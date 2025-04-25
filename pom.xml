@@ -152,7 +152,7 @@
     </dependencyManagement>
 
     <properties>
-        <reactor.version>3.6.3</reactor.version>
+        <reactor.version>3.7.5</reactor.version>
         <jackson.version>2.16.1</jackson.version>
         <maven.compiler.target>24</maven.compiler.target>
         <maven.compiler.source>24</maven.compiler.source>
