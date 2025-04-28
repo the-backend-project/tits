@@ -38,6 +38,8 @@ jobs:
           cache: maven
       - name: Build State Machine
         run: mvn -B verify --file pom.xml
+      - name: Generate diagrams
+        run: java -jar state-machine/target/state-machine-0.3.0-SNAPSHOT.jar
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Build Pages
