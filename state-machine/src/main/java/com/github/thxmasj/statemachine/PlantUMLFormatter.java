@@ -1,9 +1,15 @@
 package com.github.thxmasj.statemachine;
 
+import net.sourceforge.plantuml.FileFormat;
+import net.sourceforge.plantuml.FileFormatOption;
+import net.sourceforge.plantuml.SourceStringReader;
+
 import static java.util.function.Predicate.not;
 import static java.util.stream.Collectors.joining;
 
 import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.HashSet;
@@ -16,28 +22,43 @@ public class PlantUMLFormatter {
 
   private final static String STATE_BEGIN = "Begin"; // A bit bad to hard code the "Begin" name, as it is by convention only.
   private final TraversableState beginState;
+  private final EntityModel model;
+  private final boolean hideBuiltin;
 
   public PlantUMLFormatter(EntityModel model) {
+    this(model, true);
+  }
+
+  public PlantUMLFormatter(EntityModel model, boolean hideBuiltin) {
+    this.model = model;
+    this.hideBuiltin = hideBuiltin;
     this.beginState = TraversableState.create(model);
   }
 
-  public void formatToFile(String directory) throws IOException {
-    String fileName = String.format(
-        "%s/%s.puml",
-        directory, beginState.state().getClass().getName().replace("$1", "")
-    );
-    try (BufferedWriter writer = new BufferedWriter(new FileWriter(fileName))) {
+  public File formatToFile(String directory) throws IOException {
+    File file = file(directory, "puml");
+    try (BufferedWriter writer = new BufferedWriter(new FileWriter(file))) {
       writer.write(format());
     }
-    System.out.println("Wrote <" + fileName + ">");
+    return file;
+  }
+
+  public File formatToImage(String directory) throws IOException {
+    File file = file(directory, "svg");
+    new SourceStringReader(format()).outputImage(new FileOutputStream(file), new FileFormatOption(FileFormat.SVG));
+    return file;
+  }
+
+  private File file(String directory, String suffix) {
+    return new File(String.format("%s/%s.%s.%s", directory, model.getClass().getPackageName(), model.name(), suffix));
   }
 
   public String format() {
     return String.format(
       """
       @startuml
-      hide empty description
-  
+      !pragma svginteractive true
+      
       %s
       
       %s
@@ -64,6 +85,7 @@ public class PlantUMLFormatter {
     visited.add(state.state());
     StringBuilder s = new StringBuilder();
     for (var transition : state.forwardTransitions()) {
+      if (hideBuiltin && transition.eventType() instanceof BuiltinEventTypes) continue;
       var targetState = state.forward(transition.eventType());
       s.append(String.format(
           "%s --> %s: %s\n",
