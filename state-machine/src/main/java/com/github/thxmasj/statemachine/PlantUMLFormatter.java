@@ -93,8 +93,9 @@ public class PlantUMLFormatter {
           targetState.state().name(),
           Stream.of(
               transition.eventType().name(),
-              transition.outgoingRequests().stream().map(ns -> notification(ns, false)).collect(joining("\\n")),
-              transition.reverse() != null ? transition.reverse().outgoingRequests().stream().map(ns -> notification(ns, true)).collect(joining("\\n")) : ""
+              transition.outgoingRequests().stream().map(ns -> outgoingRequest(ns, false)).collect(joining("\\n")),
+              transition.outgoingResponses().stream().map(ns -> outgoingResponse(ns, false)).collect(joining("\\n")),
+              transition.reverse() != null ? transition.reverse().outgoingRequests().stream().map(ns -> outgoingRequest(ns, true)).collect(joining("\\n")) : ""
           ).filter(not(String::isEmpty)).collect(joining("\\n"))
       ));
       s.append(transitions(targetState, visited));
@@ -102,7 +103,7 @@ public class PlantUMLFormatter {
     return s.toString();
   }
 
-  private String notification(OutgoingRequestModel<?, ?> spec, boolean reverse) {
+  private String outgoingRequest(OutgoingRequestModel<?, ?> spec, boolean reverse) {
     return String.format(
         "<color:" + (reverse ? "red" : "blue") + ">%s %s %s</color>%s",
         Objects.requireNonNullElseGet(spec.notificationCreatorType(), () -> spec.notificationCreator().getClass())
@@ -110,6 +111,15 @@ public class PlantUMLFormatter {
         spec.guaranteed() ? ">>" : ">",
         spec.subscriber(),
         spec.responseValidator() != null ? " > <color:green>" + spec.responseValidator().getClass().getSimpleName() + "</color>" : ""
+    );
+  }
+
+  private String outgoingResponse(OutgoingResponseModel<?, ?> spec, boolean reverse) {
+    return String.format(
+        "<color:" + (reverse ? "red" : "blue") + ">%s %s %s</color>",
+        Objects.requireNonNullElseGet(spec.creatorType(), () -> spec.creator().getClass()).getSimpleName(),
+        ">",
+        "client"
     );
   }
 
