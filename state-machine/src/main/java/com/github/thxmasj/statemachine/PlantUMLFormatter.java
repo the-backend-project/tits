@@ -50,7 +50,10 @@ public class PlantUMLFormatter {
   }
 
   private File file(String directory, String suffix) {
-    return new File(String.format("%s/%s.%s.%s", directory, model.getClass().getPackageName(), model.name(), suffix));
+    var file = new File(String.format("%s/%s.%s.%s", directory, model.getClass().getPackageName(), model.name(), suffix));
+    //noinspection ResultOfMethodCallIgnored
+    file.getParentFile().mkdirs();
+    return file;
   }
 
   public String format() {

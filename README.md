@@ -2,4 +2,4 @@
 
 Implement common integration patterns with reduced complexity.
 
-![](docs/com.github.thxmasj.statemachine.examples.RequestReply.svg)
+![](images/com.github.thxmasj.statemachine.examples.RequestReply.svg)
