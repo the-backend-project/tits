@@ -46,7 +46,7 @@ jobs:
 #          source: ./doc
 #          destination: ./_site
       - name: Build Pages
-        run: apt update && apt install -y mkdocs && mkdocs build
+        run: sudo apt update && sudo apt install -y mkdocs && mkdocs build
       - name: Generate diagrams
         run: java -jar examples/target/examples-0.3.0-SNAPSHOT.jar
       - name: Upload Pages
