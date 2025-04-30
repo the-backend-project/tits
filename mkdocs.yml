@@ -1,11 +1,11 @@
 site_name: The Integratable Transaction Server
-theme:
-  name: material
 nav:
   - Welcome: index.md
   - Templates:
       - Batching: batching.md
-features:
+theme:
+  name: material
+  features:
     - navigation.tabs
     - navigation.sections
     - navigation.top
