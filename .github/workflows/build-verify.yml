@@ -51,6 +51,8 @@ jobs:
         run: java -jar examples/target/examples-0.3.0-SNAPSHOT.jar
       - name: Upload Pages
         uses: actions/upload-pages-artifact@v3
+        with:
+          path: 'site/'
 
   # Deployment job
   deploy:
