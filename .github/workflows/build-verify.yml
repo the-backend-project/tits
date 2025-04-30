@@ -43,7 +43,7 @@ jobs:
       - name: Build Pages
         uses: actions/jekyll-build-pages@v1
         with:
-          source: ./_site
+          source: ./doc
           destination: ./_site
       - name: Generate diagrams
         run: java -jar examples/target/examples-0.3.0-SNAPSHOT.jar
