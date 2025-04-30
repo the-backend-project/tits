@@ -6,7 +6,7 @@ import java.io.IOException;
 public class Main {
 
   public static void main(String[] args) throws IOException {
-    new PlantUMLFormatter(RequestReply.INSTANCE).formatToImage("docs/images/");
+    new PlantUMLFormatter(Batching.INSTANCE).formatToImage("docs/images/");
   }
 
 }
