@@ -17,13 +17,13 @@ theme:
       toggle:
         icon: material/toggle-switch-off-outline
         name: Switch to dark mode
-      primary: deep-purple
+      primary: green
       accent: purple
     - scheme: slate
       toggle:
         icon: material/toggle-switch
         name: Switch to light mode
-      primary: deep-purple
+      primary: green
       accent: purple
   markdown_extensions:
     - abbr
