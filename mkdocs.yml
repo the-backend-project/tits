@@ -1,7 +1,11 @@
-site_name: TiTS
+site_name: The Integratable Transaction Server
 theme:
   name: material
-  features:
+nav:
+  - Welcome: index.md
+  - Templates:
+      - Batching: batching.md
+features:
     - navigation.tabs
     - navigation.sections
     - navigation.top
