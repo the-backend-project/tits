@@ -45,8 +45,17 @@ jobs:
 #        with:
 #          source: ./doc
 #          destination: ./_site
+      - name: Set up Python 3.7
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install mkdocs-material
       - name: Build Pages
-        run: sudo apt update && sudo apt install -y mkdocs && mkdocs build
+        run: mkdocs build
+#        run: sudo apt update && sudo apt install -y mkdocs && mkdocs build
       - name: Generate diagrams
         run: java -jar examples/target/examples-0.3.0-SNAPSHOT.jar
       - name: Upload Pages
