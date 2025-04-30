@@ -1,13 +1,13 @@
-package com.github.thxmasj.statemachine.examples;
+package com.github.thxmasj.statemachine.templates;
 
 import static com.github.thxmasj.statemachine.BuiltinEventTypes.Status;
 import static com.github.thxmasj.statemachine.EventTriggerBuilder.event;
 import static com.github.thxmasj.statemachine.IncomingRequestModel.validator;
 import static com.github.thxmasj.statemachine.TransitionModel.Builder.from;
-import static com.github.thxmasj.statemachine.examples.Batching.EntityTypes.Item;
-import static com.github.thxmasj.statemachine.examples.Batching.Events.AddToBatch;
-import static com.github.thxmasj.statemachine.examples.Batching.Events.CreateItem;
-import static com.github.thxmasj.statemachine.examples.Batching.States.Begin;
+import static com.github.thxmasj.statemachine.templates.Batching.EntityTypes.Item;
+import static com.github.thxmasj.statemachine.templates.Batching.Events.AddToBatch;
+import static com.github.thxmasj.statemachine.templates.Batching.Events.CreateItem;
+import static com.github.thxmasj.statemachine.templates.Batching.States.Begin;
 
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.EventType;

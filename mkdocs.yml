@@ -1,6 +1,6 @@
 site_name: The Integratable Transaction Server
 nav:
-  - Welcome: index.md
+  - Overview: index.md
   - Templates:
       - Batching: batching.md
 theme:
