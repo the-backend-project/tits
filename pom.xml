@@ -12,7 +12,7 @@
 
     <modules>
         <module>state-machine</module>
-        <module>examples</module>
+        <module>templates</module>
     </modules>
 
     <build>
