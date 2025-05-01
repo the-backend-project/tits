@@ -40,11 +40,6 @@ jobs:
         run: mvn -B verify --file pom.xml
       - name: Configure Pages
         uses: actions/configure-pages@v5
-#      - name: Build Pages
-#        uses: actions/jekyll-build-pages@v1
-#        with:
-#          source: ./doc
-#          destination: ./_site
       - name: Set up Python 3
         uses: actions/setup-python@v2
         with:
@@ -73,3 +68,5 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+        with:
+          preview: 'true'
