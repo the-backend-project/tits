@@ -194,6 +194,11 @@ public class TransitionModel<T> {
           .response(creator);
     }
 
+    public TransitionModel<String> response(String data, OutgoingResponseCreator<String> creator) {
+      return new TransitionModel<>(fromState, toState, eventType, _ -> Mono.just(data), null)
+          .response(creator);
+    }
+
     public TransitionModel<String> build() {
       return new TransitionModel<>(fromState, toState, eventType, null, null);
     }
