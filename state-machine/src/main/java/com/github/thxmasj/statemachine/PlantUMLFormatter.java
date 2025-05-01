@@ -1,9 +1,15 @@
 package com.github.thxmasj.statemachine;
 
+import net.sourceforge.plantuml.FileFormat;
+import net.sourceforge.plantuml.FileFormatOption;
+import net.sourceforge.plantuml.SourceStringReader;
+
 import static java.util.function.Predicate.not;
 import static java.util.stream.Collectors.joining;
 
 import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.HashSet;
@@ -16,28 +22,46 @@ public class PlantUMLFormatter {
 
   private final static String STATE_BEGIN = "Begin"; // A bit bad to hard code the "Begin" name, as it is by convention only.
   private final TraversableState beginState;
+  private final EntityModel model;
+  private final boolean hideBuiltin;
 
   public PlantUMLFormatter(EntityModel model) {
+    this(model, true);
+  }
+
+  public PlantUMLFormatter(EntityModel model, boolean hideBuiltin) {
+    this.model = model;
+    this.hideBuiltin = hideBuiltin;
     this.beginState = TraversableState.create(model);
   }
 
-  public void formatToFile(String directory) throws IOException {
-    String fileName = String.format(
-        "%s/%s.puml",
-        directory, beginState.state().getClass().getName().replace("$1", "")
-    );
-    try (BufferedWriter writer = new BufferedWriter(new FileWriter(fileName))) {
+  public File formatToFile(String directory) throws IOException {
+    File file = file(directory, "puml");
+    try (BufferedWriter writer = new BufferedWriter(new FileWriter(file))) {
       writer.write(format());
     }
-    System.out.println("Wrote <" + fileName + ">");
+    return file;
+  }
+
+  public File formatToImage(String directory) throws IOException {
+    File file = file(directory, "svg");
+    new SourceStringReader(format()).outputImage(new FileOutputStream(file), new FileFormatOption(FileFormat.SVG));
+    return file;
+  }
+
+  private File file(String directory, String suffix) {
+    var file = new File(String.format("%s/%s.%s.%s", directory, model.getClass().getPackageName(), model.name(), suffix));
+    //noinspection ResultOfMethodCallIgnored
+    file.getParentFile().mkdirs();
+    return file;
   }
 
   public String format() {
     return String.format(
       """
       @startuml
-      hide empty description
-  
+      !pragma svginteractive true
+      
       %s
       
       %s
@@ -64,6 +88,7 @@ public class PlantUMLFormatter {
     visited.add(state.state());
     StringBuilder s = new StringBuilder();
     for (var transition : state.forwardTransitions()) {
+      if (hideBuiltin && transition.eventType() instanceof BuiltinEventTypes) continue;
       var targetState = state.forward(transition.eventType());
       s.append(String.format(
           "%s --> %s: %s\n",
@@ -71,8 +96,9 @@ public class PlantUMLFormatter {
           targetState.state().name(),
           Stream.of(
               transition.eventType().name(),
-              transition.outgoingRequests().stream().map(ns -> notification(ns, false)).collect(joining("\\n")),
-              transition.reverse() != null ? transition.reverse().outgoingRequests().stream().map(ns -> notification(ns, true)).collect(joining("\\n")) : ""
+              transition.outgoingRequests().stream().map(ns -> outgoingRequest(ns, false)).collect(joining("\\n")),
+              transition.outgoingResponses().stream().map(ns -> outgoingResponse(ns, false)).collect(joining("\\n")),
+              transition.reverse() != null ? transition.reverse().outgoingRequests().stream().map(ns -> outgoingRequest(ns, true)).collect(joining("\\n")) : ""
           ).filter(not(String::isEmpty)).collect(joining("\\n"))
       ));
       s.append(transitions(targetState, visited));
@@ -80,7 +106,7 @@ public class PlantUMLFormatter {
     return s.toString();
   }
 
-  private String notification(OutgoingRequestModel<?, ?> spec, boolean reverse) {
+  private String outgoingRequest(OutgoingRequestModel<?, ?> spec, boolean reverse) {
     return String.format(
         "<color:" + (reverse ? "red" : "blue") + ">%s %s %s</color>%s",
         Objects.requireNonNullElseGet(spec.notificationCreatorType(), () -> spec.notificationCreator().getClass())
@@ -88,6 +114,15 @@ public class PlantUMLFormatter {
         spec.guaranteed() ? ">>" : ">",
         spec.subscriber(),
         spec.responseValidator() != null ? " > <color:green>" + spec.responseValidator().getClass().getSimpleName() + "</color>" : ""
+    );
+  }
+
+  private String outgoingResponse(OutgoingResponseModel<?, ?> spec, boolean reverse) {
+    return String.format(
+        "<color:" + (reverse ? "red" : "blue") + ">%s %s %s</color>",
+        Objects.requireNonNullElseGet(spec.creatorType(), () -> spec.creator().getClass()).getSimpleName(),
+        ">",
+        "client"
     );
   }
 
