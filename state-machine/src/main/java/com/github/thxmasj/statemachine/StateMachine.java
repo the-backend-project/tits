@@ -11,6 +11,7 @@ import static java.util.Optional.ofNullable;
 import static java.util.stream.Collectors.joining;
 import static java.util.stream.Collectors.toMap;
 
+import com.github.thxmasj.statemachine.OutboxWorker.ResponseEvaluator;
 import com.github.thxmasj.statemachine.database.ChangeRaced;
 import com.github.thxmasj.statemachine.database.DuplicateMessage;
 import com.github.thxmasj.statemachine.database.EntityGroupNotInitialised;
@@ -670,32 +671,44 @@ public class StateMachine {
     );
   }
 
-  private Mono<ProcessResult> doProcessIncomingResponse(
+  private Mono<ForwardStatus> doProcessIncomingResponse(
+      HttpRequestMessage requestMessage,
+      HttpResponseMessage responseMessage,
       int attempt,
-      EntityModel entityModel,
-      EntityId entityId,
-      Notification.IncomingResponse responseNotification
+      OutboxElement queueElement
   ) {
+    EvaluatedResponse evaluatedResponse = queueElement.subscriber().responseEvaluator().evaluate(requestMessage, responseMessage);
+    if (queueElement.guaranteed() && evaluatedResponse.status() == ResponseEvaluator.Status.PermanentError) {
+      return moveToDLQ.execute(queueElement, evaluatedResponse.statusReason().message())
+          .doOnSuccess(_ -> logDead(queueElement, evaluatedResponse.statusReason().message()))
+          .thenReturn(ForwardStatus.Dead);
+    } else if (queueElement.guaranteed() && evaluatedResponse.status() == ResponseEvaluator.Status.TransientError) {
+      return backOffOrDie(queueElement, evaluatedResponse.statusReason().message());
+    }
+    Notification.IncomingResponse responseNotification = responseNotification(queueElement, evaluatedResponse.message());
+    EntityModel entityModel = queueElement.entityModel();
+    EntityId entityId = queueElement.entityId();
     return eventsByEntityId.execute(entityModel, entityId).flatMap(eventLog -> {
       // TODO: Consistency check/error handling for invalid event logs
       // TODO: Consistency check/error handling for missing model/notification specifications (shift left)
       Event requestEvent = eventLog.events().stream().filter(e -> e.getEventNumber() == responseNotification.eventNumber() - 1).findFirst().orElseThrow();
       if (eventLog.lastEventNumber() != requestEvent.getEventNumber()) {
-        return Mono.empty(); // Outbox worker will handle the response
+        return dequeueAndStoreReceipt.execute(queueElement, evaluatedResponse.message(), ZonedDateTime.now(clock))
+            .thenReturn(ForwardStatus.Ok)
+            .doOnSuccess(_ -> logForwarded(queueElement, evaluatedResponse.message(), evaluatedResponse.statusReason().message()));
       }
       var effectiveEventLog = eventLog.effectiveEvents();
       var currentState = entityModel.begin().forward(effectiveEventLog.stream().map(Event::getType).toList());
       var requestTransition = lastTransition(eventLog);
-      if (requestTransition == null) {
-        return Mono.empty();
-      }
       var requestNotificationSpecification = requestTransition.outgoingRequests()
           .stream()
           .filter(notificationSpecification -> notificationSpecification.subscriber() != null && notificationSpecification.subscriber().equals(responseNotification.subscriber()))
           .findFirst()
           .orElseThrow();
       if (requestNotificationSpecification.responseValidator() == null) {
-        return Mono.empty();
+        return dequeueAndStoreReceipt.execute(queueElement, evaluatedResponse.message(), ZonedDateTime.now(clock))
+            .thenReturn(ForwardStatus.Ok)
+            .doOnSuccess(_ -> logForwarded(queueElement, evaluatedResponse.message(), evaluatedResponse.statusReason().message()));
       }
       var incomingResponse = new IncomingResponse(
           entityId,
@@ -706,19 +719,13 @@ public class StateMachine {
           .map(timeout -> effectiveEventLog.getLast().getTimestamp().plus(timeout.duration()))
           .filter(ZonedDateTime.now(clock)::isAfter)
           .isPresent()) {
-        return Mono.just(new ProcessResult(
-            Status.Rejected,
-            new Entity(entityId, List.of(), entityModel),
-            null,
-            "State changed (timeout) during notification exchange"
-        ));
+        return dequeueAndStoreReceipt.execute(queueElement, evaluatedResponse.message(), ZonedDateTime.now(clock))
+            .thenReturn(ForwardStatus.Ok)
+            .doOnSuccess(_ -> logForwarded(queueElement, evaluatedResponse.message(), evaluatedResponse.statusReason().message()));
       } else if (!scheduledEvents(new Entity(eventLog.entityId(), eventLog.secondaryIds(), eventLog.entityModel()), eventLog.effectiveEvents(), ZonedDateTime.now(clock)).isEmpty()) {
-        return Mono.just(new ProcessResult(
-            Status.Rejected,
-            new Entity(entityId, List.of(), entityModel),
-            null,
-            "State changed (scheduled) during notification exchange"
-        ));
+        return dequeueAndStoreReceipt.execute(queueElement, evaluatedResponse.message(), ZonedDateTime.now(clock))
+            .thenReturn(ForwardStatus.Ok)
+            .doOnSuccess(_ -> logForwarded(queueElement, evaluatedResponse.message(), evaluatedResponse.statusReason().message()));
       }
       return validateResponse(
           incomingResponse,
@@ -741,10 +748,16 @@ public class StateMachine {
           // No point repeating for pending state change when processing responses, as no events are allowed between a
           // request and a response event.
           .filter(pr -> isUnrepeatable(attempt, pr, false))
+          .flatMap(pr -> !(pr.isAccepted() || pr.isRepeated()) ?
+              dequeueAndStoreReceipt.execute(queueElement, evaluatedResponse.message(), ZonedDateTime.now(clock))
+                .thenReturn(ForwardStatus.Ok)
+                .doOnSuccess(_ -> logForwarded(queueElement, evaluatedResponse.message(), evaluatedResponse.statusReason().message())) :
+              Mono.just(ForwardStatus.Ok)
+          )
           .switchIfEmpty(reattemptDelay.then(
-              doProcessIncomingResponse(attempt + 1, entityModel, entityId, responseNotification)
+              doProcessIncomingResponse(requestMessage, responseMessage, attempt + 1, queueElement)
           ));
-    }).onErrorResume(t -> withCorrelationId(correlationId -> listener.notificationResponseFailed(correlationId, entityId, responseNotification, t)).then(Mono.error(t)));
+    });//.onErrorResume(t -> withCorrelationId(correlationId -> listener.notificationResponseFailed(correlationId, entityId, responseNotification, t)).then(Mono.error(t)));
   }
 
   private Mono<ProcessResult> doProcessRollback(
@@ -1452,36 +1465,10 @@ public class StateMachine {
           .thenReturn(ForwardStatus.Dead);
     }
     return queueElement.subscriber().client().exchange(httpRequest)
-        .map(httpResponse -> queueElement.subscriber().responseEvaluator().evaluate(httpRequest, httpResponse))
-        .flatMap(evaluatedResponse -> handleResponse(queueElement, evaluatedResponse))
+        .flatMap(httpResponse -> doProcessIncomingResponse(httpRequest, httpResponse, 1, queueElement))
             .onErrorResume(TimeoutException.class, _ -> backOffOrDie(queueElement, "Client timeout"))
             .onErrorResume(e -> backOffOrDie(queueElement, reason(e)))
             .contextWrite(Correlation.correlationIdContext(queueElement.correlationId()));
-  }
-
-  private Mono<ForwardStatus> handleResponse(OutboxElement queueElement, EvaluatedResponse evaluatedResponse) {
-    if (!queueElement.guaranteed()) {
-      return doProcessIncomingResponse(1, queueElement.entityModel(), queueElement.entityId(), responseNotification(queueElement, evaluatedResponse.message()))
-              .map(_ -> ForwardStatus.Ok);
-    }
-    return switch (evaluatedResponse.status()) {
-      case Ok -> doProcessIncomingResponse(1, queueElement.entityModel(), queueElement.entityId(), responseNotification(queueElement, evaluatedResponse.message()))
-              .filter(processResult -> processResult.isAccepted() || processResult.isRepeated())
-              .map(_ -> ForwardStatus.Ok)
-              .switchIfEmpty(
-                      dequeueAndStoreReceipt.execute(queueElement, evaluatedResponse.message(), ZonedDateTime.now(clock))
-                              .thenReturn(ForwardStatus.Ok)
-                              .doOnSuccess(_ -> logForwarded(
-                                      queueElement,
-                                      evaluatedResponse.message(),
-                                      evaluatedResponse.statusReason().message()
-                              ))
-              );
-      case PermanentError -> moveToDLQ.execute(queueElement, evaluatedResponse.statusReason().message())
-              .doOnSuccess(_ -> logDead(queueElement, evaluatedResponse.statusReason().message()))
-              .thenReturn(ForwardStatus.Dead);
-      case TransientError -> backOffOrDie(queueElement, evaluatedResponse.statusReason().message());
-    };
   }
 
   private Notification.IncomingResponse responseNotification(OutboxElement queueElement, String responseMessage) {
