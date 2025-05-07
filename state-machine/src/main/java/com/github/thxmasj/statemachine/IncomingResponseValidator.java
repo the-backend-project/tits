@@ -1,15 +1,25 @@
 package com.github.thxmasj.statemachine;
 
+import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import reactor.core.publisher.Mono;
 
 public interface IncomingResponseValidator<OUTPUT_TYPE> extends DataRequirer {
 
-  Mono<Event> execute(
+  Mono<Result> execute(
       EntityId entityId,
       Context<OUTPUT_TYPE> context,
+      HttpRequestMessage requestMessage,
       Input.IncomingResponse response,
       Input input
   );
+
+  record Result(Status status, String message, Event event) {
+    public enum Status {
+      Ok,
+      PermanentError,
+      TransientError
+    }
+  }
 
   interface Context<OUTPUT_TYPE> {
 

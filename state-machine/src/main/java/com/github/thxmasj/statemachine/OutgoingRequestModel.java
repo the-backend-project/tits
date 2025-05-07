@@ -1,6 +1,10 @@
 package com.github.thxmasj.statemachine;
 
-import java.util.function.*;
+import com.github.thxmasj.statemachine.IncomingResponseValidator.Result;
+import com.github.thxmasj.statemachine.OutboxWorker.ResponseEvaluator;
+import java.util.function.Function;
+import com.github.thxmasj.statemachine.OutboxWorker.ResponseEvaluator.EvaluatedResponse;
+import reactor.core.publisher.Mono;
 
 public record OutgoingRequestModel<T, U>(
     Function<T, U> dataAdapter,
@@ -10,6 +14,18 @@ public record OutgoingRequestModel<T, U>(
     boolean guaranteed,
     IncomingResponseValidator<?> responseValidator
 ) {
+
+  public OutgoingRequestModel {
+    if (responseValidator == null)
+      responseValidator = (IncomingResponseValidator<Object>) (_, _, requestMessage, response, input) -> {
+        EvaluatedResponse evaluatedResponse = new ResponseEvaluator() {}.evaluate(requestMessage, response.httpMessage());
+        return Mono.just(new Result(
+            evaluatedResponse.status(),
+            evaluatedResponse.statusReason().message(),
+            null
+        ));
+      };
+  }
 
   public static class Builder<T, U> {
 

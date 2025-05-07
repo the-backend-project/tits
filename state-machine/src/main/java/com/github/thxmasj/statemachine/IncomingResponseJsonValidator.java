@@ -5,6 +5,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.github.thxmasj.statemachine.IncomingResponseValidator.Result.Status;
+import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
@@ -23,6 +25,7 @@ public abstract class IncomingResponseJsonValidator<INPUT_TYPE, OUTPUT_TYPE>
 
   public IncomingResponseJsonValidator(Class<INPUT_TYPE> inputType) {
     this.inputType = inputType;
+    //noinspection resource
     this.jsonValidator = Validation.byDefaultProvider()
         .configure()
         .messageInterpolator(new ParameterMessageInterpolator())
@@ -30,31 +33,40 @@ public abstract class IncomingResponseJsonValidator<INPUT_TYPE, OUTPUT_TYPE>
         .getValidator();
   }
 
-  public final Mono<Event> execute(
+  @Override
+  public final Mono<Result> execute(
       EntityId entityId,
       Context<OUTPUT_TYPE> context,
+      HttpRequestMessage requestMessage,
       Input.IncomingResponse response,
       Input input
   ) {
     if (response.httpMessage().statusCode() < 200 || response.httpMessage().statusCode() >= 300)
-      return execute(entityId, context, response, input, null);
+      return execute(entityId, context, requestMessage, response, input, null);
     else if (response.httpMessage().body() == null)
-      return Mono.just(context.rollback("Missing response message"));
+      return Mono.just(new Result(Status.PermanentError, "Missing response message", context.rollback("Missing response message")));
     INPUT_TYPE jsonBody;
     try {
       jsonBody = objectMapper.readerFor(inputType).readValue(response.httpMessage().body());
     } catch (JsonProcessingException e) {
-      return Mono.just(context.rollback("Failed to parse JSON response message: " + e.getMessage()));
+      return Mono.just(new Result(Status.PermanentError, "Failed to parse JSON message", context.rollback("Failed to parse JSON response message: " + e.getMessage())));
     }
     var violations = jsonValidator.validate(jsonBody);
-    if (!violations.isEmpty())
-      return Mono.just(context.rollback(new ConstraintViolationException(violations).getMessage()));
-    return execute(entityId, context, response, input, jsonBody);
+    if (!violations.isEmpty()) {
+      String violationMessage= new ConstraintViolationException(violations).getMessage();
+      return Mono.just(new Result(
+          Status.PermanentError,
+          violationMessage,
+          context.rollback(violationMessage)
+      ));
+    }
+    return execute(entityId, context, requestMessage, response, input, jsonBody);
   }
 
-  public abstract Mono<Event> execute(
+  public abstract Mono<Result> execute(
       EntityId entityId,
       Context<OUTPUT_TYPE> context,
+      HttpRequestMessage requestMessage,
       Input.IncomingResponse response,
       Input input,
       INPUT_TYPE jsonBody
@@ -63,14 +75,15 @@ public abstract class IncomingResponseJsonValidator<INPUT_TYPE, OUTPUT_TYPE>
   public static <T> IncomingResponseJsonValidator<T, T> jsonResponse(Class<T> dataType, EventType eventType) {
     return new IncomingResponseJsonValidator<>(dataType) {
       @Override
-      public Mono<Event> execute(
+      public Mono<Result> execute(
           EntityId entityId,
           Context<T> context,
+          HttpRequestMessage requestMessage,
           Input.IncomingResponse response,
           Input input,
           T jsonBody
       ) {
-        return Mono.just(context.validResponse(eventType, jsonBody));
+        return Mono.just(new Result(Status.Ok, null, context.validResponse(eventType, jsonBody)));
       }
     };
   }

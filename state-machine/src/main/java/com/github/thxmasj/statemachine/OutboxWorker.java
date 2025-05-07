@@ -1,5 +1,6 @@
 package com.github.thxmasj.statemachine;
 
+import com.github.thxmasj.statemachine.IncomingResponseValidator.Result.Status;
 import com.github.thxmasj.statemachine.database.Client.ConcurrencyFailure;
 import com.github.thxmasj.statemachine.database.Client.PrimaryKeyConstraintViolation;
 import com.github.thxmasj.statemachine.database.mssql.ProcessBackedOff;
@@ -32,7 +33,6 @@ public class OutboxWorker {
   public enum ExchangeType {
     OutgoingRequest(0),
     IncomingResponse(1),
-    ReverseOutgoingRequest(2),
     OutgoingResponse(6),
     IncomingRequest(7);
 
@@ -47,8 +47,6 @@ public class OutboxWorker {
   public enum ForwardStatus {Ok, Dead, Empty, Backoff, Error, Deadlock}
 
   public interface ResponseEvaluator {
-
-    enum Status {Ok, PermanentError, TransientError}
 
     record EvaluatedResponse(Status status, StatusReason statusReason, String message) {}
 
@@ -72,13 +70,13 @@ public class OutboxWorker {
       int c = responseMessage.statusCode();
       Status status;
       if (c >= 200 && c < 300) {
-        status = ResponseEvaluator.Status.Ok;
+        status = Status.Ok;
       } else if (c >= 400 && c < 500) {
-        status = ResponseEvaluator.Status.PermanentError;
+        status = Status.PermanentError;
       } else if (c >= 500 && c < 600) {
-        status = ResponseEvaluator.Status.TransientError;
+        status = Status.TransientError;
       } else {
-        status = ResponseEvaluator.Status.PermanentError;
+        status = Status.PermanentError;
       }
       return new EvaluatedResponse(status,
           new HttpStatusReason(responseMessage.statusCode(), responseMessage.reasonPhrase()),
