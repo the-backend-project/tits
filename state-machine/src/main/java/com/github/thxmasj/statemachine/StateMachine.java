@@ -11,7 +11,7 @@ import static java.util.Optional.ofNullable;
 import static java.util.stream.Collectors.joining;
 import static java.util.stream.Collectors.toMap;
 
-import com.github.thxmasj.statemachine.OutboxWorker.ResponseEvaluator;
+import com.github.thxmasj.statemachine.IncomingResponseValidator.Result;
 import com.github.thxmasj.statemachine.database.ChangeRaced;
 import com.github.thxmasj.statemachine.database.DuplicateMessage;
 import com.github.thxmasj.statemachine.database.EntityGroupNotInitialised;
@@ -21,7 +21,6 @@ import com.github.thxmasj.statemachine.EventTrigger.EntitySelector;
 import com.github.thxmasj.statemachine.IncomingRequestValidator.Context;
 import com.github.thxmasj.statemachine.Notification.OutgoingResponse;
 import com.github.thxmasj.statemachine.OutboxWorker.ForwardStatus;
-import com.github.thxmasj.statemachine.OutboxWorker.ResponseEvaluator.EvaluatedResponse;
 import com.github.thxmasj.statemachine.RequiredData.RequirementsNotFulfilled;
 import com.github.thxmasj.statemachine.Requirements.MissingRequirement;
 import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Entity;
@@ -545,21 +544,22 @@ public class StateMachine {
     );
   }
 
-  private Mono<Event> validateResponse(
+  private Mono<IncomingResponseValidator.Result> validateResponse(
+      HttpRequestMessage requestMessage,
       IncomingResponse response,
       int currentEventNumber,
       RequiredData requiredData
   ) {
-    var incomingResponse = new Input.IncomingResponse(
-        response.responseMessage(),
-        currentEventNumber
-    );
     return response.validator().execute(
         response.entityId(),
         new IncomingResponseContext<>(
             currentEventNumber
         ),
-        incomingResponse,
+        requestMessage,
+        new Input.IncomingResponse(
+            response.responseMessage(),
+            currentEventNumber
+        ),
         requiredData
     );
   }
@@ -671,93 +671,93 @@ public class StateMachine {
     );
   }
 
-  private Mono<ForwardStatus> doProcessIncomingResponse(
+    private Mono<ForwardStatus> doProcessIncomingResponse(
       HttpRequestMessage requestMessage,
       HttpResponseMessage responseMessage,
       int attempt,
       OutboxElement queueElement
   ) {
-    EvaluatedResponse evaluatedResponse = queueElement.subscriber().responseEvaluator().evaluate(requestMessage, responseMessage);
-    if (queueElement.guaranteed() && evaluatedResponse.status() == ResponseEvaluator.Status.PermanentError) {
-      return moveToDLQ.execute(queueElement, evaluatedResponse.statusReason().message())
-          .doOnSuccess(_ -> logDead(queueElement, evaluatedResponse.statusReason().message()))
-          .thenReturn(ForwardStatus.Dead);
-    } else if (queueElement.guaranteed() && evaluatedResponse.status() == ResponseEvaluator.Status.TransientError) {
-      return backOffOrDie(queueElement, evaluatedResponse.statusReason().message());
-    }
-    Notification.IncomingResponse responseNotification = responseNotification(queueElement, evaluatedResponse.message());
+    Notification.IncomingResponse responseNotification = responseNotification(queueElement, responseMessage.message());
     EntityModel entityModel = queueElement.entityModel();
     EntityId entityId = queueElement.entityId();
     return eventsByEntityId.execute(entityModel, entityId).flatMap(eventLog -> {
       // TODO: Consistency check/error handling for invalid event logs
       // TODO: Consistency check/error handling for missing model/notification specifications (shift left)
-      Event requestEvent = eventLog.events().stream().filter(e -> e.getEventNumber() == responseNotification.eventNumber() - 1).findFirst().orElseThrow();
-      if (eventLog.lastEventNumber() != requestEvent.getEventNumber()) {
-        return dequeueAndStoreReceipt.execute(queueElement, evaluatedResponse.message(), ZonedDateTime.now(clock))
-            .thenReturn(ForwardStatus.Ok)
-            .doOnSuccess(_ -> logForwarded(queueElement, evaluatedResponse.message(), evaluatedResponse.statusReason().message()));
-      }
       var effectiveEventLog = eventLog.effectiveEvents();
       var currentState = entityModel.begin().forward(effectiveEventLog.stream().map(Event::getType).toList());
-      var requestTransition = lastTransition(eventLog);
+      var requestTransition = transitionForEventNumber(eventLog, queueElement.eventNumber());
       var requestNotificationSpecification = requestTransition.outgoingRequests()
           .stream()
           .filter(notificationSpecification -> notificationSpecification.subscriber() != null && notificationSpecification.subscriber().equals(responseNotification.subscriber()))
           .findFirst()
-          .orElseThrow();
-      if (requestNotificationSpecification.responseValidator() == null) {
-        return dequeueAndStoreReceipt.execute(queueElement, evaluatedResponse.message(), ZonedDateTime.now(clock))
+          .orElse(null);
+      if (requestNotificationSpecification == null) {
+        return dequeueAndStoreReceipt.execute(queueElement, responseMessage.message(), ZonedDateTime.now(clock))
             .thenReturn(ForwardStatus.Ok)
-            .doOnSuccess(_ -> logForwarded(queueElement, evaluatedResponse.message(), evaluatedResponse.statusReason().message()));
+            .doOnSuccess(_ -> logForwarded(queueElement, responseMessage.message(), "No request transition found, ignoring response"));
       }
       var incomingResponse = new IncomingResponse(
           entityId,
-          new HttpResponseMessage(responseNotification.message()),
+          responseMessage,
           requestNotificationSpecification.responseValidator()
       );
       if (currentState.state().timeout()
           .map(timeout -> effectiveEventLog.getLast().getTimestamp().plus(timeout.duration()))
           .filter(ZonedDateTime.now(clock)::isAfter)
           .isPresent()) {
-        return dequeueAndStoreReceipt.execute(queueElement, evaluatedResponse.message(), ZonedDateTime.now(clock))
+        return dequeueAndStoreReceipt.execute(queueElement, responseMessage.message(), ZonedDateTime.now(clock))
             .thenReturn(ForwardStatus.Ok)
-            .doOnSuccess(_ -> logForwarded(queueElement, evaluatedResponse.message(), evaluatedResponse.statusReason().message()));
+            .doOnSuccess(_ -> logForwarded(queueElement, responseMessage.message(), "State timeout, ignoring response"));
       } else if (!scheduledEvents(new Entity(eventLog.entityId(), eventLog.secondaryIds(), eventLog.entityModel()), eventLog.effectiveEvents(), ZonedDateTime.now(clock)).isEmpty()) {
-        return dequeueAndStoreReceipt.execute(queueElement, evaluatedResponse.message(), ZonedDateTime.now(clock))
+        return dequeueAndStoreReceipt.execute(queueElement, responseMessage.message(), ZonedDateTime.now(clock))
             .thenReturn(ForwardStatus.Ok)
-            .doOnSuccess(_ -> logForwarded(queueElement, evaluatedResponse.message(), evaluatedResponse.statusReason().message()));
+            .doOnSuccess(_ -> logForwarded(queueElement, responseMessage.message(), "Scheduled event, ignoring response"));
       }
+      Entity entity = new Entity(eventLog.entityId(), eventLog.secondaryIds(), eventLog.entityModel());
       return validateResponse(
+          requestMessage,
           incomingResponse,
-          requestEvent.getEventNumber() + 1,
+          eventLog.lastEventNumber() + 1,
           requiredData(
               incomingResponse.validator(),
-              new Entity(eventLog.entityId(), eventLog.secondaryIds(), eventLog.entityModel()),
+              entity,
               effectiveEventLog,
               List.of(),
               null,
               responseNotification
           )
       )
-          .flatMap(validationOutput -> processEvents(
+          .flatMap(validationOutput -> (validationOutput.event() != null ? processEvents(
               eventLog,
-              List.of(validationOutput),
+              List.of(validationOutput.event()),
               responseNotification,
               List.of()
-          ))
+          ) : Mono.just(new ProcessResult(Status.Rejected, entity, null, null)))
           // No point repeating for pending state change when processing responses, as no events are allowed between a
           // request and a response event.
           .filter(pr -> isUnrepeatable(attempt, pr, false))
-          .flatMap(pr -> !(pr.isAccepted() || pr.isRepeated()) ?
-              dequeueAndStoreReceipt.execute(queueElement, evaluatedResponse.message(), ZonedDateTime.now(clock))
-                .thenReturn(ForwardStatus.Ok)
-                .doOnSuccess(_ -> logForwarded(queueElement, evaluatedResponse.message(), evaluatedResponse.statusReason().message())) :
-              Mono.just(ForwardStatus.Ok)
+          .flatMap(pr -> switch (pr) {
+                case ProcessResult r when r.status() == Status.Accepted -> Mono.just(ForwardStatus.Ok);
+                case ProcessResult r when r.status() == Status.Repeated -> Mono.just(ForwardStatus.Ok);
+                case ProcessResult r when r.status() == Status.Rejected && validationOutput.status() == Result.Status.Ok ->
+                    dequeueAndStoreReceipt.execute(queueElement, responseMessage.message(), ZonedDateTime.now(clock))
+                        .thenReturn(ForwardStatus.Ok)
+                        .doOnSuccess(_ -> logForwarded(
+                            queueElement,
+                            responseMessage.message(),
+                            "Forwarded, but event " + validationOutput.event() + " not accepted: " + pr.status()
+                        ));
+                case ProcessResult r when r.status() == Status.Rejected && validationOutput.status() == Result.Status.PermanentError ->
+                    moveToDLQ.execute(queueElement, validationOutput.message()).thenReturn(ForwardStatus.Ok);
+                case ProcessResult r when r.status() == Status.Rejected && validationOutput.status() == Result.Status.TransientError ->
+                    backOffOrDie(queueElement, validationOutput.message()).thenReturn(ForwardStatus.Ok);
+                default -> Mono.error(new IllegalStateException("Unexpected value: " + pr));
+              }
           )
           .switchIfEmpty(reattemptDelay.then(
               doProcessIncomingResponse(requestMessage, responseMessage, attempt + 1, queueElement)
-          ));
-    });//.onErrorResume(t -> withCorrelationId(correlationId -> listener.notificationResponseFailed(correlationId, entityId, responseNotification, t)).then(Mono.error(t)));
+          )));
+    }).onErrorResume(t -> withCorrelationId(correlationId -> listener.notificationResponseFailed(correlationId, entityId, responseNotification, t)).then(Mono.error(t)));
   }
 
   private Mono<ProcessResult> doProcessRollback(
@@ -1201,7 +1201,7 @@ public class StateMachine {
     return transitionsWithData(
         actualTransitions(
             startEventNumber,
-            entity,
+            entity.model(),
             effectiveEvents,
             eventsToStore,
             transitionEvents,
@@ -1790,13 +1790,13 @@ public class StateMachine {
    */
   private List<ActualTransition<?>> actualTransitions(
       int startEventNumber,
-      Entity entity,
+      EntityModel entityModel,
       List<Event> eventLog,
       List<Event> newEvents,
       List<Event> transitionEvents,
       boolean reverse
   ) {
-    TraversableState state = entity.model().begin();
+    TraversableState state = entityModel.begin();
     // Skip till startEventNumber
     for (var event : eventLog) {
       if (event.getEventNumber() <= startEventNumber) {
@@ -1834,7 +1834,7 @@ public class StateMachine {
 
   private List<EventType> scheduledEvents(Entity entity, List<Event> eventLog, ZonedDateTime deadline) {
     var scheduledEvents = new ArrayList<EventType>();
-    for (var actualTransition : actualTransitions(0, entity, eventLog, List.of(), eventLog, false)) {
+    for (var actualTransition : actualTransitions(0, entity.model(), eventLog, List.of(), eventLog, false)) {
       scheduledEvents.addAll(
           actualTransition.model().scheduledEvents().stream()
               .filter(se -> !actualTransition.event().getTimestamp().plus(se.deadline()).isAfter(deadline))
@@ -1852,16 +1852,29 @@ public class StateMachine {
   }
 
   private boolean isPendingIncomingResponse(EventLog eventLog) {
-    TransitionModel<?> lastTransition = lastTransition(eventLog);
-    return lastTransition != null && lastTransition.outgoingRequests()
-        .stream().anyMatch(s -> s.responseValidator() != null);
+    return false;
+//    TransitionModel<?> lastTransition = lastTransition(eventLog);
+//    return lastTransition != null && lastTransition.outgoingRequests()
+//        .stream().anyMatch(s -> s.responseValidator() != null);
   }
 
-  private TransitionModel<?> lastTransition(EventLog eventLog) {
-    var effectiveEvents = eventLog.effectiveEvents();
-    if (effectiveEvents.isEmpty()) return null;
-    var nextToLastState = eventLog.entityModel().begin().forward(effectiveEvents.subList(0, effectiveEvents.size()-1).stream().map(Event::getType).toList());
-    return requireNonNull(nextToLastState).transition(effectiveEvents.getLast().getType());
+//  private TransitionModel<?> lastTransition(EventLog eventLog) {
+//    var events = eventLog.events();
+//    if (events.isEmpty()) return null;
+//    var nextToLastState = eventLog.entityModel().begin().forward(events.subList(0, events.size()-1).stream().map(Event::getType).toList());
+//    return requireNonNull(nextToLastState).transition(events.getLast().getType());
+//  }
+
+  private TransitionModel<?> transitionForEventNumber(EventLog eventLog, int eventNumber) {
+    var events = eventLog.events();
+    if (events.isEmpty()) return null;
+    TraversableState state = eventLog.entityModel().begin();
+    for (var event : events) {
+      if (event.getEventNumber() == eventNumber)
+        return state.transition(event.getType());
+      state = state.forward(event.getType());
+    }
+    throw new IllegalStateException("Event number " + eventNumber + " not found in event log");
   }
 
   private TraversableState traverseTo(EntityModel entityModel, List<Event> eventLog, int eventNumber) {
