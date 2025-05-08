@@ -1,9 +1,7 @@
 package com.github.thxmasj.statemachine;
 
 import com.github.thxmasj.statemachine.IncomingResponseValidator.Result;
-import com.github.thxmasj.statemachine.OutboxWorker.ResponseEvaluator;
 import java.util.function.Function;
-import com.github.thxmasj.statemachine.OutboxWorker.ResponseEvaluator.EvaluatedResponse;
 import reactor.core.publisher.Mono;
 
 public record OutgoingRequestModel<T, U>(
@@ -17,14 +15,11 @@ public record OutgoingRequestModel<T, U>(
 
   public OutgoingRequestModel {
     if (responseValidator == null)
-      responseValidator = (IncomingResponseValidator<Object>) (_, _, requestMessage, response, input) -> {
-        EvaluatedResponse evaluatedResponse = new ResponseEvaluator() {}.evaluate(requestMessage, response.httpMessage());
-        return Mono.just(new Result(
-            evaluatedResponse.status(),
-            evaluatedResponse.statusReason().message(),
-            null
-        ));
-      };
+      responseValidator = (IncomingResponseValidator<Object>) (_, _, _, response, _) -> Mono.just(new Result(
+          IncomingResponseValidator.status(response.httpMessage()),
+          response.httpMessage().statusLine(),
+          null
+      ));
   }
 
   public static class Builder<T, U> {

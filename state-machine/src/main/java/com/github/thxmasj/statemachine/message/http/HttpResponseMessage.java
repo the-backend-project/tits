@@ -62,6 +62,10 @@ public class HttpResponseMessage {
     return statusCode;
   }
 
+  public String statusLine() {
+    return String.format("HTTP/1.1 %d %s", statusCode, reasonPhrase);
+  }
+
   public String reasonPhrase() {
     return reasonPhrase;
   }

@@ -1,6 +1,8 @@
 package com.github.thxmasj.statemachine;
 
+import com.github.thxmasj.statemachine.IncomingResponseValidator.Result.Status;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
+import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import reactor.core.publisher.Mono;
 
 public interface IncomingResponseValidator<OUTPUT_TYPE> extends DataRequirer {
@@ -12,6 +14,28 @@ public interface IncomingResponseValidator<OUTPUT_TYPE> extends DataRequirer {
       Input.IncomingResponse response,
       Input input
   );
+
+  record EvaluatedResponse(Status status, HttpStatusReason statusReason, String message) {}
+
+  record HttpStatusReason(int status, String reasonPhrase) {
+
+    public String message() {
+      return status + " " + reasonPhrase;
+    }
+  }
+
+  static Status status(HttpResponseMessage responseMessage) {
+    int c = responseMessage.statusCode();
+    if (c >= 200 && c < 300) {
+      return Status.Ok;
+    } else if (c >= 400 && c < 500) {
+      return Status.PermanentError;
+    } else if (c >= 500 && c < 600) {
+      return Status.TransientError;
+    } else {
+      return Status.PermanentError;
+    }
+  }
 
   record Result(Status status, String message, Event event) {
     public enum Status {
