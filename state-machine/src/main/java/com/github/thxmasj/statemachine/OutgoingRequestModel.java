@@ -1,9 +1,8 @@
 package com.github.thxmasj.statemachine;
 
 import com.github.thxmasj.statemachine.IncomingResponseValidator.Result;
-import com.github.thxmasj.statemachine.OutboxWorker.ResponseEvaluator;
+import com.github.thxmasj.statemachine.IncomingResponseValidator.Result.Status;
 import java.util.function.Function;
-import com.github.thxmasj.statemachine.OutboxWorker.ResponseEvaluator.EvaluatedResponse;
 import reactor.core.publisher.Mono;
 
 public record OutgoingRequestModel<T, U>(
@@ -18,10 +17,20 @@ public record OutgoingRequestModel<T, U>(
   public OutgoingRequestModel {
     if (responseValidator == null)
       responseValidator = (IncomingResponseValidator<Object>) (_, _, requestMessage, response, input) -> {
-        EvaluatedResponse evaluatedResponse = new ResponseEvaluator() {}.evaluate(requestMessage, response.httpMessage());
+        int c = response.httpMessage().statusCode();
+        Status status;
+        if (c >= 200 && c < 300) {
+          status = Status.Ok;
+        } else if (c >= 400 && c < 500) {
+          status = Status.PermanentError;
+        } else if (c >= 500 && c < 600) {
+          status = Status.TransientError;
+        } else {
+          status = Status.PermanentError;
+        }
         return Mono.just(new Result(
-            evaluatedResponse.status(),
-            evaluatedResponse.statusReason().message(),
+            status,
+            c + " " + response.httpMessage().reasonPhrase(),
             null
         ));
       };
