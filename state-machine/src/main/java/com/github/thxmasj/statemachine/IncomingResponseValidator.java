@@ -24,23 +24,17 @@ public interface IncomingResponseValidator<OUTPUT_TYPE> extends DataRequirer {
     }
   }
 
-  default EvaluatedResponse evaluate(HttpResponseMessage responseMessage) {
+  static Status status(HttpResponseMessage responseMessage) {
     int c = responseMessage.statusCode();
-    Status status;
     if (c >= 200 && c < 300) {
-      status = Status.Ok;
+      return Status.Ok;
     } else if (c >= 400 && c < 500) {
-      status = Status.PermanentError;
+      return Status.PermanentError;
     } else if (c >= 500 && c < 600) {
-      status = Status.TransientError;
+      return Status.TransientError;
     } else {
-      status = Status.PermanentError;
+      return Status.PermanentError;
     }
-    return new EvaluatedResponse(
-        status,
-        new HttpStatusReason(responseMessage.statusCode(), responseMessage.reasonPhrase()),
-        responseMessage.message()
-    );
   }
 
   record Result(Status status, String message, Event event) {

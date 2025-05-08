@@ -1,7 +1,6 @@
 package com.github.thxmasj.statemachine;
 
 import com.github.thxmasj.statemachine.IncomingResponseValidator.Result;
-import com.github.thxmasj.statemachine.IncomingResponseValidator.Result.Status;
 import java.util.function.Function;
 import reactor.core.publisher.Mono;
 
@@ -16,24 +15,11 @@ public record OutgoingRequestModel<T, U>(
 
   public OutgoingRequestModel {
     if (responseValidator == null)
-      responseValidator = (IncomingResponseValidator<Object>) (_, _, requestMessage, response, input) -> {
-        int c = response.httpMessage().statusCode();
-        Status status;
-        if (c >= 200 && c < 300) {
-          status = Status.Ok;
-        } else if (c >= 400 && c < 500) {
-          status = Status.PermanentError;
-        } else if (c >= 500 && c < 600) {
-          status = Status.TransientError;
-        } else {
-          status = Status.PermanentError;
-        }
-        return Mono.just(new Result(
-            status,
-            c + " " + response.httpMessage().reasonPhrase(),
-            null
-        ));
-      };
+      responseValidator = (IncomingResponseValidator<Object>) (_, _, _, response, _) -> Mono.just(new Result(
+          IncomingResponseValidator.status(response.httpMessage()),
+          response.httpMessage().statusLine(),
+          null
+      ));
   }
 
   public static class Builder<T, U> {
