@@ -364,13 +364,6 @@ public class StateMachine {
                 "Client not allowed"
             );
           }
-          if (isRolledBack(eventLog, incomingRequest.clientId(), messageId)) {
-            return rejectedRequest(
-                messageId,
-                incomingRequest,
-                eventLog,
-                "Request already rolled back");
-          }
           Notification requestNotification = incomingRequestNotification(nextEventNumber, incomingRequest, messageId);
           var stateAfterScheduledEvents = currentState.forward(scheduledEvents.stream().map(Event::getType).toList());
           if (stateAfterScheduledEvents == null) {
@@ -671,7 +664,7 @@ public class StateMachine {
     );
   }
 
-    private Mono<ForwardStatus> doProcessIncomingResponse(
+  private Mono<ForwardStatus> doProcessIncomingResponse(
       HttpRequestMessage requestMessage,
       HttpResponseMessage responseMessage,
       int attempt,
@@ -680,84 +673,118 @@ public class StateMachine {
     Notification.IncomingResponse responseNotification = responseNotification(queueElement, responseMessage.message());
     EntityModel entityModel = queueElement.entityModel();
     EntityId entityId = queueElement.entityId();
-    return eventsByEntityId.execute(entityModel, entityId).flatMap(eventLog -> {
-      // TODO: Consistency check/error handling for invalid event logs
-      // TODO: Consistency check/error handling for missing model/notification specifications (shift left)
-      var effectiveEventLog = eventLog.effectiveEvents();
-      var currentState = entityModel.begin().forward(effectiveEventLog.stream().map(Event::getType).toList());
-      var requestTransition = transitionForEventNumber(eventLog, queueElement.eventNumber());
-      var requestNotificationSpecification = requestTransition.outgoingRequests()
-          .stream()
-          .filter(notificationSpecification -> notificationSpecification.subscriber() != null && notificationSpecification.subscriber().equals(responseNotification.subscriber()))
-          .findFirst()
-          .orElse(null);
-      if (requestNotificationSpecification == null) {
-        return dequeueAndStoreReceipt.execute(queueElement, responseMessage.message(), ZonedDateTime.now(clock))
-            .thenReturn(ForwardStatus.Ok)
-            .doOnSuccess(_ -> logForwarded(queueElement, responseMessage.message(), "No request transition found, ignoring response"));
-      }
-      var incomingResponse = new IncomingResponse(
-          entityId,
-          responseMessage,
-          requestNotificationSpecification.responseValidator()
-      );
-      if (currentState.state().timeout()
-          .map(timeout -> effectiveEventLog.getLast().getTimestamp().plus(timeout.duration()))
-          .filter(ZonedDateTime.now(clock)::isAfter)
-          .isPresent()) {
-        return dequeueAndStoreReceipt.execute(queueElement, responseMessage.message(), ZonedDateTime.now(clock))
-            .thenReturn(ForwardStatus.Ok)
-            .doOnSuccess(_ -> logForwarded(queueElement, responseMessage.message(), "State timeout, ignoring response"));
-      } else if (!scheduledEvents(new Entity(eventLog.entityId(), eventLog.secondaryIds(), eventLog.entityModel()), eventLog.effectiveEvents(), ZonedDateTime.now(clock)).isEmpty()) {
-        return dequeueAndStoreReceipt.execute(queueElement, responseMessage.message(), ZonedDateTime.now(clock))
-            .thenReturn(ForwardStatus.Ok)
-            .doOnSuccess(_ -> logForwarded(queueElement, responseMessage.message(), "Scheduled event, ignoring response"));
-      }
-      Entity entity = new Entity(eventLog.entityId(), eventLog.secondaryIds(), eventLog.entityModel());
-      return validateResponse(
-          requestMessage,
-          incomingResponse,
-          eventLog.lastEventNumber() + 1,
-          requiredData(
-              incomingResponse.validator(),
-              entity,
-              effectiveEventLog,
-              List.of(),
-              null,
-              responseNotification
+    return eventsByEntityId.execute(entityModel, entityId)
+        .flatMap(eventLog -> {
+          // TODO: Consistency check/error handling for invalid event logs
+          // TODO: Consistency check/error handling for missing model/notification specifications (shift left)
+          var effectiveEventLog = eventLog.effectiveEvents();
+          var currentState = entityModel.begin().forward(effectiveEventLog.stream().map(Event::getType).toList());
+          var requestTransition = transitionForEventNumber(eventLog, queueElement.eventNumber());
+          var requestNotificationSpecification = requestTransition.outgoingRequests()
+              .stream()
+              .filter(notificationSpecification -> notificationSpecification.subscriber() != null
+                  && notificationSpecification.subscriber().equals(responseNotification.subscriber()))
+              .findFirst()
+              .orElse(null);
+          if (requestNotificationSpecification == null) {
+            return dequeueAndStoreReceipt.execute(queueElement, responseMessage.message(), ZonedDateTime.now(clock))
+                .thenReturn(ForwardStatus.Ok)
+                .doOnSuccess(_ -> logForwarded(
+                    queueElement,
+                    responseMessage.message(),
+                    "No request transition found, ignoring response"
+                ));
+          }
+          var incomingResponse = new IncomingResponse(
+              entityId,
+              responseMessage,
+              requestNotificationSpecification.responseValidator()
+          );
+          if (currentState.state().timeout()
+              .map(timeout -> effectiveEventLog.getLast().getTimestamp().plus(timeout.duration()))
+              .filter(ZonedDateTime.now(clock)::isAfter)
+              .isPresent()) {
+            return dequeueAndStoreReceipt.execute(queueElement, responseMessage.message(), ZonedDateTime.now(clock))
+                .thenReturn(ForwardStatus.Ok)
+                .doOnSuccess(_ -> logForwarded(
+                    queueElement,
+                    responseMessage.message(),
+                    "State timeout, ignoring response"
+                ));
+          } else if (!scheduledEvents(
+              new Entity(eventLog.entityId(), eventLog.secondaryIds(), eventLog.entityModel()),
+              eventLog.effectiveEvents(),
+              ZonedDateTime.now(clock)
+          ).isEmpty()) {
+            return dequeueAndStoreReceipt.execute(queueElement, responseMessage.message(), ZonedDateTime.now(clock))
+                .thenReturn(ForwardStatus.Ok)
+                .doOnSuccess(_ -> logForwarded(
+                    queueElement,
+                    responseMessage.message(),
+                    "Scheduled event, ignoring response"
+                ));
+          }
+          Entity entity = new Entity(eventLog.entityId(), eventLog.secondaryIds(), eventLog.entityModel());
+          return validateResponse(
+              requestMessage,
+              incomingResponse,
+              eventLog.lastEventNumber() + 1,
+              requiredData(
+                  incomingResponse.validator(),
+                  entity,
+                  effectiveEventLog,
+                  List.of(),
+                  null,
+                  responseNotification
+              )
           )
-      )
-          .flatMap(validationOutput -> (validationOutput.event() != null ? processEvents(
-              eventLog,
-              List.of(validationOutput.event()),
-              responseNotification,
-              List.of()
-          ) : Mono.just(new ProcessResult(Status.Rejected, entity, null, null)))
-          // No point repeating for pending state change when processing responses, as no events are allowed between a
-          // request and a response event.
-          .filter(pr -> isUnrepeatable(attempt, pr, false))
-          .flatMap(pr -> switch (pr) {
-                case ProcessResult r when r.status() == Status.Accepted -> Mono.just(ForwardStatus.Ok);
-                case ProcessResult r when r.status() == Status.Repeated -> Mono.just(ForwardStatus.Ok);
-                case ProcessResult r when r.status() == Status.Rejected && validationOutput.status() == Result.Status.Ok ->
-                    dequeueAndStoreReceipt.execute(queueElement, responseMessage.message(), ZonedDateTime.now(clock))
-                        .thenReturn(ForwardStatus.Ok)
-                        .doOnSuccess(_ -> logForwarded(
-                            queueElement,
-                            responseMessage.message(),
-                            "Forwarded, but event " + validationOutput.event() + " not accepted: " + pr.status()
-                        ));
-                case ProcessResult r when r.status() == Status.Rejected && validationOutput.status() == Result.Status.PermanentError ->
-                    moveToDLQ.execute(queueElement, validationOutput.message()).thenReturn(ForwardStatus.Ok);
-                case ProcessResult r when r.status() == Status.Rejected && validationOutput.status() == Result.Status.TransientError ->
-                    backOffOrDie(queueElement, validationOutput.message()).thenReturn(ForwardStatus.Ok);
-                default -> Mono.error(new IllegalStateException("Unexpected value: " + pr));
-              }
-          )
-          .switchIfEmpty(reattemptDelay.then(
-              doProcessIncomingResponse(requestMessage, responseMessage, attempt + 1, queueElement)
-          )));
-    }).onErrorResume(t -> withCorrelationId(correlationId -> listener.notificationResponseFailed(correlationId, entityId, responseNotification, t)).then(Mono.error(t)));
+              .flatMap(validationOutput -> (validationOutput.event() != null ? processEvents(
+                      eventLog,
+                      List.of(validationOutput.event()),
+                      responseNotification,
+                      List.of()
+                  ) : Mono.just(new ProcessResult(Status.Rejected, entity, null, null)))
+                      .flatMap(pr -> switch (pr) {
+                            case ProcessResult r when r.status() == Status.Accepted -> Mono.just(ForwardStatus.Ok);
+                            case ProcessResult r when r.status() == Status.Repeated -> Mono.just(ForwardStatus.Ok);
+                            case ProcessResult r when r.status() == Status.Rejected
+                                && validationOutput.status() == Result.Status.Ok -> dequeueAndStoreReceipt.execute(
+                                    queueElement,
+                                    responseMessage.message(),
+                                    ZonedDateTime.now(clock)
+                                )
+                                .thenReturn(ForwardStatus.Ok)
+                                .doOnSuccess(_ -> logForwarded(
+                                    queueElement,
+                                    responseMessage.message(),
+                                    "Forwarded and dequeued, as event " +
+                                        (validationOutput.event() != null ? validationOutput.event().getType() : "N/A") +
+                                        " was " + pr.status()
+                                ));
+                            case ProcessResult r when r.status() == Status.Rejected
+                                && validationOutput.status() == Result.Status.PermanentError ->
+                                moveToDLQ.execute(queueElement, validationOutput.message()).thenReturn(ForwardStatus.Ok);
+                            case ProcessResult r when r.status() == Status.Rejected
+                                && validationOutput.status() == Result.Status.TransientError ->
+                                backOffOrDie(queueElement, validationOutput.message()).thenReturn(ForwardStatus.Ok);
+                            case ProcessResult r when r.status() == Status.Raced -> {
+                              System.out.println("Raced response not handled");
+                              yield Mono.error(new IllegalStateException("Raced response not handled"));
+                            }
+                            default -> {
+                              System.out.println("Unhandled status " + pr);
+                              yield Mono.error(new IllegalStateException("Unexpected value: " + pr));
+                            }
+                          }
+                      )
+              );
+        })
+        .onErrorResume(t -> withCorrelationId(correlationId -> listener.notificationResponseFailed(
+            correlationId,
+            entityId,
+            responseNotification,
+            t
+        )).then(Mono.error(t)));
   }
 
   private Mono<ProcessResult> doProcessRollback(
@@ -1843,12 +1870,6 @@ public class StateMachine {
       );
     }
     return unmodifiableList(scheduledEvents);
-  }
-
-  private boolean isRolledBack(EventLog eventLog, String clientId, String messageId) {
-    return eventLog.events().stream()
-        .filter(e -> e.getType().isRollback())
-        .anyMatch(e -> Objects.equals(clientId, e.getClientId()) && Objects.equals(messageId, e.getMessageId()));
   }
 
   private boolean isPendingIncomingResponse(EventLog eventLog) {
