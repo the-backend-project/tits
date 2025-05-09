@@ -744,6 +744,9 @@ public class StateMachine {
                       responseNotification,
                       List.of()
                   ) : Mono.just(new ProcessResult(Status.Rejected, entity, null, null)))
+                      // No point repeating for pending state change when processing responses, as no events are allowed between a
+                      // request and a response event. Races on nested changes could be repeated, though.
+                      .filter(pr -> isUnrepeatable(attempt, pr, false))
                       .flatMap(pr -> switch (pr) {
                             case ProcessResult r when r.status() == Status.Accepted -> Mono.just(ForwardStatus.Ok);
                             case ProcessResult r when r.status() == Status.Repeated -> Mono.just(ForwardStatus.Ok);
@@ -767,16 +770,15 @@ public class StateMachine {
                             case ProcessResult r when r.status() == Status.Rejected
                                 && validationOutput.status() == Result.Status.TransientError ->
                                 backOffOrDie(queueElement, validationOutput.message()).thenReturn(ForwardStatus.Ok);
-                            case ProcessResult r when r.status() == Status.Raced -> {
-                              System.out.println("Raced response not handled");
-                              yield Mono.error(new IllegalStateException("Raced response not handled"));
-                            }
-                            default -> {
-                              System.out.println("Unhandled status " + pr);
-                              yield Mono.error(new IllegalStateException("Unexpected value: " + pr));
-                            }
+                            case ProcessResult r when r.status() == Status.Raced ->
+                                Mono.error(new IllegalStateException("Raced response not handled"));
+                            default -> Mono.error(new IllegalStateException("Unexpected value: " + pr));
                           }
                       )
+                      .switchIfEmpty(reattemptDelay.then(
+                          doProcessIncomingResponse(requestMessage, responseMessage, attempt + 1, queueElement)
+                      ))
+
               );
         })
         .onErrorResume(t -> withCorrelationId(correlationId -> listener.notificationResponseFailed(
