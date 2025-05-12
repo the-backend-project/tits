@@ -6,6 +6,7 @@ import java.util.Optional;
 import com.github.thxmasj.statemachine.Event.LoadedEvent;
 import com.github.thxmasj.statemachine.StateMachine.ProcessResult;
 import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Entity;
+import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import reactor.core.publisher.Mono;
@@ -53,6 +54,10 @@ public interface Input {
   Entity entity();
 
   List<Entity> nestedEntities();
+
+  Entity nestedEntity(String entityName);
+
+  SecondaryId secondaryId(String entityName, SecondaryIdModel idModel);
 
   ProcessResult processResult(EntityModel entityType, EntityId entityId);
 

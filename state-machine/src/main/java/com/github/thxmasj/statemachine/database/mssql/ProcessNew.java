@@ -17,6 +17,7 @@ import reactor.core.publisher.Mono;
 
 public class ProcessNew {
 
+  private final List<EntityModel> entityModels;
   private final Client databaseClient;
   private final Map<EntityModel, Map<Subscriber, String>> sqls;
   private final String schemaName;
@@ -24,6 +25,7 @@ public class ProcessNew {
   private final DelaySpecification backoff;
 
   public ProcessNew(Client databaseClient, List<EntityModel> entityModels, String schemaName, Clock clock, DelaySpecification backoff) {
+    this.entityModels = entityModels;
     this.databaseClient = databaseClient;
     this.schemaName = schemaName;
     this.clock = clock;
@@ -112,10 +114,10 @@ public class ProcessNew {
                 .replace("{queueTable}", q.queueTable(subscriber))
                 .replace("{outboxTable}", q.outboxTable(subscriber))
                 .replace("{outboxTablePK}", names.outboxTablePrimaryKeyName(subscriber))
-                .replace("{parentEntityFilter}", entityModel.childEntity() == null ? "" :
+                .replace("{parentEntityFilter}", childEntity(entityModel) == null ? "" :
                     String.format(
                         "AND q.EntityId NOT IN (SELECT ParentEntityId FROM %s WHERE ParentEntityId IS NOT NULL)",
-                        new SchemaNames(schemaName, entityModel.childEntity()).qualifiedNames().queueTable(subscriber)
+                        new SchemaNames(schemaName, childEntity(entityModel)).qualifiedNames().queueTable(subscriber)
                     )
                 );
         sqls.get(entityModel).put(subscriber, sql);
@@ -140,6 +142,13 @@ public class ProcessNew {
         .map(Mappers.queueElementMapper(entityModel, new SchemaNames(schemaName, entityModel), clock, subscriber, now))
         .all()
         .switchIfEmpty(raceSimulationIfTriggered(entityModel, subscriber));
+  }
+
+  private EntityModel childEntity(EntityModel thisModel) {
+    return entityModels.stream()
+        .filter(e -> thisModel.equals(e.parentEntity()))
+        .findFirst()
+        .orElse(null);
   }
 
   private Mono<OutboxElement> raceSimulationIfTriggered(EntityModel model, Subscriber subscriber) {

@@ -28,11 +28,13 @@ import reactor.core.publisher.Flux;
 @SuppressWarnings({"TrailingWhitespacesInTextBlock", "StringConcatenationInLoop"})
 public class ChangeState {
 
+  private final List<EntityModel> entityModels;
   private final Client databaseClient;
   private final Clock clock;
   private final String schema;
 
-  public ChangeState(Client databaseClient, String schema, Clock clock) {
+  public ChangeState(List<EntityModel> entityModels, Client databaseClient, String schema, Clock clock) {
+    this.entityModels = entityModels;
     this.databaseClient = databaseClient;
     this.clock = clock;
     this.schema = schema;
@@ -359,14 +361,14 @@ public class ChangeState {
             .replace("{dlqTable}", q.dlqTable(outgoingRequests.get(i).subscriber()))
             .replace("{dlqTablePK}", names.dlqTablePrimaryKeyName(outgoingRequests.get(i).subscriber())) +
             (
-                entityModel.childEntity() == null ? "" :
+                childEntity(entityModel) == null ? "" :
                     """
                     AND @entityId{changeIndex} NOT IN (
                       SELECT ParentEntityId
                       FROM {childQueueTable}
                       WHERE ParentEntityId IS NOT NULL)
                     """.replace("{changeIndex}", String.valueOf(changeIndex))
-                        .replace("{childQueueTable}", new SchemaNames(schema, entityModel.childEntity()).qualifiedNames().queueTable(outgoingRequests.get(i).subscriber()))
+                        .replace("{childQueueTable}", new SchemaNames(schema, childEntity(entityModel)).qualifiedNames().queueTable(outgoingRequests.get(i).subscriber()))
             ) +
         """
         END TRY
@@ -455,6 +457,13 @@ public class ChangeState {
       return changes.stream().anyMatch(change -> new SchemaNames(schema, change.entityModel()).inboxTableName().equals(f.tableName()) && f.indexName().equals("ixMessageId_ClientId"));
     }
     return false;
+  }
+
+  private EntityModel childEntity(EntityModel thisModel) {
+    return entityModels.stream()
+        .filter(e -> thisModel.equals(e.parentEntity()))
+        .findFirst()
+        .orElse(null);
   }
 
   private Change isRace(Throwable e, List<Change> changes) {
