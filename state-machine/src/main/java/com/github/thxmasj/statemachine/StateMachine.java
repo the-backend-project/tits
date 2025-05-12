@@ -123,7 +123,7 @@ public class StateMachine {
     }
     this.clock = clock;
     var jdbcClient = new JDBCClient(dataSource);
-    this.changeState = new ChangeState(jdbcClient, schemaName, clock);
+    this.changeState = new ChangeState(entityModels, jdbcClient, schemaName, clock);
     this.eventsByEntityId = new EventsByEntityId(dataSource, entityModels, schemaName, clock);
     this.eventsByLookupId = new EventsByLookupId(dataSource, entityModels, schemaName, clock);
     this.eventsByMessageId = new EventsByMessageId(dataSource, entityModels, schemaName, clock);
@@ -1651,7 +1651,7 @@ public class StateMachine {
         incomingResponseByEvent
     );
     Entity parentEntity = filteredEvents.nestedEntities().stream()
-        .filter(nestedEntity -> entity.model().equals(nestedEntity.model().childEntity()))
+        .filter(nestedEntity -> nestedEntity.model().equals(entity.model.parentEntity()))
         .findFirst().orElse(null);
     return creator.create(
             notificationModel.dataAdapter().apply(transition.data()),

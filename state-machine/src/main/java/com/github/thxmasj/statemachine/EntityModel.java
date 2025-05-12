@@ -38,7 +38,7 @@ public interface EntityModel {
         .findFirst().orElseThrow(() -> new MappingFailure("No event type has id " + typeId));
   }
 
-  default EntityModel childEntity() {
+  default EntityModel parentEntity() {
     return null;
   }
 

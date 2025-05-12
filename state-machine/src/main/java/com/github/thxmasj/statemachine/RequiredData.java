@@ -21,6 +21,7 @@ import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Entity;
 import com.github.thxmasj.statemachine.database.mssql.IncomingRequestByEvent;
 import com.github.thxmasj.statemachine.database.mssql.IncomingResponseByEvent;
 import com.github.thxmasj.statemachine.database.mssql.OutgoingRequestByEvent;
+import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
 import com.github.thxmasj.statemachine.message.http.HttpMessageParser;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import java.time.ZonedDateTime;
@@ -362,6 +363,25 @@ public class RequiredData implements Input {
   public List<Entity> nestedEntities() {
     //noinspection SimplifyStreamApiCallChains
     return processResults.stream().filter(r -> r.entity() != null).map(ProcessResult::entity).toList();
+  }
+
+  @Override
+  public Entity nestedEntity(String entityName) {
+    return nestedEntities().stream()
+        .filter(entity -> entity.model().name().equals(entityName))
+        .findFirst()
+        .orElse(null);
+  }
+
+  @Override
+  public SecondaryId secondaryId(String entityName, SecondaryIdModel idModel) {
+    var entity = nestedEntity(entityName);
+    if (entity == null)
+      throw new RequirementsNotFulfilled("No nested entity " + entityName);
+    return entity.secondaryIds().stream()
+        .filter(sid -> sid.model() == idModel)
+        .findFirst()
+        .orElseThrow(() -> new RequirementsNotFulfilled("No secondary id " + entityName + "/" + idModel.name()));
   }
 
   @Override
