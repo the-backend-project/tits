@@ -1656,7 +1656,6 @@ public class StateMachine {
     return creator.create(
             notificationModel.dataAdapter().apply(transition.data()),
             entity.id(),
-            currentEvent.getEventNumber(),
             correlationId,
             filteredEvents
         )
