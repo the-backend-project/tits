@@ -50,6 +50,7 @@ public record OutgoingRequestModel<T, U>(
 
     public static <T> Builder<T, T> request(OutgoingRequestCreator<T> notificationCreator) {
       Builder<T, T> builder = new Builder<>();
+      builder.dataAdapter = Function.identity();
       builder.notificationCreator = notificationCreator;
       return builder;
     }

@@ -11,20 +11,20 @@ import static java.util.Optional.ofNullable;
 import static java.util.stream.Collectors.joining;
 import static java.util.stream.Collectors.toMap;
 
-import com.github.thxmasj.statemachine.IncomingResponseValidator.Result;
-import com.github.thxmasj.statemachine.database.ChangeRaced;
-import com.github.thxmasj.statemachine.database.DuplicateMessage;
-import com.github.thxmasj.statemachine.database.EntityGroupNotInitialised;
-import com.github.thxmasj.statemachine.database.MappingFailure;
-import com.github.thxmasj.statemachine.database.UnknownEntity;
 import com.github.thxmasj.statemachine.EventTrigger.EntitySelector;
 import com.github.thxmasj.statemachine.IncomingRequestValidator.Context;
+import com.github.thxmasj.statemachine.IncomingResponseValidator.Result;
 import com.github.thxmasj.statemachine.Notification.OutgoingResponse;
 import com.github.thxmasj.statemachine.OutboxWorker.ForwardStatus;
 import com.github.thxmasj.statemachine.RequiredData.RequirementsNotFulfilled;
 import com.github.thxmasj.statemachine.Requirements.MissingRequirement;
 import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Entity;
 import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Status;
+import com.github.thxmasj.statemachine.database.ChangeRaced;
+import com.github.thxmasj.statemachine.database.DuplicateMessage;
+import com.github.thxmasj.statemachine.database.EntityGroupNotInitialised;
+import com.github.thxmasj.statemachine.database.MappingFailure;
+import com.github.thxmasj.statemachine.database.UnknownEntity;
 import com.github.thxmasj.statemachine.database.jdbc.JDBCClient;
 import com.github.thxmasj.statemachine.database.mssql.ChangeState;
 import com.github.thxmasj.statemachine.database.mssql.ChangeState.Change;
@@ -47,8 +47,8 @@ import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdMod
 import com.github.thxmasj.statemachine.database.mssql.SecondaryIdByEntityId;
 import com.github.thxmasj.statemachine.http.HttpClient.TimeoutException;
 import com.github.thxmasj.statemachine.http.RequestMapper;
-import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.HttpMessageParser;
+import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import java.io.IOException;
 import java.io.PrintWriter;
@@ -1657,7 +1657,6 @@ public class StateMachine {
             notificationModel.dataAdapter().apply(transition.data()),
             entity.id(),
             currentEvent.getEventNumber(),
-            notificationModel,
             correlationId,
             filteredEvents
         )
