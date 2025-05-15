@@ -2,7 +2,10 @@ package com.github.thxmasj.statemachine;
 
 import com.github.thxmasj.statemachine.EventTrigger.EntitySelector;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
+import javax.annotation.Nullable;
 import java.util.UUID;
+
+import static java.util.Objects.requireNonNull;
 
 public class EntitySelectorBuilder {
 
@@ -23,7 +26,8 @@ public class EntitySelectorBuilder {
     return builder;
   }
 
-  public static EntitySelectorBuilder id(String id) {
+  public static EntitySelectorBuilder id(@Nullable String id) {
+    requireNonNull(id);
     var builder = new EntitySelectorBuilder();
     builder.entityId = new EntityId.UUID(UUID.fromString(id));
     return builder;

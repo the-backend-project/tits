@@ -108,21 +108,18 @@ public class PlantUMLFormatter {
 
   private String outgoingRequest(OutgoingRequestModel<?, ?> spec, boolean reverse) {
     return String.format(
-        "<color:" + (reverse ? "red" : "blue") + ">%s %s %s</color>%s",
-        Objects.requireNonNullElseGet(spec.notificationCreatorType(), () -> spec.notificationCreator().getClass())
-            .getSimpleName(),
+        "<color:" + (reverse ? "red" : "blue") + ">%s %s %s</color>",
+        spec.notificationCreatorType() != null ? spec.notificationCreatorType().getSimpleName() :
+            spec.notificationCreator().toString(),
         spec.guaranteed() ? ">>" : ">",
-        spec.subscriber(),
-        spec.responseValidator() != null ? " > <color:green>" + spec.responseValidator().getClass().getSimpleName() + "</color>" : ""
+        spec.subscriber()
     );
   }
 
   private String outgoingResponse(OutgoingResponseModel<?, ?> spec, boolean reverse) {
     return String.format(
-        "<color:" + (reverse ? "red" : "blue") + ">%s %s %s</color>",
-        Objects.requireNonNullElseGet(spec.creatorType(), () -> spec.creator().getClass()).getSimpleName(),
-        ">",
-        "client"
+        "<color:" + (reverse ? "red" : "blue") + ">< %s</color>",
+        Objects.requireNonNullElseGet(spec.creatorType(), () -> spec.creator().getClass()).getSimpleName()
     );
   }
 

@@ -39,12 +39,20 @@ public class IncomingRequestModelBuilder<DATA_TYPE> {
   }
 
   public static String fromRequestLine(HttpRequestMessage message, String pattern, int captureGroup) {
-    Matcher matcher = Pattern.compile(pattern).matcher(message.requestLine());
+    return fromRequestLine(message, Pattern.compile(pattern), captureGroup);
+  }
+
+  public static String fromRequestLine(HttpRequestMessage message, Pattern pattern, int captureGroup) {
+    Matcher matcher = pattern.matcher(message.requestLine());
     return matcher.find() ? matcher.group(captureGroup) : null;
   }
 
   public static <T> T fromRequestLine(HttpRequestMessage message, String pattern, Function<Matcher, T> idBuilder) {
-    Matcher matcher = Pattern.compile(pattern).matcher(message.requestLine());
+    return fromRequestLine(message, Pattern.compile(pattern), idBuilder);
+  }
+
+  public static <T> T fromRequestLine(HttpRequestMessage message, Pattern pattern, Function<Matcher, T> idBuilder) {
+    Matcher matcher = pattern.matcher(message.requestLine());
     return matcher.find() ? idBuilder.apply(matcher) : null;
   }
 
