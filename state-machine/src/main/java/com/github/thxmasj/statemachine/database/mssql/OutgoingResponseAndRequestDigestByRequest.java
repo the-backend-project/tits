@@ -31,7 +31,7 @@ public class OutgoingResponseAndRequestDigestByRequest {
           SELECT rq.Digest, rs.Data
           FROM {InboxTable} rq WITH (INDEX(ixMessageId_ClientId))
           LEFT OUTER JOIN {OutboxTable} rs WITH (INDEX({OutboxTablePK}))
-          ON rs.EntityId=rq.EntityId AND rs.InboxEventNumber=rq.EventNumber
+          ON rs.EntityId=rq.EntityId AND rs.RequestId=rq.Id
           WHERE rq.MessageId=:messageId AND rq.ClientId=:clientId
           """
               .replace("{InboxTable}", names.qualifiedNames().inboxTable())

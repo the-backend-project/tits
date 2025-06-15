@@ -3,6 +3,7 @@ nav:
   - Overview: index.md
   - Templates:
       - Batching: batching.md
+      - Card payments: cardpayments.md
 theme:
   name: material
   features:

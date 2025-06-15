@@ -1,41 +1,46 @@
 package com.github.thxmasj.statemachine;
 
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.Sinks;
 import reactor.util.annotation.NonNull;
 import reactor.util.context.Context;
 import reactor.util.context.ContextView;
 import java.util.UUID;
-import java.util.function.Supplier;
-
-import static java.util.Optional.ofNullable;
-import static java.util.function.Predicate.not;
 
 public class Correlation {
 
   private static final String CORRELATION_ID = "correlationId";
-
-  public static final Supplier<ContextView> newCorrelationIdContext =
-      () -> Context.of(CORRELATION_ID, newCorrelationId());
+  private static final String RESPONSE_SINK = "responseSink";
+  private static final String REQUEST_ID = "requestId";
 
   public static Mono<String> correlationId() {
     return Mono.deferContextual(Mono::just)
         .map(ctx -> ctx.<String>get(CORRELATION_ID))
-        .contextWrite(ctx -> ctx.hasKey(CORRELATION_ID) ? ctx : ctx.put(CORRELATION_ID, newCorrelationId()));
+        .contextWrite(ctx -> ctx.hasKey(CORRELATION_ID) ? ctx : ctx.put(CORRELATION_ID, UUID.randomUUID().toString()));
   }
 
-  public static ContextView correlationIdContextOfNullable(String correlationId) {
-    return ofNullable(correlationId)
-        .filter(not(String::isEmpty))
-        .map(Correlation::correlationIdContext)
-        .orElseGet(Correlation.newCorrelationIdContext);
+  public static ContextView contextOf(@NonNull String correlationId, Sinks.One<String> responseSink, UUID requestId) {
+    return Context.of(CORRELATION_ID, correlationId, RESPONSE_SINK, responseSink, REQUEST_ID, requestId);
   }
 
-  public static ContextView correlationIdContext(@NonNull String correlationId) {
+  public static ContextView contextOf(@NonNull String correlationId) {
     return Context.of(CORRELATION_ID, correlationId);
   }
 
-  private static String newCorrelationId() {
-    return UUID.randomUUID().toString();
+  public static String correlationId(ContextView context) {
+    return context.get(CORRELATION_ID);
+  }
+
+  public static UUID requestId(ContextView context) {
+    return context.get(REQUEST_ID);
+  }
+
+  public static Sinks.One<String> responseSink(ContextView context) {
+    return context.get(RESPONSE_SINK);
+  }
+
+  public static boolean hasResponseSink(ContextView context) {
+    return context.hasKey(RESPONSE_SINK);
   }
 
 }

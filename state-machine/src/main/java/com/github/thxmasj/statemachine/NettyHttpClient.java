@@ -6,6 +6,7 @@ import com.github.thxmasj.statemachine.http.HttpClient;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import io.netty.handler.codec.http.HttpMethod;
+import java.time.Duration;
 import java.util.Base64;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -35,6 +36,7 @@ public class NettyHttpClient implements HttpClient {
 
   @Override
   public Mono<HttpResponseMessage> exchange(HttpRequestMessage message) {
+    long t0 = System.nanoTime();
     return nettyHttpClient
         .headers(h -> message.headers().forEach(h::add))
         .headers(h -> fixedHeaders.get().forEach(h::add))
@@ -61,7 +63,14 @@ public class NettyHttpClient implements HttpClient {
           ))
         )
         .single()
-        .onErrorMap(io.netty.handler.timeout.TimeoutException.class, TimeoutException::new);
+        .onErrorMap(
+            io.netty.handler.timeout.TimeoutException.class,
+            t -> new TimeoutException(Duration.ofNanos(System.nanoTime() - t0), t)
+        )
+        .onErrorMap(
+            io.netty.handler.timeout.ReadTimeoutException.class,
+            t -> new TimeoutException(Duration.ofNanos(System.nanoTime() - t0), t)
+        );
   }
 
 }

@@ -8,7 +8,7 @@ public interface State {
 
   String name();
 
-  record Choice(Class<? extends Action> action) {}
+  record Choice(Action<?> action) {}
 
   default Choice choice() {
     return null;
@@ -20,7 +20,7 @@ public interface State {
     return Optional.empty();
   }
 
-  default List<Class<? extends Action>> actions() {
+  default List<Class<? extends Action<?>>> actions() {
     return List.of();
   }
 

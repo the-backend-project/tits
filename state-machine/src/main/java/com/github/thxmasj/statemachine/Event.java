@@ -10,9 +10,7 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZonedDateTime;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.stream.Stream;
 import reactor.core.publisher.Mono;
 
@@ -25,7 +23,6 @@ public final class Event {
   private final String clientId;
   private String data;
   private Object unmarshalledData;
-  private Map<Class<?>, Object> transientData;
 
   public Event(Integer eventNumber, EventType type, Clock clock, String messageId, String clientId) {
     this(eventNumber, type, LocalDateTime.ofInstant(clock.instant(), clock.getZone()), clock, messageId, clientId, null);
@@ -41,15 +38,15 @@ public final class Event {
     this.unmarshalledData = data;
   }
 
-  public Event(Integer eventNumber, EventType type, Clock clock, String messageId, String clientId, String data, Object...transientData) {
-    this(eventNumber, type, LocalDateTime.ofInstant(clock.instant(), clock.getZone()), clock, messageId, clientId, data, transientData);
+  public Event(Integer eventNumber, EventType type, Clock clock, String messageId, String clientId, String data) {
+    this(eventNumber, type, LocalDateTime.ofInstant(clock.instant(), clock.getZone()), clock, messageId, clientId, data);
   }
 
   public Event(Integer eventNumber, EventType type, Clock clock) {
     this(eventNumber, type, LocalDateTime.ofInstant(clock.instant(), clock.getZone()), clock, null, null, null);
   }
 
-  public Event(Integer eventNumber, EventType type, LocalDateTime timestamp, Clock clock, String messageId, String clientId, String data, Object...transientData) {
+  public Event(Integer eventNumber, EventType type, LocalDateTime timestamp, Clock clock, String messageId, String clientId, String data) {
     requireNonNull(eventNumber);
     requireNonNull(type);
     this.eventNumber = eventNumber;
@@ -58,11 +55,6 @@ public final class Event {
     this.messageId = messageId;
     this.clientId = clientId;
     this.data = data;
-    if (transientData.length > 0)
-      this.transientData = new HashMap<>(transientData.length);
-    for (var d : transientData) {
-      if (d != null) this.transientData.put(d.getClass(), d);
-    }
   }
 
   public static class LoadedEvent {
@@ -92,12 +84,7 @@ public final class Event {
       if (unmarshalled != null && unmarshalled.getClass() == type)
         return type.cast(unmarshalled);
       else
-        try {
-          return event.getTransientData(type);
-        } catch (IllegalArgumentException e) {
-          throw new IllegalArgumentException("Failed to get unmarshalled data of type " + type + " from "
-              + event.getType() + ". Found " + (unmarshalled != null ? unmarshalled.getClass() : "nothing"));
-        }
+        return null;
     }
 
     public String getData() {
@@ -182,14 +169,6 @@ public final class Event {
     if (type.dataType() != dataType)
       throw new IllegalArgumentException("Event " + getType() + " does not have data type " + dataType.getName() + " but " + type.dataType().getName());
     return getUnmarshalledData();
-  }
-
-  public <T> T getTransientData(Class<T> dataType) {
-    if (dataType == Void.class)
-      return null;
-    if (transientData == null)
-      throw new IllegalArgumentException("No transient data on event " + getType());
-    return (T) requireNonNull(transientData.get(dataType), "No transient data of type " + dataType + " on event " + getType());
   }
 
   public String getMarshalledData() {

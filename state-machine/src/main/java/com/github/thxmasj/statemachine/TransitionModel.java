@@ -56,7 +56,7 @@ public class TransitionModel<T> {
       Class<? extends OutgoingRequestCreator<T>> notificationCreator,
       Subscriber subscriber
   ) {
-    this.outgoingRequests.add(new OutgoingRequestModel<>(Function.identity(), notificationCreator, null, subscriber, true, null));
+    this.outgoingRequests.add(new OutgoingRequestModel<>(Function.identity(), notificationCreator, null, subscriber, true, 0, null, null));
     return this;
   }
 
@@ -65,7 +65,7 @@ public class TransitionModel<T> {
       Subscriber subscriber,
       IncomingResponseValidator<?> responseValidator
   ) {
-    this.outgoingRequests.add(new OutgoingRequestModel<>(Function.identity(), notificationCreator, null, subscriber, true, responseValidator));
+    this.outgoingRequests.add(new OutgoingRequestModel<>(Function.identity(), notificationCreator, null, subscriber, true, 0, null, responseValidator));
     return this;
   }
 
@@ -158,6 +158,23 @@ public class TransitionModel<T> {
 
   public List<Function<T, SecondaryId>> newIdentifiers() {
     return newIdentifiers;
+  }
+
+  @Override
+  public String toString() {
+    return "TransitionModel{" +
+        "fromState=" + fromState +
+        ", toState=" + toState +
+        ", eventType=" + eventType +
+        ", dataCreatorType=" + dataCreatorType +
+        ", dataCreator=" + dataCreator +
+        ", eventTriggers=" + eventTriggers +
+        ", outgoingRequests=" + outgoingRequests +
+        ", outgoingResponses=" + outgoingResponses +
+        ", reverse=" + reverse +
+        ", newIdentifiers=" + newIdentifiers +
+        ", scheduledEvents=" + scheduledEvents +
+        '}';
   }
 
   public static class Builder {

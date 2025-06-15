@@ -15,8 +15,6 @@ public interface IncomingRequestValidator<OUTPUT_TYPE> extends DataRequirer {
 
   interface Context<OUTPUT_TYPE> {
 
-    Event invalidRequest(OUTPUT_TYPE data, String errorMessage);
-
     Event invalidRequest(String errorMessage);
 
     Event invalidRequest(EventType eventType, OUTPUT_TYPE data, String errorMessage);
