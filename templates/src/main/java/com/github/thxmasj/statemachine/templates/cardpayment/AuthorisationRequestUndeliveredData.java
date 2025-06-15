@@ -13,11 +13,11 @@ class AuthorisationRequestUndeliveredData implements DataCreator<PaymentEvent.Au
 
   @Override
   public Requirements requirements() {
-    return of(one(AuthorisationRequest));
+    return of(one(AuthorisationRequest, PreauthorisationRequest));
   }
 
   @Override
   public Mono<PaymentEvent.Authorisation> execute(Input input) {
-    return Mono.just(input.one(AuthorisationRequest).getUnmarshalledData(PaymentEvent.Authorisation.class));
+    return Mono.just(input.one(AuthorisationRequest, PreauthorisationRequest).getUnmarshalledData(PaymentEvent.Authorisation.class));
   }
 }

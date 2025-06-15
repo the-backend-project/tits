@@ -9,14 +9,12 @@ import java.util.Optional;
 
 public enum PaymentState implements State {
   Begin,
-  PendingPreauthorisationResponse(new Timeout(ofMillis(6600), Rollback)),
   PendingAuthorisationResponse(new Timeout(ofMillis(6600), Rollback)),
   AuthorisationFailed,
   PendingCaptureResponse,
   Preauthorised,
   Authorised,
-  PendingRefundResponse1(new Timeout(ofMillis(6600), Rollback)),
-  PendingRefundResponse2(new Timeout(ofMillis(6600), Rollback)),
+  PendingRefundResponse(new Timeout(ofMillis(6600), Rollback)),
   PendingSettlement(new Timeout(Duration.ofHours(5), SettlementEvent.Type.Timeout)),
   Settled(new Choice(new Reconcile())),
   Reconciled,
