@@ -14,20 +14,6 @@ public interface Listener {
             Throwable t
     );
 
-    void notificationResponseTimeout(
-            String correlationId,
-            EntityId entityId,
-            int eventNumber,
-            String requestNotificationSubscriber
-    );
-
-    void notificationResponseFailed(
-            String correlationId,
-            EntityId entityId,
-            Notification responseNotification,
-            Throwable t
-    );
-
     void rollbackFailed(
             String correlationId,
             EntityId entityId,
@@ -47,6 +33,14 @@ public interface Listener {
             EntityId entityId,
             String sourceState,
             String details
+    );
+
+    void resolveStateFailed(
+        String correlationId,
+        EntityId entityId,
+        String sourceState,
+        Event resolveEvent,
+        String details
     );
 
     record Change(

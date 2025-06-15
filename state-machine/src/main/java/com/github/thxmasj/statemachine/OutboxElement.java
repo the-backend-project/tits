@@ -2,14 +2,16 @@ package com.github.thxmasj.statemachine;
 
 import java.time.Duration;
 import java.time.ZonedDateTime;
+import java.util.UUID;
 import java.util.function.UnaryOperator;
 
 public record OutboxElement(
-    byte[] id,
+    byte[] queueElementId,
     long outboxElementId,
     EntityId entityId,
     EntityModel entityModel,
     int eventNumber,
+    UUID creatorId,
     Subscriber subscriber,
     boolean guaranteed,
     ZonedDateTime enqueuedAt,

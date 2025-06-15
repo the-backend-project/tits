@@ -41,7 +41,6 @@ public class Mappers {
 
   static  Function<Row, OutboxElement> queueElementMapper(
       EntityModel entityModel,
-      SchemaNames names,
       Clock clock,
       Subscriber subscriber,
       LocalDateTime now
@@ -52,6 +51,7 @@ public class Mappers {
         new EntityId.UUID(row.get("EntityId", UUID.class)),
         entityModel,
         requireNonNull(row.get("EventNumber", Integer.class)),
+        requireNonNull(row.get("CreatorId", UUID.class)),
         requireNonNull(subscriber),
         requireNonNull(row.get("Guaranteed", Boolean.class)),
         ZonedDateTime.of(requireNonNull(row.get("EnqueuedAt", LocalDateTime.class)), clock.getZone()),

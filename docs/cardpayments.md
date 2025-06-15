@@ -1,0 +1,1 @@
+![](images/com.github.thxmasj.statemachine.templates.cardpayment.Payment.svg)

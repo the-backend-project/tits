@@ -64,7 +64,8 @@ public class ChangeState {
     }
     for (int i = 0; i < change.incomingRequests().size(); i++) {
       IncomingRequest irq = change.incomingRequests().get(i);
-      spec.bind("incomingRequestEventNumber"+i, irq.eventNumber())
+      spec.bind("incomingRequestId"+i, irq.id())
+          .bind("incomingRequestEventNumber"+i, irq.eventNumber())
           .bind("incomingRequestMessageId"+i, irq.messageId())
           .bind("incomingRequestClientId"+i, irq.clientId())
           .bind("incomingRequestDigest"+i, irq.digest())
@@ -76,6 +77,7 @@ public class ChangeState {
         spec.bind("outgoingRequestParentEntityId"+i, orq.parentEntity().value());
       }
       spec.bind("outgoingRequestEventNumber"+i, orq.eventNumber())
+          .bind("outgoingRequestCreatorId"+i, orq.creatorId())
           .bind("correlationId", correlationId)
           .bind("outgoingRequestGuaranteedDelivery" + i, orq.guaranteed())
           .bind("outgoingRequestData"+i, orq.message());
@@ -83,7 +85,7 @@ public class ChangeState {
     for (int i = 0; i < change.outgoingResponses().size(); i++) {
       OutgoingResponse ors = change.outgoingResponses().get(i);
       spec.bind("outgoingResponseEventNumber"+i, ors.eventNumber())
-          .bind("outgoingResponseRequestEventNumber"+i, ors.requestEventNumber())
+          .bind("outgoingResponseRequestId"+i, ors.requestId())
           .bind("outgoingResponseData"+i, ors.message());
     }
     for (int i = 0; i < change.incomingResponses().size(); i++) {
@@ -226,6 +228,7 @@ public class ChangeState {
     sql += range(0, incomingRequests.size()).mapToObj(i ->
         """
         INSERT INTO {inboxTable} (
+          Id,
           EntityId,
           EventNumber,
           Timestamp,
@@ -234,6 +237,7 @@ public class ChangeState {
           Digest,
           Data
         ) VALUES (
+          :incomingRequestId{i},
           @entityId{changeIndex},
           :incomingRequestEventNumber{i},
           :timestamp0,
@@ -287,6 +291,7 @@ public class ChangeState {
           EntityId,
           {parentEntityColumn}
           EventNumber,
+          CreatorId,
           Guaranteed,
           CorrelationId,
           Timestamp,
@@ -297,6 +302,7 @@ public class ChangeState {
           @entityId{changeIndex},
           {parentEntityValue}
           :outgoingRequestEventNumber{i},
+          :outgoingRequestCreatorId{i},
           :outgoingRequestGuaranteedDelivery{i},
           :correlationId,
           :timestamp0,
@@ -324,6 +330,7 @@ public class ChangeState {
           ElementId,
           EntityId,
           EventNumber,
+          CreatorId,
           Guaranteed,
           Data,
           CorrelationId,
@@ -337,6 +344,7 @@ public class ChangeState {
           (SELECT ElementId FROM @QueueElement WHERE ChangeIndex = {changeIndex} AND NotificationIndex = {i}),
           @entityId{changeIndex},
           :outgoingRequestEventNumber{i},
+          :outgoingRequestCreatorId{i},
           :outgoingRequestGuaranteedDelivery{i},
           :outgoingRequestData{i},
           :correlationId,
@@ -405,13 +413,13 @@ public class ChangeState {
           EventNumber,
           Timestamp,
           Data,
-          InboxEventNumber
+          RequestId
         ) VALUES (
           @entityId{changeIndex},
           :outgoingResponseEventNumber{i},
           :timestamp0,
           :outgoingResponseData{i},
-          :outgoingResponseRequestEventNumber{i}
+          :outgoingResponseRequestId{i}
         );
         """.replace("{changeIndex}", String.valueOf(changeIndex))
             .replace("{i}", String.valueOf(i))

@@ -1,5 +1,8 @@
 package com.github.thxmasj.statemachine;
 
+import java.time.Duration;
+import java.util.UUID;
+
 public abstract sealed class Notification permits
     Notification.IncomingRequest,
     Notification.OutgoingRequest,
@@ -54,19 +57,28 @@ public abstract sealed class Notification permits
   public static final class OutgoingRequest extends Notification {
 
     private final Subscriber subscriber;
+    private final UUID creatorId;
     private final boolean guaranteed;
     private final EntityId parentEntity;
+    private final int maxRetryAttempts;
+    private final Duration retryInterval;
 
     public OutgoingRequest(
         int eventNumber,
         String message,
         Subscriber subscriber,
+        UUID creatorId,
         boolean guaranteed,
+        int maxRetryAttempts,
+        Duration retryInterval,
         EntityId parentEntity
     ) {
       super(eventNumber, message);
       this.subscriber = subscriber;
+      this.creatorId = creatorId;
       this.guaranteed = guaranteed;
+      this.maxRetryAttempts = maxRetryAttempts;
+      this.retryInterval = retryInterval;
       this.parentEntity = parentEntity;
     }
 
@@ -74,8 +86,20 @@ public abstract sealed class Notification permits
       return subscriber;
     }
 
+    public UUID creatorId() {
+      return creatorId;
+    }
+
     public boolean guaranteed() {
       return guaranteed;
+    }
+
+    public int maxRetryAttempts() {
+      return maxRetryAttempts;
+    }
+
+    public Duration retryInterval() {
+      return retryInterval;
     }
 
     public EntityId parentEntity() {
@@ -86,30 +110,32 @@ public abstract sealed class Notification permits
 
   public static final class OutgoingResponse extends Notification {
 
-    private final int requestEventNumber;
+    private final UUID requestId;
 
     public OutgoingResponse(
         int eventNumber,
         String message,
-        int requestEventNumber
+        UUID requestId
     ) {
       super(eventNumber, message);
-      this.requestEventNumber = requestEventNumber;
+      this.requestId = requestId;
     }
 
-    public int requestEventNumber() {
-      return requestEventNumber;
+    public UUID requestId() {
+      return requestId;
     }
 
   }
 
   public static final class IncomingRequest extends Notification {
 
+    private final UUID id;
     private final String messageId;
     private final String clientId;
     private final byte[] digest;
 
     public IncomingRequest(
+        UUID id,
         int eventNumber,
         String message,
         String messageId,
@@ -117,9 +143,14 @@ public abstract sealed class Notification permits
         byte[] digest
     ) {
       super(eventNumber, message);
+      this.id = id;
       this.messageId = messageId;
       this.clientId = clientId;
       this.digest = digest;
+    }
+
+    public UUID id() {
+      return id;
     }
 
     public String messageId() {

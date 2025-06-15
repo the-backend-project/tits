@@ -14,7 +14,7 @@ import reactor.core.publisher.Mono;
 public interface Input {
 
   record IncomingRequest(HttpRequestMessage httpMessage, String messageId, String clientId, int eventNumber) {}
-  record OutgoingRequest<T>(String message, T request, int eventNumber) {}
+  record OutgoingRequest<T>(HttpRequestMessage httpMessage, int eventNumber) {}
   record IncomingResponse(HttpResponseMessage httpMessage, int eventNumber) {}
 
   int nextEventNumber();
@@ -27,20 +27,16 @@ public interface Input {
 
   LoadedEvent one(EventType eventType);
 
-  @SuppressWarnings("unchecked")
   LoadedEvent one(EventType... eligibleEventTypes);
 
   Optional<LoadedEvent> oneIfExists(EventType eventType);
 
   LoadedEvent current(EventType eligibleEventType);
 
-  @SuppressWarnings("unchecked")
   LoadedEvent current(EventType... eligibleEventTypes);
 
-  @SuppressWarnings("unchecked")
   LoadedEvent trigger(EventType... eligibleEventTypes);
 
-  @SuppressWarnings("unchecked")
   Optional<LoadedEvent> lastIfExists(EventType... eligibleEventTypes);
 
   LoadedEvent last(EventType eventType);

@@ -43,6 +43,7 @@ public class ProcessNew {
                 OutboxElementId BIGINT,
                 EntityId UNIQUEIDENTIFIER,
                 EventNumber SMALLINT,
+                CreatorId UNIQUEIDENTIFIER,
                 Guaranteed BIT,
                 Data VARCHAR(MAX),
                 CorrelationId VARCHAR(36),
@@ -56,6 +57,7 @@ public class ProcessNew {
                 OutboxElementId,
                 EntityId,
                 EventNumber,
+                CreatorId,
                 Guaranteed,
                 Data,
                 CorrelationId,
@@ -68,6 +70,7 @@ public class ProcessNew {
                 inserted.OutboxElementId,
                 inserted.EntityId,
                 inserted.EventNumber,
+                inserted.CreatorId,
                 inserted.Guaranteed,
                 inserted.Data,
                 inserted.CorrelationId,
@@ -80,6 +83,7 @@ public class ProcessNew {
                 q.OutboxElementId,
                 q.EntityId,
                 q.EventNumber,
+                q.CreatorId,
                 q.Guaranteed,
                 d.Data,
                 q.CorrelationId,
@@ -100,6 +104,7 @@ public class ProcessNew {
               OutboxElementId,
               EntityId,
               EventNumber,
+              CreatorId,
               Guaranteed,
               Data,
               CorrelationId,
@@ -139,7 +144,7 @@ public class ProcessNew {
         .name("ProcessNew")
         .bind("now", now)
         .bind("minimumBackoff", backoff.minimum().toSeconds())
-        .map(Mappers.queueElementMapper(entityModel, new SchemaNames(schemaName, entityModel), clock, subscriber, now))
+        .map(Mappers.queueElementMapper(entityModel, clock, subscriber, now))
         .all()
         .switchIfEmpty(raceSimulationIfTriggered(entityModel, subscriber));
   }

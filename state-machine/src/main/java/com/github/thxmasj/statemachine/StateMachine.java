@@ -1,6 +1,9 @@
 package com.github.thxmasj.statemachine;
 
 import static com.github.thxmasj.statemachine.Correlation.correlationId;
+import static com.github.thxmasj.statemachine.Correlation.hasResponseSink;
+import static com.github.thxmasj.statemachine.Correlation.requestId;
+import static com.github.thxmasj.statemachine.Correlation.responseSink;
 import static java.time.Duration.ofHours;
 import static java.time.Duration.ofMinutes;
 import static java.time.Duration.ofSeconds;
@@ -45,14 +48,11 @@ import com.github.thxmasj.statemachine.database.mssql.ProcessBackedOff;
 import com.github.thxmasj.statemachine.database.mssql.ProcessNew;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
 import com.github.thxmasj.statemachine.database.mssql.SecondaryIdByEntityId;
-import com.github.thxmasj.statemachine.http.HttpClient.TimeoutException;
+import com.github.thxmasj.statemachine.http.HttpClient;
 import com.github.thxmasj.statemachine.http.RequestMapper;
 import com.github.thxmasj.statemachine.message.http.HttpMessageParser;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
-import java.io.IOException;
-import java.io.PrintWriter;
-import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Clock;
@@ -65,14 +65,19 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Random;
+import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 import javax.sql.DataSource;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.Sinks;
+import reactor.core.publisher.Sinks.One;
+import reactor.util.retry.RetrySpec;
 
 public class StateMachine {
 
@@ -100,6 +105,8 @@ public class StateMachine {
   private final IncomingRequestByEvent incomingRequestByEvent;
   private final OutgoingRequestByEvent outgoingRequestByEvent;
   private final IncomingResponseByEvent incomingResponseByEvent;
+  private final Map<UUID, OutgoingRequestCreator<?>> outgoingRequestCreators;
+  private final Function<Subscriber, HttpClient> clients;
 
   public StateMachine(
       RequestMapper requestMapper,
@@ -112,8 +119,24 @@ public class StateMachine {
       String role,
       Clock clock,
       Listener listener,
-      boolean singleClientPerEntity
+      boolean singleClientPerEntity,
+      Function<Subscriber, HttpClient> clients
   ) {
+    this.outgoingRequestCreators =
+        Stream.concat(
+                entityModels.stream()
+                    .flatMap(e -> e.transitions().stream())
+                    .flatMap(t -> t.outgoingRequests().stream()),
+                entityModels.stream()
+                    .flatMap(e -> e.transitions().stream())
+                    .filter(t -> t.reverse() != null)
+                    .map(TransitionModel::reverse)
+                    .flatMap(t -> t.outgoingRequests().stream())
+            )
+            .filter(r -> r.notificationCreator() != null)
+            .map(OutgoingRequestModel::notificationCreator)
+            .distinct()
+            .collect(toMap(OutgoingRequestCreator::id, nc -> nc));
     this.requestMapper = requestMapper;
     this.delayer = delayer != null ? delayer : _ -> Mono.empty();
     this.beanRegistry = beanRegistry;
@@ -139,6 +162,7 @@ public class StateMachine {
     this.incomingResponseByEvent = new IncomingResponseByEvent(dataSource, entityModels, schemaName);
     this.listener = listener;
     this.singleClientPerEntity = singleClientPerEntity;
+    this.clients = clients;
     // TODO: Differentiate delay spec per subscriber
     var backoff = new DelaySpecification(ofSeconds(10), ofSeconds(20), ofSeconds(100), 1.5);
     var processNew = new ProcessNew(jdbcClient, entityModels, schemaName, clock, backoff);
@@ -195,6 +219,7 @@ public class StateMachine {
       }
       IncomingRequestModel requestModel = requestModelBuilder.build();
       var incomingRequest = new IncomingRequest(
+          UUID.randomUUID(),
           requestModel.eventTrigger().build(), // TODO: Errors end up in the big try/catch. Related: https://github.com/orgs/the-backend-project/projects/1/views/1?pane=issue&itemId=79673689
           requestModel.clientId(),
           requestModel.derivedMessageId() ? (entityId, eventType) -> entityId.value() + "-" + eventType.id() : (_, _) -> requestModel.messageId(),
@@ -202,15 +227,22 @@ public class StateMachine {
           message,
           requestModel.validatorClass() != null ? beanRegistry.getBean(requestModel.validatorClass()) : requestModel.validator()
       );
+      String correlationId = requireNonNullElse(requestModel.correlationId(), requireNonNullElse(message.headerValue("X-Correlation-Id"), "processRequest"));
+      Sinks.One<String> responseSink = Sinks.one();
       return (switch (incomingRequest.eventTrigger().eventType()) {
         case EventType type when type.isCancel() || type.isRollback() -> doProcessRollback(1, incomingRequest);
         case EventType _ -> doProcessIncomingRequest(1, incomingRequest);
-      }).contextWrite(Correlation.correlationIdContext(
-          requireNonNullElse(requestModel.correlationId(), requireNonNullElse(message.headerValue("X-Correlation-Id"), "processRequest"))
-      ));
+      })
+          .flatMap(processResult -> processResult.responseMessage() != null ?
+              Mono.just(processResult) :
+              responseSink.asMono()
+                  .map(responseMessage -> new ProcessResult(processResult.status(), processResult.entity(), responseMessage, processResult.error()))
+                  .timeout(ofSeconds(20))
+              )
+          .contextWrite(Correlation.contextOf(correlationId, responseSink, incomingRequest.id()));
     } catch (Exception e) {
       listener.clientRequestFailed("N/A", null, null, e);
-      return Mono.just(new ProcessResult(Status.Failed, null, null, "Request failed: " + e.toString()));
+      return Mono.just(new ProcessResult(Status.Failed, null, null, "Request failed: " + e));
     }
   }
 
@@ -245,11 +277,24 @@ public class StateMachine {
                 // - Repeats and conflicts should only happen with incoming requests (which this is not).
                 case Rejected, Repeated, Conflicted -> Mono.error(new IllegalStateException("Unexpected result for state resolving: " + processResult.status()));
                 // Need to retry. Deadline was already modified when reading.
-                case Failed -> backoff.isExhausted(eventLog.events().getLast().getTimestamp(), deadline.nextAttemptAt(), clock) ?
-                    Mono.error(new RuntimeException("Period for state resolving exhausted: " + Duration.between(eventLog.events().getLast().getTimestamp(), ZonedDateTime.now(clock)))) :
-                    Mono.just(ResolverStatus.Ok);
+                case Failed -> {
+                  listener.resolveStateFailed(
+                      deadline.correlationId(),
+                      eventLog.entityId(),
+                      currentState.state().name(),
+                      timeoutEvent,
+                      processResult.error()
+                  );
+                  yield backoff.isExhausted(eventLog.events().getLast().getTimestamp(), deadline.nextAttemptAt(), clock) ?
+                      Mono.error(new RuntimeException("Period for state resolving exhausted: " + Duration.between(
+                          eventLog.events()
+                              .getLast()
+                              .getTimestamp(), ZonedDateTime.now(clock)
+                      ))) :
+                      Mono.just(ResolverStatus.Ok);
+                }
               }
-          ).contextWrite(Correlation.correlationIdContext(deadline.correlationId()));
+          ).contextWrite(Correlation.contextOf(deadline.correlationId()));
         })
         .onErrorReturn(MappingFailure.class, ResolverStatus.Error)
         .doOnError(listener::processNextDeadlineFailed)
@@ -407,7 +452,7 @@ public class StateMachine {
               )
               .filter(processResult -> isUnrepeatable(
                   attempt,
-                  processResult,
+                  processResult.status(),
                   isPendingIncomingResponse(eventLog)
               ))
               .switchIfEmpty(
@@ -446,6 +491,7 @@ public class StateMachine {
       String messageId
   ) {
     return new Notification.IncomingRequest(
+        incomingRequest.id(),
         eventNumber,
         new HttpRequestMessage(
             incomingRequest.requestMessage().method(),
@@ -464,6 +510,7 @@ public class StateMachine {
       String messageId
   ) {
     return new Notification.IncomingRequest(
+        incomingRequest.id(),
         incomingRequest.eventNumber(),
         incomingRequest.message(),
         messageId,
@@ -539,18 +586,20 @@ public class StateMachine {
 
   private Mono<IncomingResponseValidator.Result> validateResponse(
       HttpRequestMessage requestMessage,
-      IncomingResponse response,
+      HttpResponseMessage responseMessage,
+      IncomingResponseValidator<?> validator,
+      EntityId entityId,
       int currentEventNumber,
       RequiredData requiredData
   ) {
-    return response.validator().execute(
-        response.entityId(),
+    return validator.execute(
+        entityId,
         new IncomingResponseContext<>(
             currentEventNumber
         ),
         requestMessage,
         new Input.IncomingResponse(
-            response.responseMessage(),
+            responseMessage,
             currentEventNumber
         ),
         requiredData
@@ -577,18 +626,13 @@ public class StateMachine {
     }
 
     @Override
-    public Event invalidRequest(DATA_TYPE data, String errorMessage) {
-      return new Event(eventNumber, BuiltinEventTypes.InvalidRequest, clock, messageId, clientId, errorMessage, data);
-    }
-
-    @Override
     public Event invalidRequest(String errorMessage) {
       return new Event(eventNumber, BuiltinEventTypes.InvalidRequest, clock, messageId, clientId, errorMessage);
     }
 
     @Override
     public Event invalidRequest(EventType eventType, DATA_TYPE data, String errorMessage) {
-      return new Event(eventNumber, eventType, clock, messageId, clientId, errorMessage, data);
+      return new Event(eventNumber, eventType, clock, messageId, clientId, data);
     }
 
     @Override
@@ -664,130 +708,11 @@ public class StateMachine {
     );
   }
 
-  private Mono<ForwardStatus> doProcessIncomingResponse(
-      HttpRequestMessage requestMessage,
-      HttpResponseMessage responseMessage,
-      int attempt,
-      OutboxElement queueElement
-  ) {
-    Notification.IncomingResponse responseNotification = responseNotification(queueElement, responseMessage.message());
-    EntityModel entityModel = queueElement.entityModel();
-    EntityId entityId = queueElement.entityId();
-    return eventsByEntityId.execute(entityModel, entityId)
-        .flatMap(eventLog -> {
-          // TODO: Consistency check/error handling for invalid event logs
-          // TODO: Consistency check/error handling for missing model/notification specifications (shift left)
-          var effectiveEventLog = eventLog.effectiveEvents();
-          var currentState = entityModel.begin().forward(effectiveEventLog.stream().map(Event::getType).toList());
-          var requestTransition = transitionForEventNumber(eventLog, queueElement.eventNumber());
-          var requestNotificationSpecification = requestTransition.outgoingRequests()
-              .stream()
-              .filter(notificationSpecification -> notificationSpecification.subscriber() != null
-                  && notificationSpecification.subscriber().equals(responseNotification.subscriber()))
-              .findFirst()
-              .orElse(null);
-          if (requestNotificationSpecification == null) {
-            return dequeueAndStoreReceipt.execute(queueElement, responseMessage.message(), ZonedDateTime.now(clock))
-                .thenReturn(ForwardStatus.Ok)
-                .doOnSuccess(_ -> logForwarded(
-                    queueElement,
-                    responseMessage.message(),
-                    "No request transition found, ignoring response"
-                ));
-          }
-          var incomingResponse = new IncomingResponse(
-              entityId,
-              responseMessage,
-              requestNotificationSpecification.responseValidator()
-          );
-          if (currentState.state().timeout()
-              .map(timeout -> effectiveEventLog.getLast().getTimestamp().plus(timeout.duration()))
-              .filter(ZonedDateTime.now(clock)::isAfter)
-              .isPresent()) {
-            return dequeueAndStoreReceipt.execute(queueElement, responseMessage.message(), ZonedDateTime.now(clock))
-                .thenReturn(ForwardStatus.Ok)
-                .doOnSuccess(_ -> logForwarded(
-                    queueElement,
-                    responseMessage.message(),
-                    "State timeout, ignoring response"
-                ));
-          } else if (!scheduledEvents(
-              new Entity(eventLog.entityId(), eventLog.secondaryIds(), eventLog.entityModel()),
-              eventLog.effectiveEvents(),
-              ZonedDateTime.now(clock)
-          ).isEmpty()) {
-            return dequeueAndStoreReceipt.execute(queueElement, responseMessage.message(), ZonedDateTime.now(clock))
-                .thenReturn(ForwardStatus.Ok)
-                .doOnSuccess(_ -> logForwarded(
-                    queueElement,
-                    responseMessage.message(),
-                    "Scheduled event, ignoring response"
-                ));
-          }
-          Entity entity = new Entity(eventLog.entityId(), eventLog.secondaryIds(), eventLog.entityModel());
-          return validateResponse(
-              requestMessage,
-              incomingResponse,
-              eventLog.lastEventNumber() + 1,
-              requiredData(
-                  incomingResponse.validator(),
-                  entity,
-                  effectiveEventLog,
-                  List.of(),
-                  null,
-                  responseNotification
-              )
-          )
-              .flatMap(validationOutput -> (validationOutput.event() != null ? processEvents(
-                      eventLog,
-                      List.of(validationOutput.event()),
-                      responseNotification,
-                      List.of()
-                  ) : Mono.just(new ProcessResult(Status.Rejected, entity, null, null)))
-                      // No point repeating for pending state change when processing responses, as no events are allowed between a
-                      // request and a response event. Races on nested changes could be repeated, though.
-                      .filter(pr -> isUnrepeatable(attempt, pr, false))
-                      .flatMap(pr -> switch (pr) {
-                            case ProcessResult r when r.status() == Status.Accepted -> Mono.just(ForwardStatus.Ok);
-                            case ProcessResult r when r.status() == Status.Repeated -> Mono.just(ForwardStatus.Ok);
-                            case ProcessResult r when r.status() == Status.Rejected
-                                && validationOutput.status() == Result.Status.Ok -> dequeueAndStoreReceipt.execute(
-                                    queueElement,
-                                    responseMessage.message(),
-                                    ZonedDateTime.now(clock)
-                                )
-                                .thenReturn(ForwardStatus.Ok)
-                                .doOnSuccess(_ -> logForwarded(
-                                    queueElement,
-                                    responseMessage.message(),
-                                    "Forwarded and dequeued, as event " +
-                                        (validationOutput.event() != null ? validationOutput.event().getType() : "N/A") +
-                                        " was " + pr.status()
-                                ));
-                            case ProcessResult r when r.status() == Status.Rejected
-                                && validationOutput.status() == Result.Status.PermanentError ->
-                                moveToDLQ.execute(queueElement, validationOutput.message()).thenReturn(ForwardStatus.Ok);
-                            case ProcessResult r when r.status() == Status.Rejected
-                                && validationOutput.status() == Result.Status.TransientError ->
-                                backOffOrDie(queueElement, validationOutput.message()).thenReturn(ForwardStatus.Ok);
-                            case ProcessResult r when r.status() == Status.Raced ->
-                                Mono.error(new IllegalStateException("Raced response not handled"));
-                            default -> Mono.error(new IllegalStateException("Unexpected value: " + pr));
-                          }
-                      )
-                      .switchIfEmpty(reattemptDelay.then(
-                          doProcessIncomingResponse(requestMessage, responseMessage, attempt + 1, queueElement)
-                      ))
-
-              );
-        })
-        .onErrorResume(t -> withCorrelationId(correlationId -> listener.notificationResponseFailed(
-            correlationId,
-            entityId,
-            responseNotification,
-            t
-        )).then(Mono.error(t)));
-  }
+  private record IncomingResponseStatus(
+      Notification.IncomingResponse response,
+      ProcessResult processResult,
+      IncomingResponseValidator.Result validationResult
+  ) {}
 
   private Mono<ProcessResult> doProcessRollback(
       int attempt,
@@ -872,7 +797,7 @@ public class StateMachine {
                   //rejectIfNotRepeat(entityId, eventLog, incomingRequest, result.error()) :
                   Mono.just(result)
               )
-              .filter(pr -> isUnrepeatable(attempt, pr, isPendingIncomingResponse(eventLog)))
+              .filter(pr -> isUnrepeatable(attempt, pr.status(), isPendingIncomingResponse(eventLog)))
               .switchIfEmpty(reattemptDelay.then(
                   doProcessRollback(attempt + 1, incomingRequest)
               ));
@@ -880,13 +805,13 @@ public class StateMachine {
         .onErrorResume(t -> withCorrelationId(correlationId -> listener.rollbackFailed(correlationId, null, t)).then(Mono.error(t)));
   }
 
-  private boolean isUnrepeatable(int attempt, ProcessResult processResult, boolean stateIsPendingChange) {
+  private boolean isUnrepeatable(int attempt, ProcessResult.Status processStatus, boolean stateIsPendingChange) {
     // A rejected event might be repeatable if current state is pending change shortly.
     // Using 100 reattempts, then, as we delay for 100 ms to cover changes arriving within 10 seconds (which should
     // cover synchronous notification exchanges). TODO: Use a backoff algorithm instead in that case
     return
-        !(processResult.status() == Status.Rejected && attempt < 100 && stateIsPendingChange) &&
-        !(processResult.status() == Status.Raced && attempt < 3);
+        !(processStatus == Status.Rejected && attempt < 100 && stateIsPendingChange) &&
+        !(processStatus == Status.Raced && attempt < 3);
   }
 
   private Mono<Void> withCorrelationId(Consumer<String> consumer) {
@@ -1188,7 +1113,7 @@ public class StateMachine {
         return executeAction(
             entity,
             new EventLog(eventLog.entityModel(), entityId, List.of(), Event.join(effectiveEvents, newEvents)),
-            beanRegistry.getBean(targetState.state().choice().action()),
+            targetState.state().choice().action(),
             targetState.state(),
             incomingNotification != null ? List.of(incomingNotification) : List.of()
         )
@@ -1282,7 +1207,6 @@ public class StateMachine {
                                   new Entity(entity.id(), join(entity.secondaryIds(), secondaryIdsToAdd), entity.model()),
                                   finalEventsToStore,
                                   effectiveEvents,
-                                  correlationId,
                                   incomingNotification,
                                   processResults,
                                   processedEvents
@@ -1356,6 +1280,16 @@ public class StateMachine {
       List<SecondaryId> idsForNewEntity
   ) {
     return calculateChange(eventLog, newEvents, incomingNotification, idsForNewEntity)
+        .onErrorResume(t -> Mono.just(new ChangeResult(
+                new ProcessResult(
+                    Status.Failed,
+                    new Entity(eventLog.entityId(), List.of(), eventLog.entityModel()),
+                    null,
+                    t.toString()
+                ),
+                List.of()
+            ))
+        )
         .flatMap(changeResult -> switch (changeResult.result().status()) {
               case Accepted -> storeChanges(changeResult.changes(), eventLog)
                   .doOnNext(resultAfterStore -> {
@@ -1425,45 +1359,22 @@ public class StateMachine {
             Mono.empty() :
             delayer.apply(changes.getLast().newEvents().stream().map(e -> c + "-" + e.getTypeName()).toList())
         )
-        .flatMap(correlationId -> (changes.isEmpty() ? Flux.<ChangeState.OutboxElement>empty() : changeState.execute(changes))
+        .flatMap(correlationId -> (changes.isEmpty() ? Flux.<ChangeState.OutboxElement>empty() :
+            changeState.execute(changes))
             .collectList()
             // Forward outgoing requests (for guaranteed delivery this will be the first attempt)
-            .map(outboxElementsToForward -> IntStream.range(
-                    0,
-                    (int) outboxElementsToForward.stream().filter(e -> e.changeIndex() == changes.size() - 1).count()
-                )
-                .boxed()
-                .map(outboxElementsToForward::get)
-                .map(q -> new OutboxElement(
-                    q.elementId(),
-                    q.outboxElementId(),
-                    changes.getLast().entityId(),
-                    changes.getLast().entityModel(),
-                    changes.getLast().outgoingRequests().get(q.notificationIndex()).eventNumber(),
-                    changes.getLast().outgoingRequests().get(q.notificationIndex()).subscriber(),
-                    changes.getLast().outgoingRequests().get(q.notificationIndex()).guaranteed(),
-                    changes.getLast().newEvents().getFirst().getTimestamp(),
-                    changes.getLast().outgoingRequests().get(q.notificationIndex()).message(),
-                    correlationId,
-                    1,
-                    null,
-                    null
-                )).toList())
-            .doOnNext(queueElements -> queueElements.forEach(queueElement -> doForward(
-                    queueElement
-                ).doOnError(
-                        TimeoutException.class,
-                        _ -> listener.notificationResponseTimeout(
-                            correlationId,
-                            unfilteredChanges.getFirst().entityId(),
-                            queueElement.eventNumber(),
-                            queueElement.subscriber().name()
-                        )
+            .transformDeferredContextual((publisher, ctx) -> publisher
+                .doOnNext(outboxElementsToForward -> outboxElementsToForward.forEach(q ->
+                        forwardInitial(
+                            changes.get(q.changeIndex()),
+                            q.elementId(),
+                            q.outboxElementId(),
+                            changes.get(q.changeIndex()).outgoingRequests().get(q.notificationIndex()),
+                            correlationId
+                        ).contextWrite(ctx).subscribe()
                     )
-                    .doOnError(Throwable::printStackTrace)
-                    .contextWrite(Correlation.correlationIdContext(correlationId))
-                    .subscribe()
-            ))
+                )
+            )
             .thenReturn(new ProcessResult(
                 Status.Accepted,
                 new Entity(unfilteredChanges.getLast().entityId(), unfilteredChanges.getLast().secondaryIds(), unfilteredChanges.getLast().entityModel()),
@@ -1474,15 +1385,50 @@ public class StateMachine {
         );
   }
 
-  Mono<ForwardStatus> doForward(OutboxElement queueElement) {
+  private Mono<ForwardStatus> forwardInitial(
+      ChangeState.Change change,
+      byte[] queueElementId,
+      long outboxElementId,
+      Notification.OutgoingRequest outgoingRequest,
+      String correlationId
+  ) {
+    var queueElement = new OutboxElement(
+        queueElementId,
+        outboxElementId,
+        change.entityId(),
+        change.entityModel(),
+        outgoingRequest.eventNumber(),
+        outgoingRequest.creatorId(),
+        outgoingRequest.subscriber(),
+        outgoingRequest.guaranteed(),
+        change.newEvents().getFirst().getTimestamp(),
+        outgoingRequest.message(),
+        correlationId,
+        1,
+        null,
+        null
+    );
+    return doForward(queueElement, outgoingRequest.maxRetryAttempts(), outgoingRequest.retryInterval());
+  }
+
+  Mono<ForwardStatus> forward(OutboxElement queueElement) {
+    return doForward(queueElement, 0, null).contextWrite(Correlation.contextOf(queueElement.correlationId()));
+  }
+
+  private record ResponseValidationResult(Result validationResult, Notification.IncomingResponse response) {}
+
+  private Mono<ForwardStatus> doForward(OutboxElement queueElement, int maxRetryAttempts, Duration retryInterval) {
     String message;
     try {
-      message = ofNullable(queueElement.subscriber().reattemptTransformation()).map(queueElement::data).orElse(queueElement.data());
+      message = ofNullable(outgoingRequestCreators.get(queueElement.creatorId()))
+          .filter(_ -> queueElement.attempt() > 1)
+          .map(c -> c.repeated(queueElement.data()))
+          .orElse(queueElement.data());
     } catch (Exception e) {
       String reason = "Reattempt transformation failed: " + e.getMessage();
       return moveToDLQ.execute(queueElement, reason)
-              .doOnSuccess(_ -> logDead(queueElement, reason))
-              .thenReturn(ForwardStatus.Dead);
+          .doOnSuccess(_ -> logDead(queueElement, reason))
+          .thenReturn(ForwardStatus.Dead);
     }
     HttpRequestMessage httpRequest;
     try {
@@ -1493,11 +1439,137 @@ public class StateMachine {
           .doOnSuccess(_ -> logDead(queueElement, reason))
           .thenReturn(ForwardStatus.Dead);
     }
-    return queueElement.subscriber().client().exchange(httpRequest)
-        .flatMap(httpResponse -> doProcessIncomingResponse(httpRequest, httpResponse, 1, queueElement))
-            .onErrorResume(TimeoutException.class, _ -> backOffOrDie(queueElement, "Client timeout"))
-            .onErrorResume(e -> backOffOrDie(queueElement, reason(e)))
-            .contextWrite(Correlation.correlationIdContext(queueElement.correlationId()));
+    EntityModel entityModel = queueElement.entityModel();
+    EntityId entityId = queueElement.entityId();
+    return eventsByEntityId
+        .execute(entityModel, entityId)
+        .onErrorMap(e -> new RuntimeException("Failed to get events", e))
+        .flatMap(eventLog -> {
+          var responseValidator = findOutgoingRequestModel(
+              eventLog,
+              queueElement.eventNumber(),
+              queueElement.subscriber(),
+              queueElement.creatorId()
+          ).responseValidator();
+          return clients.apply(queueElement.subscriber()).exchange(httpRequest)
+              .flatMap(httpResponse -> {
+                var responseNotification = responseNotification(queueElement, httpResponse.message());
+                return validateResponse(
+                    httpRequest,
+                    httpResponse,
+                    responseValidator,
+                    entityId,
+                    eventLog.lastEventNumber() + 1,
+                    requiredData(
+                        responseValidator,
+                        new Entity(entityId, eventLog.secondaryIds(), eventLog.entityModel()),
+                        eventLog.effectiveEvents(),
+                        List.of(),
+                        null,
+                        responseNotification
+                    )
+                ).map(output -> new ResponseValidationResult(output, responseNotification));
+              })
+              .flatMap(validationOutput -> validationOutput.validationResult().status() == Result.Status.TransientError ?
+                  Mono.error(new TransientError(validationOutput)) :
+                  Mono.just(validationOutput)
+              )
+              .retryWhen(RetrySpec.fixedDelay(maxRetryAttempts, retryInterval)
+                  .filter(e -> e instanceof TransientError && maxRetryAttempts > 0))
+              .onErrorResume(TransientError.class, e -> Mono.just(e.transientResult))
+              .flatMap(validationOutput ->
+                  (validationOutput.validationResult().event() != null ?
+                      processEvents(
+                          eventLog,
+                          List.of(validationOutput.validationResult().event()),
+                          validationOutput.response(),
+                          List.of()
+                      )
+                          .flatMap(processResult -> processResult.status() != Status.Raced ?
+                              Mono.just(processResult) :
+                              Mono.error(new RuntimeException("Change for response raced: " + processResult))
+                          )
+                          .retryWhen(RetrySpec.fixedDelay(3, Duration.ofMillis(100))
+                              .filter(e -> e instanceof RuntimeException))
+                          .flatMap(processResult -> Mono.deferContextual(ctx -> {
+                            if (processResult.responseMessage() != null && hasResponseSink(ctx)) {
+                              One<String> sink = responseSink(ctx);
+                              sink.tryEmitValue(processResult.responseMessage());
+                            }
+                            return Mono.just(processResult);
+                          }))
+                          .map(processResult -> new IncomingResponseStatus(
+                              validationOutput.response(),
+                              processResult,
+                              validationOutput.validationResult()
+                          )) :
+                      Mono.just(new IncomingResponseStatus(
+                          validationOutput.response(),
+                          new ProcessResult(Status.Rejected, null, null, null),
+                          validationOutput.validationResult()
+                      )
+                  )
+              ))
+              .flatMap(result -> switch (result.processResult.status()) {
+                    case Status.Accepted, Status.Repeated -> Mono.just(ForwardStatus.Ok);
+                    case Status.Rejected -> switch (result.validationResult().status()) {
+                      case Ok -> dequeueAndStoreReceipt.execute(
+                              queueElement,
+                              result.response().message(),
+                              ZonedDateTime.now(clock)
+                          )
+                          .thenReturn(ForwardStatus.Ok)
+                          .doOnSuccess(_ -> logForwarded(
+                              queueElement,
+                              result.response().message(),
+                              "Forwarded and dequeued, as response event " +
+                                  (result.validationResult().event() != null ?
+                                      result.validationResult().event().getTypeName() :
+                                      "N/A"
+                                  ) + " was rejected"
+                          ));
+                      case PermanentError -> moveToDLQ.execute(queueElement, result.validationResult().message())
+                          .thenReturn(ForwardStatus.Ok);
+                      case TransientError -> backOffOrDie(queueElement, result.validationResult().message()).thenReturn(ForwardStatus.Ok);
+                    };
+                    case Status.Raced -> Mono.error(new IllegalStateException("Raced response not handled"));
+                    case Status.Failed -> Mono.error(new IllegalStateException("Failed (" + result.processResult().error() + ")"));
+                    default -> Mono.error(new IllegalStateException("Unexpected value: " + result.processResult().status()));
+                  }
+              );
+        })
+        .onErrorResume(e -> backOffOrDie(queueElement, e.getMessage() + (e.getCause() != null ? " (cause: " + e.getCause() + ")" : "")));
+  }
+
+  private OutgoingRequestModel<?, ?> findOutgoingRequestModel(EventLog eventLog, int eventNumber, Subscriber subscriber, UUID requestModelId) {
+    return Stream.concat(
+            requireNonNull(transitionForEventNumber(eventLog, eventNumber)).outgoingRequests().stream(),
+            requireNonNull(transitionForEventNumber(eventLog, eventNumber)).reverse().outgoingRequests().stream()
+        )
+        .filter(notificationSpecification -> {
+              if (!notificationSpecification.subscriber().equals(subscriber))
+                return false;
+              OutgoingRequestCreator<?> c = notificationSpecification.notificationCreator();
+              if (c == null)
+                c = beanRegistry.getBean(notificationSpecification.notificationCreatorType());
+              return c.id().equals(requestModelId);
+            }
+        )
+        .findFirst()
+        .orElseThrow(() -> new RuntimeException(String.format(
+            "No outgoing request model found for %s:%s with event number %d on queue %s",
+            eventLog.entityModel().name(),
+            eventLog.entityId().value(),
+            eventNumber,
+            subscriber.name()
+        )));
+  }
+
+  private static class TransientError extends RuntimeException {
+    ResponseValidationResult transientResult;
+    public TransientError(ResponseValidationResult transientResult) {
+      this.transientResult = transientResult;
+    }
   }
 
   private Notification.IncomingResponse responseNotification(OutboxElement queueElement, String responseMessage) {
@@ -1538,15 +1610,6 @@ public class StateMachine {
     listener.forwardingBackedOff(e.subscriber().name(), e.enqueuedAt(), e.attempt(), e.entityId(), e.eventNumber(), e.correlationId(), reason, e.nextAttemptAt(), e.backoff());
   }
 
-  private String reason(Throwable t) {
-    try (StringWriter sw = new StringWriter(); PrintWriter pw = new PrintWriter(sw)) {
-      t.printStackTrace(pw);
-      return sw.toString();
-    } catch (IOException e) {
-      throw new RuntimeException(e);
-    }
-  }
-
   private void logDead(OutboxElement e, String reason) {
     listener.forwardingDead(e.entityId(), e.subscriber().name(), e.enqueuedAt(), e.attempt(), e.eventNumber(), e.correlationId(), reason);
   }
@@ -1581,7 +1644,6 @@ public class StateMachine {
       Entity entity,
       List<Event> newEvents,
       List<Event> eventLog,
-      String correlationId,
       Notification incomingNotification,
       List<ProcessResult> processResults,
       List<Event> processedEvents
@@ -1594,7 +1656,6 @@ public class StateMachine {
             newEvents,
             eventLog,
             outgoingResponseModel,
-            correlationId,
             incomingNotification,
             processResults,
             processedEvents
@@ -1663,7 +1724,10 @@ public class StateMachine {
             currentEvent.getEventNumber(),
             message,
             notificationModel.subscriber(),
+            creator.id(),
             notificationModel.guaranteed(),
+            notificationModel.maxRetryAttempts(),
+            notificationModel.retryInterval(),
             parentEntity != null ? parentEntity.id() : null
         ));
   }
@@ -1675,7 +1739,6 @@ public class StateMachine {
       List<Event> newEvents,
       List<Event> eventLog,
       OutgoingResponseModel<T, U> notificationModel,
-      String correlationId,
       Notification incomingNotification,
       List<ProcessResult> processResults,
       List<Event> processedEvents
@@ -1697,42 +1760,49 @@ public class StateMachine {
         outgoingRequestByEvent,
         incomingResponseByEvent
     );
-    // TODO: Fix correlation with request (or not)?
-    return creator.create(
+    return Mono.deferContextual(ctx -> creator.create(
         notificationModel.dataAdapter().apply(transition.data()),
         incomingNotification instanceof Notification.IncomingRequest rq ? rq : null,
         entity.id(),
-        correlationId,
+        correlationId(ctx),
         filteredEvents
-    ).map(message -> new Notification.OutgoingResponse(currentEvent.getEventNumber(), message, incomingNotification instanceof Notification.IncomingRequest rq ? rq.eventNumber() : -1));
+    ).map(message -> new Notification.OutgoingResponse(
+        currentEvent.getEventNumber(),
+        message,
+        requestId(ctx)
+    )));
   }
 
   private ZonedDateTime getDeadline(State targetState) {
     return targetState.timeout().map(timeout -> ZonedDateTime.now(clock).plus(timeout.duration())).orElse(null);
   }
 
-  private Mono<Event> executeAction(
+  private <T> Mono<Event> executeAction(
       Entity entity,
       EventLog eventLog,
-      Action action,
+      Action<T> action,
       State currentState,
       List<Notification> notifications
   ) {
     var lastEvent = eventLog.events().getLast();
-    return action.execute(eventLog.entityId(), new RequiredData(
-            entity,
-            eventLog.effectiveEvents(),
-            lastEvent,
-            lastEvent,
-            List.of(),
-            List.of(),
-            notifications,
-            action.requirements(),
-            action.getClass(),
-            incomingRequestByEvent,
-            outgoingRequestByEvent,
-            incomingResponseByEvent
-        ))
+    return action.execute(
+            eventLog.entityId(),
+            (eventType, data) -> new Event(eventLog.lastEventNumber() + 1, eventType, clock, data),
+            new RequiredData(
+                entity,
+                eventLog.effectiveEvents(),
+                lastEvent,
+                lastEvent,
+                List.of(),
+                List.of(),
+                notifications,
+                action.requirements(),
+                action.getClass(),
+                incomingRequestByEvent,
+                outgoingRequestByEvent,
+                incomingResponseByEvent
+            )
+        )
         .flatMap(output -> withCorrelationId(correlationId -> listener
             .actionExecuted(
                 correlationId,

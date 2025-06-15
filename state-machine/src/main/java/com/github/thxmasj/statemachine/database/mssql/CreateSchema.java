@@ -90,14 +90,15 @@ public class CreateSchema {
 
         CREATE TABLE [{schema}].[{entity}Inbox]
         (
+            Id                   UNIQUEIDENTIFIER NOT NULL,
             EntityId             UNIQUEIDENTIFIER NOT NULL,
-            EventNumber          SMALLINT       NOT NULL,
-            Timestamp            DATETIME2      NOT NULL,
+            EventNumber          SMALLINT         NOT NULL,
+            Timestamp            DATETIME2        NOT NULL,
             MessageId            VARCHAR(100),
-            ClientId             VARCHAR(100)   NOT NULL,
+            ClientId             VARCHAR(100)     NOT NULL,
             Digest               BINARY(32),
-            Data                 VARCHAR(MAX)   NOT NULL,
-            CONSTRAINT [pk{entity}Inbox] PRIMARY KEY (EntityId, EventNumber),
+            Data                 VARCHAR(MAX)     NOT NULL,
+            CONSTRAINT [pk{entity}Inbox] PRIMARY KEY (Id),
             CONSTRAINT [fk{entity}Inbox_{entity}Event_EntityId_EventNumber] FOREIGN KEY (EntityId, EventNumber) references [{schema}].[{entity}Event] (EntityId, EventNumber)
         );
         GRANT INSERT, SELECT ON [{schema}].[{entity}Inbox] TO [{role}];
@@ -110,9 +111,9 @@ public class CreateSchema {
             EventNumber          SMALLINT         NOT NULL,
             Timestamp            DATETIME2        NOT NULL,
             Data                 VARCHAR(MAX)     NOT NULL,
-            InboxEventNumber     SMALLINT         NOT NULL,
+            RequestId            UNIQUEIDENTIFIER NOT NULL,
             CONSTRAINT [pk{entity}Outbox] PRIMARY KEY (EntityId, EventNumber),
-            CONSTRAINT [fk{entity}Outbox_{entity}Inbox_EntityId_EventNumber] FOREIGN KEY (EntityId, InboxEventNumber) references [{schema}].[{entity}Inbox] (EntityId, EventNumber)
+            CONSTRAINT [fk{entity}Outbox_{entity}Inbox_RequestId] FOREIGN KEY (RequestId) references [{schema}].[{entity}Inbox] (Id)
         );
         GRANT INSERT, SELECT ON [{schema}].[{entity}Outbox] TO [{role}];
         """.replace("{schema}", schema)
@@ -172,6 +173,7 @@ public class CreateSchema {
                   ElementId       ROWVERSION,
                   EntityId        UNIQUEIDENTIFIER NOT NULL,
                   EventNumber     SMALLINT         NOT NULL,
+                  CreatorId       UNIQUEIDENTIFIER NOT NULL,
                   Timestamp       DATETIME2        NOT NULL,
                   Data            VARCHAR(MAX),
                   ParentEntityId  UNIQUEIDENTIFIER NULL,
@@ -198,6 +200,7 @@ public class CreateSchema {
                   ElementId        BINARY(8)        NOT NULL,
                   EntityId         UNIQUEIDENTIFIER NOT NULL,
                   EventNumber      SMALLINT         NOT NULL,
+                  CreatorId        UNIQUEIDENTIFIER NOT NULL,
                   Data             VARCHAR(MAX)     NOT NULL,
                   EnqueuedAt       DATETIME2        NOT NULL,
                   Attempt          INT              NOT NULL,

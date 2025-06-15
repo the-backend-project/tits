@@ -75,7 +75,7 @@ public class OutboxWorker {
         )
         .mergeWith(processBackedOff.execute(now, entityModel, subscriber))
         .doOnNext(e -> listener.forwardingAttempt(e.subscriber().name(), e.enqueuedAt(), e.attempt(), e.entityId(), e.eventNumber(), e.correlationId()))
-        .flatMap(stateMachine::doForward)
+        .flatMap(stateMachine::forward)
         .onErrorResume(this::isDeadlock, _ -> {
           listener.forwardingDeadlock(subscriber.name());
           return Mono.just(ForwardStatus.Deadlock);

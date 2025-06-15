@@ -74,7 +74,7 @@ public class DequeueAndStoreReceipt {
     String sql = sqls.get(outboxElement.entityModel()).get(outboxElement.subscriber());
     Client.Query.Builder builder = databaseClient.sql(sql).name("DequeueAndStoreReceipt-" + outboxElement.subscriber());
     return builder
-        .bind("elementId", outboxElement.id())
+        .bind("elementId", outboxElement.queueElementId())
         .bind("entityId", outboxElement.entityId().value())
         .bind("eventNumber", outboxElement.eventNumber())
         .bind("data", responseMessage)

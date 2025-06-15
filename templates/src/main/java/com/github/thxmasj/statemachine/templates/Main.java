@@ -1,6 +1,7 @@
 package com.github.thxmasj.statemachine.templates;
 
 import com.github.thxmasj.statemachine.PlantUMLFormatter;
+import com.github.thxmasj.statemachine.templates.cardpayment.DummyPayment;
 import java.io.IOException;
 
 import static com.github.thxmasj.statemachine.templates.Batching.EntityTypes.Batch;
@@ -9,8 +10,9 @@ import static com.github.thxmasj.statemachine.templates.Batching.EntityTypes.Ite
 public class Main {
 
   public static void main(String[] ignoredArgs) throws IOException {
-    new PlantUMLFormatter(Item).formatToImage("docs/images/");
-    new PlantUMLFormatter(Batch).formatToImage("docs/images/");
+    System.out.println(new PlantUMLFormatter(Item).formatToImage("docs/images/"));
+    System.out.println(new PlantUMLFormatter(Batch).formatToImage("docs/images/"));
+    System.out.println(new PlantUMLFormatter(new DummyPayment(null), false).formatToImage("docs/images/"));
   }
 
 }

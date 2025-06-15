@@ -1,6 +1,7 @@
 package com.github.thxmasj.statemachine;
 
 import com.github.thxmasj.statemachine.IncomingResponseValidator.Result;
+import java.time.Duration;
 import java.util.function.Function;
 import reactor.core.publisher.Mono;
 
@@ -10,6 +11,8 @@ public record OutgoingRequestModel<T, U>(
     OutgoingRequestCreator<U> notificationCreator,
     Subscriber subscriber,
     boolean guaranteed,
+    int maxRetryAttempts,
+    Duration retryInterval,
     IncomingResponseValidator<?> responseValidator
 ) {
 
@@ -22,6 +25,14 @@ public record OutgoingRequestModel<T, U>(
       ));
   }
 
+  public int maxRetryAttempts() {
+    return maxRetryAttempts;
+  }
+
+  public Duration retryInterval() {
+    return retryInterval;
+  }
+
   public static class Builder<T, U> {
 
     private Function<T, U> dataAdapter;
@@ -29,6 +40,8 @@ public record OutgoingRequestModel<T, U>(
     private OutgoingRequestCreator<U> notificationCreator;
     private Subscriber subscriber;
     private boolean guaranteed;
+    private int maxRetryAttempts = 0;
+    private Duration retryInterval;
     private IncomingResponseValidator<?> responseValidator;
 
     public static <T> Builder<T, T> request(Class<? extends OutgoingRequestCreator<T>> notificationCreatorType) {
@@ -65,6 +78,12 @@ public record OutgoingRequestModel<T, U>(
       return this;
     }
 
+    public Builder<T, U> retry(int maxAttempts, Duration interval) {
+      this.maxRetryAttempts = maxAttempts;
+      this.retryInterval = interval;
+      return this;
+    }
+
     public Builder<T, U> responseValidator(IncomingResponseValidator<?> responseValidator) {
       this.responseValidator = responseValidator;
       return this;
@@ -81,6 +100,8 @@ public record OutgoingRequestModel<T, U>(
           notificationCreator,
           subscriber,
           guaranteed,
+          maxRetryAttempts,
+          retryInterval,
           responseValidator
       );
     }

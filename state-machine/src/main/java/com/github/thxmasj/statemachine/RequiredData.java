@@ -264,10 +264,9 @@ public class RequiredData implements Input {
   @Override
   public <T> Mono<OutgoingRequest<T>> outgoingRequest(Subscriber subscriber, EventType eventType, Class<T> type) {
     var loadedEvent = last(eventType);
-    return loadedEvent.getLoadedData(type).zipWith(loadedEvent.getNotification())
-        .map(parsedRequestAndMessage -> new OutgoingRequest<>(
-            parsedRequestAndMessage.getT2(),
-            parsedRequestAndMessage.getT1(),
+    return loadedEvent.getNotification()
+        .map(message -> new OutgoingRequest<>(
+            HttpMessageParser.parseRequest(message),
             loadedEvent.eventNumber()
         ));
   }
