@@ -12,7 +12,7 @@ public class Main {
   public static void main(String[] ignoredArgs) throws IOException {
     System.out.println(new PlantUMLFormatter(Item).formatToImage("docs/images/"));
     System.out.println(new PlantUMLFormatter(Batch).formatToImage("docs/images/"));
-    System.out.println(new PlantUMLFormatter(new DummyPayment(null), false).formatToImage("docs/images/"));
+    System.out.println(new PlantUMLFormatter(new DummyPayment(null)).formatToImage("docs/images/"));
   }
 
 }
