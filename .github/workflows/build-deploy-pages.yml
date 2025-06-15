@@ -27,6 +27,8 @@ jobs:
         uses: actions/setup-python@v2
         with:
           python-version: '3.x'
+      - name: Install Graphviz (dot)
+        run: apt update && apt install -y graphviz
       - name: Install MkDocs
         run: |
           python -m pip install --upgrade pip
