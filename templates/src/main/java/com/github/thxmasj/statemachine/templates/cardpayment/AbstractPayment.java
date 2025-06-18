@@ -2,8 +2,8 @@ package com.github.thxmasj.statemachine.templates.cardpayment;
 
 import static com.github.thxmasj.statemachine.BuiltinEventTypes.RequestUndelivered;
 import static com.github.thxmasj.statemachine.BuiltinEventTypes.Rollback;
-import static com.github.thxmasj.statemachine.EntitySelectorBuilder.id;
 import static com.github.thxmasj.statemachine.EntitySelectorBuilder.model;
+import static com.github.thxmasj.statemachine.EntitySelectorBuilder.secondaryId;
 import static com.github.thxmasj.statemachine.EventTriggerBuilder.event;
 import static com.github.thxmasj.statemachine.OutgoingRequestModel.Builder.request;
 import static com.github.thxmasj.statemachine.TransitionModel.Builder.from;
@@ -48,17 +48,26 @@ import com.github.thxmasj.statemachine.message.http.BadRequest;
 import com.github.thxmasj.statemachine.message.http.Created;
 import java.time.Duration;
 import java.util.List;
+import java.util.UUID;
 import reactor.core.publisher.Mono;
 
 public abstract class AbstractPayment implements EntityModel {
 
   private final AbstractSettlement settlement;
+  private final UUID id = UUID.fromString("c56dc62e-24e8-43a7-868f-b87720327ff5");
 
-  public AbstractPayment(AbstractSettlement settlement) {this.settlement = settlement;}
+  public AbstractPayment(AbstractSettlement settlement) {
+    this.settlement = settlement;
+  }
 
   @Override
   public String name() {
     return "Payment";
+  }
+
+  @Override
+  public UUID id() {
+    return id;
   }
 
   @Override
@@ -188,7 +197,7 @@ public abstract class AbstractPayment implements EntityModel {
             .trigger(data ->
                 event(MerchantCredit, data.amount().requested())
                     .onEntity(settlement)
-                    .identifiedBy(id(
+                    .identifiedBy(secondaryId(
                         AcquirerBatchNumber,
                         new AcquirerBatchNumber(data.merchantId(), data.acquirerBatchNumber())
                     ).createIfNotExists())
@@ -213,7 +222,7 @@ public abstract class AbstractPayment implements EntityModel {
             .trigger(data ->
                 event(MerchantCredit, data.amount())
                     .onEntity(settlement)
-                    .identifiedBy(id(
+                    .identifiedBy(secondaryId(
                         AcquirerBatchNumber,
                         new AcquirerBatchNumber(data.merchantId(), data.netsSessionNumber())
                     ).createIfNotExists())
@@ -274,7 +283,7 @@ public abstract class AbstractPayment implements EntityModel {
             .notify(request(approvedRefund()).to(Merchant).guaranteed())
             .trigger(data -> event(MerchantDebit, data.amount())
                 .onEntity(settlement)
-                .identifiedBy(id(
+                .identifiedBy(secondaryId(
                     AcquirerBatchNumber,
                     new AcquirerBatchNumber(data.merchantId(), data.bankBatchNumber())
                 )

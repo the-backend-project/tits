@@ -19,12 +19,23 @@ import com.github.thxmasj.statemachine.http.RequestMapper;
 import com.github.thxmasj.statemachine.message.http.Created;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import java.util.List;
+import java.util.UUID;
 
 public class Batching {
 
   public enum EntityTypes implements EntityModel {
-    Item,
-    Batch
+    Item {
+      @Override
+      public UUID id() {
+        return UUID.fromString("33026afa-b541-400e-b3ca-fe3c00af9e23");
+      }
+    },
+    Batch {
+      @Override
+      public UUID id() {
+        return UUID.fromString("5bec6418-4615-4b1f-a394-41e033bfb32a");
+      }
+    }
     ;
 
     @Override

@@ -34,9 +34,9 @@ public class OutgoingResponseAndRequestDigestByRequest {
           ON rs.EntityId=rq.EntityId AND rs.RequestId=rq.Id
           WHERE rq.MessageId=:messageId AND rq.ClientId=:clientId
           """
-              .replace("{InboxTable}", names.qualifiedNames().inboxTable())
-              .replace("{OutboxTable}", names.qualifiedNames().outboxTable())
-              .replace("{OutboxTablePK}", names.outboxTablePrimaryKeyName());
+              .replace("{InboxTable}", names.qualifiedNames().inboxRequestTable())
+              .replace("{OutboxTable}", names.qualifiedNames().inboxResponseTable())
+              .replace("{OutboxTablePK}", names.inboxResponseTablePrimaryKeyName());
       this.sqls.put(entityModel, sql);
     }
   }

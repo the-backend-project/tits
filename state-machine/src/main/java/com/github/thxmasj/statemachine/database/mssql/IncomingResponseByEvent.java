@@ -32,8 +32,8 @@ public class IncomingResponseByEvent {
             FROM {InboxTable} WITH (INDEX({InboxTablePK}))
             WHERE EntityId=:entityId AND EventNumber=:eventNumber
             """
-                .replace("{InboxTable}", names.qualifiedNames().inboxTable(subscriber))
-                .replace("{InboxTablePK}", names.inboxTablePrimaryKeyName(subscriber));
+                .replace("{InboxTable}", names.qualifiedNames().outboxResponseTable(subscriber))
+                .replace("{InboxTablePK}", names.outboxResponseTablePrimaryKeyName(subscriber));
         this.sqls.get(entityModel).put(subscriber, sql);
       }
     }

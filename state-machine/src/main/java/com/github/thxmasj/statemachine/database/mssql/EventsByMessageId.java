@@ -49,7 +49,7 @@ public class EventsByMessageId {
           WHERE EntityId=@entityId
           ORDER BY EventNumber;
           """
-              .replace("{InboxTable}", names.qualifiedNames().inboxTable())
+              .replace("{InboxTable}", names.qualifiedNames().inboxRequestTable())
               .replace("{EventTable}", names.qualifiedNames().eventTable())
               .replace("{EventTablePK}", names.eventTablePrimaryKeyName());
       for (var idModel : entityModel.secondaryIds()) {

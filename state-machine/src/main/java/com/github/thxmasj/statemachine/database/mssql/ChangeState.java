@@ -46,6 +46,7 @@ public class ChangeState {
     String correlationId = change.correlationId();
     if (change.entityId() != null)
       spec.bind("entityId", change.entityId().value());
+    spec.bind("entityModelId", change.entityModel().id());
     for (int i = 0; i < events.size(); i++) {
       var event = events.get(i);
       spec.bind("eventNumber"+i, event.getEventNumber())
@@ -76,7 +77,8 @@ public class ChangeState {
       if (orq.parentEntity() != null) {
         spec.bind("outgoingRequestParentEntityId"+i, orq.parentEntity().value());
       }
-      spec.bind("outgoingRequestEventNumber"+i, orq.eventNumber())
+      spec.bind("outgoingRequestSubscriberId" + i, orq.subscriber().id())
+          .bind("outgoingRequestEventNumber"+i, orq.eventNumber())
           .bind("outgoingRequestCreatorId"+i, orq.creatorId())
           .bind("correlationId", correlationId)
           .bind("outgoingRequestGuaranteedDelivery" + i, orq.guaranteed())
@@ -248,7 +250,7 @@ public class ChangeState {
         );
         """.replace("{changeIndex}", String.valueOf(changeIndex))
             .replace("{i}", String.valueOf(i))
-            .replace("{inboxTable}", q.inboxTable())
+            .replace("{inboxTable}", q.inboxRequestTable())
     ).collect(joining());
 
     sql += range(0, incomingResponses.size()).mapToObj(i ->
@@ -267,7 +269,8 @@ public class ChangeState {
 
     sql += range(0, outgoingRequests.size()).mapToObj(i ->
         """
-        INSERT INTO {outboxTable} (
+        INSERT INTO {outboxRequestTable} (
+          SubscriberId,
           EntityId,
           EventNumber,
           Timestamp,
@@ -275,6 +278,7 @@ public class ChangeState {
         )
         OUTPUT {changeIndex}, {i}, inserted.Id INTO @OutboxElement
         VALUES (
+          :outgoingRequestSubscriberId{i},
           @entityId{changeIndex},
           :outgoingRequestEventNumber{i},
           :timestamp0,
@@ -282,7 +286,7 @@ public class ChangeState {
         );
         """.replace("{changeIndex}", String.valueOf(changeIndex))
             .replace("{i}", String.valueOf(i))
-            .replace("{outboxTable}", q.outboxTable(outgoingRequests.get(i).subscriber()))
+            .replace("{outboxRequestTable}", q.outboxRequestTable(outgoingRequests.get(i).subscriber()))
     ).collect(joining());
 
     sql += range(0, outgoingRequests.size()).mapToObj(i ->
@@ -388,7 +392,7 @@ public class ChangeState {
 
     sql += range(0, incomingResponses.size()).mapToObj(i ->
         """
-        INSERT INTO {inboxTable} (
+        INSERT INTO {outboxResponseTable} (
           EntityId,
           EventNumber,
           Timestamp,
@@ -403,12 +407,12 @@ public class ChangeState {
         );
         """.replace("{changeIndex}", String.valueOf(changeIndex))
             .replace("{i}", String.valueOf(i))
-            .replace("{inboxTable}", q.inboxTable(incomingResponses.get(i).subscriber()))
+            .replace("{outboxResponseTable}", q.outboxResponseTable(incomingResponses.get(i).subscriber()))
     ).collect(joining());
 
     sql += range(0, outgoingResponses.size()).mapToObj(i ->
         """
-        INSERT INTO {outboxTable} (
+        INSERT INTO {inboxResponseTable} (
           EntityId,
           EventNumber,
           Timestamp,
@@ -423,7 +427,7 @@ public class ChangeState {
         );
         """.replace("{changeIndex}", String.valueOf(changeIndex))
             .replace("{i}", String.valueOf(i))
-            .replace("{outboxTable}", q.outboxTable())
+            .replace("{inboxResponseTable}", q.inboxResponseTable())
     ).collect(joining());
 
     sql += range(0, incomingResponses.size()).filter(i -> incomingResponses.get(i).guaranteed()).mapToObj(i ->
@@ -442,12 +446,14 @@ public class ChangeState {
         """
         INSERT INTO {timeoutTable} (
           EntityId,
+          EntityModelId,
           EventNumber,
           Deadline,
           CorrelationId,
           Attempt
         ) VALUES (
           @entityId{changeIndex},
+          :entityModelId,
           :eventNumber,
           :deadline,
           :correlationId,
@@ -462,7 +468,7 @@ public class ChangeState {
 
   private boolean isDuplicateMessage(Throwable e, List<Change> changes) {
     if (e instanceof UniqueIndexConstraintViolation f) {
-      return changes.stream().anyMatch(change -> new SchemaNames(schema, change.entityModel()).inboxTableName().equals(f.tableName()) && f.indexName().equals("ixMessageId_ClientId"));
+      return changes.stream().anyMatch(change -> new SchemaNames(schema, change.entityModel()).inboxRequestTableName().equals(f.tableName()) && f.indexName().equals("ixMessageId_ClientId"));
     }
     return false;
   }

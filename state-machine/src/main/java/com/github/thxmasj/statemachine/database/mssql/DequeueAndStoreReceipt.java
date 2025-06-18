@@ -59,7 +59,7 @@ public class DequeueAndStoreReceipt {
                 .replace("{processingTablePK}", names.notificationQueueProcessingTablePrimaryKeyName(subscriber))
                 .replace("{queueTable}", q.queueTable(subscriber))
                 .replace("{queueTablePK}", names.queueTablePrimaryKeyName(subscriber))
-                .replace("{inboxTable}", q.inboxTable(subscriber));
+                .replace("{inboxTable}", q.outboxResponseTable(subscriber));
         sqls.get(entityModel).put(subscriber, sql);
       }
     }

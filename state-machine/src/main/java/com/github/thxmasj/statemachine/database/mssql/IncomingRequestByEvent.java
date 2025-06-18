@@ -29,8 +29,8 @@ public class IncomingRequestByEvent {
           FROM {InboxTable} WITH (INDEX({InboxTablePK}))
           WHERE EntityId=:entityId AND EventNumber=:eventNumber
           """
-              .replace("{InboxTable}", names.qualifiedNames().inboxTable())
-              .replace("{InboxTablePK}", names.inboxTablePrimaryKeyName());
+              .replace("{InboxTable}", names.qualifiedNames().inboxRequestTable())
+              .replace("{InboxTablePK}", names.inboxRequestTablePrimaryKeyName());
       this.sqls.put(entityModel, sql);
     }
   }

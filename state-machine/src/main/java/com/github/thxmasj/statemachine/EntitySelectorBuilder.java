@@ -20,13 +20,19 @@ public class EntitySelectorBuilder {
   private EntitySelector fallback;
   private boolean next;
 
-  public static EntitySelectorBuilder id(EntityId id) {
+  public static EntitySelectorBuilder entityId(UUID id) {
+    var builder = new EntitySelectorBuilder();
+    builder.entityId = new EntityId.UUID(id);
+    return builder;
+  }
+
+  public static EntitySelectorBuilder entityId(EntityId id) {
     var builder = new EntitySelectorBuilder();
     builder.entityId = id;
     return builder;
   }
 
-  public static EntitySelectorBuilder id(@Nullable String id) {
+  public static EntitySelectorBuilder entityId(@Nullable String id) {
     requireNonNull(id);
     var builder = new EntitySelectorBuilder();
     builder.entityId = new EntityId.UUID(UUID.fromString(id));
@@ -38,7 +44,7 @@ public class EntitySelectorBuilder {
     return this;
   }
 
-  public static EntitySelectorBuilder id(SecondaryIdModel model, Object value) {
+  public static EntitySelectorBuilder secondaryId(SecondaryIdModel model, Object value) {
     var builder = new EntitySelectorBuilder();
     builder.secondaryId = new SecondaryId(model, value);
     return builder;

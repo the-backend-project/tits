@@ -10,6 +10,8 @@ public interface EntityModel {
 
   String name();
 
+  UUID id();
+
   default TraversableState begin() {
     return TraversableState.create(this);
   }

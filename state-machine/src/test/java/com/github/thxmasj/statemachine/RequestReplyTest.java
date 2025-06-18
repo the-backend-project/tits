@@ -1,6 +1,5 @@
 package com.github.thxmasj.statemachine;
 
-import static com.github.thxmasj.statemachine.EntitySelectorBuilder.id;
 import static com.github.thxmasj.statemachine.EventTriggerBuilder.event;
 import static com.github.thxmasj.statemachine.IncomingRequestModel.validator;
 import static com.github.thxmasj.statemachine.IncomingRequestModelBuilder.fromRequestLine;
@@ -68,6 +67,11 @@ public class RequestReplyTest {
   enum Entities implements EntityModel {
     Lamp {
       @Override
+      public UUID id() {
+        return UUID.fromString("59d3158c-7b2a-4312-a293-325858c2673f");
+      }
+
+      @Override
       public List<EventType> eventTypes() {
         return List.of(Events.values());
       }
@@ -98,7 +102,7 @@ public class RequestReplyTest {
           case String l when l.matches("PUT .*/lamps/.*") -> validator(new IncomingRequestValidator<Void>() {})
               .trigger(event(Toggle)
                   .onEntity(Lamp)
-                  .identifiedBy(id(fromRequestLine(message, "PUT .*/lamps/(.*)", 1)).createIfNotExists())
+                  .identifiedBy(EntitySelectorBuilder.entityId(fromRequestLine(message, "PUT .*/lamps/(.*)", 1)).createIfNotExists())
               )
               .clientId("system")
               .derivedMessageId();

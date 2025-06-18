@@ -13,11 +13,11 @@ public record SchemaNames(
 ) {
 
   public String eventTableName() {
-    return String.format("%sEvent", model.name());
+    return "Event";
   }
 
   public String eventTablePrimaryKeyName() {
-    return String.format("pk%sEvent", model.name());
+    return "pkEvent";
   }
 
   public String indexName(List<Column> columns) {
@@ -25,43 +25,43 @@ public record SchemaNames(
   }
 
   public String timeoutTableName() {
-    return String.format("%sTimeout", model.name());
+    return "Timeout";
   }
 
   public String notificationQueueProcessingTablePrimaryKeyName(Subscriber subscriber) {
     return String.format("pk%s", processingTableName(subscriber));
   }
 
-  public String inboxTableName() {
-    return model.name() + "Inbox";
+  public String inboxRequestTableName() {
+    return "InboxRequest";
   }
 
-  public String inboxTablePrimaryKeyName() {
-    return String.format("pk%sInbox", model.name());
+  public String inboxRequestTablePrimaryKeyName() {
+    return "pkInboxRequest";
   }
 
-  public String outboxTableName() {
-    return model.name() + "Outbox";
+  public String inboxResponseTableName() {
+    return "InboxResponse";
   }
 
-  public String outboxTablePrimaryKeyName() {
-    return String.format("pk%sOutbox", model.name());
+  public String inboxResponseTablePrimaryKeyName() {
+    return "pkInboxResponse";
   }
 
-  public String inboxTableName(Subscriber subscriber) {
-    return model.name() + capitalize(subscriber) + "Inbox";
+  public String outboxResponseTableName(Subscriber subscriber) {
+    return "OutboxResponse";
   }
 
-  public String inboxTablePrimaryKeyName(Subscriber subscriber) {
-    return String.format("pk%s%sInbox", model.name(), capitalize(subscriber));
+  public String outboxResponseTablePrimaryKeyName(Subscriber subscriber) {
+    return "pkOutboxResponse";
   }
 
-  public String outboxTableName(Subscriber subscriber) {
-    return model.name() + capitalize(subscriber) + "Outbox";
+  public String outboxRequestTableName(Subscriber subscriber) {
+    return "OutboxRequest";
   }
 
-  public String outboxTablePrimaryKeyName(Subscriber subscriber) {
-    return String.format("pk%s%sOutbox", model.name(), capitalize(subscriber));
+  public String outboxRequestTablePrimaryKeyName(Subscriber subscriber) {
+    return "pkOutboxRequest";
   }
 
   public String processingTableName(Subscriber subscriber) {
@@ -92,20 +92,20 @@ public record SchemaNames(
       return qualifiedName(entityModel.eventTableName());
     }
 
-    public String inboxTable() {
-      return qualifiedName(entityModel.inboxTableName());
+    public String inboxRequestTable() {
+      return qualifiedName(entityModel.inboxRequestTableName());
     }
 
-    public String outboxTable() {
-      return qualifiedName(entityModel.outboxTableName());
+    public String inboxResponseTable() {
+      return qualifiedName(entityModel.inboxResponseTableName());
     }
 
-    public String inboxTable(Subscriber subscriber) {
-      return qualifiedName(entityModel.inboxTableName(subscriber));
+    public String outboxResponseTable(Subscriber subscriber) {
+      return qualifiedName(entityModel.outboxResponseTableName(subscriber));
     }
 
-    public String outboxTable(Subscriber subscriber) {
-      return qualifiedName(entityModel.outboxTableName(subscriber));
+    public String outboxRequestTable(Subscriber subscriber) {
+      return qualifiedName(entityModel.outboxRequestTableName(subscriber));
     }
 
     public String idTable(SecondaryIdModel secondaryId) {

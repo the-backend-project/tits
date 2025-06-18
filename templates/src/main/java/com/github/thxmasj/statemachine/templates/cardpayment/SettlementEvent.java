@@ -5,16 +5,16 @@ import com.github.thxmasj.statemachine.EventType;
 public class SettlementEvent {
 
   public enum Type implements EventType {
-    Open(1001),
-    CutOffRequest(1002, CutOff.class),
-    SettlementApproved(1005, AcquirerResponse.class),
-    InBalance(1011, String.class),
-    OutOfBalance(1012, String.class),
-    Timeout(1013),
-    MerchantCredit(1014, Long.class),
-    MerchantCreditReversed(1015, Long.class),
-    MerchantDebit(1016, Long.class),
-    MerchantDebitReversed(1017, Long.class);
+    Open(1034),
+    CutOffRequest(1035, CutOff.class),
+    SettlementApproved(1036, AcquirerResponse.class),
+    InBalance(1037, String.class),
+    OutOfBalance(1038, String.class),
+    Timeout(1039),
+    MerchantCredit(1040, Long.class),
+    MerchantCreditReversed(1041, Long.class),
+    MerchantDebit(1042, Long.class),
+    MerchantDebitReversed(1043, Long.class);
 
     private final int id;
     private final Class<?> dataType;

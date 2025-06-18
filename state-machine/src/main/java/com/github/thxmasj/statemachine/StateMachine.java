@@ -167,19 +167,19 @@ public class StateMachine {
     var backoff = new DelaySpecification(ofSeconds(10), ofSeconds(20), ofSeconds(100), 1.5);
     var processNew = new ProcessNew(jdbcClient, entityModels, schemaName, clock, backoff);
     var processBackedOff = new ProcessBackedOff(jdbcClient, entityModels, schemaName, clock, backoff);
+    Looper<ResolverStatus> resolverLooper = new Looper<>(
+        "ResolverWorker",
+        false,
+        () -> resolveState().flux().switchIfEmpty(Flux.just(ResolverStatus.Empty)),
+        status -> switch (status) {
+          case Ok -> Duration.ZERO;
+          case Empty -> Duration.ofSeconds(1);
+          case Error -> Duration.ofSeconds(10);
+        }
+    );
+    resolverLooper.loop();
+    workers.add(resolverLooper);
     for (var entityModel : entityModels) {
-      Looper<ResolverStatus> resolverLooper = new Looper<>(
-          "ResolverWorker-" + entityModel.name(),
-          false,
-          () -> resolveState(entityModel).flux().switchIfEmpty(Flux.just(ResolverStatus.Empty)),
-          status -> switch (status) {
-            case Ok -> Duration.ZERO;
-            case Empty -> Duration.ofSeconds(1);
-            case Error -> Duration.ofSeconds(10);
-          }
-      );
-      resolverLooper.loop();
-      workers.add(resolverLooper);
       for (var subscriber : entityModel.subscribers()) {
         var looper = new OutboxWorker(
             this,
@@ -251,10 +251,10 @@ public class StateMachine {
   /**
    * Resolve a state that has reached its deadline, as indicated by its timeout value.
    */
-  public Mono<ResolverStatus> resolveState(EntityModel entityModel) {
+  public Mono<ResolverStatus> resolveState() {
     var backoff = new DelaySpecification(ofSeconds(10), ofMinutes(10), ofHours(5), 1.5);
-    return nextDeadline.execute(entityModel, backoff)
-        .zipWhen(deadline -> eventsByEntityId.execute(entityModel, deadline.entityId()))
+    return nextDeadline.execute(backoff)
+        .zipWhen(deadline -> eventsByEntityId.execute(deadline.entityModel(), deadline.entityId()))
         .flatMap(deadlineAndEventLog -> {
           Deadline deadline = deadlineAndEventLog.getT1();
           EventLog eventLog = deadlineAndEventLog.getT2();
@@ -262,7 +262,9 @@ public class StateMachine {
             // The state has already been resolved by another resolver or incoming request
             return Mono.just(ResolverStatus.Ok);
           }
-          var currentState = entityModel.begin().forward(eventLog.events().stream().map(Event::getType).toList());
+          var currentState = deadline.entityModel().begin().forward(eventLog.events().stream().map(Event::getType).toList());
+          if (currentState == null)
+            return Mono.error(new RuntimeException("Invalid event log: " + eventLog.events().stream().map(Event::getTypeName).collect(joining(","))));
           var timeoutEvent = new Event(deadline.eventNumber() + 1, currentState.state().timeout().get().eventType(), clock);
           return processEvents(
               eventLog,
@@ -421,7 +423,7 @@ public class StateMachine {
           //       validation can fail with RequirementsNotFulfilled. This duplicates the behavior, though
           //       (see below, rejectIfNotRepeat called twice).
           if (stateAfterScheduledEvents.forward(eventTrigger.eventType()) == null) {
-            return rejectIfNotRepeat(entityId, eventLog, messageId, incomingRequest, "State " + eventTrigger.entityModel() + "/" + stateAfterScheduledEvents.state() + " does not accept " + eventTrigger.eventType());
+            return rejectIfNotRepeat(entityId, eventLog, messageId, incomingRequest, "State " + eventTrigger.entityModel().name() + "/" + stateAfterScheduledEvents.state() + " does not accept " + eventTrigger.eventType() + " (" + eventTrigger.eventType().id() + ")");
           }
           return validateRequest(
               eventLog.entityId(),
@@ -1063,7 +1065,7 @@ public class StateMachine {
           Status.Rejected,
           new Entity(entityId, List.of(), eventLog.entityModel()),
           null,
-          "State " + eventLog.entityModel() + "[id=" + eventLog.entityId().value() + "]:" + currentState.state() + " does not accept " + newEvents.stream().map(Event::getType).toList()
+          "State " + eventLog.entityModel() + "[id=" + eventLog.entityId().value() + "]:" + currentState.state() + " does not accept " + newEvents.stream().map(e -> e.getTypeName() + " (" + e.getType().id() + ")").toList()
       ), null));
     List<Event> transitionEvents;
     List<Event> eventsToStore;
@@ -1526,7 +1528,7 @@ public class StateMachine {
                                   (result.validationResult().event() != null ?
                                       result.validationResult().event().getTypeName() :
                                       "N/A"
-                                  ) + " was rejected"
+                                  ) + " was rejected: " + result.processResult().error()
                           ));
                       case PermanentError -> moveToDLQ.execute(queueElement, result.validationResult().message())
                           .thenReturn(ForwardStatus.Ok);

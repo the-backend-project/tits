@@ -33,9 +33,17 @@ import com.github.thxmasj.statemachine.TransitionModel;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames;
 import com.github.thxmasj.statemachine.message.http.Created;
 import java.util.List;
+import java.util.UUID;
 import reactor.core.publisher.Mono;
 
 public abstract class AbstractSettlement implements EntityModel {
+
+  private final UUID id = UUID.fromString("fc1d7b4c-92c7-40b3-9f7e-68a84d8d56f1");
+
+  @Override
+  public UUID id() {
+    return id;
+  }
 
   @Override
   public String name() {

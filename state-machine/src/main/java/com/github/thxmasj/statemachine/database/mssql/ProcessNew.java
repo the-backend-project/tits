@@ -117,8 +117,8 @@ public class ProcessNew {
                 .replace("{dlqTable}", q.dlqTable(subscriber))
                 .replace("{dlqTablePK}", names.dlqTablePrimaryKeyName(subscriber))
                 .replace("{queueTable}", q.queueTable(subscriber))
-                .replace("{outboxTable}", q.outboxTable(subscriber))
-                .replace("{outboxTablePK}", names.outboxTablePrimaryKeyName(subscriber))
+                .replace("{outboxTable}", q.outboxRequestTable(subscriber))
+                .replace("{outboxTablePK}", names.outboxRequestTablePrimaryKeyName(subscriber))
                 .replace("{parentEntityFilter}", childEntity(entityModel) == null ? "" :
                     String.format(
                         "AND q.EntityId NOT IN (SELECT ParentEntityId FROM %s WHERE ParentEntityId IS NOT NULL)",

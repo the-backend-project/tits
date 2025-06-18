@@ -31,8 +31,8 @@ public class OutgoingRequestByEvent {
             FROM {OutboxTable} WITH (INDEX({OutboxTablePK}))
             WHERE EntityId=:entityId AND EventNumber=:eventNumber
             """
-                .replace("{OutboxTable}", names.qualifiedNames().outboxTable(subscriber))
-                .replace("{OutboxTablePK}", names.outboxTablePrimaryKeyName(subscriber));
+                .replace("{OutboxTable}", names.qualifiedNames().outboxRequestTable(subscriber))
+                .replace("{OutboxTablePK}", names.outboxRequestTablePrimaryKeyName(subscriber));
         this.sqls.get(entityModel).put(subscriber, sql);
       }
     }
