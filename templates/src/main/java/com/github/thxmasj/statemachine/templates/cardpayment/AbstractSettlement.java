@@ -8,7 +8,7 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.Identifiers.
 import static com.github.thxmasj.statemachine.templates.cardpayment.Identifiers.BatchNumber;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.Begin;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.Error;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.PendingSettlement;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.ProcessingSettlement;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.Reconciled;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.Settled;
 import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Type.CutOffRequest;
@@ -79,7 +79,7 @@ public abstract class AbstractSettlement implements EntityModel {
         from(Begin).to(Begin).onEvent(MerchantDebit).build(),
         from(Begin).to(Begin).onEvent(MerchantCreditReversed).build(),
         from(Begin).to(Begin).onEvent(MerchantDebitReversed).build(),
-        from(Begin).to(PendingSettlement).onEvent(CutOffRequest)
+        from(Begin).to(ProcessingSettlement).onEvent(CutOffRequest)
             .withData(_ -> Mono.just(""))
             .response(_ -> "", new Created())
             .trigger(_ -> event(Open).onEntity(this)
@@ -88,12 +88,12 @@ public abstract class AbstractSettlement implements EntityModel {
             )
             .notify(request(reconciliation()).to(Acquirer).guaranteed().responseValidator(validateSettlementResponse())),
         // To support "Previous batch is kept open after cut-off"
-        from(PendingSettlement).to(PendingSettlement).onEvent(MerchantCredit).build(),
-        from(PendingSettlement).to(PendingSettlement).onEvent(MerchantDebit).build(),
-        from(PendingSettlement).to(PendingSettlement).onEvent(MerchantCreditReversed).build(),
-        from(PendingSettlement).to(PendingSettlement).onEvent(MerchantDebitReversed).build(),
-        from(PendingSettlement).to(Settled).onEvent(SettlementApproved).build(),
-        from(PendingSettlement).to(Error).onEvent(Timeout).build(),
+        from(ProcessingSettlement).to(ProcessingSettlement).onEvent(MerchantCredit).build(),
+        from(ProcessingSettlement).to(ProcessingSettlement).onEvent(MerchantDebit).build(),
+        from(ProcessingSettlement).to(ProcessingSettlement).onEvent(MerchantCreditReversed).build(),
+        from(ProcessingSettlement).to(ProcessingSettlement).onEvent(MerchantDebitReversed).build(),
+        from(ProcessingSettlement).to(Settled).onEvent(SettlementApproved).build(),
+        from(ProcessingSettlement).to(Error).onEvent(Timeout).build(),
         from(Settled).to(Reconciled).onEvent(InBalance)
             .withData(_ -> Mono.just(""))
             .notify(request(approvedCutOff()).to(Merchant).guaranteed()),

@@ -10,13 +10,13 @@ import java.util.Optional;
 
 public enum PaymentState implements State {
   Begin,
-  PendingAuthorisationResponse(new Timeout(ofMillis(6600), Rollback)),
+  ProcessingAuthorisation(new Timeout(ofMillis(6600), Rollback)),
   AuthorisationFailed,
-  PendingCaptureResponse,
+  ProcessingCapture,
   Preauthorised,
   Authorised,
-  PendingRefundResponse(new Timeout(ofMillis(6600), Rollback)),
-  PendingSettlement(new Timeout(Duration.ofHours(5), SettlementEvent.Type.Timeout)),
+  ProcessingRefund(new Timeout(ofMillis(6600), Rollback)),
+  ProcessingSettlement(new Timeout(Duration.ofHours(5), SettlementEvent.Type.Timeout)),
   Settled(new Reconcile()),
   Reconciled,
   Error
