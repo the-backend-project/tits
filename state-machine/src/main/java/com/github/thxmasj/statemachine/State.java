@@ -8,9 +8,7 @@ public interface State {
 
   String name();
 
-  record Choice(Action<?> action) {}
-
-  default Choice choice() {
+  default Choice<?> choice() {
     return null;
   }
 

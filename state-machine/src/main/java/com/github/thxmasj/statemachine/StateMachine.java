@@ -1115,7 +1115,7 @@ public class StateMachine {
         return executeAction(
             entity,
             new EventLog(eventLog.entityModel(), entityId, List.of(), Event.join(effectiveEvents, newEvents)),
-            targetState.state().choice().action(),
+            targetState.state().choice(),
             targetState.state(),
             incomingNotification != null ? List.of(incomingNotification) : List.of()
         )

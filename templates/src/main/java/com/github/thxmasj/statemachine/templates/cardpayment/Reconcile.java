@@ -11,6 +11,7 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEv
 import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Type.SettlementApproved;
 
 import com.github.thxmasj.statemachine.Action;
+import com.github.thxmasj.statemachine.Choice;
 import com.github.thxmasj.statemachine.EntityId;
 import com.github.thxmasj.statemachine.Event;
 import com.github.thxmasj.statemachine.Input;
@@ -18,7 +19,7 @@ import com.github.thxmasj.statemachine.Requirements;
 import com.github.thxmasj.statemachine.templates.cardpayment.AcquirerResponse.ReconciliationValues;
 import reactor.core.publisher.Mono;
 
-public class Reconcile implements Action<String> {
+public class Reconcile implements Choice<String> {
 
   @Override
   public final Requirements requirements() {
