@@ -147,7 +147,7 @@ public class EventsByLastEntity {
         while (rs.next()) {
           events.add(new Event(
               rs.getInt(1), // EventNumber
-              entityModel.eventType(rs.getInt(2)), // Type
+              entityModel.eventType(UUID.fromString(rs.getString(2))), // Type
               rs.getObject(3, LocalDateTime.class), // Timestamp
               clock,
               rs.getString(4), // MessageId

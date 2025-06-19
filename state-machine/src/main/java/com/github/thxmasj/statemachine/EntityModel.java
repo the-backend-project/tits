@@ -34,9 +34,9 @@ public interface EntityModel {
     return List.of();
   }
 
-  default EventType eventType(int typeId) {
+  default EventType eventType(UUID typeId) {
     return Stream.concat(eventTypes().stream(), Stream.of(BuiltinEventTypes.values()))
-        .filter(type -> typeId == type.id())
+        .filter(type -> typeId.equals(type.id()))
         .findFirst().orElseThrow(() -> new MappingFailure("No event type has id " + typeId));
   }
 

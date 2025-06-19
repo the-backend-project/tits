@@ -60,18 +60,18 @@ public class Batching {
   }
 
   public enum Events implements EventType {
-    CreateItem(1),
-    DeleteItem(2),
-    AddToBatch(3),
-    DeleteFromBatch(4),
+    CreateItem(UUID.fromString("b6c4ed96-4cfc-4258-a222-3a51064b35f7")),
+    DeleteItem(UUID.fromString("485935f8-2f80-4228-8278-42e84e2d262d")),
+    AddToBatch(UUID.fromString("ef054730-344c-4d1b-98a9-5aa7204a2eab")),
+    DeleteFromBatch(UUID.fromString("8dc15503-2a4d-491b-b258-82f209d32825")),
     ;
 
-    private final int id;
+    private final UUID id;
 
-    Events(int id) {this.id = id;}
+    Events(UUID id) {this.id = id;}
 
     @Override
-    public int id() {
+    public UUID id() {
       return id;
     }
   }
@@ -80,7 +80,7 @@ public class Batching {
     Begin
   }
 
-  public class RequestMappings implements RequestMapper {
+  public static class RequestMappings implements RequestMapper {
 
     @Override
     public IncomingRequestModelBuilder<?> incomingRequest(HttpRequestMessage message) {

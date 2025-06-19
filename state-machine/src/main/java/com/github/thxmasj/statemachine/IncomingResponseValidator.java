@@ -15,15 +15,6 @@ public interface IncomingResponseValidator<OUTPUT_TYPE> extends DataRequirer {
       Input input
   );
 
-  record EvaluatedResponse(Status status, HttpStatusReason statusReason, String message) {}
-
-  record HttpStatusReason(int status, String reasonPhrase) {
-
-    public String message() {
-      return status + " " + reasonPhrase;
-    }
-  }
-
   static Status status(HttpResponseMessage responseMessage) {
     int c = responseMessage.statusCode();
     if (c >= 200 && c < 300) {

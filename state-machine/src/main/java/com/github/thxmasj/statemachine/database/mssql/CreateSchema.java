@@ -56,7 +56,7 @@ public class CreateSchema {
         (
             EntityId    UNIQUEIDENTIFIER   NOT NULL,
             EventNumber SMALLINT           NOT NULL,
-            Type        VARCHAR(1024)      NOT NULL,
+            Type        UNIQUEIDENTIFIER   NOT NULL,
             MessageId   VARCHAR(100),
             ClientId    VARCHAR(100),
             Data        VARCHAR(MAX),

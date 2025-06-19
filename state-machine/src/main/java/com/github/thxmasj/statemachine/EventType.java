@@ -1,10 +1,12 @@
 package com.github.thxmasj.statemachine;
 
+import java.util.UUID;
+
 public interface EventType {
 
   String name();
 
-  int id();
+  UUID id();
 
   default Class<?> dataType() {
     return null;

@@ -26,7 +26,7 @@ public class Mappers {
             try {
                 return new Event(
                         value(row, "EventNumber", Integer.class),
-                        entityModel.eventType(row.get("Type", Integer.class)),
+                        entityModel.eventType(row.get("Type", UUID.class)),
                         value(row, "Timestamp", LocalDateTime.class),
                         clock,
                         nullableString(row, "MessageId"),

@@ -48,17 +48,17 @@ public class RequestReplyTest {
   enum States implements State {On, Off}
 
   enum Events implements EventType {
-    Toggle(1001),
-    SwitchOn(1002),
-    SwitchOff(1003),
+    Toggle(UUID.fromString("46b0211e-f583-49b3-a6e7-8d13742e0260")),
+    SwitchOn(UUID.fromString("5e9a8a9d-6a21-41cf-82dc-857fe1e4c4e0")),
+    SwitchOff(UUID.fromString("8e1483c8-b649-43b8-b352-5094a94c0dad")),
     ;
 
-    private final int id;
+    private final UUID id;
 
-    Events(int id) {this.id = id;}
+    Events(UUID id) {this.id = id;}
 
     @Override
-    public int id() {
+    public UUID id() {
       return id;
     }
 
