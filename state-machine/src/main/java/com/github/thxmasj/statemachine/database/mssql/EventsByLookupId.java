@@ -59,16 +59,14 @@ public class EventsByLookupId {
             SELECT @entityId;
             
             SELECT EventNumber, Type, Timestamp, MessageId, ClientId, Data
-            FROM %s WITH (INDEX(%s))
+            FROM [{schema}].Event WITH (INDEX(pkEvent))
             WHERE EntityId=@entityId
             ORDER BY EventNumber;
-            """,
+            """.replace("{schema}", schemaName),
             names.qualifiedNames().idTable(idModel),
             names.indexName(idModel.columns()),
             idModel.columns().stream().map(c -> c.name() + "=?").collect(joining(" AND ")),
-            idModel.isSerial() ? "ORDER BY SerialNumber DESC" : "",
-            names.qualifiedNames().eventTable(),
-            names.eventTablePrimaryKeyName()
+            idModel.isSerial() ? "ORDER BY SerialNumber DESC" : ""
         );
         // TODO: Can skip the lookup id, as we already have it
         for (var idModel2 : entityModel.secondaryIds()) {

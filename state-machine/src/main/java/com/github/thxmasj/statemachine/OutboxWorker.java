@@ -1,10 +1,8 @@
 package com.github.thxmasj.statemachine;
 
 import com.github.thxmasj.statemachine.database.Client.ConcurrencyFailure;
-import com.github.thxmasj.statemachine.database.Client.PrimaryKeyConstraintViolation;
 import com.github.thxmasj.statemachine.database.mssql.ProcessBackedOff;
 import com.github.thxmasj.statemachine.database.mssql.ProcessNew;
-import com.github.thxmasj.statemachine.database.mssql.SchemaNames;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -65,16 +63,26 @@ public class OutboxWorker {
 
   public Flux<ForwardStatus> doForward() {
     var now = LocalDateTime.now(clock);
-    return processNew.execute(now, entityModel, subscriber)
-        .onErrorResume(
-            e -> e instanceof PrimaryKeyConstraintViolation f && new SchemaNames(schemaName, entityModel).processingTableName(subscriber).equals(f.tableName()),
-            _ -> {
-              listener.forwardingRaced(subscriber.name());
-              return Mono.empty();
-            }
-        )
-        .mergeWith(processBackedOff.execute(now, entityModel, subscriber))
-        .doOnNext(e -> listener.forwardingAttempt(e.subscriber().name(), e.enqueuedAt(), e.attempt(), e.entityId(), e.eventNumber(), e.correlationId()))
+//    return processNew.execute(now, entityModel, subscriber)
+//        .onErrorResume(
+//            e -> e instanceof PrimaryKeyConstraintViolation f && "OutboxQueueProcessing".equals(f.tableName()),
+//            _ -> {
+//              listener.forwardingRaced(subscriber.name());
+//              return Mono.empty();
+//            }
+//        )
+//        .mergeWith(processBackedOff.execute(now, subscriber))
+        return processBackedOff.execute(now, subscriber)
+            .doOnNext(e -> listener.forwardingAttempt(
+                    e.requestId(),
+                    e.subscriber().name(),
+                    e.enqueuedAt(),
+                    e.attempt(),
+                    e.entityId(),
+                    e.eventNumber(),
+                    e.correlationId()
+                )
+            )
         .flatMap(stateMachine::forward)
         .onErrorResume(this::isDeadlock, _ -> {
           listener.forwardingDeadlock(subscriber.name());

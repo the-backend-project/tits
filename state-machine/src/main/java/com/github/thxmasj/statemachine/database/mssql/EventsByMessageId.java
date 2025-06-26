@@ -36,7 +36,7 @@ public class EventsByMessageId {
           DECLARE @entityId UNIQUEIDENTIFIER;
 
           SELECT @entityId=EntityId
-          FROM {InboxTable} WITH (INDEX(ixMessageId_ClientId))
+          FROM [{schema}].InboxRequest WITH (INDEX(ixMessageId_ClientId))
           WHERE MessageId=:messageId AND ClientId=:clientId;
           
           IF @@ROWCOUNT < 1
@@ -45,13 +45,10 @@ public class EventsByMessageId {
           SELECT @entityId;
 
           SELECT EventNumber, Type, Timestamp, MessageId, ClientId, Data
-          FROM {EventTable} WITH (INDEX({EventTablePK}))
+          FROM [{schema}].Event WITH (INDEX(pkEvent))
           WHERE EntityId=@entityId
           ORDER BY EventNumber;
-          """
-              .replace("{InboxTable}", names.qualifiedNames().inboxRequestTable())
-              .replace("{EventTable}", names.qualifiedNames().eventTable())
-              .replace("{EventTablePK}", names.eventTablePrimaryKeyName());
+          """.replace("{schema}", schemaName);
       for (var idModel : entityModel.secondaryIds()) {
         sql = sql +
             """

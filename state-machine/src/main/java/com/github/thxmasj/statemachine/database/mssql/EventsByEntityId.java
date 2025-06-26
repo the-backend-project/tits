@@ -39,12 +39,10 @@ public class EventsByEntityId {
       String sql =
           """
           SELECT EventNumber, Type, Timestamp, MessageId, ClientId, Data
-          FROM {EventTable} WITH (INDEX({EventTablePK}))
+          FROM [{schema}].[Event] WITH (INDEX(pkEvent))
           WHERE EntityId=:entityId
           ORDER BY EventNumber;
-          """
-              .replace("{EventTable}", names.qualifiedNames().eventTable())
-              .replace("{EventTablePK}", names.eventTablePrimaryKeyName());
+          """.replace("{schema}", schemaName);
       for (var idModel : entityModel.secondaryIds()) {
         sql = sql +
             """

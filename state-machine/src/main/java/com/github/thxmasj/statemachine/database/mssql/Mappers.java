@@ -13,6 +13,7 @@ import com.github.thxmasj.statemachine.database.Row;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZonedDateTime;
+import java.util.List;
 import java.util.UUID;
 import java.util.function.Function;
 
@@ -40,16 +41,16 @@ public class Mappers {
     }
 
   static  Function<Row, OutboxElement> queueElementMapper(
-      EntityModel entityModel,
+      List<EntityModel> entityModels,
       Clock clock,
       Subscriber subscriber,
       LocalDateTime now
   ) {
     return row -> new OutboxElement(
         row.get("ElementId", byte[].class),
-        row.get("OutboxElementId", Long.class),
+        row.get("RequestId", UUID.class),
         new EntityId.UUID(row.get("EntityId", UUID.class)),
-        entityModel,
+        entityModels.stream().filter(e -> e.id().equals(row.get("EntityModelId", UUID.class))).findFirst().orElseThrow(),
         requireNonNull(row.get("EventNumber", Integer.class)),
         requireNonNull(row.get("CreatorId", UUID.class)),
         requireNonNull(subscriber),

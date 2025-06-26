@@ -22,15 +22,12 @@ public class IncomingRequestByEvent {
     this.dataSource = dataSource;
     this.sqls = new HashMap<>();
     for (var entityModel : entityModels) {
-      var names = new SchemaNames(schemaName, entityModel);
       String sql =
           """
           SELECT Data
-          FROM {InboxTable} WITH (INDEX({InboxTablePK}))
+          FROM [{schema}].[InboxRequest] WITH (INDEX(pkInboxRequest))
           WHERE EntityId=:entityId AND EventNumber=:eventNumber
-          """
-              .replace("{InboxTable}", names.qualifiedNames().inboxRequestTable())
-              .replace("{InboxTablePK}", names.inboxRequestTablePrimaryKeyName());
+          """.replace("{schema}", schemaName);
       this.sqls.put(entityModel, sql);
     }
   }

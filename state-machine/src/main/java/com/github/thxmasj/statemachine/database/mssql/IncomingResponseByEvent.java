@@ -1,18 +1,17 @@
 package com.github.thxmasj.statemachine.database.mssql;
 
+import static com.github.thxmasj.statemachine.database.jdbc.PreparedStatementSupport.prepare;
+import static java.util.Objects.requireNonNull;
+
 import com.github.thxmasj.statemachine.EntityId;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.Subscriber;
-import reactor.core.publisher.Mono;
-
-import javax.sql.DataSource;
 import java.sql.ResultSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-
-import static com.github.thxmasj.statemachine.database.jdbc.PreparedStatementSupport.prepare;
-import static java.util.Objects.requireNonNull;
+import javax.sql.DataSource;
+import reactor.core.publisher.Mono;
 
 public class IncomingResponseByEvent {
 
@@ -29,11 +28,9 @@ public class IncomingResponseByEvent {
         String sql =
             """
             SELECT Data
-            FROM {InboxTable} WITH (INDEX({InboxTablePK}))
+            FROM [{schema}].[OutboxResponse] WITH (INDEX(pkOutboxResponse))
             WHERE EntityId=:entityId AND EventNumber=:eventNumber
-            """
-                .replace("{InboxTable}", names.qualifiedNames().outboxResponseTable(subscriber))
-                .replace("{InboxTablePK}", names.outboxResponseTablePrimaryKeyName(subscriber));
+            """.replace("{schema}", schemaName);
         this.sqls.get(entityModel).put(subscriber, sql);
       }
     }

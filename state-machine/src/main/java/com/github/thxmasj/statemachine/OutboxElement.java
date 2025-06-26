@@ -7,7 +7,7 @@ import java.util.function.UnaryOperator;
 
 public record OutboxElement(
     byte[] queueElementId,
-    long outboxElementId,
+    UUID requestId,
     EntityId entityId,
     EntityModel entityModel,
     int eventNumber,

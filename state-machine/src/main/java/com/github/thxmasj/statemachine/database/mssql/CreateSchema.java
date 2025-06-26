@@ -110,7 +110,7 @@ public class CreateSchema {
 
         CREATE TABLE [{schema}].[OutboxRequest]
         (
-            Id                 BIGINT           IDENTITY,
+            Id                 UNIQUEIDENTIFIER NOT NULL,
             SubscriberId       UNIQUEIDENTIFIER NOT NULL,
             EntityId           UNIQUEIDENTIFIER NOT NULL,
             EventNumber        SMALLINT         NOT NULL,
@@ -127,10 +127,61 @@ public class CreateSchema {
             EventNumber        SMALLINT         NOT NULL,
             Timestamp          DATETIME2        NOT NULL,
             Data               VARCHAR(MAX)     NOT NULL,
-            RequestId          BIGINT           NOT NULL,
+            RequestId          UNIQUEIDENTIFIER NOT NULL,
             CONSTRAINT [fkOutboxResponse_OutboxRequest] FOREIGN KEY (RequestId) REFERENCES [{schema}].[OutboxRequest] (Id)
         );
         GRANT INSERT, SELECT ON [{schema}].[OutboxResponse] TO [{role}];
+        
+        CREATE TABLE [{schema}].[OutboxQueue]
+        (
+            ElementId       ROWVERSION,
+            SubscriberId    UNIQUEIDENTIFIER NOT NULL,
+            EntityModelId   UNIQUEIDENTIFIER NOT NULL,
+            EntityId        UNIQUEIDENTIFIER NOT NULL,
+            EventNumber     SMALLINT         NOT NULL,
+            CreatorId       UNIQUEIDENTIFIER NOT NULL,
+            Timestamp       DATETIME2        NOT NULL,
+            Data            VARCHAR(MAX),
+            ParentEntityId  UNIQUEIDENTIFIER NULL,
+            Guaranteed      BIT              NOT NULL,
+            CorrelationId   VARCHAR(36)      NOT NULL,
+            RequestId       UNIQUEIDENTIFIER NOT NULL,
+            CONSTRAINT [pkOutboxQueue] PRIMARY KEY (ElementId),
+            CONSTRAINT [fkOutboxQueue_OutboxRequest_EntityId_EventNumber_Type] FOREIGN KEY (RequestId) REFERENCES [{schema}].[OutboxRequest] (Id)
+        );
+        GRANT INSERT, SELECT, DELETE ON [{schema}].[OutboxQueue] TO [{role}];
+        CREATE INDEX ixEntityId ON [{schema}].[OutboxQueue] (EntityId);
+
+        CREATE TABLE [{schema}].[OutboxDeadLetterQueue]
+        (
+            EntityId     UNIQUEIDENTIFIER NOT NULL,
+            EventNumber  SMALLINT         NOT NULL,
+            SubscriberId UNIQUEIDENTIFIER NOT NULL,
+            Cause        VARCHAR(MAX),
+            RequestId    UNIQUEIDENTIFIER NOT NULL,
+            CONSTRAINT [pkOutboxDeadLetterQueue] PRIMARY KEY (EntityId)
+        );
+        GRANT INSERT, SELECT ON [{schema}].[OutboxDeadLetterQueue] TO [{role}];
+
+        CREATE TABLE [{schema}].[OutboxQueueProcessing]
+        (
+            ElementId        BINARY(8)        NOT NULL,
+            SubscriberId     UNIQUEIDENTIFIER NOT NULL,
+            EntityModelId    UNIQUEIDENTIFIER NOT NULL,
+            EntityId         UNIQUEIDENTIFIER NOT NULL,
+            EventNumber      SMALLINT         NOT NULL,
+            CreatorId        UNIQUEIDENTIFIER NOT NULL,
+            Data             VARCHAR(MAX)     NOT NULL,
+            EnqueuedAt       DATETIME2        NOT NULL,
+            Attempt          INT              NOT NULL,
+            NextAttemptAt    DATETIME2        NOT NULL,
+            Guaranteed       BIT              NOT NULL,
+            CorrelationId    VARCHAR(36)      NOT NULL,
+            RequestId        UNIQUEIDENTIFIER NOT NULL,
+            CONSTRAINT [pkOutboxQueueProcessing] PRIMARY KEY (EntityId, SubscriberId)
+        )
+        GRANT INSERT, SELECT, UPDATE, DELETE ON [{schema}].[OutboxQueueProcessing] TO [{role}];
+        CREATE INDEX ixNextAttemptAt ON [{schema}].[OutboxQueueProcessing] (NextAttemptAt ASC);
         """.replace("{schema}", schema)
             .replace("{checksum}", String.valueOf(checksum(coreSql)))
             .replace("{role}", role);
@@ -163,64 +214,6 @@ public class CreateSchema {
                   .replace("{columnDefinitions}", secondaryId.columns().stream().map(column -> column.name() + " " + column.type() + " NOT NULL").collect(joining(",")))
                   .replace("{indexName}", names.indexName(secondaryId.columns()))
                   .replace("{columnList}", String.join(",", secondaryId.columns().stream().map(SchemaNames.Column::name).toList()))
-          ;
-        }
-        for (Subscriber subscriber : entityModel.subscribers().stream().toList()) {
-          sql +=
-              """
-              CREATE TABLE {queueTable}
-              (
-                  ElementId       ROWVERSION,
-                  EntityId        UNIQUEIDENTIFIER NOT NULL,
-                  EventNumber     SMALLINT         NOT NULL,
-                  CreatorId       UNIQUEIDENTIFIER NOT NULL,
-                  Timestamp       DATETIME2        NOT NULL,
-                  Data            VARCHAR(MAX),
-                  ParentEntityId  UNIQUEIDENTIFIER NULL,
-                  Guaranteed      BIT              NOT NULL,
-                  CorrelationId   VARCHAR(36)      NOT NULL,
-                  OutboxElementId BIGINT           NOT NULL,
-                  CONSTRAINT [{queueTablePK}] PRIMARY KEY (ElementId),
-                  CONSTRAINT [{queueTableToOutboxTableFK}] FOREIGN KEY (OutboxElementId) REFERENCES [{schema}].[OutboxRequest] (Id)
-              );
-              GRANT INSERT, SELECT, DELETE ON {queueTable} TO [{role}];
-              CREATE INDEX ixEntityId ON {queueTable} (EntityId);
-
-              CREATE TABLE {dlqTable}
-              (
-                  EntityId    UNIQUEIDENTIFIER NOT NULL,
-                  EventNumber SMALLINT         NOT NULL,
-                  Cause       VARCHAR(MAX),
-                  CONSTRAINT [{dlqTablePK}] PRIMARY KEY (EntityId)
-              );
-              GRANT INSERT, SELECT ON {dlqTable} TO [{role}];
-
-              CREATE TABLE {processingTable}
-              (
-                  ElementId        BINARY(8)        NOT NULL,
-                  EntityId         UNIQUEIDENTIFIER NOT NULL,
-                  EventNumber      SMALLINT         NOT NULL,
-                  CreatorId        UNIQUEIDENTIFIER NOT NULL,
-                  Data             VARCHAR(MAX)     NOT NULL,
-                  EnqueuedAt       DATETIME2        NOT NULL,
-                  Attempt          INT              NOT NULL,
-                  NextAttemptAt    DATETIME2        NOT NULL,
-                  Guaranteed       BIT              NOT NULL,
-                  CorrelationId    VARCHAR(36)      NOT NULL,
-                  OutboxElementId  BIGINT           NOT NULL,
-                  CONSTRAINT [{processingTablePK}] PRIMARY KEY (EntityId)
-              )
-              GRANT INSERT, SELECT, UPDATE, DELETE ON {processingTable} TO [{role}];
-              CREATE INDEX ixNextAttemptAt ON {processingTable} (NextAttemptAt ASC);
-              """.replace("{schema}", schema)
-                  .replace("{queueTable}", q.queueTable(subscriber))
-                  .replace("{queueTablePK}", names.queueTablePrimaryKeyName(subscriber))
-                  .replace("{dlqTable}", q.dlqTable(subscriber))
-                  .replace("{dlqTablePK}", names.dlqTablePrimaryKeyName(subscriber))
-                  .replace("{processingTable}", q.processingTable(subscriber))
-                  .replace("{processingTablePK}", names.notificationQueueProcessingTablePrimaryKeyName(subscriber))
-                  .replace("{queueTableToOutboxTableFK}", String.format("fk%s_OutboxRequest_EntityId_EventNumber_Type", names.queueTableName(subscriber)))
-                  .replace("{role}", role)
           ;
         }
         return sql;

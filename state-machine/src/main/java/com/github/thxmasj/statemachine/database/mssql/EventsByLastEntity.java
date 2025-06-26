@@ -66,10 +66,10 @@ public class EventsByLastEntity {
             SELECT @entityId
 
             SELECT EventNumber, Type, Timestamp, MessageId, ClientId, Data
-            FROM #EventTable# WITH (INDEX(#EventTablePK#))
+            FROM [{schema}].Event WITH (INDEX(pkEvent))
             WHERE EntityId=@entityId
             ORDER BY EventNumber;
-            """
+            """.replace("{schema}", schemaName)
                 .replaceAll(
                     "#IdTableColumns#",
                     idModel.columns().stream().map(Column::name).collect(joining(","))
@@ -96,9 +96,7 @@ public class EventsByLastEntity {
                     .groupOrdering()
                     .stream()
                     .map(c -> c.column().name() + " " + (c.descending() ? "ASC" : "DESC"))
-                    .collect(joining(", ")))
-                .replaceAll("#EventTable#", names.qualifiedNames().eventTable())
-                .replaceAll("#EventTablePK#", names.eventTablePrimaryKeyName());
+                    .collect(joining(", ")));
         for (var idModel2 : entityModel.secondaryIds()) {
           sql = sql +
               """

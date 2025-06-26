@@ -4,6 +4,7 @@ import com.github.thxmasj.statemachine.database.ChangeRaced;
 import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.List;
+import java.util.UUID;
 
 public interface Listener {
 
@@ -83,15 +84,15 @@ public interface Listener {
 
     void processNextDeadlineFailed(Throwable t);
 
-    void forwardingAttempt(String subscriber, ZonedDateTime enqueuedAt, int attempt, EntityId entityId, int eventNumber, String correlationId);
+    void forwardingAttempt(UUID requestId, String subscriber, ZonedDateTime enqueuedAt, int attempt, EntityId entityId, int eventNumber, String correlationId);
 
-    void forwardingCompleted(String subscriber, ZonedDateTime enqueuedAt, int attempt, EntityId entityId, int eventNumber, String correlationId, String receipt, String reason);
+    void forwardingCompleted(UUID requestId, String subscriber, ZonedDateTime enqueuedAt, int attempt, EntityId entityId, int eventNumber, String correlationId, String receipt, String reason);
 
-    void forwardingBackedOff(String subscriber, ZonedDateTime enqueuedAt, int attempt, EntityId entityId, int eventNumber, String correlationId, String reason, ZonedDateTime nextAttemptAt, Duration backoff);
+    void forwardingBackedOff(UUID requestId, String subscriber, ZonedDateTime enqueuedAt, int attempt, EntityId entityId, int eventNumber, String correlationId, String reason, ZonedDateTime nextAttemptAt, Duration backoff);
 
-    void forwardingDead(EntityId entityId, String subscriber, ZonedDateTime enqueuedAt, int attempt, int eventNumber, String correlationId, String reason);
+    void forwardingDead(UUID requestId, EntityId entityId, String subscriber, ZonedDateTime enqueuedAt, int attempt, int eventNumber, String correlationId, String reason);
 
-    void forwardingDeadByExhaustion(EntityId entityId, String subscriber, ZonedDateTime enqueuedAt, int attempt, int eventNumber, String correlationId, String reason);
+    void forwardingDeadByExhaustion(UUID requestId, EntityId entityId, String subscriber, ZonedDateTime enqueuedAt, int attempt, int eventNumber, String correlationId, String reason);
 
     void forwardingRaced(String subscriber);
 

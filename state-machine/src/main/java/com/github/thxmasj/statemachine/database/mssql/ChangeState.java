@@ -3,8 +3,6 @@ package com.github.thxmasj.statemachine.database.mssql;
 import static java.util.stream.Collectors.joining;
 import static java.util.stream.IntStream.range;
 
-import com.github.thxmasj.statemachine.database.ChangeRaced;
-import com.github.thxmasj.statemachine.database.DuplicateMessage;
 import com.github.thxmasj.statemachine.EntityId;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.Event;
@@ -14,18 +12,20 @@ import com.github.thxmasj.statemachine.Notification.OutgoingRequest;
 import com.github.thxmasj.statemachine.Notification.OutgoingResponse;
 import com.github.thxmasj.statemachine.SecondaryId;
 import com.github.thxmasj.statemachine.TraversableState;
+import com.github.thxmasj.statemachine.database.ChangeRaced;
 import com.github.thxmasj.statemachine.database.Client;
 import com.github.thxmasj.statemachine.database.Client.DataIntegrityViolation;
 import com.github.thxmasj.statemachine.database.Client.PrimaryKeyConstraintViolation;
 import com.github.thxmasj.statemachine.database.Client.Query.Builder;
 import com.github.thxmasj.statemachine.database.Client.UniqueIndexConstraintViolation;
+import com.github.thxmasj.statemachine.database.DuplicateMessage;
 import java.time.Clock;
 import java.time.ZonedDateTime;
 import java.util.List;
+import java.util.UUID;
 import java.util.stream.IntStream;
 import reactor.core.publisher.Flux;
 
-@SuppressWarnings({"TrailingWhitespacesInTextBlock", "StringConcatenationInLoop"})
 public class ChangeState {
 
   private final List<EntityModel> entityModels;
@@ -77,7 +77,8 @@ public class ChangeState {
       if (orq.parentEntity() != null) {
         spec.bind("outgoingRequestParentEntityId"+i, orq.parentEntity().value());
       }
-      spec.bind("outgoingRequestSubscriberId" + i, orq.subscriber().id())
+      spec.bind("outgoingRequestId" + i, orq.id())
+          .bind("outgoingRequestSubscriberId" + i, orq.subscriber().id())
           .bind("outgoingRequestEventNumber"+i, orq.eventNumber())
           .bind("outgoingRequestCreatorId"+i, orq.creatorId())
           .bind("correlationId", correlationId)
@@ -119,16 +120,16 @@ public class ChangeState {
       String correlationId
   ) {}
 
-  public record OutboxElement(int changeIndex, int notificationIndex, long outboxElementId, byte[] elementId) {}
+  public record OutboxElement(int changeIndex, int notificationIndex, UUID requestId, byte[] elementId) {}
 
   public Flux<OutboxElement> execute(List<Change> changes) {
     String sql =
         """
         SET XACT_ABORT ON;
         BEGIN TRANSACTION;
-        DECLARE @OutboxElement         TABLE (ChangeIndex TINYINT, NotificationIndex TINYINT, Id BIGINT);
-        DECLARE @QueueElement          TABLE (ChangeIndex TINYINT, NotificationIndex TINYINT, OutboxElementId BIGINT, ElementId BINARY(8), Guaranteed BIT);
-        DECLARE @QueueElementToProcess TABLE (ChangeIndex TINYINT, NotificationIndex TINYINT, OutboxElementId BIGINT, ElementId BINARY(8));
+        DECLARE @OutboxElement         TABLE (ChangeIndex TINYINT, NotificationIndex TINYINT, RequestId UNIQUEIDENTIFIER);
+        DECLARE @QueueElement          TABLE (ChangeIndex TINYINT, NotificationIndex TINYINT, RequestId UNIQUEIDENTIFIER, ElementId BINARY(8), Guaranteed BIT);
+        DECLARE @QueueElementToProcess TABLE (ChangeIndex TINYINT, NotificationIndex TINYINT, RequestId UNIQUEIDENTIFIER, ElementId BINARY(8));
         """ + IntStream.range(0, changes.size()).mapToObj(i -> insertSql(
             i,
             "p" + i + "_",
@@ -142,7 +143,7 @@ public class ChangeState {
             changes.get(i).deadline != null
         )).collect(joining("\n")) +
         """
-        SELECT ChangeIndex, NotificationIndex, OutboxElementId, ElementId FROM @QueueElementToProcess ORDER BY ChangeIndex ASC, NotificationIndex ASC
+        SELECT ChangeIndex, NotificationIndex, RequestId, ElementId FROM @QueueElementToProcess ORDER BY ChangeIndex ASC, NotificationIndex ASC
         COMMIT TRANSACTION;
         """;
     Builder spec = databaseClient.sql(sql).name("ChangeState");
@@ -151,11 +152,11 @@ public class ChangeState {
     return spec.map(row -> new OutboxElement(
             row.get("ChangeIndex", Integer.class),
             row.get("NotificationIndex", Integer.class),
-            row.get("OutboxElementId", Long.class),
+            row.get("RequestId", UUID.class),
             row.get("ElementId", byte[].class)
         ))
         .all()
-        .onErrorMap(t -> isDuplicateMessage(t, changes), DuplicateMessage::new)
+        .onErrorMap(this::isDuplicateMessage, DuplicateMessage::new)
         .onErrorMap(DataIntegrityViolation.class, t -> {
           Change change = isRace(t, changes);
           if (change != null)
@@ -204,14 +205,14 @@ public class ChangeState {
 
     sql +=
         """
-        DELETE {timeoutTable} FROM {timeoutTable} WITH (INDEX([ixEntityId]))
+        DELETE [{schema}].[Timeout] FROM [{schema}].[Timeout] WITH (INDEX([ixEntityId]))
         WHERE EntityId=@entityId{changeIndex} AND EventNumber=:eventNumber0 - 1;
         """.replace("{changeIndex}", String.valueOf(changeIndex))
-            .replace("{timeoutTable}", q.timeoutTable());
+            .replace("{schema}", schema);
 
     sql +=
         """
-        INSERT INTO {eventTable} (
+        INSERT INTO [{schema}].[Event] (
           EntityId,
           EventNumber,
           Type,
@@ -220,7 +221,7 @@ public class ChangeState {
           ClientId,
           Data
         ) VALUES
-        """.replace("{eventTable}", q.eventTable());
+        """.replace("{schema}", schema);
     sql += range(0, numberOfEvents).mapToObj(i ->
         """
         (@entityId{changeIndex},:eventNumber{i},:type{i},:timestamp{i},:messageId{i},:clientId{i},:data{i})
@@ -229,7 +230,7 @@ public class ChangeState {
 
     sql += range(0, incomingRequests.size()).mapToObj(i ->
         """
-        INSERT INTO {inboxTable} (
+        INSERT INTO [{schema}].[InboxRequest] (
           Id,
           EntityId,
           EventNumber,
@@ -250,7 +251,7 @@ public class ChangeState {
         );
         """.replace("{changeIndex}", String.valueOf(changeIndex))
             .replace("{i}", String.valueOf(i))
-            .replace("{inboxTable}", q.inboxRequestTable())
+            .replace("{schema}", schema)
     ).collect(joining());
 
     sql += range(0, incomingResponses.size()).mapToObj(i ->
@@ -258,18 +259,19 @@ public class ChangeState {
            be done prior to insertion of new outgoing requests (see below), otherwise, in case of rollback, the new
            outgoing request will be deleted as well */
         """
-        DELETE {queueTable} FROM {queueTable} WITH (INDEX([ixEntityId]))
-        WHERE EntityId=@entityId{changeIndex} AND OutboxElementId=:incomingResponseRequestId{i}
+        DELETE [{schema}].[OutboxQueue] FROM [{schema}].[OutboxQueue] WITH (INDEX([ixEntityId]))
+        WHERE EntityId=@entityId{changeIndex} AND RequestId=:incomingResponseRequestId{i}
         IF @@ROWCOUNT != 1
           THROW 50003, 'Failed to delete outgoing request from queue', 1;
         """.replace("{changeIndex}", String.valueOf(changeIndex))
             .replace("{i}", String.valueOf(i))
-            .replace("{queueTable}", q.queueTable(incomingResponses.get(i).subscriber()))
+            .replace("{schema}", schema)
     ).collect(joining());
 
     sql += range(0, outgoingRequests.size()).mapToObj(i ->
         """
-        INSERT INTO {outboxRequestTable} (
+        INSERT INTO [{schema}].[OutboxRequest] (
+          Id,
           SubscriberId,
           EntityId,
           EventNumber,
@@ -278,6 +280,7 @@ public class ChangeState {
         )
         OUTPUT {changeIndex}, {i}, inserted.Id INTO @OutboxElement
         VALUES (
+          :outgoingRequestId{i},
           :outgoingRequestSubscriberId{i},
           @entityId{changeIndex},
           :outgoingRequestEventNumber{i},
@@ -286,12 +289,14 @@ public class ChangeState {
         );
         """.replace("{changeIndex}", String.valueOf(changeIndex))
             .replace("{i}", String.valueOf(i))
-            .replace("{outboxRequestTable}", q.outboxRequestTable(outgoingRequests.get(i).subscriber()))
+            .replace("{schema}", schema)
     ).collect(joining());
 
     sql += range(0, outgoingRequests.size()).mapToObj(i ->
         """
-        INSERT INTO {queueTable} (
+        INSERT INTO [{schema}].[OutboxQueue] (
+          SubscriberId,
+          EntityModelId,
           EntityId,
           {parentEntityColumn}
           EventNumber,
@@ -299,10 +304,12 @@ public class ChangeState {
           Guaranteed,
           CorrelationId,
           Timestamp,
-          OutboxElementId
+          RequestId
         )
-        OUTPUT {changeIndex}, {i}, inserted.OutboxElementId, inserted.ElementId, inserted.Guaranteed INTO @QueueElement
+        OUTPUT {changeIndex}, {i}, inserted.RequestId, inserted.ElementId, inserted.Guaranteed INTO @QueueElement
         VALUES (
+          :outgoingRequestSubscriberId{i},
+          :entityModelId,
           @entityId{changeIndex},
           {parentEntityValue}
           :outgoingRequestEventNumber{i},
@@ -310,19 +317,19 @@ public class ChangeState {
           :outgoingRequestGuaranteedDelivery{i},
           :correlationId,
           :timestamp0,
-          (SELECT Id FROM @OutboxElement WHERE ChangeIndex={changeIndex} AND NotificationIndex={i})
+          (SELECT RequestId FROM @OutboxElement WHERE ChangeIndex={changeIndex} AND NotificationIndex={i})
         );
         """.replace("{changeIndex}", String.valueOf(changeIndex))
             .replace("{i}", String.valueOf(i))
-            .replace("{queueTable}", q.queueTable(outgoingRequests.get(i).subscriber()))
+            .replace("{schema}", schema)
             .replace("{parentEntityColumn}", outgoingRequests.get(i).parentEntity() != null ? "ParentEntityId," : "")
             .replace("{parentEntityValue}", outgoingRequests.get(i).parentEntity() != null ? ":outgoingRequestParentEntityId" + i + "," : "")
     ).collect(joining());
 
     sql +=
         """
-        INSERT INTO @QueueElementToProcess (ChangeIndex, NotificationIndex, OutboxElementId, ElementId)
-        SELECT ChangeIndex, NotificationIndex, OutboxElementId, ElementId FROM @QueueElement
+        INSERT INTO @QueueElementToProcess (ChangeIndex, NotificationIndex, RequestId, ElementId)
+        SELECT ChangeIndex, NotificationIndex, RequestId, ElementId FROM @QueueElement
         WHERE Guaranteed = 0;
         """;
 
@@ -330,8 +337,10 @@ public class ChangeState {
         """
         SET XACT_ABORT OFF
         BEGIN TRY
-        INSERT INTO {processingTable} (
+        INSERT INTO [{schema}].[OutboxQueueProcessing] (
           ElementId,
+          SubscriberId,
+          EntityModelId,
           EntityId,
           EventNumber,
           CreatorId,
@@ -341,11 +350,13 @@ public class ChangeState {
           EnqueuedAt,
           Attempt,
           NextAttemptAt,
-          OutboxElementId
+          RequestId
         )
-        OUTPUT {changeIndex}, {i}, inserted.OutboxElementId, inserted.ElementId INTO @QueueElementToProcess
+        OUTPUT {changeIndex}, {i}, inserted.RequestId, inserted.ElementId INTO @QueueElementToProcess
         SELECT
           (SELECT ElementId FROM @QueueElement WHERE ChangeIndex = {changeIndex} AND NotificationIndex = {i}),
+          :outgoingRequestSubscriberId{i},
+          :entityModelId,
           @entityId{changeIndex},
           :outgoingRequestEventNumber{i},
           :outgoingRequestCreatorId{i},
@@ -355,32 +366,34 @@ public class ChangeState {
           :timestamp0,
           1,
           (DATEADD(millisecond, 10*1000, :timestamp0)), -- TODO: (DATEADD(millisecond, :minimumBackoff*1000, :now))
-          (SELECT Id FROM @OutboxElement WHERE ChangeIndex={changeIndex} AND NotificationIndex={i})
+          (SELECT RequestId FROM @OutboxElement WHERE ChangeIndex={changeIndex} AND NotificationIndex={i})
         WHERE @entityId{changeIndex} NOT IN (
           SELECT EntityId
-           FROM {dlqTable}
-             WITH (INDEX([{dlqTablePK}]))
-          )
-          AND @entityId{changeIndex} NOT IN (
-            SELECT EntityId
-            FROM {processingTable}
-            WITH (INDEX([{processingTablePK}]))
-          )
-          """.replace("{changeIndex}", String.valueOf(changeIndex))
+          FROM [{schema}].[OutboxDeadLetterQueue]
+          WITH (INDEX([pkOutboxDeadLetterQueue]))
+          WHERE SubscriberId=:outgoingRequestSubscriberId{i}
+        )
+        AND @entityId{changeIndex} NOT IN (
+          SELECT EntityId
+          FROM [{schema}].[OutboxQueueProcessing]
+          WITH (INDEX([pkOutboxQueueProcessing]))
+          WHERE SubscriberId=:outgoingRequestSubscriberId{i}
+        )
+        """.replace("{changeIndex}", String.valueOf(changeIndex))
             .replace("{i}", String.valueOf(i))
-            .replace("{processingTable}", q.processingTable(outgoingRequests.get(i).subscriber()))
-            .replace("{processingTablePK}", names.notificationQueueProcessingTablePrimaryKeyName(outgoingRequests.get(i).subscriber()))
-            .replace("{dlqTable}", q.dlqTable(outgoingRequests.get(i).subscriber()))
-            .replace("{dlqTablePK}", names.dlqTablePrimaryKeyName(outgoingRequests.get(i).subscriber())) +
+            .replace("{schema}", schema)
+            +
             (
                 childEntity(entityModel) == null ? "" :
                     """
                     AND @entityId{changeIndex} NOT IN (
                       SELECT ParentEntityId
-                      FROM {childQueueTable}
-                      WHERE ParentEntityId IS NOT NULL)
+                      FROM [{schema}].[OutboxQueue]
+                      WHERE ParentEntityId IS NOT NULL
+                      AND SubscriberId=:outgoingRequestSubscriberId{i})
                     """.replace("{changeIndex}", String.valueOf(changeIndex))
-                        .replace("{childQueueTable}", new SchemaNames(schema, childEntity(entityModel)).qualifiedNames().queueTable(outgoingRequests.get(i).subscriber()))
+                        .replace("{i}", String.valueOf(i))
+                        .replace("{schema}", schema)
             ) +
         """
         END TRY
@@ -392,7 +405,7 @@ public class ChangeState {
 
     sql += range(0, incomingResponses.size()).mapToObj(i ->
         """
-        INSERT INTO {outboxResponseTable} (
+        INSERT INTO [{schema}].[OutboxResponse] (
           EntityId,
           EventNumber,
           Timestamp,
@@ -407,12 +420,12 @@ public class ChangeState {
         );
         """.replace("{changeIndex}", String.valueOf(changeIndex))
             .replace("{i}", String.valueOf(i))
-            .replace("{outboxResponseTable}", q.outboxResponseTable(incomingResponses.get(i).subscriber()))
+            .replace("{schema}", schema)
     ).collect(joining());
 
     sql += range(0, outgoingResponses.size()).mapToObj(i ->
         """
-        INSERT INTO {inboxResponseTable} (
+        INSERT INTO [{schema}].[InboxResponse] (
           EntityId,
           EventNumber,
           Timestamp,
@@ -427,24 +440,23 @@ public class ChangeState {
         );
         """.replace("{changeIndex}", String.valueOf(changeIndex))
             .replace("{i}", String.valueOf(i))
-            .replace("{inboxResponseTable}", q.inboxResponseTable())
+            .replace("{schema}", schema)
     ).collect(joining());
 
     sql += range(0, incomingResponses.size()).filter(i -> incomingResponses.get(i).guaranteed()).mapToObj(i ->
         """
-        DELETE {processingTable} FROM {processingTable} WITH (INDEX({processingTablePK}))
-        WHERE EntityId=@entityId{changeIndex} AND OutboxElementId=:incomingResponseRequestId{i}
+        DELETE [{schema}].[OutboxQueueProcessing] FROM [{schema}].[OutboxQueueProcessing] WITH (INDEX(pkOutboxQueueProcessing))
+        WHERE EntityId=@entityId{changeIndex} AND RequestId=:incomingResponseRequestId{i}
         IF @@ROWCOUNT != 1
-          THROW 50004, 'Failed to delete queue processing element', 1;
+          THROW 50004, 'Failed to delete queue processing element (change index {changeIndex}, incomingResponseRequestId{i})', 1;
         """.replace("{changeIndex}", String.valueOf(changeIndex))
             .replace("{i}", String.valueOf(i))
-            .replace("{processingTable}", q.processingTable(incomingResponses.get(i).subscriber()))
-            .replace("{processingTablePK}", names.notificationQueueProcessingTablePrimaryKeyName(incomingResponses.get(i).subscriber()))
+            .replace("{schema}", schema)
     ).collect(joining());
 
     if (withDeadline) sql +=
         """
-        INSERT INTO {timeoutTable} (
+        INSERT INTO [{schema}].[Timeout] (
           EntityId,
           EntityModelId,
           EventNumber,
@@ -460,15 +472,15 @@ public class ChangeState {
           0
         );
         """.replace("{changeIndex}", String.valueOf(changeIndex))
-            .replace("{timeoutTable}", q.timeoutTable());
+            .replace("{schema}", schema);
     // Remove comments
     sql = sql.lines().map(line -> line.replaceAll("--.*", "")).collect(joining("\n")) + "\n";
     return sql.replaceAll(":([a-zA-Z0-9_]+)", ":" + parameterPrefix + "$1");
   }
 
-  private boolean isDuplicateMessage(Throwable e, List<Change> changes) {
+  private boolean isDuplicateMessage(Throwable e) {
     if (e instanceof UniqueIndexConstraintViolation f) {
-      return changes.stream().anyMatch(change -> new SchemaNames(schema, change.entityModel()).inboxRequestTableName().equals(f.tableName()) && f.indexName().equals("ixMessageId_ClientId"));
+      return "InboxRequest".equals(f.tableName()) && f.indexName().equals("ixMessageId_ClientId");
     }
     return false;
   }
@@ -484,7 +496,7 @@ public class ChangeState {
     if (e instanceof PrimaryKeyConstraintViolation pkViolation) {
       return changes.stream()
           .filter(change ->
-              pkViolation.tableName().equals(new SchemaNames(schema, change.entityModel()).eventTableName()) ||
+              pkViolation.tableName().equals("Event") ||
                   change.entityModel.secondaryIds().stream().map(id -> new SchemaNames(schema, change.entityModel).idTableName(id))
                       .anyMatch(idTableName -> pkViolation.tableName().equals(idTableName))
           )

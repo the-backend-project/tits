@@ -1,17 +1,17 @@
 package com.github.thxmasj.statemachine.database.mssql;
 
+import com.github.thxmasj.statemachine.DelaySpecification;
+import com.github.thxmasj.statemachine.EntityModel;
+import com.github.thxmasj.statemachine.OutboxElement;
+import com.github.thxmasj.statemachine.OutboxWorker.Simulation;
+import com.github.thxmasj.statemachine.Subscriber;
+import com.github.thxmasj.statemachine.database.Client;
+import com.github.thxmasj.statemachine.database.Client.PrimaryKeyConstraintViolation;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import com.github.thxmasj.statemachine.DelaySpecification;
-import com.github.thxmasj.statemachine.EntityModel;
-import com.github.thxmasj.statemachine.OutboxWorker.Simulation;
-import com.github.thxmasj.statemachine.OutboxElement;
-import com.github.thxmasj.statemachine.Subscriber;
-import com.github.thxmasj.statemachine.database.Client;
-import com.github.thxmasj.statemachine.database.Client.PrimaryKeyConstraintViolation;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -20,27 +20,24 @@ public class ProcessNew {
   private final List<EntityModel> entityModels;
   private final Client databaseClient;
   private final Map<EntityModel, Map<Subscriber, String>> sqls;
-  private final String schemaName;
   private final Clock clock;
   private final DelaySpecification backoff;
 
   public ProcessNew(Client databaseClient, List<EntityModel> entityModels, String schemaName, Clock clock, DelaySpecification backoff) {
     this.entityModels = entityModels;
     this.databaseClient = databaseClient;
-    this.schemaName = schemaName;
     this.clock = clock;
     this.backoff = backoff;
     this.sqls = new HashMap<>();
     for (var entityModel : entityModels) {
       sqls.put(entityModel, new HashMap<>());
-      var names = new SchemaNames(schemaName, entityModel);
-      var q = names.qualifiedNames();
       for (var subscriber : entityModel.subscribers().stream().toList()) {
         var sql =
             """
               DECLARE @selected TABLE (
                 ElementId BINARY(8),
-                OutboxElementId BIGINT,
+                RequestId UNIQUEIDENTIFIER,
+                EntityModelId UNIQUEIDENTIFIER,
                 EntityId UNIQUEIDENTIFIER,
                 EventNumber SMALLINT,
                 CreatorId UNIQUEIDENTIFIER,
@@ -52,9 +49,11 @@ public class ProcessNew {
                 NextAttemptAt DATETIME2
               )
             
-              INSERT TOP (1) INTO {processingTable} (
+              INSERT TOP (1) INTO [{schema}].[OutboxQueueProcessing] (
                 ElementId,
-                OutboxElementId,
+                SubscriberId,
+                EntityModelId,
+                RequestId,
                 EntityId,
                 EventNumber,
                 CreatorId,
@@ -67,7 +66,8 @@ public class ProcessNew {
               )
               OUTPUT
                 inserted.ElementId,
-                inserted.OutboxElementId,
+                inserted.RequestId,
+                inserted.EntityModelId,
                 inserted.EntityId,
                 inserted.EventNumber,
                 inserted.CreatorId,
@@ -80,7 +80,9 @@ public class ProcessNew {
               INTO @selected
               SELECT
                 q.ElementId,
-                q.OutboxElementId,
+                q.SubscriberId,
+                q.EntityModelId,
+                q.RequestId,
                 q.EntityId,
                 q.EventNumber,
                 q.CreatorId,
@@ -90,18 +92,20 @@ public class ProcessNew {
                 q.Timestamp,
                 1,
                 (DATEADD(millisecond, :minimumBackoff*1000, :now))
-              FROM {queueTable} q WITH (INDEX([ixEntityId]))
-                LEFT JOIN {outboxTable} d WITH (INDEX([{outboxTablePK}]))
-                ON q.OutboxElementId=d.Id
+              FROM [{schema}].[OutboxQueue] q WITH (INDEX([ixEntityId]))
+                LEFT JOIN [{schema}].[OutboxRequest] d WITH (INDEX([pkOutboxRequest]))
+                ON q.RequestId=d.Id
               WHERE q.Guaranteed=1
-                AND q.EntityId NOT IN (SELECT EntityId FROM {dlqTable} WITH (INDEX([{dlqTablePK}])))
-                AND q.EntityId NOT IN (SELECT EntityId FROM {processingTable} WITH (INDEX([{processingTablePK}])))
+                AND q.SubscriberId='{subscriberId}'
+                AND q.EntityId NOT IN (SELECT EntityId FROM [{schema}].[OutboxDeadLetterQueue] WITH (INDEX([pkOutboxDeadLetterQueue])))
+                AND q.EntityId NOT IN (SELECT EntityId FROM [{schema}].[OutboxQueueProcessing] WITH (INDEX([pkOutboxQueueProcessing])))
                 {parentEntityFilter}
             ORDER BY ElementId;
             
             SELECT
               ElementId,
-              OutboxElementId,
+              RequestId,
+              EntityModelId,
               EntityId,
               EventNumber,
               CreatorId,
@@ -112,18 +116,10 @@ public class ProcessNew {
               Attempt,
               NextAttemptAt
             FROM @selected
-            """.replace("{processingTable}", q.processingTable(subscriber))
-                .replace("{processingTablePK}", names.notificationQueueProcessingTablePrimaryKeyName(subscriber))
-                .replace("{dlqTable}", q.dlqTable(subscriber))
-                .replace("{dlqTablePK}", names.dlqTablePrimaryKeyName(subscriber))
-                .replace("{queueTable}", q.queueTable(subscriber))
-                .replace("{outboxTable}", q.outboxRequestTable(subscriber))
-                .replace("{outboxTablePK}", names.outboxRequestTablePrimaryKeyName(subscriber))
+            """.replace("{schema}", schemaName)
+                .replace("{subscriberId}", subscriber.id().toString())
                 .replace("{parentEntityFilter}", childEntity(entityModel) == null ? "" :
-                    String.format(
-                        "AND q.EntityId NOT IN (SELECT ParentEntityId FROM %s WHERE ParentEntityId IS NOT NULL)",
-                        new SchemaNames(schemaName, childEntity(entityModel)).qualifiedNames().queueTable(subscriber)
-                    )
+                        "AND q.EntityId NOT IN (SELECT ParentEntityId FROM [{schema}].[OutboxQueue] WHERE ParentEntityId IS NOT NULL)".replace("{schema}", schemaName)
                 );
         sqls.get(entityModel).put(subscriber, sql);
       }
@@ -144,9 +140,9 @@ public class ProcessNew {
         .name("ProcessNew")
         .bind("now", now)
         .bind("minimumBackoff", backoff.minimum().toSeconds())
-        .map(Mappers.queueElementMapper(entityModel, clock, subscriber, now))
+        .map(Mappers.queueElementMapper(entityModels, clock, subscriber, now))
         .all()
-        .switchIfEmpty(raceSimulationIfTriggered(entityModel, subscriber));
+        .switchIfEmpty(raceSimulationIfTriggered(entityModel));
   }
 
   private EntityModel childEntity(EntityModel thisModel) {
@@ -156,10 +152,10 @@ public class ProcessNew {
         .orElse(null);
   }
 
-  private Mono<OutboxElement> raceSimulationIfTriggered(EntityModel model, Subscriber subscriber) {
+  private Mono<OutboxElement> raceSimulationIfTriggered(EntityModel model) {
     return Mono.deferContextual(ctx -> ctx
         .getOrEmpty(Simulation.Race)
-        .map(_ -> Mono.<OutboxElement>error(new PrimaryKeyConstraintViolation("ProcessNew", model, new SchemaNames(schemaName, model).processingTableName(subscriber))))
+        .map(_ -> Mono.<OutboxElement>error(new PrimaryKeyConstraintViolation("ProcessNew", model, "OutboxQueueProcessing")))
         .orElse(Mono.empty())
     );
   }

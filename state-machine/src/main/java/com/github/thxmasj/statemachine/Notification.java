@@ -25,12 +25,12 @@ public abstract sealed class Notification permits
 
     private final Subscriber subscriber;
     private final boolean guaranteed;
-    private final long requestId;
+    private final UUID requestId;
 
     public IncomingResponse(
         int eventNumber,
         String message,
-        long requestId,
+        UUID requestId,
         Subscriber subscriber,
         boolean guaranteed
     ) {
@@ -48,7 +48,7 @@ public abstract sealed class Notification permits
       return guaranteed;
     }
 
-    public long requestId() {
+    public UUID requestId() {
       return requestId;
     }
 
@@ -56,6 +56,7 @@ public abstract sealed class Notification permits
 
   public static final class OutgoingRequest extends Notification {
 
+    private final UUID id;
     private final Subscriber subscriber;
     private final UUID creatorId;
     private final boolean guaranteed;
@@ -64,6 +65,7 @@ public abstract sealed class Notification permits
     private final Duration retryInterval;
 
     public OutgoingRequest(
+        UUID id,
         int eventNumber,
         String message,
         Subscriber subscriber,
@@ -74,12 +76,17 @@ public abstract sealed class Notification permits
         EntityId parentEntity
     ) {
       super(eventNumber, message);
+      this.id = id;
       this.subscriber = subscriber;
       this.creatorId = creatorId;
       this.guaranteed = guaranteed;
       this.maxRetryAttempts = maxRetryAttempts;
       this.retryInterval = retryInterval;
       this.parentEntity = parentEntity;
+    }
+
+    public UUID id() {
+      return id;
     }
 
     public Subscriber subscriber() {

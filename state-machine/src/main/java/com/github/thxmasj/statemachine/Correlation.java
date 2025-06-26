@@ -35,6 +35,10 @@ public class Correlation {
     return context.get(REQUEST_ID);
   }
 
+  public static boolean hasRequestId(ContextView context) {
+    return context.hasKey(REQUEST_ID);
+  }
+
   public static Sinks.One<String> responseSink(ContextView context) {
     return context.get(RESPONSE_SINK);
   }
