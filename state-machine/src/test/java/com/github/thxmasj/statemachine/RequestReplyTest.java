@@ -10,7 +10,7 @@ import static com.github.thxmasj.statemachine.RequestReplyTest.Events.SwitchOn;
 import static com.github.thxmasj.statemachine.RequestReplyTest.Events.Toggle;
 import static com.github.thxmasj.statemachine.RequestReplyTest.States.Off;
 import static com.github.thxmasj.statemachine.RequestReplyTest.States.On;
-import static com.github.thxmasj.statemachine.RequestReplyTest.Subscribers.DeviceListener;
+import static com.github.thxmasj.statemachine.RequestReplyTest.Queues.DeviceListener;
 import static com.github.thxmasj.statemachine.StateMachine.ProcessResult.Status.Accepted;
 import static com.github.thxmasj.statemachine.TransitionModel.Builder.from;
 import static com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Method.POST;
@@ -73,7 +73,7 @@ public class RequestReplyTest {
 
   }
 
-  enum Subscribers implements Subscriber {
+  enum Queues implements OutboxQueue {
     DeviceListener {
       @Override
       public UUID id() {
@@ -160,7 +160,7 @@ public class RequestReplyTest {
         Clock.systemUTC(),
         new Logger("RequestReplyTest"),
         false,
-        subscriber -> switch (subscriber) {
+        queue -> switch (queue) {
           case DeviceListener -> new NettyHttpClient(new NettyHttpClientBuilder().build());
           default -> null;
         }

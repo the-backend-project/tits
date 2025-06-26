@@ -3,7 +3,7 @@ package com.github.thxmasj.statemachine.database.mssql;
 import com.github.thxmasj.statemachine.DelaySpecification;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.OutboxElement;
-import com.github.thxmasj.statemachine.Subscriber;
+import com.github.thxmasj.statemachine.OutboxQueue;
 import com.github.thxmasj.statemachine.database.Client;
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -44,7 +44,7 @@ public class ProcessBackedOff {
         WITH rows AS (
           SELECT TOP (1) * FROM [{schema}].[OutboxQueueProcessing]
           WITH (INDEX([ixNextAttemptAt]))
-          WHERE NextAttemptAt < :now AND SubscriberId=:subscriberId
+          WHERE NextAttemptAt < :now AND QueueId=:queueId
           ORDER BY NextAttemptAt ASC
         )
         UPDATE rows SET
@@ -90,15 +90,15 @@ public class ProcessBackedOff {
         """.replace("{schema}", schemaName);
   }
 
-  public Flux<OutboxElement> execute(LocalDateTime now, Subscriber subscriber) {
+  public Flux<OutboxElement> execute(LocalDateTime now, OutboxQueue queue) {
     return databaseClient.sql(sql)
         .name("ProcessBackedOff")
         .bind("now", now)
         .bind("maximumBackoff", backoff.maximum().toSeconds())
         .bind("minimumBackoff", backoff.minimum().toSeconds())
         .bind("backoffPowerBase", backoff.powerBase())
-        .bind("subscriberId", subscriber.id())
-        .map(Mappers.queueElementMapper(entityModels, clock, subscriber, now))
+        .bind("queueId", queue.id())
+        .map(Mappers.queueElementMapper(entityModels, clock, queue, now))
         .all()
         .doOnError(Throwable::printStackTrace)
         ;

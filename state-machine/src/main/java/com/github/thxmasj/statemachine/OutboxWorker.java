@@ -18,7 +18,7 @@ public class OutboxWorker {
 
   private final StateMachine stateMachine;
   private final EntityModel entityModel;
-  private final Subscriber subscriber;
+  private final OutboxQueue queue;
   private final String schemaName;
   private final Clock clock;
   private final Listener listener;
@@ -47,13 +47,13 @@ public class OutboxWorker {
       ProcessBackedOff processBackedOff,
       EntityModel entityModel,
       Listener listener,
-      Subscriber subscriber,
+      OutboxQueue queue,
       String schemaName,
       Clock clock
   ) {
     this.stateMachine = stateMachine;
     this.entityModel = entityModel;
-    this.subscriber = subscriber;
+    this.queue = queue;
     this.schemaName = schemaName;
     this.clock = clock;
     this.listener = listener;
@@ -63,19 +63,19 @@ public class OutboxWorker {
 
   public Flux<ForwardStatus> doForward() {
     var now = LocalDateTime.now(clock);
-//    return processNew.execute(now, entityModel, subscriber)
+//    return processNew.execute(now, entityModel, queue)
 //        .onErrorResume(
 //            e -> e instanceof PrimaryKeyConstraintViolation f && "OutboxQueueProcessing".equals(f.tableName()),
 //            _ -> {
-//              listener.forwardingRaced(subscriber.name());
+//              listener.forwardingRaced(queue.name());
 //              return Mono.empty();
 //            }
 //        )
-//        .mergeWith(processBackedOff.execute(now, subscriber))
-        return processBackedOff.execute(now, subscriber)
+//        .mergeWith(processBackedOff.execute(now, queue))
+        return processBackedOff.execute(now, queue)
             .doOnNext(e -> listener.forwardingAttempt(
                     e.requestId(),
-                    e.subscriber().name(),
+                    e.queue().name(),
                     e.enqueuedAt(),
                     e.attempt(),
                     e.entityId(),
@@ -85,18 +85,18 @@ public class OutboxWorker {
             )
         .flatMap(stateMachine::forward)
         .onErrorResume(this::isDeadlock, _ -> {
-          listener.forwardingDeadlock(subscriber.name());
+          listener.forwardingDeadlock(queue.name());
           return Mono.just(ForwardStatus.Deadlock);
         })
         .onErrorResume(t -> {
-          listener.forwardingError(subscriber.name(), t);
+          listener.forwardingError(queue.name(), t);
           return Mono.just(ForwardStatus.Error);
         })
-        .switchIfEmpty(Flux.just(ForwardStatus.Empty).doOnNext(_ -> listener.forwardingEmptyQueue(subscriber.name())));
+        .switchIfEmpty(Flux.just(ForwardStatus.Empty).doOnNext(_ -> listener.forwardingEmptyQueue(queue.name())));
   }
 
   public Looper<ForwardStatus> forwarder(boolean enable) {
-    return new Looper<>("MessageForwarder-Looper-" + subscriber, !enable, this::doForward, status -> switch (status) {
+    return new Looper<>("OutboxWorker-Looper-" + queue, !enable, this::doForward, status -> switch (status) {
       case Ok, Backoff, Dead, Deadlock -> Duration.ZERO;
       case Empty, Error -> Duration.ofSeconds(1);
     });

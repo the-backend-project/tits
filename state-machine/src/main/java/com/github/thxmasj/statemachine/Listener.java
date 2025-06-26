@@ -84,21 +84,21 @@ public interface Listener {
 
     void processNextDeadlineFailed(Throwable t);
 
-    void forwardingAttempt(UUID requestId, String subscriber, ZonedDateTime enqueuedAt, int attempt, EntityId entityId, int eventNumber, String correlationId);
+    void forwardingAttempt(UUID requestId, String queue, ZonedDateTime enqueuedAt, int attempt, EntityId entityId, int eventNumber, String correlationId);
 
-    void forwardingCompleted(UUID requestId, String subscriber, ZonedDateTime enqueuedAt, int attempt, EntityId entityId, int eventNumber, String correlationId, String receipt, String reason);
+    void forwardingCompleted(UUID requestId, String queue, ZonedDateTime enqueuedAt, int attempt, EntityId entityId, int eventNumber, String correlationId, String receipt, String reason);
 
-    void forwardingBackedOff(UUID requestId, String subscriber, ZonedDateTime enqueuedAt, int attempt, EntityId entityId, int eventNumber, String correlationId, String reason, ZonedDateTime nextAttemptAt, Duration backoff);
+    void forwardingBackedOff(UUID requestId, String queue, ZonedDateTime enqueuedAt, int attempt, EntityId entityId, int eventNumber, String correlationId, String reason, ZonedDateTime nextAttemptAt, Duration backoff);
 
-    void forwardingDead(UUID requestId, EntityId entityId, String subscriber, ZonedDateTime enqueuedAt, int attempt, int eventNumber, String correlationId, String reason);
+    void forwardingDead(UUID requestId, EntityId entityId, String queue, ZonedDateTime enqueuedAt, int attempt, int eventNumber, String correlationId, String reason);
 
-    void forwardingDeadByExhaustion(UUID requestId, EntityId entityId, String subscriber, ZonedDateTime enqueuedAt, int attempt, int eventNumber, String correlationId, String reason);
+    void forwardingDeadByExhaustion(UUID requestId, EntityId entityId, String queue, ZonedDateTime enqueuedAt, int attempt, int eventNumber, String correlationId, String reason);
 
-    void forwardingRaced(String subscriber);
+    void forwardingRaced(String queue);
 
-    void forwardingDeadlock(String subscriber);
+    void forwardingDeadlock(String queue);
 
-    void forwardingError(String subscriber, Throwable error);
+    void forwardingError(String queue, Throwable error);
 
-    void forwardingEmptyQueue(String subscriber);
+    void forwardingEmptyQueue(String queue);
 }

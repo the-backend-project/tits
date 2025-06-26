@@ -7,7 +7,7 @@ import com.github.thxmasj.statemachine.EntityId;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.Event;
 import com.github.thxmasj.statemachine.OutboxElement;
-import com.github.thxmasj.statemachine.Subscriber;
+import com.github.thxmasj.statemachine.OutboxQueue;
 import com.github.thxmasj.statemachine.database.MappingFailure;
 import com.github.thxmasj.statemachine.database.Row;
 import java.time.Clock;
@@ -43,7 +43,7 @@ public class Mappers {
   static  Function<Row, OutboxElement> queueElementMapper(
       List<EntityModel> entityModels,
       Clock clock,
-      Subscriber subscriber,
+      OutboxQueue queue,
       LocalDateTime now
   ) {
     return row -> new OutboxElement(
@@ -53,7 +53,7 @@ public class Mappers {
         entityModels.stream().filter(e -> e.id().equals(row.get("EntityModelId", UUID.class))).findFirst().orElseThrow(),
         requireNonNull(row.get("EventNumber", Integer.class)),
         requireNonNull(row.get("CreatorId", UUID.class)),
-        requireNonNull(subscriber),
+        requireNonNull(queue),
         requireNonNull(row.get("Guaranteed", Boolean.class)),
         ZonedDateTime.of(requireNonNull(row.get("EnqueuedAt", LocalDateTime.class)), clock.getZone()),
         row.get("Data", String.class),

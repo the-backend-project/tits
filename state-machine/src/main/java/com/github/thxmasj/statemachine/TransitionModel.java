@@ -54,18 +54,18 @@ public class TransitionModel<T> {
 
   public TransitionModel<T> guaranteedNotification(
       Class<? extends OutgoingRequestCreator<T>> notificationCreator,
-      Subscriber subscriber
+      OutboxQueue queue
   ) {
-    this.outgoingRequests.add(new OutgoingRequestModel<>(Function.identity(), notificationCreator, null, subscriber, true, 0, null, null));
+    this.outgoingRequests.add(new OutgoingRequestModel<>(Function.identity(), notificationCreator, null, queue, true, 0, null, null));
     return this;
   }
 
   public TransitionModel<T> guaranteedNotification(
       Class<? extends OutgoingRequestCreator<T>> notificationCreator,
-      Subscriber subscriber,
+      OutboxQueue queue,
       IncomingResponseValidator<?> responseValidator
   ) {
-    this.outgoingRequests.add(new OutgoingRequestModel<>(Function.identity(), notificationCreator, null, subscriber, true, 0, null, responseValidator));
+    this.outgoingRequests.add(new OutgoingRequestModel<>(Function.identity(), notificationCreator, null, queue, true, 0, null, responseValidator));
     return this;
   }
 

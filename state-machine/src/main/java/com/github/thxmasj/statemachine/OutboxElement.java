@@ -12,7 +12,7 @@ public record OutboxElement(
     EntityModel entityModel,
     int eventNumber,
     UUID creatorId,
-    Subscriber subscriber,
+    OutboxQueue queue,
     boolean guaranteed,
     ZonedDateTime enqueuedAt,
     String data,

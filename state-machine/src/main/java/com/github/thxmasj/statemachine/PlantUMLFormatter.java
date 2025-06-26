@@ -112,7 +112,7 @@ public class PlantUMLFormatter {
         spec.notificationCreatorType() != null ? spec.notificationCreatorType().getSimpleName() :
             spec.notificationCreator().toString(),
         spec.guaranteed() ? ">>" : ">",
-        spec.subscriber()
+        spec.queue()
     );
   }
 

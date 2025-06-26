@@ -23,7 +23,7 @@ public abstract sealed class Notification permits
 
   public static final class IncomingResponse extends Notification {
 
-    private final Subscriber subscriber;
+    private final OutboxQueue queue;
     private final boolean guaranteed;
     private final UUID requestId;
 
@@ -31,17 +31,17 @@ public abstract sealed class Notification permits
         int eventNumber,
         String message,
         UUID requestId,
-        Subscriber subscriber,
+        OutboxQueue queue,
         boolean guaranteed
     ) {
       super(eventNumber, message);
-      this.subscriber = subscriber;
+      this.queue = queue;
       this.guaranteed = guaranteed;
       this.requestId = requestId;
     }
 
-    public Subscriber subscriber() {
-      return subscriber;
+    public OutboxQueue queue() {
+      return queue;
     }
 
     public boolean guaranteed() {
@@ -57,7 +57,7 @@ public abstract sealed class Notification permits
   public static final class OutgoingRequest extends Notification {
 
     private final UUID id;
-    private final Subscriber subscriber;
+    private final OutboxQueue queue;
     private final UUID creatorId;
     private final boolean guaranteed;
     private final EntityId parentEntity;
@@ -68,7 +68,7 @@ public abstract sealed class Notification permits
         UUID id,
         int eventNumber,
         String message,
-        Subscriber subscriber,
+        OutboxQueue queue,
         UUID creatorId,
         boolean guaranteed,
         int maxRetryAttempts,
@@ -77,7 +77,7 @@ public abstract sealed class Notification permits
     ) {
       super(eventNumber, message);
       this.id = id;
-      this.subscriber = subscriber;
+      this.queue = queue;
       this.creatorId = creatorId;
       this.guaranteed = guaranteed;
       this.maxRetryAttempts = maxRetryAttempts;
@@ -89,8 +89,8 @@ public abstract sealed class Notification permits
       return id;
     }
 
-    public Subscriber subscriber() {
-      return subscriber;
+    public OutboxQueue queue() {
+      return queue;
     }
 
     public UUID creatorId() {

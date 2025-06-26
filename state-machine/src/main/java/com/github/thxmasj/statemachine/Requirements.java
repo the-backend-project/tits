@@ -152,12 +152,12 @@ public class Requirements {
     return last(notifications(null, ExchangeType.IncomingRequest, dataType), eventType);
   }
 
-  public static  EventRequirement outgoingRequest(Subscriber subscriber, EventType eventType, Class<?> dataType) {
-    return last(notifications(subscriber, ExchangeType.OutgoingRequest, dataType), eventType);
+  public static  EventRequirement outgoingRequest(OutboxQueue queue, EventType eventType, Class<?> dataType) {
+    return last(notifications(queue, ExchangeType.OutgoingRequest, dataType), eventType);
   }
 
-  public static  EventRequirement incomingResponse(Subscriber subscriber, EventType eventType, Class<?> dataType) {
-    return last(notifications(subscriber, ExchangeType.IncomingResponse, dataType), eventType);
+  public static  EventRequirement incomingResponse(OutboxQueue queue, EventType eventType, Class<?> dataType) {
+    return last(notifications(queue, ExchangeType.IncomingResponse, dataType), eventType);
   }
 
   public static  EventRequirement current(EventType... eligibleEventTypes) {
@@ -171,8 +171,8 @@ public class Requirements {
     return new EventRequirement(Arrays.asList(eligibleEventTypes), Type.Current, notification);
   }
 
-  public static <T> NotificationRequirement notifications(Subscriber subscriber, ExchangeType exchangeType, Class<T> dataType) {
-    return new NotificationRequirement(subscriber, exchangeType, dataType);
+  public static <T> NotificationRequirement notifications(OutboxQueue queue, ExchangeType exchangeType, Class<T> dataType) {
+    return new NotificationRequirement(queue, exchangeType, dataType);
   }
 
   public interface Requirement {
@@ -185,7 +185,7 @@ public class Requirements {
 
   }
 
-  public record NotificationRequirement(Subscriber subscriber, ExchangeType exchangeType, Class<?> dataType) {}
+  public record NotificationRequirement(OutboxQueue queue, ExchangeType exchangeType, Class<?> dataType) {}
 
   public record EventRequirement(
       List<EventType> eventTypes,

@@ -4,7 +4,7 @@ import com.github.thxmasj.statemachine.DelaySpecification;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.OutboxElement;
 import com.github.thxmasj.statemachine.OutboxWorker.Simulation;
-import com.github.thxmasj.statemachine.Subscriber;
+import com.github.thxmasj.statemachine.OutboxQueue;
 import com.github.thxmasj.statemachine.database.Client;
 import com.github.thxmasj.statemachine.database.Client.PrimaryKeyConstraintViolation;
 import java.time.Clock;
@@ -19,7 +19,7 @@ public class ProcessNew {
 
   private final List<EntityModel> entityModels;
   private final Client databaseClient;
-  private final Map<EntityModel, Map<Subscriber, String>> sqls;
+  private final Map<EntityModel, Map<OutboxQueue, String>> sqls;
   private final Clock clock;
   private final DelaySpecification backoff;
 
@@ -31,7 +31,7 @@ public class ProcessNew {
     this.sqls = new HashMap<>();
     for (var entityModel : entityModels) {
       sqls.put(entityModel, new HashMap<>());
-      for (var subscriber : entityModel.subscribers().stream().toList()) {
+      for (var queue : entityModel.queues().stream().toList()) {
         var sql =
             """
               DECLARE @selected TABLE (
@@ -51,7 +51,7 @@ public class ProcessNew {
             
               INSERT TOP (1) INTO [{schema}].[OutboxQueueProcessing] (
                 ElementId,
-                SubscriberId,
+                QueueId,
                 EntityModelId,
                 RequestId,
                 EntityId,
@@ -80,7 +80,7 @@ public class ProcessNew {
               INTO @selected
               SELECT
                 q.ElementId,
-                q.SubscriberId,
+                q.QueueId,
                 q.EntityModelId,
                 q.RequestId,
                 q.EntityId,
@@ -96,7 +96,7 @@ public class ProcessNew {
                 LEFT JOIN [{schema}].[OutboxRequest] d WITH (INDEX([pkOutboxRequest]))
                 ON q.RequestId=d.Id
               WHERE q.Guaranteed=1
-                AND q.SubscriberId='{subscriberId}'
+                AND q.QueueId='{queueId}'
                 AND q.EntityId NOT IN (SELECT EntityId FROM [{schema}].[OutboxDeadLetterQueue] WITH (INDEX([pkOutboxDeadLetterQueue])))
                 AND q.EntityId NOT IN (SELECT EntityId FROM [{schema}].[OutboxQueueProcessing] WITH (INDEX([pkOutboxQueueProcessing])))
                 {parentEntityFilter}
@@ -117,30 +117,30 @@ public class ProcessNew {
               NextAttemptAt
             FROM @selected
             """.replace("{schema}", schemaName)
-                .replace("{subscriberId}", subscriber.id().toString())
+                .replace("{queueId}", queue.id().toString())
                 .replace("{parentEntityFilter}", childEntity(entityModel) == null ? "" :
                         "AND q.EntityId NOT IN (SELECT ParentEntityId FROM [{schema}].[OutboxQueue] WHERE ParentEntityId IS NOT NULL)".replace("{schema}", schemaName)
                 );
-        sqls.get(entityModel).put(subscriber, sql);
+        sqls.get(entityModel).put(queue, sql);
       }
     }
   }
 
-  private String sql(EntityModel entityModel, Subscriber subscriber) {
-    Map<Subscriber, String> sqlsForEntityModel = sqls.get(entityModel);
+  private String sql(EntityModel entityModel, OutboxQueue queue) {
+    Map<OutboxQueue, String> sqlsForEntityModel = sqls.get(entityModel);
     if (sqlsForEntityModel == null) throw new IllegalStateException("No SQL for " + entityModel.name());
-    String sql = sqlsForEntityModel.get(subscriber);
-    if (sql == null) throw new IllegalStateException("No SQL for " + subscriber.name());
+    String sql = sqlsForEntityModel.get(queue);
+    if (sql == null) throw new IllegalStateException("No SQL for " + queue.name());
     return sql;
   }
 
-  public Flux<OutboxElement> execute(LocalDateTime now, EntityModel entityModel, Subscriber subscriber) {
-    String sql = sql(entityModel, subscriber);
+  public Flux<OutboxElement> execute(LocalDateTime now, EntityModel entityModel, OutboxQueue queue) {
+    String sql = sql(entityModel, queue);
     return databaseClient.sql(sql)
         .name("ProcessNew")
         .bind("now", now)
         .bind("minimumBackoff", backoff.minimum().toSeconds())
-        .map(Mappers.queueElementMapper(entityModels, clock, subscriber, now))
+        .map(Mappers.queueElementMapper(entityModels, clock, queue, now))
         .all()
         .switchIfEmpty(raceSimulationIfTriggered(entityModel));
   }

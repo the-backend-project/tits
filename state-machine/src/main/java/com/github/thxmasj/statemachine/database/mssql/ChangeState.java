@@ -78,7 +78,7 @@ public class ChangeState {
         spec.bind("outgoingRequestParentEntityId"+i, orq.parentEntity().value());
       }
       spec.bind("outgoingRequestId" + i, orq.id())
-          .bind("outgoingRequestSubscriberId" + i, orq.subscriber().id())
+          .bind("outgoingRequestQueueId" + i, orq.queue().id())
           .bind("outgoingRequestEventNumber"+i, orq.eventNumber())
           .bind("outgoingRequestCreatorId"+i, orq.creatorId())
           .bind("correlationId", correlationId)
@@ -272,7 +272,7 @@ public class ChangeState {
         """
         INSERT INTO [{schema}].[OutboxRequest] (
           Id,
-          SubscriberId,
+          QueueId,
           EntityId,
           EventNumber,
           Timestamp,
@@ -281,7 +281,7 @@ public class ChangeState {
         OUTPUT {changeIndex}, {i}, inserted.Id INTO @OutboxElement
         VALUES (
           :outgoingRequestId{i},
-          :outgoingRequestSubscriberId{i},
+          :outgoingRequestQueueId{i},
           @entityId{changeIndex},
           :outgoingRequestEventNumber{i},
           :timestamp0,
@@ -295,7 +295,7 @@ public class ChangeState {
     sql += range(0, outgoingRequests.size()).mapToObj(i ->
         """
         INSERT INTO [{schema}].[OutboxQueue] (
-          SubscriberId,
+          QueueId,
           EntityModelId,
           EntityId,
           {parentEntityColumn}
@@ -308,7 +308,7 @@ public class ChangeState {
         )
         OUTPUT {changeIndex}, {i}, inserted.RequestId, inserted.ElementId, inserted.Guaranteed INTO @QueueElement
         VALUES (
-          :outgoingRequestSubscriberId{i},
+          :outgoingRequestQueueId{i},
           :entityModelId,
           @entityId{changeIndex},
           {parentEntityValue}
@@ -339,7 +339,7 @@ public class ChangeState {
         BEGIN TRY
         INSERT INTO [{schema}].[OutboxQueueProcessing] (
           ElementId,
-          SubscriberId,
+          QueueId,
           EntityModelId,
           EntityId,
           EventNumber,
@@ -355,7 +355,7 @@ public class ChangeState {
         OUTPUT {changeIndex}, {i}, inserted.RequestId, inserted.ElementId INTO @QueueElementToProcess
         SELECT
           (SELECT ElementId FROM @QueueElement WHERE ChangeIndex = {changeIndex} AND NotificationIndex = {i}),
-          :outgoingRequestSubscriberId{i},
+          :outgoingRequestQueueId{i},
           :entityModelId,
           @entityId{changeIndex},
           :outgoingRequestEventNumber{i},
@@ -371,13 +371,13 @@ public class ChangeState {
           SELECT EntityId
           FROM [{schema}].[OutboxDeadLetterQueue]
           WITH (INDEX([pkOutboxDeadLetterQueue]))
-          WHERE SubscriberId=:outgoingRequestSubscriberId{i}
+          WHERE QueueId=:outgoingRequestQueueId{i}
         )
         AND @entityId{changeIndex} NOT IN (
           SELECT EntityId
           FROM [{schema}].[OutboxQueueProcessing]
           WITH (INDEX([pkOutboxQueueProcessing]))
-          WHERE SubscriberId=:outgoingRequestSubscriberId{i}
+          WHERE QueueId=:outgoingRequestQueueId{i}
         )
         """.replace("{changeIndex}", String.valueOf(changeIndex))
             .replace("{i}", String.valueOf(i))
@@ -390,7 +390,7 @@ public class ChangeState {
                       SELECT ParentEntityId
                       FROM [{schema}].[OutboxQueue]
                       WHERE ParentEntityId IS NOT NULL
-                      AND SubscriberId=:outgoingRequestSubscriberId{i})
+                      AND QueueId=:outgoingRequestQueueId{i})
                     """.replace("{changeIndex}", String.valueOf(changeIndex))
                         .replace("{i}", String.valueOf(i))
                         .replace("{schema}", schema)

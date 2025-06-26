@@ -25,13 +25,13 @@ public class MoveToDLQ {
             INSERT INTO [{schema}].[OutboxDeadLetterQueue] (
               EntityId,
               EventNumber,
-              SubscriberId,
+              QueueId,
               Cause,
               RequestId
             ) VALUES (
               @entityId,
               :eventNumber,
-              :subscriberId,
+              :queueId,
               :cause,
               :requestId
             );
@@ -43,7 +43,7 @@ public class MoveToDLQ {
       return databaseClient.sql(sql).name("MoveToDLQ")
           .bind("entityId", outboxElement.entityId().value())
           .bind("eventNumber", outboxElement.eventNumber())
-          .bind("subscriberId", outboxElement.subscriber().id())
+          .bind("queueId", outboxElement.queue().id())
           .bind("cause", cause)
           .bind("requestId", outboxElement.requestId())
           .update()

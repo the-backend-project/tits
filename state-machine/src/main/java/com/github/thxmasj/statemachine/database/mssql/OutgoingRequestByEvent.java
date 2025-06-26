@@ -3,8 +3,6 @@ package com.github.thxmasj.statemachine.database.mssql;
 import static com.github.thxmasj.statemachine.database.jdbc.PreparedStatementSupport.prepare;
 
 import com.github.thxmasj.statemachine.EntityId;
-import com.github.thxmasj.statemachine.EntityModel;
-import com.github.thxmasj.statemachine.Subscriber;
 import java.sql.ResultSet;
 import java.util.Map;
 import javax.sql.DataSource;
@@ -25,7 +23,7 @@ public class OutgoingRequestByEvent {
         """.replace("{schema}", schemaName);
   }
 
-  public Mono<String> execute(EntityModel entityModel, Subscriber subscriber, EntityId entityId, int eventNumber) {
+  public Mono<String> execute(EntityId entityId, int eventNumber) {
     return Mono.fromCallable(() -> {
       try (
           var connection = dataSource.getConnection();

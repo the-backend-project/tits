@@ -33,8 +33,8 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.Preauthorised;
 import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Type.MerchantCredit;
 import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Type.MerchantDebit;
-import static com.github.thxmasj.statemachine.templates.cardpayment.Subscribers.Acquirer;
-import static com.github.thxmasj.statemachine.templates.cardpayment.Subscribers.Merchant;
+import static com.github.thxmasj.statemachine.templates.cardpayment.Queues.Acquirer;
+import static com.github.thxmasj.statemachine.templates.cardpayment.Queues.Merchant;
 
 import com.github.thxmasj.statemachine.BuiltinEventTypes;
 import com.github.thxmasj.statemachine.EntityModel;
@@ -42,7 +42,7 @@ import com.github.thxmasj.statemachine.EventType;
 import com.github.thxmasj.statemachine.IncomingResponseValidator;
 import com.github.thxmasj.statemachine.ScheduledEvent;
 import com.github.thxmasj.statemachine.State;
-import com.github.thxmasj.statemachine.Subscriber;
+import com.github.thxmasj.statemachine.OutboxQueue;
 import com.github.thxmasj.statemachine.TransitionModel;
 import com.github.thxmasj.statemachine.message.http.BadRequest;
 import com.github.thxmasj.statemachine.message.http.Created;
@@ -76,8 +76,8 @@ public abstract class AbstractPayment implements EntityModel {
   }
 
   @Override
-  public List<Subscriber> subscribers() {
-    return List.of(Subscribers.values());
+  public List<OutboxQueue> queues() {
+    return List.of(Queues.values());
   }
 
   @Override

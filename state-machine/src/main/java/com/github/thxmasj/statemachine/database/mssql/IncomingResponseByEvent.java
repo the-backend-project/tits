@@ -5,7 +5,7 @@ import static java.util.Objects.requireNonNull;
 
 import com.github.thxmasj.statemachine.EntityId;
 import com.github.thxmasj.statemachine.EntityModel;
-import com.github.thxmasj.statemachine.Subscriber;
+import com.github.thxmasj.statemachine.OutboxQueue;
 import java.sql.ResultSet;
 import java.util.HashMap;
 import java.util.List;
@@ -16,7 +16,7 @@ import reactor.core.publisher.Mono;
 public class IncomingResponseByEvent {
 
   private final DataSource dataSource;
-  private final Map<EntityModel, Map<Subscriber, String>> sqls;
+  private final Map<EntityModel, Map<OutboxQueue, String>> sqls;
 
   public IncomingResponseByEvent(DataSource dataSource, List<EntityModel> entityModels, String schemaName) {
     this.dataSource = dataSource;
@@ -24,20 +24,20 @@ public class IncomingResponseByEvent {
     for (var entityModel : entityModels) {
       var names = new SchemaNames(schemaName, entityModel);
       this.sqls.put(entityModel, new HashMap<>());
-      for (var subscriber : entityModel.subscribers()) {
+      for (var queue : entityModel.queues()) {
         String sql =
             """
             SELECT Data
             FROM [{schema}].[OutboxResponse] WITH (INDEX(pkOutboxResponse))
             WHERE EntityId=:entityId AND EventNumber=:eventNumber
             """.replace("{schema}", schemaName);
-        this.sqls.get(entityModel).put(subscriber, sql);
+        this.sqls.get(entityModel).put(queue, sql);
       }
     }
   }
 
-  public Mono<String> execute(EntityModel entityModel, Subscriber subscriber, EntityId entityId, int eventNumber) {
-    String sqlToPrepare = requireNonNull(sqls.get(entityModel).get(subscriber));
+  public Mono<String> execute(EntityModel entityModel, OutboxQueue queue, EntityId entityId, int eventNumber) {
+    String sqlToPrepare = requireNonNull(sqls.get(entityModel).get(queue));
     return Mono.fromCallable(() -> {
       try (
           var connection = dataSource.getConnection();

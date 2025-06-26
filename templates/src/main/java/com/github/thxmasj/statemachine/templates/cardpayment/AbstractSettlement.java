@@ -21,14 +21,14 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEv
 import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Type.OutOfBalance;
 import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Type.SettlementApproved;
 import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Type.Timeout;
-import static com.github.thxmasj.statemachine.templates.cardpayment.Subscribers.Acquirer;
-import static com.github.thxmasj.statemachine.templates.cardpayment.Subscribers.Merchant;
+import static com.github.thxmasj.statemachine.templates.cardpayment.Queues.Acquirer;
+import static com.github.thxmasj.statemachine.templates.cardpayment.Queues.Merchant;
 
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.EventType;
 import com.github.thxmasj.statemachine.IncomingResponseValidator;
 import com.github.thxmasj.statemachine.State;
-import com.github.thxmasj.statemachine.Subscriber;
+import com.github.thxmasj.statemachine.OutboxQueue;
 import com.github.thxmasj.statemachine.TransitionModel;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames;
 import com.github.thxmasj.statemachine.message.http.Created;
@@ -102,8 +102,8 @@ public abstract class AbstractSettlement implements EntityModel {
   }
 
   @Override
-  public List<Subscriber> subscribers() {
-    return List.of(Subscribers.values());
+  public List<OutboxQueue> queues() {
+    return List.of(Queues.values());
   }
 
 }

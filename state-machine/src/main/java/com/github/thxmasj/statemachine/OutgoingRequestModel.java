@@ -9,7 +9,7 @@ public record OutgoingRequestModel<T, U>(
     Function<T, U> dataAdapter,
     Class<? extends OutgoingRequestCreator<U>> notificationCreatorType,
     OutgoingRequestCreator<U> notificationCreator,
-    Subscriber subscriber,
+    OutboxQueue queue,
     boolean guaranteed,
     int maxRetryAttempts,
     Duration retryInterval,
@@ -38,7 +38,7 @@ public record OutgoingRequestModel<T, U>(
     private Function<T, U> dataAdapter;
     private Class<? extends OutgoingRequestCreator<U>> notificationCreatorType;
     private OutgoingRequestCreator<U> notificationCreator;
-    private Subscriber subscriber;
+    private OutboxQueue queue;
     private boolean guaranteed;
     private int maxRetryAttempts = 0;
     private Duration retryInterval;
@@ -68,8 +68,8 @@ public record OutgoingRequestModel<T, U>(
       return builder;
     }
 
-    public Builder<T, U> to(Subscriber subscriber) {
-      this.subscriber = subscriber;
+    public Builder<T, U> to(OutboxQueue queue) {
+      this.queue = queue;
       return this;
     }
 
@@ -98,7 +98,7 @@ public record OutgoingRequestModel<T, U>(
           dataAdapter,
           notificationCreatorType,
           notificationCreator,
-          subscriber,
+          queue,
           guaranteed,
           maxRetryAttempts,
           retryInterval,

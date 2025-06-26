@@ -8,7 +8,7 @@ public interface LogMessageFormatter {
 
   static Optional<LogMessageFormatter> getFormatter(List<LogMessageFormatter> formatters, Notification notification) {
     for (LogMessageFormatter formatter : formatters) {
-      if (formatter.isRelevantSubscriber(notification) && formatter.isRelevantType(notification)) {
+      if (formatter.isRelevantQueue(notification) && formatter.isRelevantType(notification)) {
         return Optional.of(formatter);
       }
     }
@@ -19,7 +19,7 @@ public interface LogMessageFormatter {
 
   boolean isRelevantType(Notification notification);
 
-  boolean isRelevantSubscriber(Notification notification);
+  boolean isRelevantQueue(Notification notification);
 
 }
 

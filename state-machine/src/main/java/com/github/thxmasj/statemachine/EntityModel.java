@@ -30,7 +30,7 @@ public interface EntityModel {
 
   List<TransitionModel<?>> transitions();
 
-  default List<Subscriber> subscribers() {
+  default List<OutboxQueue> queues() {
     return List.of();
   }
 

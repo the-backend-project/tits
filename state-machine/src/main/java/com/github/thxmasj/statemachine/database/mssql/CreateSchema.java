@@ -3,7 +3,6 @@ package com.github.thxmasj.statemachine.database.mssql;
 import static java.util.stream.Collectors.joining;
 
 import com.github.thxmasj.statemachine.EntityModel;
-import com.github.thxmasj.statemachine.Subscriber;
 import com.github.thxmasj.statemachine.database.Client;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -111,7 +110,7 @@ public class CreateSchema {
         CREATE TABLE [{schema}].[OutboxRequest]
         (
             Id                 UNIQUEIDENTIFIER NOT NULL,
-            SubscriberId       UNIQUEIDENTIFIER NOT NULL,
+            QueueId            UNIQUEIDENTIFIER NOT NULL,
             EntityId           UNIQUEIDENTIFIER NOT NULL,
             EventNumber        SMALLINT         NOT NULL,
             Timestamp          DATETIME2        NOT NULL,
@@ -135,7 +134,7 @@ public class CreateSchema {
         CREATE TABLE [{schema}].[OutboxQueue]
         (
             ElementId       ROWVERSION,
-            SubscriberId    UNIQUEIDENTIFIER NOT NULL,
+            QueueId         UNIQUEIDENTIFIER NOT NULL,
             EntityModelId   UNIQUEIDENTIFIER NOT NULL,
             EntityId        UNIQUEIDENTIFIER NOT NULL,
             EventNumber     SMALLINT         NOT NULL,
@@ -156,7 +155,7 @@ public class CreateSchema {
         (
             EntityId     UNIQUEIDENTIFIER NOT NULL,
             EventNumber  SMALLINT         NOT NULL,
-            SubscriberId UNIQUEIDENTIFIER NOT NULL,
+            QueueId      UNIQUEIDENTIFIER NOT NULL,
             Cause        VARCHAR(MAX),
             RequestId    UNIQUEIDENTIFIER NOT NULL,
             CONSTRAINT [pkOutboxDeadLetterQueue] PRIMARY KEY (EntityId)
@@ -166,7 +165,7 @@ public class CreateSchema {
         CREATE TABLE [{schema}].[OutboxQueueProcessing]
         (
             ElementId        BINARY(8)        NOT NULL,
-            SubscriberId     UNIQUEIDENTIFIER NOT NULL,
+            QueueId          UNIQUEIDENTIFIER NOT NULL,
             EntityModelId    UNIQUEIDENTIFIER NOT NULL,
             EntityId         UNIQUEIDENTIFIER NOT NULL,
             EventNumber      SMALLINT         NOT NULL,
@@ -178,7 +177,7 @@ public class CreateSchema {
             Guaranteed       BIT              NOT NULL,
             CorrelationId    VARCHAR(36)      NOT NULL,
             RequestId        UNIQUEIDENTIFIER NOT NULL,
-            CONSTRAINT [pkOutboxQueueProcessing] PRIMARY KEY (EntityId, SubscriberId)
+            CONSTRAINT [pkOutboxQueueProcessing] PRIMARY KEY (EntityId, QueueId)
         )
         GRANT INSERT, SELECT, UPDATE, DELETE ON [{schema}].[OutboxQueueProcessing] TO [{role}];
         CREATE INDEX ixNextAttemptAt ON [{schema}].[OutboxQueueProcessing] (NextAttemptAt ASC);

@@ -74,8 +74,8 @@ public class RequiredData implements Input {
   private boolean isMatchingRequirement(Notification notification, NotificationRequirement requirement) {
     return switch (notification) {
       case Notification.IncomingRequest _ -> requirement.exchangeType() == ExchangeType.IncomingRequest;
-      case Notification.OutgoingRequest outgoingRequest -> requirement.exchangeType() == ExchangeType.OutgoingRequest && requirement.subscriber().equals(outgoingRequest.subscriber());
-      case Notification.IncomingResponse incomingResponse -> requirement.exchangeType() == ExchangeType.IncomingResponse && requirement.subscriber().equals(incomingResponse.subscriber());
+      case Notification.OutgoingRequest outgoingRequest -> requirement.exchangeType() == ExchangeType.OutgoingRequest && requirement.queue().equals(outgoingRequest.queue());
+      case Notification.IncomingResponse incomingResponse -> requirement.exchangeType() == ExchangeType.IncomingResponse && requirement.queue().equals(incomingResponse.queue());
       case Notification.OutgoingResponse _ -> requirement.exchangeType() == ExchangeType.OutgoingResponse;
     };
   }
@@ -98,18 +98,17 @@ public class RequiredData implements Input {
         .orElse(switch (requirement.notification().exchangeType()) {
           case ExchangeType.IncomingRequest ->
               incomingRequestByEvent.execute(entityModel, entityId, event.getEventNumber());
-          case ExchangeType.OutgoingRequest ->
-              outgoingRequestByEvent.execute(entityModel, requirement.notification().subscriber(), entityId, event.getEventNumber());
+          case ExchangeType.OutgoingRequest -> outgoingRequestByEvent.execute(entityId, event.getEventNumber());
           case ExchangeType.IncomingResponse ->
-              incomingResponseByEvent.execute(entityModel, requirement.notification().subscriber(), entityId, event.getEventNumber());
+              incomingResponseByEvent.execute(entityModel, requirement.notification().queue(), entityId, event.getEventNumber());
           default -> Mono.error(
               new GetNotificationFailed(format(
-                  "No %s notification found for event %s with number %s of type %s and subscriber %s for requirer %s. Inflight notifications: %s. Events: %s",
+                  "No %s notification found for event %s with number %s of type %s and queue %s for requirer %s. Inflight notifications: %s. Events: %s",
                   requirement.notification().exchangeType(),
                   event.getType(),
                   event.getEventNumber(),
                   requirement.notification().exchangeType(),
-                  requirement.notification().subscriber(),
+                  requirement.notification().queue(),
                   requirer.getName(),
                   inflightNotifications,
                   events
@@ -216,17 +215,17 @@ public class RequiredData implements Input {
           return objectMapper.readerFor(requirement.notification().dataType()).readValue(body);
         } catch (Exception e) {
           throw new RuntimeException(format(
-              "Requirement %s: Failed to unmarshal message for notification from/to subscriber %s to type %s for event %s",
+              "Requirement %s: Failed to unmarshal message for notification from/to queue %s to type %s for event %s",
               requirement,
-              requirement.notification().subscriber(),
+              requirement.notification().queue(),
               requirement.notification().dataType(),
               event.getType().name()
           ), e);
         }
       }).switchIfEmpty(Mono.error(new RequirementsNotFulfilled(format(
-          "Requirement %s for: Failed to unmarshal message for notification from/to subscriber %s to type %s for event %s: Notification is null",
+          "Requirement %s for: Failed to unmarshal message for notification from/to queue %s to type %s for event %s: Notification is null",
           requirement,
-          requirement.notification().subscriber(),
+          requirement.notification().queue(),
           requirement.notification().dataType(),
           event.getType().name()
       ))));
@@ -262,7 +261,7 @@ public class RequiredData implements Input {
   }
 
   @Override
-  public <T> Mono<OutgoingRequest<T>> outgoingRequest(Subscriber subscriber, EventType eventType, Class<T> type) {
+  public <T> Mono<OutgoingRequest<T>> outgoingRequest(OutboxQueue queue, EventType eventType, Class<T> type) {
     var loadedEvent = last(eventType);
     return loadedEvent.getNotification()
         .map(message -> new OutgoingRequest<>(
@@ -272,7 +271,7 @@ public class RequiredData implements Input {
   }
 
   @Override
-  public <T> Mono<IncomingResponse> incomingResponse(Subscriber subscriber, EventType eventType, Class<T> type) {
+  public <T> Mono<IncomingResponse> incomingResponse(OutboxQueue queue, EventType eventType, Class<T> type) {
     var loadedEvent = last(eventType);
     return loadedEvent.getNotification()
         .map(message -> new IncomingResponse(

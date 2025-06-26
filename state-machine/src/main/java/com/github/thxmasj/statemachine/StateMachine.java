@@ -107,7 +107,7 @@ public class StateMachine {
   private final OutgoingRequestByEvent outgoingRequestByEvent;
   private final IncomingResponseByEvent incomingResponseByEvent;
   private final Map<UUID, OutgoingRequestCreator<?>> outgoingRequestCreators;
-  private final Function<Subscriber, HttpClient> clients;
+  private final Function<OutboxQueue, HttpClient> clients;
 
   public StateMachine(
       RequestMapper requestMapper,
@@ -121,7 +121,7 @@ public class StateMachine {
       Clock clock,
       Listener listener,
       boolean singleClientPerEntity,
-      Function<Subscriber, HttpClient> clients
+      Function<OutboxQueue, HttpClient> clients
   ) {
     this.outgoingRequestCreators =
         Stream.concat(
@@ -164,7 +164,7 @@ public class StateMachine {
     this.listener = listener;
     this.singleClientPerEntity = singleClientPerEntity;
     this.clients = clients;
-    // TODO: Differentiate delay spec per subscriber
+    // TODO: Differentiate delay spec per queue
     var backoff = new DelaySpecification(ofSeconds(10), ofSeconds(20), ofSeconds(100), 1.5);
     var processNew = new ProcessNew(jdbcClient, entityModels, schemaName, clock, backoff);
     var processBackedOff = new ProcessBackedOff(jdbcClient, entityModels, schemaName, clock, backoff);
@@ -181,14 +181,14 @@ public class StateMachine {
     resolverLooper.loop();
     workers.add(resolverLooper);
     for (var entityModel : entityModels) {
-      for (var subscriber : entityModel.subscribers()) {
+      for (var queue : entityModel.queues()) {
         var looper = new OutboxWorker(
             this,
             processNew,
             processBackedOff,
             entityModel,
             listener,
-            subscriber,
+            queue,
             schemaName,
             clock
         ).forwarder(true);
@@ -1321,8 +1321,8 @@ public class StateMachine {
                 change.newSecondaryIds().stream().map(SecondaryId::toString).toList(),
                 change.incomingRequests().stream().map(Notification::message).toList(),
                 change.outgoingResponses().stream().map(Notification::message).toList(),
-                change.outgoingRequests().stream().map(n -> n.subscriber().name() + "=>" + n.message()).toList(),
-                change.incomingResponses().stream().map(n -> n.subscriber().name() + "=>" + n.message()).toList()
+                change.outgoingRequests().stream().map(n -> n.queue().name() + "=>" + n.message()).toList(),
+                change.incomingResponses().stream().map(n -> n.queue().name() + "=>" + n.message()).toList()
             )
         )
         .toList();
@@ -1402,7 +1402,7 @@ public class StateMachine {
         change.entityModel(),
         outgoingRequest.eventNumber(),
         outgoingRequest.creatorId(),
-        outgoingRequest.subscriber(),
+        outgoingRequest.queue(),
         outgoingRequest.guaranteed(),
         change.newEvents().getFirst().getTimestamp(),
         outgoingRequest.message(),
@@ -1451,10 +1451,10 @@ public class StateMachine {
           var responseValidator = findOutgoingRequestModel(
               eventLog,
               queueElement.eventNumber(),
-              queueElement.subscriber(),
+              queueElement.queue(),
               queueElement.creatorId()
           ).responseValidator();
-          return clients.apply(queueElement.subscriber()).exchange(httpRequest)
+          return clients.apply(queueElement.queue()).exchange(httpRequest)
               .flatMap(httpResponse -> {
                 var responseNotification = responseNotification(queueElement, httpResponse.message());
                 return validateResponse(
@@ -1547,13 +1547,13 @@ public class StateMachine {
 
   private static class ProcessEventsRaced extends RuntimeException {}
 
-  private OutgoingRequestModel<?, ?> findOutgoingRequestModel(EventLog eventLog, int eventNumber, Subscriber subscriber, UUID requestModelId) {
+  private OutgoingRequestModel<?, ?> findOutgoingRequestModel(EventLog eventLog, int eventNumber, OutboxQueue queue, UUID requestModelId) {
     return Stream.concat(
             requireNonNull(transitionForEventNumber(eventLog, eventNumber)).outgoingRequests().stream(),
             requireNonNull(transitionForEventNumber(eventLog, eventNumber)).reverse().outgoingRequests().stream()
         )
         .filter(notificationSpecification -> {
-              if (!notificationSpecification.subscriber().equals(subscriber))
+              if (!notificationSpecification.queue().equals(queue))
                 return false;
               OutgoingRequestCreator<?> c = notificationSpecification.notificationCreator();
               if (c == null)
@@ -1567,7 +1567,7 @@ public class StateMachine {
             eventLog.entityModel().name(),
             eventLog.entityId().value(),
             eventNumber,
-            subscriber.name()
+            queue.name()
         )));
   }
 
@@ -1584,7 +1584,7 @@ public class StateMachine {
         queueElement.eventNumber() + 1,
         responseMessage,
         queueElement.requestId(),
-        queueElement.subscriber(),
+        queueElement.queue(),
         queueElement.guaranteed()
     );
   }
@@ -1604,20 +1604,20 @@ public class StateMachine {
   }
 
   private void logDeadByExhaustion(OutboxElement e, String reason) {
-    listener.forwardingDeadByExhaustion(e.requestId(), e.entityId(), e.subscriber().name(), e.enqueuedAt(), e.attempt(), e.eventNumber(), e.correlationId(), reason);
+    listener.forwardingDeadByExhaustion(e.requestId(), e.entityId(), e.queue().name(), e.enqueuedAt(), e.attempt(), e.eventNumber(), e.correlationId(), reason);
   }
 
   private void logForwarded(OutboxElement e, String responseMessage, String reason) {
-    listener.forwardingCompleted(e.requestId(), e.subscriber().name(), e.enqueuedAt(), e.attempt(), e.entityId(), e.eventNumber(), e.correlationId(), responseMessage, reason);
+    listener.forwardingCompleted(e.requestId(), e.queue().name(), e.enqueuedAt(), e.attempt(), e.entityId(), e.eventNumber(), e.correlationId(), responseMessage, reason);
   }
 
   private void logBackoff(OutboxElement e, String reason) {
     // TODO: e.backoff() requires processedAt nextAttemptAt
-    listener.forwardingBackedOff(e.requestId(), e.subscriber().name(), e.enqueuedAt(), e.attempt(), e.entityId(), e.eventNumber(), e.correlationId(), reason, e.nextAttemptAt(), e.backoff());
+    listener.forwardingBackedOff(e.requestId(), e.queue().name(), e.enqueuedAt(), e.attempt(), e.entityId(), e.eventNumber(), e.correlationId(), reason, e.nextAttemptAt(), e.backoff());
   }
 
   private void logDead(OutboxElement e, String reason) {
-    listener.forwardingDead(e.requestId(), e.entityId(), e.subscriber().name(), e.enqueuedAt(), e.attempt(), e.eventNumber(), e.correlationId(), reason);
+    listener.forwardingDead(e.requestId(), e.entityId(), e.queue().name(), e.enqueuedAt(), e.attempt(), e.eventNumber(), e.correlationId(), reason);
   }
 
   private <T> Flux<Notification.OutgoingRequest> outgoingRequests(
@@ -1730,7 +1730,7 @@ public class StateMachine {
             UUID.randomUUID(),
             currentEvent.getEventNumber(),
             message,
-            notificationModel.subscriber(),
+            notificationModel.queue(),
             creator.id(),
             notificationModel.guaranteed(),
             notificationModel.maxRetryAttempts(),

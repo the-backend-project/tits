@@ -20,8 +20,8 @@ public interface Input {
   int nextEventNumber();
 
   <T> Mono<IncomingRequest> incomingRequest(EventType eventType, Class<T> type);
-  <T> Mono<OutgoingRequest<T>> outgoingRequest(Subscriber subscriber, EventType eventType, Class<T> type);
-  <T> Mono<IncomingResponse> incomingResponse(Subscriber subscriber, EventType eventType, Class<T> type);
+  <T> Mono<OutgoingRequest<T>> outgoingRequest(OutboxQueue queue, EventType eventType, Class<T> type);
+  <T> Mono<IncomingResponse> incomingResponse(OutboxQueue queue, EventType eventType, Class<T> type);
 
   List<LoadedEvent> all(EventType... eventTypes);
 

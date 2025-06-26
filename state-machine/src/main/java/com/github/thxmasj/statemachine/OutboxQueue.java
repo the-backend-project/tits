@@ -2,7 +2,7 @@ package com.github.thxmasj.statemachine;
 
 import java.util.UUID;
 
-public interface Subscriber {
+public interface OutboxQueue {
 
   String name();
 
