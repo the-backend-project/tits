@@ -2,6 +2,8 @@ package com.github.thxmasj.statemachine.database.mssql;
 
 import com.github.thxmasj.statemachine.EntityId;
 import com.github.thxmasj.statemachine.EntityModel;
+import com.github.thxmasj.statemachine.message.http.HttpMessageParser;
+import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import reactor.core.publisher.Mono;
 
 import javax.sql.DataSource;
@@ -32,7 +34,7 @@ public class IncomingRequestByEvent {
     }
   }
 
-  public Mono<String> execute(EntityModel entityModel, EntityId entityId, int eventNumber) {
+  public Mono<HttpRequestMessage> execute(EntityModel entityModel, EntityId entityId, int eventNumber) {
     String sqlToPrepare = requireNonNull(sqls.get(entityModel));
     return Mono.fromCallable(() -> {
       try (
@@ -44,7 +46,7 @@ public class IncomingRequestByEvent {
         if (!rs.next()) {
           return null; // Yields Mono.empty
         }
-        return rs.getString("Data");
+        return HttpMessageParser.parseRequest(rs.getString("Data"));
       }
     });
   }

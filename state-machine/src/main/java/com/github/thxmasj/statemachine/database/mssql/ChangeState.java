@@ -70,7 +70,7 @@ public class ChangeState {
           .bind("incomingRequestMessageId"+i, irq.messageId())
           .bind("incomingRequestClientId"+i, irq.clientId())
           .bind("incomingRequestDigest"+i, irq.digest())
-          .bind("incomingRequestData"+i, irq.message());
+          .bind("incomingRequestData"+i, irq.message().message());
     }
     for (int i = 0; i < change.outgoingRequests().size(); i++) {
       OutgoingRequest orq = change.outgoingRequests().get(i);
@@ -83,19 +83,19 @@ public class ChangeState {
           .bind("outgoingRequestCreatorId"+i, orq.creatorId())
           .bind("correlationId", correlationId)
           .bind("outgoingRequestGuaranteedDelivery" + i, orq.guaranteed())
-          .bind("outgoingRequestData"+i, orq.message());
+          .bind("outgoingRequestData"+i, orq.message().message());
     }
     for (int i = 0; i < change.outgoingResponses().size(); i++) {
       OutgoingResponse ors = change.outgoingResponses().get(i);
       spec.bind("outgoingResponseEventNumber"+i, ors.eventNumber())
           .bind("outgoingResponseRequestId"+i, ors.requestId())
-          .bind("outgoingResponseData"+i, ors.message());
+          .bind("outgoingResponseData"+i, ors.message().message());
     }
     for (int i = 0; i < change.incomingResponses().size(); i++) {
       IncomingResponse irs = change.incomingResponses().get(i);
       spec.bind("incomingResponseEventNumber"+i, irs.eventNumber())
           .bind("incomingResponseRequestId"+i, irs.requestId())
-          .bind("incomingResponseData"+i, irs.message());
+          .bind("incomingResponseData"+i, irs.message().message());
     }
     if (deadline != null) {
       spec.bind("eventNumber", events.getLast().getEventNumber()) // new current event number

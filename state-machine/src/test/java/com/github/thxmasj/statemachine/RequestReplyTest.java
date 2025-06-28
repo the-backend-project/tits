@@ -21,6 +21,7 @@ import com.github.thxmasj.statemachine.database.Client.Config;
 import com.github.thxmasj.statemachine.database.jdbc.DataSourceBuilder;
 import com.github.thxmasj.statemachine.http.NettyHttpClientBuilder;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
+import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -85,10 +86,10 @@ public class RequestReplyTest {
   static class LampNotification implements OutgoingRequestCreator<String> {
 
     @Override
-    public Mono<String> create(String data, EntityId entityId, String correlationId, Input input) {
+    public Mono<HttpRequestMessage> create(String data, EntityId entityId, String correlationId, Input input) {
       return Mono.just(new HttpRequestMessage(POST, URI.create(
           "http://localhost:" + server.getAddress().getPort() + "/lamps/" + entityId.value()
-      )).message());
+      )));
     }
 
     @Override
@@ -120,7 +121,7 @@ public class RequestReplyTest {
             from(On).to(Off).onEvent(Toggle).build(),
             from(On).to(Off).onEvent(SwitchOff).build(),
             from(Off).to(On).onEvent(Toggle)
-                .response((_, _, _, _, _) -> Mono.just("Light is on!"))
+                .response((_, _, _, _, _) -> Mono.just(new HttpResponseMessage(200, "OK", "Light is on!")))
                 .notify(request(new LampNotification()).to(DeviceListener).guaranteed()),
             from(Off).to(On).onEvent(SwitchOn).build()
         );

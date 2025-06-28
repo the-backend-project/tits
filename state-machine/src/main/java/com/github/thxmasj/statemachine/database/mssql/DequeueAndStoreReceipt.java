@@ -4,6 +4,7 @@ import com.github.thxmasj.statemachine.OutboxElement;
 import com.github.thxmasj.statemachine.database.Client;
 import java.time.Clock;
 import java.time.ZonedDateTime;
+import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import reactor.core.publisher.Mono;
 
 public class DequeueAndStoreReceipt {
@@ -48,7 +49,7 @@ public class DequeueAndStoreReceipt {
 
   public Mono<Void> execute(
       OutboxElement outboxElement,
-      String responseMessage,
+      HttpResponseMessage responseMessage,
       ZonedDateTime timestamp
   ) {
     Client.Query.Builder builder = databaseClient.sql(sql).name("DequeueAndStoreReceipt");
@@ -56,7 +57,7 @@ public class DequeueAndStoreReceipt {
         .bind("elementId", outboxElement.queueElementId())
         .bind("entityId", outboxElement.entityId().value())
         .bind("eventNumber", outboxElement.eventNumber())
-        .bind("data", responseMessage)
+        .bind("data", responseMessage.message())
         .bind("timestamp", timestamp.withZoneSameInstant(clock.getZone()).toLocalDateTime())
         .bind("requestId", outboxElement.requestId())
         .update()

@@ -156,10 +156,6 @@ public class Requirements {
     return last(notifications(queue, ExchangeType.OutgoingRequest, dataType), eventType);
   }
 
-  public static  EventRequirement incomingResponse(OutboxQueue queue, EventType eventType, Class<?> dataType) {
-    return last(notifications(queue, ExchangeType.IncomingResponse, dataType), eventType);
-  }
-
   public static  EventRequirement current(EventType... eligibleEventTypes) {
     return new EventRequirement(Arrays.asList(eligibleEventTypes), Type.Current);
   }

@@ -3,6 +3,7 @@ package com.github.thxmasj.statemachine.templates.cardpayment;
 import com.github.thxmasj.statemachine.EntityId;
 import com.github.thxmasj.statemachine.IncomingResponseValidator;
 import com.github.thxmasj.statemachine.Input;
+import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.templates.cardpayment.ApprovedAuthorisationDataCreator.ApprovedAuthorisationData;
 import com.github.thxmasj.statemachine.templates.cardpayment.ApprovedCaptureDataCreator.ApprovedCaptureData;
 import com.github.thxmasj.statemachine.templates.cardpayment.ApprovedRefundDataCreator.ApprovedRefundData;
@@ -27,7 +28,7 @@ public class DummyPayment extends AbstractPayment{
   protected OutgoingRequests.Preauthorisation preauthorisation() {
     return new OutgoingRequests.Preauthorisation() {
       @Override
-      public Mono<String> create(
+      public Mono<HttpRequestMessage> create(
           PaymentEvent.Authorisation data,
           EntityId entityId,
           String correlationId,
@@ -47,7 +48,7 @@ public class DummyPayment extends AbstractPayment{
   protected OutgoingRequests.PreauthorisationReversal preauthorisationReversal() {
     return new OutgoingRequests.PreauthorisationReversal() {
       @Override
-      public Mono<String> create(
+      public Mono<HttpRequestMessage> create(
           PreauthorisationReversalData data,
           EntityId entityId,
           String correlationId,
@@ -66,7 +67,7 @@ public class DummyPayment extends AbstractPayment{
   protected Authorisation authorisation() {
     return new OutgoingRequests.Authorisation() {
       @Override
-      public Mono<String> create(
+      public Mono<HttpRequestMessage> create(
           PaymentEvent.Authorisation data,
           EntityId entityId,
           String correlationId,
@@ -86,7 +87,7 @@ public class DummyPayment extends AbstractPayment{
   protected OutgoingRequests.AuthorisationReversal authorisationReversal() {
     return new OutgoingRequests.AuthorisationReversal() {
       @Override
-      public Mono<String> create(
+      public Mono<HttpRequestMessage> create(
           AuthorisationReversalData data,
           EntityId entityId,
           String correlationId,
@@ -107,7 +108,7 @@ public class DummyPayment extends AbstractPayment{
   protected OutgoingRequests.RolledBackPreauthorisationRequest rolledBackPreauthorisationRequest() {
     return new OutgoingRequests.RolledBackPreauthorisationRequest() {
       @Override
-      public Mono<String> create(
+      public Mono<HttpRequestMessage> create(
           PreauthorisationReversalData data,
           EntityId entityId,
           String correlationId,
@@ -127,7 +128,7 @@ public class DummyPayment extends AbstractPayment{
   protected OutgoingRequests.RolledBackAuthorisationRequest rolledBackAuthorisationRequest() {
     return new OutgoingRequests.RolledBackAuthorisationRequest() {
       @Override
-      public Mono<String> create(
+      public Mono<HttpRequestMessage> create(
           AuthorisationReversalData data,
           EntityId entityId,
           String correlationId,
@@ -147,7 +148,7 @@ public class DummyPayment extends AbstractPayment{
   protected OutgoingRequests.FailedAuthentication failedAuthentication() {
     return new OutgoingRequests.FailedAuthentication() {
       @Override
-      public Mono<String> create(
+      public Mono<HttpRequestMessage> create(
           PaymentEvent.Authorisation data,
           EntityId entityId,
           String correlationId,
@@ -168,7 +169,7 @@ public class DummyPayment extends AbstractPayment{
   protected OutgoingRequests.FailedTokenValidation failedTokenValidation() {
     return new OutgoingRequests.FailedTokenValidation() {
       @Override
-      public Mono<String> create(
+      public Mono<HttpRequestMessage> create(
           PaymentEvent.Authorisation data,
           EntityId entityId,
           String correlationId,
@@ -188,7 +189,7 @@ public class DummyPayment extends AbstractPayment{
   protected OutgoingRequests.FailedAuthorisation failedAuthorisation() {
     return new OutgoingRequests.FailedAuthorisation() {
       @Override
-      public Mono<String> create(
+      public Mono<HttpRequestMessage> create(
           PaymentEvent.Authorisation data,
           EntityId entityId,
           String correlationId,
@@ -208,7 +209,7 @@ public class DummyPayment extends AbstractPayment{
   protected OutgoingRequests.DeclinedAuthorisation declinedAuthorisation() {
     return new OutgoingRequests.DeclinedAuthorisation() {
       @Override
-      public Mono<String> create(String data, EntityId entityId, String correlationId, Input input) {
+      public Mono<HttpRequestMessage> create(String data, EntityId entityId, String correlationId, Input input) {
         return null;
       }
 
@@ -223,7 +224,7 @@ public class DummyPayment extends AbstractPayment{
   protected OutgoingRequests.ApprovedPreauthorisation approvedPreauthorisation() {
     return new OutgoingRequests.ApprovedPreauthorisation() {
       @Override
-      public Mono<String> create(String data, EntityId entityId, String correlationId, Input input) {
+      public Mono<HttpRequestMessage> create(String data, EntityId entityId, String correlationId, Input input) {
         return null;
       }
 
@@ -238,7 +239,7 @@ public class DummyPayment extends AbstractPayment{
   protected OutgoingRequests.ApprovedCapture approvedCapture() {
     return new OutgoingRequests.ApprovedCapture() {
       @Override
-      public Mono<String> create(ApprovedCaptureData data, EntityId entityId, String correlationId, Input input) {
+      public Mono<HttpRequestMessage> create(ApprovedCaptureData data, EntityId entityId, String correlationId, Input input) {
         return null;
       }
 
@@ -253,7 +254,7 @@ public class DummyPayment extends AbstractPayment{
   protected OutgoingRequests.ApprovedAuthorisation approvedAuthorisation() {
     return new OutgoingRequests.ApprovedAuthorisation() {
       @Override
-      public Mono<String> create(
+      public Mono<HttpRequestMessage> create(
           ApprovedAuthorisationData data,
           EntityId entityId,
           String correlationId,
@@ -273,7 +274,7 @@ public class DummyPayment extends AbstractPayment{
   protected OutgoingRequests.Capture capture() {
     return new OutgoingRequests.Capture() {
       @Override
-      public Mono<String> create(CaptureRequestData data, EntityId entityId, String correlationId, Input input) {
+      public Mono<HttpRequestMessage> create(CaptureRequestData data, EntityId entityId, String correlationId, Input input) {
         return null;
       }
 
@@ -288,7 +289,7 @@ public class DummyPayment extends AbstractPayment{
   protected OutgoingRequests.CaptureTooLate captureRequestedTooLate() {
     return new OutgoingRequests.CaptureTooLate() {
       @Override
-      public Mono<String> create(
+      public Mono<HttpRequestMessage> create(
           CaptureRequestedTooLateData data,
           EntityId entityId,
           String correlationId,
@@ -308,7 +309,7 @@ public class DummyPayment extends AbstractPayment{
   protected OutgoingRequests.RefundAuthorisation refundAuthorisation() {
     return new OutgoingRequests.RefundAuthorisation() {
       @Override
-      public Mono<String> create(RefundRequestData data, EntityId entityId, String correlationId, Input input) {
+      public Mono<HttpRequestMessage> create(RefundRequestData data, EntityId entityId, String correlationId, Input input) {
         return null;
       }
 
@@ -323,7 +324,7 @@ public class DummyPayment extends AbstractPayment{
   protected OutgoingRequests.RefundReversal refundReversal() {
     return new OutgoingRequests.RefundReversal() {
       @Override
-      public Mono<String> create(RefundReversalData data, EntityId entityId, String correlationId, Input input) {
+      public Mono<HttpRequestMessage> create(RefundReversalData data, EntityId entityId, String correlationId, Input input) {
         return null;
       }
 
@@ -338,7 +339,7 @@ public class DummyPayment extends AbstractPayment{
   protected OutgoingRequests.FailedRefund failedRefund() {
     return new OutgoingRequests.FailedRefund() {
       @Override
-      public Mono<String> create(FailedRefundData data, EntityId entityId, String correlationId, Input input) {
+      public Mono<HttpRequestMessage> create(FailedRefundData data, EntityId entityId, String correlationId, Input input) {
         return null;
       }
 
@@ -353,7 +354,7 @@ public class DummyPayment extends AbstractPayment{
   protected OutgoingRequests.ApprovedRefund approvedRefund() {
     return new OutgoingRequests.ApprovedRefund() {
       @Override
-      public Mono<String> create(ApprovedRefundData data, EntityId entityId, String correlationId, Input input) {
+      public Mono<HttpRequestMessage> create(ApprovedRefundData data, EntityId entityId, String correlationId, Input input) {
         return null;
       }
 
@@ -368,7 +369,7 @@ public class DummyPayment extends AbstractPayment{
   protected OutgoingRequests.DeclinedRefund declinedRefund() {
     return new OutgoingRequests.DeclinedRefund() {
       @Override
-      public Mono<String> create(DeclinedRefundData data, EntityId entityId, String correlationId, Input input) {
+      public Mono<HttpRequestMessage> create(DeclinedRefundData data, EntityId entityId, String correlationId, Input input) {
         return null;
       }
 

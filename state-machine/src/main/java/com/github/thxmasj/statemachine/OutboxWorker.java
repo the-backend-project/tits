@@ -2,7 +2,6 @@ package com.github.thxmasj.statemachine;
 
 import com.github.thxmasj.statemachine.database.Client.ConcurrencyFailure;
 import com.github.thxmasj.statemachine.database.mssql.ProcessBackedOff;
-import com.github.thxmasj.statemachine.database.mssql.ProcessNew;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -17,12 +16,9 @@ public class OutboxWorker {
       "Transaction \\(Process ID (\\d+)\\) was deadlocked on lock resources with another process and has been chosen as the deadlock victim. Rerun the transaction.");
 
   private final StateMachine stateMachine;
-  private final EntityModel entityModel;
   private final OutboxQueue queue;
-  private final String schemaName;
   private final Clock clock;
   private final Listener listener;
-  private final ProcessNew processNew;
   private final ProcessBackedOff processBackedOff;
 
   public enum ExchangeType {
@@ -43,51 +39,38 @@ public class OutboxWorker {
 
   public OutboxWorker(
       StateMachine stateMachine,
-      ProcessNew processNew,
       ProcessBackedOff processBackedOff,
-      EntityModel entityModel,
       Listener listener,
       OutboxQueue queue,
-      String schemaName,
       Clock clock
   ) {
     this.stateMachine = stateMachine;
-    this.entityModel = entityModel;
     this.queue = queue;
-    this.schemaName = schemaName;
     this.clock = clock;
     this.listener = listener;
-    this.processNew = processNew;
     this.processBackedOff = processBackedOff;
   }
 
   public Flux<ForwardStatus> doForward() {
     var now = LocalDateTime.now(clock);
-//    return processNew.execute(now, entityModel, queue)
-//        .onErrorResume(
-//            e -> e instanceof PrimaryKeyConstraintViolation f && "OutboxQueueProcessing".equals(f.tableName()),
-//            _ -> {
-//              listener.forwardingRaced(queue.name());
-//              return Mono.empty();
-//            }
-//        )
-//        .mergeWith(processBackedOff.execute(now, queue))
-        return processBackedOff.execute(now, queue)
-            .doOnNext(e -> listener.forwardingAttempt(
-                    e.requestId(),
-                    e.queue().name(),
-                    e.enqueuedAt(),
-                    e.attempt(),
-                    e.entityId(),
-                    e.eventNumber(),
-                    e.correlationId()
-                )
+    return processBackedOff.execute(now, queue)
+        .doOnNext(e -> listener.forwardingAttempt(
+                e.requestId(),
+                e.queue().name(),
+                e.enqueuedAt(),
+                e.attempt(),
+                e.entityId(),
+                e.eventNumber(),
+                e.correlationId()
             )
+        )
         .flatMap(stateMachine::forward)
-        .onErrorResume(this::isDeadlock, _ -> {
-          listener.forwardingDeadlock(queue.name());
-          return Mono.just(ForwardStatus.Deadlock);
-        })
+        .onErrorResume(
+            this::isDeadlock, _ -> {
+              listener.forwardingDeadlock(queue.name());
+              return Mono.just(ForwardStatus.Deadlock);
+            }
+        )
         .onErrorResume(t -> {
           listener.forwardingError(queue.name(), t);
           return Mono.just(ForwardStatus.Error);

@@ -21,7 +21,6 @@ public interface Input {
 
   <T> Mono<IncomingRequest> incomingRequest(EventType eventType, Class<T> type);
   <T> Mono<OutgoingRequest<T>> outgoingRequest(OutboxQueue queue, EventType eventType, Class<T> type);
-  <T> Mono<IncomingResponse> incomingResponse(OutboxQueue queue, EventType eventType, Class<T> type);
 
   List<LoadedEvent> all(EventType... eventTypes);
 

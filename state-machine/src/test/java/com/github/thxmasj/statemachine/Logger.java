@@ -1,6 +1,7 @@
 package com.github.thxmasj.statemachine;
 
 import com.github.thxmasj.statemachine.database.*;
+import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import java.time.*;
 import java.util.*;
 
@@ -91,7 +92,7 @@ public class Logger implements Listener {
   }
 
   @Override
-  public void forwardingCompleted(UUID requestId, String queue, ZonedDateTime enqueuedAt, int attempt, EntityId entityId, int eventNumber, String correlationId, String receipt, String reason) {
+  public void forwardingCompleted(UUID requestId, String queue, ZonedDateTime enqueuedAt, int attempt, EntityId entityId, int eventNumber, String correlationId, HttpResponseMessage receipt, String reason) {
     log("Forwarding completed: " + requestId);
   }
 

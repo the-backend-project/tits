@@ -17,6 +17,16 @@ public class HttpMessageParser {
     return new HttpRequestMessage(method, uri, headers, body);
   }
 
+  public static HttpResponseMessage parseResponse(String message) {
+    String statusLine = message.lines().findFirst().orElseThrow();
+    var s = statusLine.substring(statusLine.indexOf(" ") + 1);
+    int statusCode = Integer.parseInt(s.substring(0, s.indexOf(" ")));
+    String reasonPhrase = statusLine.substring(statusLine.lastIndexOf(" ") + 1);
+    Map<String, String> headers = HttpMessageParser.headers(message);
+    String body = HttpMessageParser.body(message);
+    return new HttpResponseMessage(statusCode, reasonPhrase, headers, body);
+  }
+
   private static URI uri(String message) {
     String startLine = message.lines().findFirst().orElseThrow();
     return URI.create(startLine.substring(message.indexOf(" ") + 1));

@@ -11,6 +11,7 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.github.thxmasj.statemachine.Event.LoadedEvent;
+import com.github.thxmasj.statemachine.Notification.OutgoingResponse;
 import com.github.thxmasj.statemachine.OutboxWorker.ExchangeType;
 import com.github.thxmasj.statemachine.Requirements.MissingRequirement;
 import com.github.thxmasj.statemachine.Requirements.NotificationRequirement;
@@ -22,8 +23,7 @@ import com.github.thxmasj.statemachine.database.mssql.IncomingRequestByEvent;
 import com.github.thxmasj.statemachine.database.mssql.IncomingResponseByEvent;
 import com.github.thxmasj.statemachine.database.mssql.OutgoingRequestByEvent;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
-import com.github.thxmasj.statemachine.message.http.HttpMessageParser;
-import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
+import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -76,31 +76,32 @@ public class RequiredData implements Input {
       case Notification.IncomingRequest _ -> requirement.exchangeType() == ExchangeType.IncomingRequest;
       case Notification.OutgoingRequest outgoingRequest -> requirement.exchangeType() == ExchangeType.OutgoingRequest && requirement.queue().equals(outgoingRequest.queue());
       case Notification.IncomingResponse incomingResponse -> requirement.exchangeType() == ExchangeType.IncomingResponse && requirement.queue().equals(incomingResponse.queue());
-      case Notification.OutgoingResponse _ -> requirement.exchangeType() == ExchangeType.OutgoingResponse;
+      case OutgoingResponse _ -> requirement.exchangeType() == ExchangeType.OutgoingResponse;
     };
   }
 
-  private Mono<String> getNotification(
+  private Mono<HttpRequestMessage> getNotification(
       EntityId entityId,
       EntityModel entityModel,
       List<Notification> inflightNotifications,
       Event event,
       Requirement requirement
   ) {
+    //noinspection SwitchStatementWithTooFewBranches
     return inflightNotifications.stream()
         .filter(n -> n != null &&
             n.eventNumber() == event.getEventNumber() &&
             isMatchingRequirement(n, requirement.notification())
         )
         .findFirst()
-        .map(Notification::message)
-        .map(Mono::just)
+        .map(n -> switch (n) {
+          case Notification.IncomingRequest rq -> Mono.just(rq.message());
+          default -> throw new IllegalStateException("Unexpected value: " + n);
+        })
         .orElse(switch (requirement.notification().exchangeType()) {
           case ExchangeType.IncomingRequest ->
               incomingRequestByEvent.execute(entityModel, entityId, event.getEventNumber());
           case ExchangeType.OutgoingRequest -> outgoingRequestByEvent.execute(entityId, event.getEventNumber());
-          case ExchangeType.IncomingResponse ->
-              incomingResponseByEvent.execute(entityModel, requirement.notification().queue(), entityId, event.getEventNumber());
           default -> Mono.error(
               new GetNotificationFailed(format(
                   "No %s notification found for event %s with number %s of type %s and queue %s for requirer %s. Inflight notifications: %s. Events: %s",
@@ -201,11 +202,11 @@ public class RequiredData implements Input {
     } catch (RuntimeException e) {
       throw new LoadFailed("Failed to unmarshal data from " + event.getType() + " -- data=" + event.getData() + ", error=" + e);
     }
-    Mono<String> notification = requirement.notification() == null ? null : getNotification(entityId, entityModel, inflightNotifications, event, requirement);
+    Mono<HttpRequestMessage> notification = requirement.notification() == null ? null : getNotification(entityId, entityModel, inflightNotifications, event, requirement);
     Mono<Object> loaded = null;
     if (notification != null) {
       loaded = notification.mapNotNull(n -> {
-        String body = HttpMessageParser.parseRequest(n).body();
+        String body = n.body();
         if (requirement.notification().dataType() == String.class) {
           if (body == null) return ""; // TODO: Hacky way to handle incoming requests/responses without body.
           return (Object) body;
@@ -252,7 +253,7 @@ public class RequiredData implements Input {
     var loadedEvent = last(eventType);
     return loadedEvent.getNotification()
         .map(message -> new IncomingRequest(
-                HttpMessageParser.parseRequest(message),
+                message,
                 loadedEvent.getMessageId(),
                 loadedEvent.clientId(),
                 loadedEvent.eventNumber()
@@ -265,17 +266,7 @@ public class RequiredData implements Input {
     var loadedEvent = last(eventType);
     return loadedEvent.getNotification()
         .map(message -> new OutgoingRequest<>(
-            HttpMessageParser.parseRequest(message),
-            loadedEvent.eventNumber()
-        ));
-  }
-
-  @Override
-  public <T> Mono<IncomingResponse> incomingResponse(OutboxQueue queue, EventType eventType, Class<T> type) {
-    var loadedEvent = last(eventType);
-    return loadedEvent.getNotification()
-        .map(message -> new IncomingResponse(
-            new HttpResponseMessage(message),
+            message,
             loadedEvent.eventNumber()
         ));
   }

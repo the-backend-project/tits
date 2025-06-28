@@ -33,7 +33,7 @@ public class HttpResponseCreator implements OutgoingResponseCreator<String> {
   }
 
   @Override
-  public Mono<String> create(
+  public Mono<HttpResponseMessage> create(
       String data,
       IncomingRequest incomingRequest,
       EntityId entityId,
@@ -46,7 +46,7 @@ public class HttpResponseCreator implements OutgoingResponseCreator<String> {
             reasonPhrase,
             headers(correlationId, data),
             json(body(entityId, data, input.timestamp()))
-        ).toString()
+        )
     );
   }
 

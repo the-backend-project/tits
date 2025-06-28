@@ -10,6 +10,7 @@ import com.github.thxmasj.statemachine.OutboxElement;
 import com.github.thxmasj.statemachine.OutboxQueue;
 import com.github.thxmasj.statemachine.database.MappingFailure;
 import com.github.thxmasj.statemachine.database.Row;
+import com.github.thxmasj.statemachine.message.http.HttpMessageParser;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZonedDateTime;
@@ -56,7 +57,7 @@ public class Mappers {
         requireNonNull(queue),
         requireNonNull(row.get("Guaranteed", Boolean.class)),
         ZonedDateTime.of(requireNonNull(row.get("EnqueuedAt", LocalDateTime.class)), clock.getZone()),
-        row.get("Data", String.class),
+        HttpMessageParser.parseRequest(row.get("Data", String.class)),
         row.get("CorrelationId", String.class),
         requireNonNull(row.get("Attempt", Integer.class)),
         ZonedDateTime.of(requireNonNull(row.get("NextAttemptAt", LocalDateTime.class)), clock.getZone()),

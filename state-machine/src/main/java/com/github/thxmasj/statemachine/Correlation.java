@@ -1,5 +1,6 @@
 package com.github.thxmasj.statemachine;
 
+import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
 import reactor.util.annotation.NonNull;
@@ -19,7 +20,7 @@ public class Correlation {
         .contextWrite(ctx -> ctx.hasKey(CORRELATION_ID) ? ctx : ctx.put(CORRELATION_ID, UUID.randomUUID().toString()));
   }
 
-  public static ContextView contextOf(@NonNull String correlationId, Sinks.One<String> responseSink, UUID requestId) {
+  public static ContextView contextOf(@NonNull String correlationId, Sinks.One<HttpResponseMessage> responseSink, UUID requestId) {
     return Context.of(CORRELATION_ID, correlationId, RESPONSE_SINK, responseSink, REQUEST_ID, requestId);
   }
 
@@ -39,7 +40,7 @@ public class Correlation {
     return context.hasKey(REQUEST_ID);
   }
 
-  public static Sinks.One<String> responseSink(ContextView context) {
+  public static Sinks.One<HttpResponseMessage> responseSink(ContextView context) {
     return context.get(RESPONSE_SINK);
   }
 

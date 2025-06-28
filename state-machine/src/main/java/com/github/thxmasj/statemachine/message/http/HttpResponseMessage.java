@@ -12,16 +12,6 @@ public class HttpResponseMessage {
   private final Map<String, String> headers;
   private final String body;
 
-  public HttpResponseMessage(String message) {
-    String statusLine = message.lines().findFirst().orElseThrow();
-    this.message = message;
-    var s = statusLine.substring(statusLine.indexOf(" ") + 1);
-    this.statusCode = Integer.parseInt(s.substring(0, s.indexOf(" ")));
-    this.reasonPhrase = statusLine.substring(statusLine.lastIndexOf(" ") + 1);
-    this.headers = HttpMessageParser.headers(message);
-    this.body = HttpMessageParser.body(message);
-  }
-
   public HttpResponseMessage(int statusCode, String reasonPhrase) {
     this(statusCode, reasonPhrase, Map.of());
   }
@@ -78,6 +68,7 @@ public class HttpResponseMessage {
     return body;
   }
 
+  @Override
   public String toString() {
     return message;
   }

@@ -5,13 +5,15 @@ import static com.github.thxmasj.statemachine.database.jdbc.PreparedStatementSup
 import java.sql.ResultSet;
 import java.util.Map;
 import javax.sql.DataSource;
+import com.github.thxmasj.statemachine.message.http.HttpMessageParser;
+import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import reactor.core.publisher.Mono;
 
 public class OutgoingResponseAndRequestDigestByRequest {
 
   public record InboxEntry(
       byte[] requestDigest,
-      String responseMessage
+      HttpResponseMessage responseMessage
   ) {}
 
   private final DataSource dataSource;
@@ -40,7 +42,7 @@ public class OutgoingResponseAndRequestDigestByRequest {
             if (!rs.next()) {
               return null; // Yields Mono.empty
             }
-            return new InboxEntry(rs.getBytes("Digest"), rs.getString("Data"));
+            return new InboxEntry(rs.getBytes("Digest"), HttpMessageParser.parseResponse(rs.getString("Data")));
           }
         });
   }

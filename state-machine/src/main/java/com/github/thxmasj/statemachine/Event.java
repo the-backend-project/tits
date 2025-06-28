@@ -12,6 +12,7 @@ import java.time.LocalDateTime;
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.stream.Stream;
+import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import reactor.core.publisher.Mono;
 
 public final class Event {
@@ -62,13 +63,13 @@ public final class Event {
     private final Object unmarshalled;
     private final Mono<Object> loaded;
     private final Event event;
-    private final Mono<String> notification;
+    private final Mono<HttpRequestMessage> notification;
 
     public LoadedEvent(
         Object unmarshalled,
         Mono<Object> loaded,
         Event event,
-        Mono<String> notification
+        Mono<HttpRequestMessage> notification
     ) {
       this.unmarshalled = unmarshalled;
       this.loaded = loaded;
@@ -76,7 +77,7 @@ public final class Event {
       this.notification = notification;
     }
 
-    public Mono<String> getNotification() {
+    public Mono<HttpRequestMessage> getNotification() {
       return notification;
     }
 

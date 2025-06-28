@@ -114,4 +114,9 @@ public class HttpRequestMessage {
     }
   }
 
+  @Override
+  public String toString() {
+    return message;
+  }
+
 }

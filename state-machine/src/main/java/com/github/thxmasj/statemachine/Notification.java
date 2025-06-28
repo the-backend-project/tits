@@ -1,5 +1,7 @@
 package com.github.thxmasj.statemachine;
 
+import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
+import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import java.time.Duration;
 import java.util.UUID;
 
@@ -11,33 +13,36 @@ public abstract sealed class Notification permits
 {
 
   private final int eventNumber;
-  private final String message;
 
   public Notification(
-      int eventNumber,
-      String message
+      int eventNumber
   ) {
     this.eventNumber = eventNumber;
-    this.message = message;
   }
 
   public static final class IncomingResponse extends Notification {
 
+    private final HttpResponseMessage message;
     private final OutboxQueue queue;
     private final boolean guaranteed;
     private final UUID requestId;
 
     public IncomingResponse(
         int eventNumber,
-        String message,
+        HttpResponseMessage message,
         UUID requestId,
         OutboxQueue queue,
         boolean guaranteed
     ) {
-      super(eventNumber, message);
+      super(eventNumber);
+      this.message = message;
       this.queue = queue;
       this.guaranteed = guaranteed;
       this.requestId = requestId;
+    }
+
+    public HttpResponseMessage message() {
+      return message;
     }
 
     public OutboxQueue queue() {
@@ -57,6 +62,7 @@ public abstract sealed class Notification permits
   public static final class OutgoingRequest extends Notification {
 
     private final UUID id;
+    private final HttpRequestMessage message;
     private final OutboxQueue queue;
     private final UUID creatorId;
     private final boolean guaranteed;
@@ -67,7 +73,7 @@ public abstract sealed class Notification permits
     public OutgoingRequest(
         UUID id,
         int eventNumber,
-        String message,
+        HttpRequestMessage message,
         OutboxQueue queue,
         UUID creatorId,
         boolean guaranteed,
@@ -75,8 +81,9 @@ public abstract sealed class Notification permits
         Duration retryInterval,
         EntityId parentEntity
     ) {
-      super(eventNumber, message);
+      super(eventNumber);
       this.id = id;
+      this.message = message;
       this.queue = queue;
       this.creatorId = creatorId;
       this.guaranteed = guaranteed;
@@ -87,6 +94,10 @@ public abstract sealed class Notification permits
 
     public UUID id() {
       return id;
+    }
+
+    public HttpRequestMessage message() {
+      return message;
     }
 
     public OutboxQueue queue() {
@@ -118,18 +129,24 @@ public abstract sealed class Notification permits
   public static final class OutgoingResponse extends Notification {
 
     private final UUID requestId;
+    private final HttpResponseMessage message;
 
     public OutgoingResponse(
         int eventNumber,
-        String message,
+        HttpResponseMessage message,
         UUID requestId
     ) {
-      super(eventNumber, message);
+      super(eventNumber);
       this.requestId = requestId;
+      this.message = message;
     }
 
     public UUID requestId() {
       return requestId;
+    }
+
+    public HttpResponseMessage message() {
+      return message;
     }
 
   }
@@ -137,6 +154,7 @@ public abstract sealed class Notification permits
   public static final class IncomingRequest extends Notification {
 
     private final UUID id;
+    private final HttpRequestMessage message;
     private final String messageId;
     private final String clientId;
     private final byte[] digest;
@@ -144,13 +162,14 @@ public abstract sealed class Notification permits
     public IncomingRequest(
         UUID id,
         int eventNumber,
-        String message,
+        HttpRequestMessage message,
         String messageId,
         String clientId,
         byte[] digest
     ) {
-      super(eventNumber, message);
+      super(eventNumber);
       this.id = id;
+      this.message = message;
       this.messageId = messageId;
       this.clientId = clientId;
       this.digest = digest;
@@ -158,6 +177,10 @@ public abstract sealed class Notification permits
 
     public UUID id() {
       return id;
+    }
+
+    public HttpRequestMessage message() {
+      return message;
     }
 
     public String messageId() {
@@ -176,10 +199,6 @@ public abstract sealed class Notification permits
 
   public int eventNumber() {
     return eventNumber;
-  }
-
-  public String message() {
-    return message;
   }
 
   public enum Type {

@@ -6,6 +6,8 @@ import com.github.thxmasj.statemachine.EntityId;
 import java.sql.ResultSet;
 import java.util.Map;
 import javax.sql.DataSource;
+import com.github.thxmasj.statemachine.message.http.HttpMessageParser;
+import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import reactor.core.publisher.Mono;
 
 public class OutgoingRequestByEvent {
@@ -23,7 +25,7 @@ public class OutgoingRequestByEvent {
         """.replace("{schema}", schemaName);
   }
 
-  public Mono<String> execute(EntityId entityId, int eventNumber) {
+  public Mono<HttpRequestMessage> execute(EntityId entityId, int eventNumber) {
     return Mono.fromCallable(() -> {
       try (
           var connection = dataSource.getConnection();
@@ -34,7 +36,7 @@ public class OutgoingRequestByEvent {
         if (!rs.next()) {
           return null; // Yields Mono.empty
         }
-        return rs.getString("Data");
+        return HttpMessageParser.parseRequest(rs.getString("Data"));
       }
     });
   }

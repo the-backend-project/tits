@@ -1,18 +1,19 @@
 package com.github.thxmasj.statemachine;
 
+import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import reactor.core.publisher.Mono;
 import java.util.UUID;
 
 public interface OutgoingRequestCreator<T> extends DataRequirer {
 
-  Mono<String> create(
+  Mono<HttpRequestMessage> create(
       T data,
       EntityId entityId,
       String correlationId,
       Input input
   );
 
-  default String repeated(String message) {
+  default HttpRequestMessage repeated(HttpRequestMessage message) {
     return message;
   }
 

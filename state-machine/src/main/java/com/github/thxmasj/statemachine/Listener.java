@@ -1,6 +1,8 @@
 package com.github.thxmasj.statemachine;
 
 import com.github.thxmasj.statemachine.database.ChangeRaced;
+import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
+import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.List;
@@ -48,12 +50,13 @@ public interface Listener {
         Entity entity,
         State sourceState,
         State targetState,
+        ZonedDateTime timeout,
         List<Event> events,
         List<String> secondaryIds,
-        List<String> incomingRequests,
-        List<String> outgoingResponses,
-        List<String> outgoingRequests,
-        List<String> incomingResponses
+        List<HttpRequestMessage> incomingRequests,
+        List<HttpResponseMessage> outgoingResponses,
+        List<HttpRequestMessage> outgoingRequests,
+        List<HttpResponseMessage> incomingResponses
     ) {
       public record Entity(
           EntityModel type,
@@ -86,7 +89,7 @@ public interface Listener {
 
     void forwardingAttempt(UUID requestId, String queue, ZonedDateTime enqueuedAt, int attempt, EntityId entityId, int eventNumber, String correlationId);
 
-    void forwardingCompleted(UUID requestId, String queue, ZonedDateTime enqueuedAt, int attempt, EntityId entityId, int eventNumber, String correlationId, String receipt, String reason);
+    void forwardingCompleted(UUID requestId, String queue, ZonedDateTime enqueuedAt, int attempt, EntityId entityId, int eventNumber, String correlationId, HttpResponseMessage receipt, String reason);
 
     void forwardingBackedOff(UUID requestId, String queue, ZonedDateTime enqueuedAt, int attempt, EntityId entityId, int eventNumber, String correlationId, String reason, ZonedDateTime nextAttemptAt, Duration backoff);
 
