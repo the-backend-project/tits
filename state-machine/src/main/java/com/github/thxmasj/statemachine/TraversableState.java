@@ -39,17 +39,18 @@ public class TraversableState {
   }
 
   public static synchronized TraversableState create(EntityModel model) {
-    return cache.computeIfAbsent(model, m -> create(null, null, m, new HashMap<>()));
+    return cache.computeIfAbsent(model, m -> create(null, null, m.transitions(), m.initialState(), new HashMap<>()));
   }
 
   private static TraversableState create(
       TraversableState fromState,
       TransitionModel<?> transitionIn,
-      EntityModel model,
+      List<TransitionModel<?>> transitions,
+      State initialState,
       Map<State, TraversableState> visitedStates
   ) {
     boolean initial = visitedStates.isEmpty();
-    State state = transitionIn != null ? transitionIn.toState() : model.initialState();
+    State state = transitionIn != null ? transitionIn.toState() : initialState;
     if (visitedStates.containsKey(state)) {
       visitedStates.get(state).backwardTransitions.put(transitionIn, fromState);
       return visitedStates.get(state);
@@ -60,9 +61,9 @@ public class TraversableState {
     if (transitionIn != null)
       backwardTransitions.put(transitionIn, fromState);
     visitedStates.put(state, node);
-    for (var transition : model.transitions()) {
+    for (var transition : transitions) {
       if (transition.fromState().equals(state))
-        forwardTransitions.put(transition, create(node, transition, model, visitedStates));
+        forwardTransitions.put(transition, create(node, transition, transitions, initialState, visitedStates));
     }
     if (initial && forwardTransitions.keySet().stream().noneMatch(t -> t.eventType() == BuiltinEventTypes.UnknownEntity)) {
       var transition = from(state)
@@ -70,20 +71,20 @@ public class TraversableState {
           .onEvent(BuiltinEventTypes.UnknownEntity)
           .withData(_ -> Mono.just(""))
           .response(_ -> "Unknown entity", new BadRequest());
-      forwardTransitions.put(transition, create(node, transition, model, visitedStates));
+      forwardTransitions.put(transition, create(node, transition, transitions, initialState, visitedStates));
     }
     if (!state.isChoice()) {
       if (forwardTransitions.keySet().stream().noneMatch(t -> t.eventType() == BuiltinEventTypes.InvalidRequest)) {
         var transition = invalidRequestTransition(state);
-        forwardTransitions.put(transition, create(node, transition, model, visitedStates));
+        forwardTransitions.put(transition, create(node, transition, transitions, initialState, visitedStates));
       }
       if (forwardTransitions.keySet().stream().noneMatch(t -> t.eventType() == BuiltinEventTypes.RejectedRequest)) {
         var transition = rejectedRequestTransition(state);
-        forwardTransitions.put(transition, create(node, transition, model, visitedStates));
+        forwardTransitions.put(transition, create(node, transition, transitions, initialState, visitedStates));
       }
       if (forwardTransitions.keySet().stream().noneMatch(t -> t.eventType() == BuiltinEventTypes.Status)) {
         var transition = statusTransition(state);
-        forwardTransitions.put(transition, create(node, transition, model, visitedStates));
+        forwardTransitions.put(transition, create(node, transition, transitions, initialState, visitedStates));
       }
     }
     return node;

@@ -76,7 +76,6 @@ public class PaymentEvent {
     AuthorisationAdviceApproved(UUID.fromString("fc91e51a-0b0c-4014-9587-fe6d03af3c46"), AcquirerResponse.class),
     AuthorisationApproved(UUID.fromString("4a3821a0-dbba-448b-8175-c40e4a771df4"), AcquirerResponse.class),
     CaptureRequest(UUID.fromString("b4cef9f9-c9dd-40e4-a627-25ba529aec2e"), Capture.class),
-    CaptureRequestedTooLate(UUID.fromString("59016010-cd2f-4144-959c-a5d0d16a6fe9")),
     CaptureApproved(UUID.fromString("6186a241-f9e0-40ae-b444-6ce5e2509dcc"), AcquirerResponse.class),
     RefundRequest(UUID.fromString("4f6d6f15-f8a4-477e-b750-dc52a1f245eb"), Refund.class),
     RefundApproved(UUID.fromString("9c7f8d63-9b27-4bf3-8a90-b7bea56a3fbd"), AcquirerResponse.class),

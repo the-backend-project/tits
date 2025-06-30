@@ -193,6 +193,11 @@ public class TransitionModel<T> {
       return this;
     }
 
+    public Builder toSelf() {
+      this.toState = fromState;
+      return this;
+    }
+
     public Builder onEvent(EventType eventType) {
       this.eventType = eventType;
       return this;

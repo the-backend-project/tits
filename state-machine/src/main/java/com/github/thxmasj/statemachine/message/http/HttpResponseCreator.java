@@ -18,7 +18,7 @@ import reactor.core.publisher.Mono;
 
 public class HttpResponseCreator implements OutgoingResponseCreator<String> {
 
-  private final ObjectWriter jsonWriter = new ObjectMapper()
+  private static final ObjectWriter jsonWriter = new ObjectMapper()
       .registerModule(new JavaTimeModule())
       .configure(DeserializationFeature.ADJUST_DATES_TO_CONTEXT_TIME_ZONE, false)
       .setSerializationInclusion(JsonInclude.Include.NON_NULL)
