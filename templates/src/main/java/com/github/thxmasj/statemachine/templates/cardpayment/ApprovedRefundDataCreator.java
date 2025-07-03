@@ -2,8 +2,7 @@ package com.github.thxmasj.statemachine.templates.cardpayment;
 
 import static com.github.thxmasj.statemachine.Requirements.last;
 import static com.github.thxmasj.statemachine.Requirements.one;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.AuthorisationRequest;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.PreauthorisationRequest;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.PaymentRequest;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.RefundApproved;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.RefundRequest;
 
@@ -32,7 +31,7 @@ public class ApprovedRefundDataCreator implements DataCreator<ApprovedRefundData
   @Override
   public final Requirements requirements() {
     return Requirements.of(
-        one(PreauthorisationRequest, AuthorisationRequest),
+        one(PaymentRequest),
         last(RefundRequest),
         last(RefundApproved)
     );
@@ -40,15 +39,14 @@ public class ApprovedRefundDataCreator implements DataCreator<ApprovedRefundData
 
   @Override
   public Mono<ApprovedRefundData> execute(Input input) {
-    Authorisation evaluatedPaymentRequest = input.one(PreauthorisationRequest, AuthorisationRequest)
-        .getUnmarshalledData(Authorisation.class);
+    Authorisation authorisationData = input.one(PaymentRequest).getUnmarshalledData(Authorisation.class);
     AcquirerResponse acquirerResponse = input.last(RefundApproved).getUnmarshalledData(AcquirerResponse.class);
     Refund refundData = input.last(RefundRequest).getUnmarshalledData(Refund.class);
     return Mono.just(new ApprovedRefundData(
-            evaluatedPaymentRequest.merchant().id(),
-            evaluatedPaymentRequest.merchant().aggregatorId(),
+            authorisationData.merchant().id(),
+            authorisationData.merchant().aggregatorId(),
             refundData.amount(),
-            evaluatedPaymentRequest.merchantReference(),
+            authorisationData.merchantReference(),
             acquirerResponse.batchNumber(),
             acquirerResponse.stan(),
             acquirerResponse.authorisationCode(),

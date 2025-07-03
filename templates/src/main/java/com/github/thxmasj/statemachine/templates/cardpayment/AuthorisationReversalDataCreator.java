@@ -10,6 +10,7 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.BankRequestFailed;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.BankRespondedIncomprehensibly;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.Cancel;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.PaymentRequest;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.RollbackRequest;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Queues.Acquirer;
 
@@ -41,14 +42,14 @@ public class AuthorisationReversalDataCreator implements DataCreator<Authorisati
     return Requirements.of(
         outgoingRequest(Acquirer, AuthorisationRequest, String.class),
         trigger(Cancel, Rollback, RollbackRequest, BankRequestFailed, BankRespondedIncomprehensibly),
-        one(AuthorisationRequest),
+        one(PaymentRequest),
         lastIfExists(AuthorisationApproved)
     );
   }
 
   @Override
   public Mono<AuthorisationReversalData> execute(Input input) {
-    Authorisation paymentData = input.one(AuthorisationRequest).getUnmarshalledData(Authorisation.class);
+    Authorisation paymentData = input.one(PaymentRequest).getUnmarshalledData(Authorisation.class);
     AcquirerResponse acquirerResponse = input.lastIfExists(AuthorisationApproved)
         .map(e -> e.getUnmarshalledData(AcquirerResponse.class)).orElse(null);
     return input.outgoingRequest(Acquirer, AuthorisationRequest, String.class)

@@ -1526,7 +1526,8 @@ public class StateMachine {
                       case TransientError -> backOffOrDie(queueElement, requireNonNullElse(result.validationResult().message(), "TransientError")).thenReturn(ForwardStatus.Ok);
                     };
                     case Status.Raced -> Mono.error(new IllegalStateException("Raced response not handled"));
-                    case Status.Failed -> Mono.error(new IllegalStateException("Failed (" + result.processResult().error() + ")"));
+                    case Status.Failed ->
+                        backOffOrDie(queueElement, result.processResult().error()).thenReturn(ForwardStatus.Ok);
                     default -> Mono.error(new IllegalStateException("Unexpected value: " + result.processResult().status()));
                   }
               );

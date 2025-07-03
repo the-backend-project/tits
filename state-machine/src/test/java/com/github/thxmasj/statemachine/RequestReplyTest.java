@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import com.github.thxmasj.statemachine.StateMachine.ProcessResult;
 import com.github.thxmasj.statemachine.database.Client.Config;
 import com.github.thxmasj.statemachine.database.jdbc.DataSourceBuilder;
+import com.github.thxmasj.statemachine.http.NettyHttpClient;
 import com.github.thxmasj.statemachine.http.NettyHttpClientBuilder;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;

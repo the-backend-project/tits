@@ -7,12 +7,16 @@ import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.templates.cardpayment.ApprovedAuthorisationDataCreator.ApprovedAuthorisationData;
 import com.github.thxmasj.statemachine.templates.cardpayment.ApprovedCaptureDataCreator.ApprovedCaptureData;
 import com.github.thxmasj.statemachine.templates.cardpayment.ApprovedRefundDataCreator.ApprovedRefundData;
+import com.github.thxmasj.statemachine.templates.cardpayment.AuthenticationDataCreator.AuthenticationData;
+import com.github.thxmasj.statemachine.templates.cardpayment.AuthorisationDataCreator.AuthorisationData;
 import com.github.thxmasj.statemachine.templates.cardpayment.AuthorisationReversalDataCreator.AuthorisationReversalData;
 import com.github.thxmasj.statemachine.templates.cardpayment.CaptureRequestDataCreator.CaptureRequestData;
 import com.github.thxmasj.statemachine.templates.cardpayment.CaptureRequestedTooLateDataCreator.CaptureRequestedTooLateData;
 import com.github.thxmasj.statemachine.templates.cardpayment.DeclinedRefundDataCreator.DeclinedRefundData;
 import com.github.thxmasj.statemachine.templates.cardpayment.FailedRefundDataCreator.FailedRefundData;
+import com.github.thxmasj.statemachine.templates.cardpayment.OutgoingRequests.Authentication;
 import com.github.thxmasj.statemachine.templates.cardpayment.OutgoingRequests.Authorisation;
+import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthenticationResult;
 import com.github.thxmasj.statemachine.templates.cardpayment.PreauthorisationReversalDataCreator.PreauthorisationReversalData;
 import com.github.thxmasj.statemachine.templates.cardpayment.RefundRequestDataCreator.RefundRequestData;
 import com.github.thxmasj.statemachine.templates.cardpayment.RefundReversalDataCreator.RefundReversalData;
@@ -25,11 +29,31 @@ public class DummyPayment extends AbstractPayment{
   }
 
   @Override
+  protected Authentication authentication() {
+    return new OutgoingRequests.Authentication() {
+      @Override
+      public Mono<HttpRequestMessage> create(
+          AuthenticationData data,
+          EntityId entityId,
+          String correlationId,
+          Input input
+      ) {
+        return null;
+      }
+
+      @Override
+      public String toString() {
+        return "Authentication";
+      }
+    };
+  }
+
+  @Override
   protected OutgoingRequests.Preauthorisation preauthorisation() {
     return new OutgoingRequests.Preauthorisation() {
       @Override
       public Mono<HttpRequestMessage> create(
-          PaymentEvent.Authorisation data,
+          AuthorisationData data,
           EntityId entityId,
           String correlationId,
           Input input
@@ -68,7 +92,7 @@ public class DummyPayment extends AbstractPayment{
     return new OutgoingRequests.Authorisation() {
       @Override
       public Mono<HttpRequestMessage> create(
-          PaymentEvent.Authorisation data,
+          AuthorisationData data,
           EntityId entityId,
           String correlationId,
           Input input
@@ -149,7 +173,7 @@ public class DummyPayment extends AbstractPayment{
     return new OutgoingRequests.FailedAuthentication() {
       @Override
       public Mono<HttpRequestMessage> create(
-          PaymentEvent.Authorisation data,
+          AuthorisationData data,
           EntityId entityId,
           String correlationId,
           Input input
@@ -170,7 +194,7 @@ public class DummyPayment extends AbstractPayment{
     return new OutgoingRequests.FailedTokenValidation() {
       @Override
       public Mono<HttpRequestMessage> create(
-          PaymentEvent.Authorisation data,
+          AuthorisationData data,
           EntityId entityId,
           String correlationId,
           Input input
@@ -190,7 +214,7 @@ public class DummyPayment extends AbstractPayment{
     return new OutgoingRequests.FailedAuthorisation() {
       @Override
       public Mono<HttpRequestMessage> create(
-          PaymentEvent.Authorisation data,
+          AuthorisationData data,
           EntityId entityId,
           String correlationId,
           Input input
@@ -378,6 +402,11 @@ public class DummyPayment extends AbstractPayment{
         return "DeclinedRefund";
       }
     };
+  }
+
+  @Override
+  protected IncomingResponseValidator<AuthenticationResult> validateAuthenticationResponse() {
+    return null;
   }
 
   @Override

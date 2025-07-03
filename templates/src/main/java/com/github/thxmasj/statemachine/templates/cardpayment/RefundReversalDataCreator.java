@@ -6,11 +6,10 @@ import static com.github.thxmasj.statemachine.Requirements.lastIfExists;
 import static com.github.thxmasj.statemachine.Requirements.one;
 import static com.github.thxmasj.statemachine.Requirements.outgoingRequest;
 import static com.github.thxmasj.statemachine.Requirements.trigger;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.AuthorisationRequest;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.BankRequestFailed;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.BankRespondedIncomprehensibly;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.Cancel;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.PreauthorisationRequest;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.PaymentRequest;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.RefundApproved;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.RefundRequest;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.RollbackRequest;
@@ -43,7 +42,7 @@ public class RefundReversalDataCreator implements DataCreator<RefundReversalData
   public final Requirements requirements() {
     return Requirements.of(
         trigger(Cancel, Rollback, RollbackRequest, BankRequestFailed, BankRespondedIncomprehensibly),
-        one(PreauthorisationRequest, AuthorisationRequest),
+        one(PaymentRequest),
         last(RefundRequest),
         outgoingRequest(Acquirer, RefundRequest, String.class),
         lastIfExists(RefundApproved)
@@ -52,8 +51,7 @@ public class RefundReversalDataCreator implements DataCreator<RefundReversalData
 
   @Override
   public Mono<RefundReversalData> execute(Input input) {
-    Authorisation paymentData = input.one(PreauthorisationRequest, AuthorisationRequest)
-        .getUnmarshalledData(Authorisation.class);
+    Authorisation paymentData = input.one(PaymentRequest).getUnmarshalledData(Authorisation.class);
     Refund refundData = input.last(RefundRequest).getUnmarshalledData(Refund.class);
     AcquirerResponse acquirerResponse = input.lastIfExists(RefundApproved)
         .map(e -> e.getUnmarshalledData(AcquirerResponse.class))

@@ -8,6 +8,7 @@ import static com.github.thxmasj.statemachine.Requirements.trigger;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.BankRequestFailed;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.BankRespondedIncomprehensibly;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.Cancel;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.PaymentRequest;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.PreauthorisationApproved;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.PreauthorisationRequest;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.RollbackRequest;
@@ -41,14 +42,14 @@ public class PreauthorisationReversalDataCreator implements DataCreator<Preautho
     return Requirements.of(
         outgoingRequest(Acquirer, PreauthorisationRequest, String.class),
         trigger(Cancel, Rollback, RollbackRequest, BankRequestFailed, BankRespondedIncomprehensibly),
-        one(PreauthorisationRequest),
+        one(PaymentRequest),
         lastIfExists(PreauthorisationApproved)
     );
   }
 
   @Override
   public Mono<PreauthorisationReversalData> execute(Input input) {
-    Authorisation paymentData = input.one(PreauthorisationRequest).getUnmarshalledData(Authorisation.class);
+    Authorisation paymentData = input.one(PaymentRequest).getUnmarshalledData(Authorisation.class);
     AcquirerResponse acquirerResponse = input.lastIfExists(PreauthorisationApproved)
         .map(e -> e.getUnmarshalledData(AcquirerResponse.class)).orElse(null);
     return input.outgoingRequest(Acquirer, PreauthorisationRequest, String.class)

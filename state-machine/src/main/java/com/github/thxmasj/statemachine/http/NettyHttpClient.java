@@ -1,8 +1,7 @@
-package com.github.thxmasj.statemachine;
+package com.github.thxmasj.statemachine.http;
 
 import static java.util.stream.Collectors.toMap;
 
-import com.github.thxmasj.statemachine.http.HttpClient;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import io.netty.handler.codec.http.HttpMethod;

@@ -14,10 +14,13 @@ public class PaymentEvent {
       Boolean inStore,
       ZonedDateTime transactionTime,
       PaymentToken paymentToken,
+      String simulation
+  ) {}
+
+  public record AuthenticationResult(
       String authenticationReference,
       String authenticationProviderId,
-      String cryptogram,
-      String simulation
+      String cryptogram
   ) {}
 
   public record Amount(
@@ -68,11 +71,15 @@ public class PaymentEvent {
   ) {}
 
   public enum Type implements EventType {
-    AuthenticationFailed(UUID.fromString("ad1dc496-ecdd-4871-9a87-715df7b30aac")),
-    PreauthorisationRequest(UUID.fromString("ead7e832-3d32-407b-8316-b23023e8217c"), Authorisation.class),
+    PaymentRequest(UUID.fromString("bf2eaeb5-cd26-4e5a-873e-f6d308387ec3"), Authorisation.class),
+    AuthenticationFailed(UUID.fromString("ad1dc496-ecdd-4871-9a87-715df7b30aac"), AuthenticationResult.class),
+    AuthenticationApproved(UUID.fromString("63fe8178-3136-4ea6-901a-917039607c47"), AuthenticationResult.class),
+    PreauthorisationRequest(UUID.fromString("ead7e832-3d32-407b-8316-b23023e8217c")),
     PreauthorisationApproved(UUID.fromString("ef315a8e-b9e7-4434-8710-4d238e6ac9c0"), AcquirerResponse.class),
-    InvalidPaymentToken(UUID.fromString("778511db-70c0-443b-963a-4e614040256f")),
-    AuthorisationRequest(UUID.fromString("4391c1cf-1cda-4627-9d9d-fe8b18b8b6cb"), Authorisation.class),
+    InvalidPaymentTokenOwnership(UUID.fromString("778511db-70c0-443b-963a-4e614040256f"), AuthenticationResult.class),
+    InvalidPaymentTokenStatus(UUID.fromString("0e15a3a7-ee6d-4ddd-9eaa-5d98bf42d635"), AuthenticationResult.class),
+    InvalidAuthenticationToken(UUID.fromString("de24bd56-5ad1-4b1e-b567-8eb719c0ff51"), AuthenticationResult.class),
+    AuthorisationRequest(UUID.fromString("4391c1cf-1cda-4627-9d9d-fe8b18b8b6cb")),
     AuthorisationAdviceApproved(UUID.fromString("fc91e51a-0b0c-4014-9587-fe6d03af3c46"), AcquirerResponse.class),
     AuthorisationApproved(UUID.fromString("4a3821a0-dbba-448b-8175-c40e4a771df4"), AcquirerResponse.class),
     CaptureRequest(UUID.fromString("b4cef9f9-c9dd-40e4-a627-25ba529aec2e"), Capture.class),

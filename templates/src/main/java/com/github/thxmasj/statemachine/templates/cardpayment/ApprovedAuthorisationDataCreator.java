@@ -3,8 +3,7 @@ package com.github.thxmasj.statemachine.templates.cardpayment;
 import static com.github.thxmasj.statemachine.Requirements.current;
 import static com.github.thxmasj.statemachine.Requirements.one;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.AuthorisationApproved;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.AuthorisationRequest;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.PreauthorisationRequest;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.PaymentRequest;
 
 import com.github.thxmasj.statemachine.DataCreator;
 import com.github.thxmasj.statemachine.Input;
@@ -30,14 +29,14 @@ public class ApprovedAuthorisationDataCreator implements DataCreator<ApprovedAut
   @Override
   public final Requirements requirements() {
     return Requirements.of(
-        one(PreauthorisationRequest, AuthorisationRequest),
+        one(PaymentRequest),
         current(AuthorisationApproved)
     );
   }
 
   @Override
   public Mono<ApprovedAuthorisationData> execute(Input input) {
-    var paymentData = input.one(PreauthorisationRequest, AuthorisationRequest).getUnmarshalledData(Authorisation.class);
+    var paymentData = input.one(PaymentRequest).getUnmarshalledData(Authorisation.class);
     var bankResponse = input.current(AuthorisationApproved).getUnmarshalledData(AcquirerResponse.class);
     return Mono.just(new ApprovedAuthorisationData(
         paymentData.merchant().id(),
