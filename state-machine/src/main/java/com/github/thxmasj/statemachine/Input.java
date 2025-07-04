@@ -3,7 +3,6 @@ package com.github.thxmasj.statemachine;
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Optional;
-import com.github.thxmasj.statemachine.Event.LoadedEvent;
 import com.github.thxmasj.statemachine.StateMachine.ProcessResult;
 import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Entity;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
@@ -22,29 +21,29 @@ public interface Input {
   <T> Mono<IncomingRequest> incomingRequest(EventType eventType, Class<T> type);
   <T> Mono<OutgoingRequest<T>> outgoingRequest(OutboxQueue queue, EventType eventType, Class<T> type);
 
-  List<LoadedEvent> all(EventType... eventTypes);
+  List<Event> all(EventType... eventTypes);
 
-  LoadedEvent one(EventType eventType);
+  Event one(EventType eventType);
 
-  LoadedEvent one(EventType... eligibleEventTypes);
+  Event one(EventType... eligibleEventTypes);
 
-  Optional<LoadedEvent> oneIfExists(EventType eventType);
+  Optional<Event> oneIfExists(EventType eventType);
 
-  LoadedEvent current(EventType eligibleEventType);
+  Event current(EventType eligibleEventType);
 
-  LoadedEvent current(EventType... eligibleEventTypes);
+  Event current(EventType... eligibleEventTypes);
 
-  LoadedEvent trigger(EventType... eligibleEventTypes);
+  Event trigger(EventType... eligibleEventTypes);
 
-  Optional<LoadedEvent> lastIfExists(EventType... eligibleEventTypes);
+  Optional<Event> lastIfExists(EventType... eligibleEventTypes);
 
-  LoadedEvent last(EventType eventType);
+  Event last(EventType eventType);
 
-  LoadedEvent last();
+  Event last();
 
-  LoadedEvent last(Class<?> dataType);
+  Event last(Class<?> dataType);
 
-  Optional<LoadedEvent> firstIfExists(EventType eventType);
+  Optional<Event> firstIfExists(EventType eventType);
 
   Entity entity();
 

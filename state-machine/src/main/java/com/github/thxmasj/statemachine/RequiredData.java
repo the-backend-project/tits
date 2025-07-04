@@ -6,26 +6,18 @@ import static java.util.stream.Collectors.collectingAndThen;
 import static java.util.stream.Collectors.joining;
 import static java.util.stream.Collectors.toList;
 
-import com.fasterxml.jackson.annotation.JsonInclude.Include;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import com.github.thxmasj.statemachine.Event.LoadedEvent;
 import com.github.thxmasj.statemachine.Notification.OutgoingResponse;
 import com.github.thxmasj.statemachine.OutboxWorker.ExchangeType;
 import com.github.thxmasj.statemachine.Requirements.MissingRequirement;
-import com.github.thxmasj.statemachine.Requirements.NotificationRequirement;
 import com.github.thxmasj.statemachine.Requirements.Requirement;
 import com.github.thxmasj.statemachine.Requirements.Type;
 import com.github.thxmasj.statemachine.StateMachine.ProcessResult;
 import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Entity;
 import com.github.thxmasj.statemachine.database.mssql.IncomingRequestByEvent;
-import com.github.thxmasj.statemachine.database.mssql.IncomingResponseByEvent;
 import com.github.thxmasj.statemachine.database.mssql.OutgoingRequestByEvent;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import java.time.ZonedDateTime;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -45,17 +37,16 @@ public class RequiredData implements Input {
   private final int nextEventNumber;
   private final Class<?> requirer;
   private final Requirements requirements;
-  private final Map<RequirementKey, List<LoadedEvent>> filteredEvents = new HashMap<>();
+  private final Map<RequirementKey, List<Event>> filteredEvents = new HashMap<>();
   private final List<Event> events;
   private final Event currentEvent;
   private final Event triggerEvent;
   private final Entity entity;
+  private final List<Notification> inflightNotifications;
   private final List<ProcessResult> processResults;
   private final List<Event> processedEvents;
-  private final List<String> errors = new ArrayList<>();
   private final IncomingRequestByEvent incomingRequestByEvent;
   private final OutgoingRequestByEvent outgoingRequestByEvent;
-  private final IncomingResponseByEvent incomingResponseByEvent;
 
   public static class RequirementsNotFulfilled extends RuntimeException {
 
@@ -71,45 +62,45 @@ public class RequiredData implements Input {
     }
   }
 
-  private boolean isMatchingRequirement(Notification notification, NotificationRequirement requirement) {
+  private boolean isMatchingRequirement(Notification notification, ExchangeType exchangeType, OutboxQueue queue) {
     return switch (notification) {
-      case Notification.IncomingRequest _ -> requirement.exchangeType() == ExchangeType.IncomingRequest;
-      case Notification.OutgoingRequest outgoingRequest -> requirement.exchangeType() == ExchangeType.OutgoingRequest && requirement.queue().equals(outgoingRequest.queue());
-      case Notification.IncomingResponse incomingResponse -> requirement.exchangeType() == ExchangeType.IncomingResponse && requirement.queue().equals(incomingResponse.queue());
-      case OutgoingResponse _ -> requirement.exchangeType() == ExchangeType.OutgoingResponse;
+      case Notification.IncomingRequest _ -> exchangeType == ExchangeType.IncomingRequest;
+      case Notification.OutgoingRequest outgoingRequest -> exchangeType == ExchangeType.OutgoingRequest && queue.equals(outgoingRequest.queue());
+      case Notification.IncomingResponse incomingResponse -> exchangeType == ExchangeType.IncomingResponse && queue.equals(incomingResponse.queue());
+      case OutgoingResponse _ -> exchangeType == ExchangeType.OutgoingResponse;
     };
   }
 
   private Mono<HttpRequestMessage> getNotification(
       EntityId entityId,
       EntityModel entityModel,
-      List<Notification> inflightNotifications,
       Event event,
-      Requirement requirement
+      ExchangeType exchangeType,
+      OutboxQueue queue
   ) {
     //noinspection SwitchStatementWithTooFewBranches
     return inflightNotifications.stream()
         .filter(n -> n != null &&
-            n.eventNumber() == event.getEventNumber() &&
-            isMatchingRequirement(n, requirement.notification())
+            n.eventNumber() == event.eventNumber() &&
+            isMatchingRequirement(n, exchangeType, queue)
         )
         .findFirst()
         .map(n -> switch (n) {
           case Notification.IncomingRequest rq -> Mono.just(rq.message());
           default -> throw new IllegalStateException("Unexpected value: " + n);
         })
-        .orElse(switch (requirement.notification().exchangeType()) {
+        .orElse(switch (exchangeType) {
           case ExchangeType.IncomingRequest ->
-              incomingRequestByEvent.execute(entityModel, entityId, event.getEventNumber());
-          case ExchangeType.OutgoingRequest -> outgoingRequestByEvent.execute(entityId, event.getEventNumber());
+              incomingRequestByEvent.execute(entityModel, entityId, event.eventNumber());
+          case ExchangeType.OutgoingRequest -> outgoingRequestByEvent.execute(entityId, event.eventNumber());
           default -> Mono.error(
               new GetNotificationFailed(format(
                   "No %s notification found for event %s with number %s of type %s and queue %s for requirer %s. Inflight notifications: %s. Events: %s",
-                  requirement.notification().exchangeType(),
-                  event.getType(),
-                  event.getEventNumber(),
-                  requirement.notification().exchangeType(),
-                  requirement.notification().queue(),
+                  exchangeType,
+                  event.type(),
+                  event.eventNumber(),
+                  exchangeType,
+                  queue,
                   requirer.getName(),
                   inflightNotifications,
                   events
@@ -128,8 +119,7 @@ public class RequiredData implements Input {
       Requirements requirements,
       Class<?> requirer,
       IncomingRequestByEvent incomingRequestByEvent,
-      OutgoingRequestByEvent outgoingRequestByEvent,
-      IncomingResponseByEvent incomingResponseByEvent
+      OutgoingRequestByEvent outgoingRequestByEvent
   ) {
     this.requirer = requireNonNull(requirer);
     this.requirements = requirements;
@@ -137,110 +127,18 @@ public class RequiredData implements Input {
     this.currentEvent = currentEvent;
     this.triggerEvent = triggerEvent;
     this.entity = entity;
+    this.inflightNotifications = inflightNotifications;
     this.processResults = processResults;
     this.processedEvents = processedEvents;
     this.incomingRequestByEvent = incomingRequestByEvent;
     this.outgoingRequestByEvent = outgoingRequestByEvent;
-    this.incomingResponseByEvent = incomingResponseByEvent;
-      for (var requirement : requirements.asList()) {
+    for (var requirement : requirements.asList()) {
       FilterResult result = filter(requirement, events);
-      if (result.error() != null) {
-        errors.add(result.error());
-      } else if (result.events() != null) {
-        try {
-          List<LoadedEvent> loaded = result.events().stream().map(event ->
-              loadEvent(
-                  entity.id(),
-                  entity.model(),
-                  requirement,
-                  event,
-                  inflightNotifications
-              )
-          ).collect(toList());
-          filteredEvents.put(RequirementKey.from(requirement), loaded);
-        } catch (LoadFailed e) {
-          errors.add(e.getMessage());
-        }
-      }
-      if (!errors.isEmpty()) {
-        throw new RequirementsNotFulfilled(format(
-            "Requirement %s not fulfilled for requirer %s: %s\nCurrent event: %s\nTrigger event: %s\nEvents: %s",
-            requirement,
-            requirer.getName(),
-            String.join(",", errors),
-            currentEvent != null ? currentEvent.getType() : "N/A",
-            triggerEvent != null ? triggerEvent.getType() : "N/A",
-            events.stream().map(Event::getType).map(EventType::toString).collect(joining(","))
-        ));
+      if (result.events() != null) {
+        filteredEvents.put(RequirementKey.from(requirement), result.events());
       }
     }
-    this.nextEventNumber = !events.isEmpty() ? events.getLast().getEventNumber() + 1 : 1;
-  }
-
-  static class LoadFailed extends RuntimeException {
-
-    LoadFailed(String message) {
-      super(message);
-    }
-  }
-
-  private final ObjectMapper objectMapper = new ObjectMapper()
-      .registerModule(new JavaTimeModule())
-      .configure(DeserializationFeature.ADJUST_DATES_TO_CONTEXT_TIME_ZONE, false)
-      .setSerializationInclusion(Include.NON_NULL);
-
-  private LoadedEvent loadEvent(
-      EntityId entityId,
-      EntityModel entityModel,
-      Requirement requirement,
-      Event event,
-      List<Notification> inflightNotifications
-  ) throws LoadFailed {
-    Object unmarshalledData;
-    try {
-      unmarshalledData = event.getUnmarshalledData();
-    } catch (RuntimeException e) {
-      throw new LoadFailed("Failed to unmarshal data from " + event.getType() + " -- data=" + event.getData() + ", error=" + e);
-    }
-    Mono<HttpRequestMessage> notification = requirement.notification() == null ? null : getNotification(entityId, entityModel, inflightNotifications, event, requirement);
-    Mono<Object> loaded = null;
-    if (notification != null) {
-      loaded = notification.mapNotNull(n -> {
-        String body = n.body();
-        if (requirement.notification().dataType() == String.class) {
-          if (body == null) return ""; // TODO: Hacky way to handle incoming requests/responses without body.
-          return (Object) body;
-        } else if (body == null)
-          return null;
-        try {
-          return objectMapper.readerFor(requirement.notification().dataType()).readValue(body);
-        } catch (Exception e) {
-          throw new RuntimeException(format(
-              "Requirement %s: Failed to unmarshal message for notification from/to queue %s to type %s for event %s",
-              requirement,
-              requirement.notification().queue(),
-              requirement.notification().dataType(),
-              event.getType().name()
-          ), e);
-        }
-      }).switchIfEmpty(Mono.error(new RequirementsNotFulfilled(format(
-          "Requirement %s for: Failed to unmarshal message for notification from/to queue %s to type %s for event %s: Notification is null",
-          requirement,
-          requirement.notification().queue(),
-          requirement.notification().dataType(),
-          event.getType().name()
-      ))));
-    }
-    return new LoadedEvent(
-        unmarshalledData,
-        loaded,
-        event,
-        notification
-    );
-  }
-
-  public boolean failed() {
-    return !errors.isEmpty();
+    this.nextEventNumber = !events.isEmpty() ? events.getLast().eventNumber() + 1 : 1;
   }
 
   @Override
@@ -250,13 +148,13 @@ public class RequiredData implements Input {
 
   @Override
   public <T> Mono<IncomingRequest> incomingRequest(EventType eventType, Class<T> type) {
-    var loadedEvent = last(eventType);
-    return loadedEvent.getNotification()
+    final var event = last(eventType);
+    return getNotification(entity.id(), entity.model(), event, ExchangeType.IncomingRequest, null)
         .map(message -> new IncomingRequest(
                 message,
-                loadedEvent.getMessageId(),
-                loadedEvent.clientId(),
-                loadedEvent.eventNumber()
+                event.messageId(),
+                event.clientId(),
+                event.eventNumber()
             )
         );
   }
@@ -264,55 +162,56 @@ public class RequiredData implements Input {
   @Override
   public <T> Mono<OutgoingRequest<T>> outgoingRequest(OutboxQueue queue, EventType eventType, Class<T> type) {
     var loadedEvent = last(eventType);
-    return loadedEvent.getNotification()
+    return getNotification(entity.id(), entity.model(), loadedEvent, ExchangeType.OutgoingRequest, null)
         .map(message -> new OutgoingRequest<>(
-            message,
-            loadedEvent.eventNumber()
-        ));
+                message,
+                loadedEvent.eventNumber()
+            )
+        );
   }
 
   @Override
-  public final List<LoadedEvent> all(EventType... eventTypes) {
+  public final List<Event> all(EventType... eventTypes) {
     return filteredForRequirement(Type.All, requirements.on(eventTypes));
   }
 
   @Override
-  public LoadedEvent one(EventType eventType) {
+  public Event one(EventType eventType) {
     return filteredForSingletonRequirement(Type.One, requirements.on(eventType));
   }
 
   @Override
-  public final LoadedEvent one(EventType... eligibleEventTypes) {
+  public final Event one(EventType... eligibleEventTypes) {
     return filteredForSingletonRequirement(Type.One, requirements.on(eligibleEventTypes));
   }
 
   @Override
-  public Optional<LoadedEvent> oneIfExists(EventType eventType) {
+  public Optional<Event> oneIfExists(EventType eventType) {
     return filteredForOptionalRequirement(Type.OneIfExists, requirements.on(eventType));
   }
 
   @Override
-  public LoadedEvent current(EventType eligibleEventType) {
+  public Event current(EventType eligibleEventType) {
     return filteredForSingletonRequirement(Type.Current, requirements.on(eligibleEventType));
   }
 
   @Override
-  public final LoadedEvent current(EventType... eligibleEventTypes) {
+  public final Event current(EventType... eligibleEventTypes) {
     return filteredForSingletonRequirement(Type.Current, requirements.on(eligibleEventTypes));
   }
 
   @Override
-  public final LoadedEvent trigger(EventType... eligibleEventTypes) {
+  public final Event trigger(EventType... eligibleEventTypes) {
     return filteredForSingletonRequirement(Type.Trigger, requirements.on(eligibleEventTypes));
   }
 
   @Override
-  public final Optional<LoadedEvent> lastIfExists(EventType... eligibleEventTypes) {
+  public final Optional<Event> lastIfExists(EventType... eligibleEventTypes) {
     return filteredForOptionalRequirement(Type.LastIfExists, requirements.on(eligibleEventTypes));
   }
 
   @Override
-  public LoadedEvent last(EventType eventType) {
+  public Event last(EventType eventType) {
     var matchingRequirements = requirements.on(eventType);
     if (matchingRequirements.isEmpty()) {
       throw new MissingRequirement(requirer.getName() + ": last(" + eventType + "): No requirements found for " + eventType);
@@ -321,7 +220,7 @@ public class RequiredData implements Input {
   }
 
   @Override
-  public LoadedEvent last() {
+  public Event last() {
     var matchingRequirements = requirements.on();
     if (matchingRequirements.isEmpty()) {
       throw new MissingRequirement(requirer.getName() + ": last(): No requirements found");
@@ -330,7 +229,7 @@ public class RequiredData implements Input {
   }
 
   @Override
-  public LoadedEvent last(Class<?> dataType) {
+  public Event last(Class<?> dataType) {
     var matchingRequirements = requirements.on();
     if (matchingRequirements.isEmpty()) {
       throw new MissingRequirement(requirer.getName() + ": last(): No requirements found");
@@ -339,7 +238,7 @@ public class RequiredData implements Input {
   }
 
   @Override
-  public Optional<LoadedEvent> firstIfExists(EventType eventType) {
+  public Optional<Event> firstIfExists(EventType eventType) {
     return filteredForOptionalRequirement(Type.FirstIfExists, requirements.on(eventType));
   }
 
@@ -380,15 +279,15 @@ public class RequiredData implements Input {
 
   @Override
   public Event processedEvent(EventType eventType) {
-    return processedEvents.stream().filter(e -> e.getType() == eventType).findFirst().orElseThrow();
+    return processedEvents.stream().filter(e -> e.type() == eventType).findFirst().orElseThrow();
   }
 
   @Override
   public ZonedDateTime timestamp() {
-    return events.isEmpty() ? null : events.getFirst().getTimestamp();
+    return events.isEmpty() ? null : events.getFirst().timestamp();
   }
 
-  private List<LoadedEvent> filteredForRequirement(Type expectedType, List<Requirement> requirements) {
+  private List<Event> filteredForRequirement(Type expectedType, List<Requirement> requirements) {
     Requirement requirement = requirements
         .stream()
         .filter(r -> r.type() == expectedType)
@@ -411,7 +310,7 @@ public class RequiredData implements Input {
     return result;
   }
 
-  private Optional<LoadedEvent> filteredForOptionalRequirement(
+  private Optional<Event> filteredForOptionalRequirement(
       Type expectedType,
       List<Requirement> requirements
   ) {
@@ -422,14 +321,17 @@ public class RequiredData implements Input {
     return Optional.ofNullable(result.size() == 1 ? result.getFirst() : null);
   }
 
-  private LoadedEvent filteredForSingletonRequirement(
+  private Event filteredForSingletonRequirement(
       Type expectedType,
       List<Requirement> requirements
   ) {
-    List<LoadedEvent> result = filteredForRequirement(expectedType, requirements);
+    List<Event> result = filteredForRequirement(expectedType, requirements);
     if (result.size() != 1)
       throw new IllegalStateException(
-          "Not exactly one requirement matches " + expectedType + " for given event type: " + result.size());
+          "Not exactly one event matches " + expectedType + " for given requirements\nEvents:\n" +
+              result.stream().map(Event::toString).collect(joining("\n")) + "Requirements:\n" +
+              requirements.stream().map(Object::toString).collect(joining("\n"))
+      );
     return result.getFirst();
   }
 
@@ -481,20 +383,20 @@ public class RequiredData implements Input {
               : new FilterResult(l)
           ));
       case Current -> Optional.of(currentEvent)
-          .filter(event -> requirement.eventTypes().contains(event.getType()))
+          .filter(event -> requirement.eventTypes().contains(event.type()))
           .map(event -> new FilterResult(List.of(event)))
           .orElse(new FilterResult(
               format("Required at least one event of type %s but found 0", formatEventTypes(requirement))));
       case CurrentIfExists -> Optional.of(currentEvent)
-          .filter(event -> requirement.eventTypes().contains(event.getType()))
+          .filter(event -> requirement.eventTypes().contains(event.type()))
           .map(event -> new FilterResult(List.of(event)))
           .orElse(new FilterResult(List.of()));
       case Trigger -> Optional.of(triggerEvent)
-          .filter(event -> requirement.eventTypes().contains(event.getType()))
+          .filter(event -> requirement.eventTypes().contains(event.type()))
           .map(event -> new FilterResult(List.of(event)))
           .orElse(new FilterResult(
               format("Required trigger event to be of type %s but was %s", formatEventTypes(requirement),
-                  triggerEvent.getType()
+                  triggerEvent.type()
               )));
     };
   }
@@ -509,7 +411,7 @@ public class RequiredData implements Input {
   ) {
     return types.isEmpty() ?
         events.stream() :
-        events.stream().filter(e -> types.contains(e.getType()));
+        events.stream().filter(e -> types.contains(e.type()));
   }
 
 }

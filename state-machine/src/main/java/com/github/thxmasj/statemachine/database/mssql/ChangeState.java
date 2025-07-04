@@ -49,11 +49,11 @@ public class ChangeState {
     spec.bind("entityModelId", change.entityModel().id());
     for (int i = 0; i < events.size(); i++) {
       var event = events.get(i);
-      spec.bind("eventNumber"+i, event.getEventNumber())
-          .bind("type"+i, event.getType().id())
-          .bind("timestamp"+i, event.getTimestamp().withZoneSameInstant(clock.getZone()).toLocalDateTime())
-          .bind("messageId"+i, event.getMessageId())
-          .bind("clientId"+i, event.getClientId())
+      spec.bind("eventNumber"+i, event.eventNumber())
+          .bind("type"+i, event.type().id())
+          .bind("timestamp"+i, event.timestamp().withZoneSameInstant(clock.getZone()).toLocalDateTime())
+          .bind("messageId"+i, event.messageId())
+          .bind("clientId"+i, event.clientId())
           .bind("data"+i, event.getMarshalledData());
     }
     for (var secondaryId : change.newSecondaryIds()) {
@@ -98,7 +98,7 @@ public class ChangeState {
           .bind("incomingResponseData"+i, irs.message().message());
     }
     if (deadline != null) {
-      spec.bind("eventNumber", events.getLast().getEventNumber()) // new current event number
+      spec.bind("eventNumber", events.getLast().eventNumber()) // new current event number
           .bind("deadline", deadline.withZoneSameInstant(clock.getZone()).toLocalDateTime())
           .bind("correlationId", correlationId);
     }

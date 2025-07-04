@@ -12,8 +12,6 @@ import java.time.LocalDateTime;
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.stream.Stream;
-import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
-import reactor.core.publisher.Mono;
 
 public final class Event {
 
@@ -58,90 +56,31 @@ public final class Event {
     this.data = data;
   }
 
-  public static class LoadedEvent {
-
-    private final Object unmarshalled;
-    private final Mono<Object> loaded;
-    private final Event event;
-    private final Mono<HttpRequestMessage> notification;
-
-    public LoadedEvent(
-        Object unmarshalled,
-        Mono<Object> loaded,
-        Event event,
-        Mono<HttpRequestMessage> notification
-    ) {
-      this.unmarshalled = unmarshalled;
-      this.loaded = loaded;
-      this.event = event;
-      this.notification = notification;
-    }
-
-    public Mono<HttpRequestMessage> getNotification() {
-      return notification;
-    }
-
-    public <T> T getUnmarshalledData(Class<T> type) {
-      if (unmarshalled != null && unmarshalled.getClass() == type)
-        return type.cast(unmarshalled);
-      else
-        return null;
-    }
-
-    public String getData() {
-      return event.getData();
-    }
-
-    public <T> Mono<T> getLoadedData(Class<T> type) {
-      return loaded.map(type::cast);
-    }
-
-    public ZonedDateTime getTimestamp() {
-      return event.getTimestamp();
-    }
-
-    public String getMessageId() {
-      return event.getMessageId();
-    }
-
-    public int eventNumber() {
-      return event.getEventNumber();
-    }
-
-    public EventType type() {
-      return event.getType();
-    }
-
-    public String clientId() {
-      return event.getClientId();
-    }
-  }
-
-  public Integer getEventNumber() {
+  public Integer eventNumber() {
     return eventNumber;
   }
 
-  public String getMessageId() {
+  public String messageId() {
     return messageId;
   }
 
-  public String getClientId() {
+  public String clientId() {
     return clientId;
   }
 
-  public ZonedDateTime getTimestamp() {
+  public ZonedDateTime timestamp() {
     return timestamp;
   }
 
-  public EventType getType() {
+  public EventType type() {
     return type;
   }
 
-  public String getTypeName() {
+  public String typeName() {
     return type.name();
   }
 
-  public String getData() {
+  public String data() {
     return data;
   }
 
@@ -166,9 +105,9 @@ public final class Event {
 
   public <T> T getUnmarshalledData(Class<T> dataType) {
     if (type.dataType() == null)
-      throw new IllegalArgumentException("Event " + getType() + " does not have data type " + dataType.getName() + " but is null");
+      throw new IllegalArgumentException("Event " + type() + " does not have data type " + dataType.getName() + " but is null");
     if (type.dataType() != dataType)
-      throw new IllegalArgumentException("Event " + getType() + " does not have data type " + dataType.getName() + " but " + type.dataType().getName());
+      throw new IllegalArgumentException("Event " + type() + " does not have data type " + dataType.getName() + " but " + type.dataType().getName());
     return getUnmarshalledData();
   }
 
@@ -180,7 +119,7 @@ public final class Event {
   }
 
   public boolean isIncomingRequest() {
-    return getClientId() != null;
+    return clientId() != null;
   }
 
   static <EVENT> List<EVENT> join(List<EVENT> events, EVENT tail) {

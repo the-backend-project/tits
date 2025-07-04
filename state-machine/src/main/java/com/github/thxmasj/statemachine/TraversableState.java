@@ -100,7 +100,7 @@ public class TraversableState {
 
     @Override
     public Mono<String> execute(Input input) {
-      return Mono.just(input.last().getData());
+      return Mono.just(input.last().data());
     }
   }
 

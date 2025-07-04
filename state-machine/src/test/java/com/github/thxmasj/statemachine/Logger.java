@@ -58,7 +58,7 @@ public class Logger implements Listener {
       Event resolveEvent,
       String details
   ) {
-    log(header(entityId, correlationId) + " Resolving state " + sourceState + " with " + resolveEvent.getTypeName() + " failed: " + details);
+    log(header(entityId, correlationId) + " Resolving state " + sourceState + " with " + resolveEvent.typeName() + " failed: " + details);
   }
 
   @Override
