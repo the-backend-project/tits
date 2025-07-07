@@ -5,6 +5,8 @@ import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static java.util.Objects.requireNonNull;
+
 @SuppressWarnings("unused")
 public class IncomingRequestModelBuilder<DATA_TYPE> {
 
@@ -29,7 +31,7 @@ public class IncomingRequestModelBuilder<DATA_TYPE> {
   }
 
   public IncomingRequestModelBuilder<DATA_TYPE> messageId(String messageId) {
-    this.messageId = messageId;
+    this.messageId = requireNonNull(messageId, "messageId");
     return this;
   }
 

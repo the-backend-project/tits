@@ -211,11 +211,21 @@ public class StateMachine {
       } catch (Exception e) {
         return Mono.just(new ProcessResult(Status.Rejected, null, null, String.format("Failed to parse incoming message: %s", e.getMessage())));
       }
-      IncomingRequestModelBuilder<?> requestModelBuilder = requestMapper.incomingRequest(message);
+      IncomingRequestModelBuilder<?> requestModelBuilder;
+      try {
+        requestModelBuilder = requestMapper.incomingRequest(message);
+      } catch (Exception e) {
+        return Mono.just(new ProcessResult(Status.Rejected, null, null, String.format("Failed to map incoming request: %s\n%s", e, message.message())));
+      }
       if (requestModelBuilder == null) {
         return Mono.just(new ProcessResult(Status.Rejected, null, null, String.format("No mapping for incoming message: %s", message.requestLine())));
       }
-      IncomingRequestModel requestModel = requestModelBuilder.build();
+      IncomingRequestModel requestModel;
+      try {
+        requestModel = requestModelBuilder.build();
+      } catch (Exception e) {
+        return Mono.just(new ProcessResult(Status.Rejected, null, null, String.format("Failed to build request model for incoming message: %s\n%s", e, message.requestLine())));
+      }
       var incomingRequest = new IncomingRequest(
           UUID.randomUUID(),
           requestModel.eventTrigger().build(), // TODO: Errors end up in the big try/catch. Related: https://github.com/orgs/the-backend-project/projects/1/views/1?pane=issue&itemId=79673689

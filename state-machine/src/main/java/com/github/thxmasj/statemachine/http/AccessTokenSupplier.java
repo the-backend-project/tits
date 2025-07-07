@@ -2,6 +2,7 @@ package com.github.thxmasj.statemachine.http;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Objects.requireNonNull;
+import static java.util.stream.Collectors.joining;
 
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Method;
@@ -10,25 +11,27 @@ import java.net.URI;
 import java.net.URLEncoder;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
+import java.util.stream.Stream;
 
 public class AccessTokenSupplier implements Supplier<String> {
 
-  private final CompletableFuture<AccessToken> cachedToken = new CompletableFuture<>();
+  private final AtomicReference<AccessToken> cachedToken = new AtomicReference<>();
   private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
-  private final ExecutorService fetchExecutor = Executors.newSingleThreadExecutor();
   private final Clock clock;
+  private final CountDownLatch readyLatch = new CountDownLatch(1);
 
   private boolean shutDown;
 
@@ -37,7 +40,7 @@ public class AccessTokenSupplier implements Supplier<String> {
   private final Map<String, String> headers;
   private final String body;
 
-  public AccessTokenSupplier(
+  private AccessTokenSupplier(
       URI url,
       Map<String, String> headers,
       String body,
@@ -56,14 +59,14 @@ public class AccessTokenSupplier implements Supplier<String> {
   private void scheduleFetch(Duration duration) {
     if (shutDown)
       return;
-    scheduler.schedule(
-        () -> httpClient.exchange(new HttpRequestMessage(Method.POST, url, headers, body))
-            .doOnNext(this::onNext)
-            .doOnError(this::onError)
-            .subscribe(),
-        duration.toMillis(),
-        TimeUnit.MILLISECONDS
-    );
+    scheduler.schedule(this::fetch, duration.toMillis(), TimeUnit.MILLISECONDS);
+  }
+
+  private void fetch() {
+    httpClient.exchange(new HttpRequestMessage(Method.POST, url, headers, body))
+        .doOnNext(this::onNext)
+        .doOnError(this::onError)
+        .block();
   }
 
   private void onNext(HttpResponseMessage item) {
@@ -84,19 +87,28 @@ public class AccessTokenSupplier implements Supplier<String> {
       onError(e);
       return;
     }
-    cachedToken.complete(token);
+    cachedToken.set(token);
+    readyLatch.countDown();
     scheduleFetch(Duration.between(clock.instant(), token.expiry().minusSeconds(10)));
   }
 
   @Override
   public String get() {
+    long t0 = System.currentTimeMillis();
     try {
-      return cachedToken.get(10, TimeUnit.SECONDS).token();
-    } catch (ExecutionException e) {
-      throw new AccessFailed(e.getCause());
-    } catch (Exception e) {
-      throw new AccessFailed(e);
+      if (!readyLatch.await(10, TimeUnit.SECONDS))
+        throw new AccessFailed("No access token available");
+    } catch (InterruptedException e) {
+      throw new AccessFailed(
+          "Interrupted while waiting for access token after %d ms (from: %s)"
+          .formatted(
+              System.currentTimeMillis() - t0,
+              Stream.of(e.getStackTrace()).map(StackTraceElement::toString).collect(joining("\n"))
+          ),
+          e
+      );
     }
+    return cachedToken.get().token();
   }
 
   private void onError(Throwable throwable) {
@@ -106,7 +118,6 @@ public class AccessTokenSupplier implements Supplier<String> {
   public synchronized void shutDown() {
     shutDown = true;
     scheduler.shutdown();
-    fetchExecutor.shutdown();
   }
 
   public static class Builder {
@@ -121,14 +132,9 @@ public class AccessTokenSupplier implements Supplier<String> {
     private String grantType;
     private final List<String> scopes = new ArrayList<>();
 
-    public Builder httpClient(HttpClient httpClient) {
+    public Builder(HttpClient httpClient, URI uri) {
       this.httpClient = httpClient;
-      return this;
-    }
-
-    public Builder url(URI url) {
-      this.url = url;
-      return this;
+      this.url = uri;
     }
 
     public Builder clientCredentials(String id, String secret) {
@@ -169,8 +175,8 @@ public class AccessTokenSupplier implements Supplier<String> {
   }
 
   public static class AccessFailed extends RuntimeException {
-    public AccessFailed(Throwable cause) {
-      super(cause);
+    public AccessFailed(String message, Throwable cause) {
+      super(message, cause);
     }
     public AccessFailed(String message) {
       super(message);
