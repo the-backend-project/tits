@@ -3,6 +3,7 @@ package com.github.thxmasj.statemachine.templates.cardpayment;
 import com.github.thxmasj.statemachine.OutgoingRequestCreator;
 import com.github.thxmasj.statemachine.templates.cardpayment.ApprovedAuthorisationDataCreator.ApprovedAuthorisationData;
 import com.github.thxmasj.statemachine.templates.cardpayment.ApprovedCaptureDataCreator.ApprovedCaptureData;
+import com.github.thxmasj.statemachine.templates.cardpayment.ApprovedCutOffDataCreator.ApprovedCutOffData;
 import com.github.thxmasj.statemachine.templates.cardpayment.ApprovedRefundDataCreator.ApprovedRefundData;
 import com.github.thxmasj.statemachine.templates.cardpayment.AuthenticationDataCreator.AuthenticationData;
 import com.github.thxmasj.statemachine.templates.cardpayment.AuthorisationDataCreator.AuthorisationData;
@@ -51,7 +52,7 @@ public class OutgoingRequests {
   public interface DeclinedAuthorisation extends OutgoingRequestCreator<String> {
     default UUID id() {return UUID.fromString("88a79f93-3345-4f44-830a-19cd719d4209");}
   }
-  public interface ApprovedPreauthorisation extends OutgoingRequestCreator<String> {
+  public interface ApprovedPreauthorisation extends OutgoingRequestCreator<ApprovedAuthorisationData> {
     default UUID id() {return UUID.fromString("0d76d725-d55c-41f5-be8f-f8f3633de7c8");}
   }
   public interface ApprovedCapture extends OutgoingRequestCreator<ApprovedCaptureData> {
@@ -81,7 +82,7 @@ public class OutgoingRequests {
   public interface DeclinedRefund extends OutgoingRequestCreator<DeclinedRefundData> {
     default UUID id() {return UUID.fromString("70e88428-995a-4d86-8397-f54b3abcfdaa");}
   }
-  public interface ApprovedCutOff extends OutgoingRequestCreator<String> {
+  public interface ApprovedCutOff extends OutgoingRequestCreator<ApprovedCutOffData> {
     default UUID id() {return UUID.fromString("f8002ded-f8ae-4d7e-a7de-44a7bba4d24d");}
   }
   public interface Reconciliation extends OutgoingRequestCreator<String> {

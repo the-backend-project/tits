@@ -74,28 +74,28 @@ public abstract class AbstractSettlement implements EntityModel {
   @Override
   public List<TransitionModel<?>> transitions() {
     return List.of(
-        from(Begin).to(Begin).onEvent(Open).build(),
-        from(Begin).to(Begin).onEvent(MerchantCredit).build(),
-        from(Begin).to(Begin).onEvent(MerchantDebit).build(),
-        from(Begin).to(Begin).onEvent(MerchantCreditReversed).build(),
-        from(Begin).to(Begin).onEvent(MerchantDebitReversed).build(),
+        from(Begin).toSelf().onEvent(Open).build(),
+        from(Begin).toSelf().onEvent(MerchantCredit).build(),
+        from(Begin).toSelf().onEvent(MerchantDebit).build(),
+        from(Begin).toSelf().onEvent(MerchantCreditReversed).build(),
+        from(Begin).toSelf().onEvent(MerchantDebitReversed).build(),
         from(Begin).to(ProcessingSettlement).onEvent(CutOffRequest)
             .withData(_ -> Mono.just(""))
-            .response(_ -> "", new Created())
+            .response(new Created())
             .trigger(_ -> event(Open).onEntity(this)
                 .identifiedBy(model(BatchNumber).next().create())
                 .and(model(AcquirerBatchNumber).next().create())
             )
             .notify(request(reconciliation()).to(Acquirer).guaranteed().responseValidator(validateSettlementResponse())),
-        // To support "Previous batch is kept open after cut-off"
-        from(ProcessingSettlement).to(ProcessingSettlement).onEvent(MerchantCredit).build(),
-        from(ProcessingSettlement).to(ProcessingSettlement).onEvent(MerchantDebit).build(),
-        from(ProcessingSettlement).to(ProcessingSettlement).onEvent(MerchantCreditReversed).build(),
-        from(ProcessingSettlement).to(ProcessingSettlement).onEvent(MerchantDebitReversed).build(),
+        // For previous batch to stay open for ongoing capture exchanges when cut-off is performed
+        from(ProcessingSettlement).toSelf().onEvent(MerchantCredit).build(),
+        from(ProcessingSettlement).toSelf().onEvent(MerchantDebit).build(),
+        from(ProcessingSettlement).toSelf().onEvent(MerchantCreditReversed).build(),
+        from(ProcessingSettlement).toSelf().onEvent(MerchantDebitReversed).build(),
         from(ProcessingSettlement).to(Settled).onEvent(SettlementApproved).build(),
         from(ProcessingSettlement).to(Error).onEvent(Timeout).build(),
         from(Settled).to(Reconciled).onEvent(InBalance)
-            .withData(_ -> Mono.just(""))
+            .withData(new ApprovedCutOffDataCreator())
             .notify(request(approvedCutOff()).to(Merchant).guaranteed()),
         from(Settled).to(Error).onEvent(OutOfBalance).build()
     );

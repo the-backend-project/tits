@@ -248,7 +248,7 @@ public class DummyPayment extends AbstractPayment{
   protected OutgoingRequests.ApprovedPreauthorisation approvedPreauthorisation() {
     return new OutgoingRequests.ApprovedPreauthorisation() {
       @Override
-      public Mono<HttpRequestMessage> create(String data, EntityId entityId, String correlationId, Input input) {
+      public Mono<HttpRequestMessage> create(ApprovedAuthorisationData data, EntityId entityId, String correlationId, Input input) {
         return null;
       }
 

@@ -1,8 +1,10 @@
 package com.github.thxmasj.statemachine.templates.cardpayment;
 
 import static com.github.thxmasj.statemachine.Requirements.current;
+import static com.github.thxmasj.statemachine.Requirements.incomingRequest;
 import static com.github.thxmasj.statemachine.Requirements.one;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.CaptureApproved;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.CaptureRequest;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.PaymentRequest;
 
 import com.github.thxmasj.statemachine.DataCreator;
@@ -22,14 +24,16 @@ public class ApprovedCaptureDataCreator implements DataCreator<ApprovedCaptureDa
       int netsSessionNumber,
       String stan,
       String authorisationCode,
-      String responseCode
+      String responseCode,
+      String requestMessageId
   ) {}
 
   @Override
   public final Requirements requirements() {
     return Requirements.of(
         one(PaymentRequest),
-        current(CaptureApproved)
+        current(CaptureApproved),
+        incomingRequest(CaptureRequest, String.class)
     );
   }
 
@@ -37,16 +41,17 @@ public class ApprovedCaptureDataCreator implements DataCreator<ApprovedCaptureDa
   public Mono<ApprovedCaptureData> execute(Input input) {
     var paymentData = input.one(PaymentRequest).getUnmarshalledData(Authorisation.class);
     var bankResponse = input.current(CaptureApproved).getUnmarshalledData(AcquirerResponse.class);
-    return Mono.just(new ApprovedCaptureData(
-            paymentData.merchant().id(),
-            paymentData.merchant().aggregatorId(),
-            bankResponse.amount(),
-            paymentData.merchantReference(),
-            bankResponse.batchNumber(),
-            bankResponse.stan(),
-            bankResponse.authorisationCode(),
-            bankResponse.responseCode()
-        ));
+    return input.incomingRequest(CaptureRequest, String.class).map(request -> new ApprovedCaptureData(
+        paymentData.merchant().id(),
+        paymentData.merchant().aggregatorId(),
+        bankResponse.amount(),
+        paymentData.merchantReference(),
+        bankResponse.batchNumber(),
+        bankResponse.stan(),
+        bankResponse.authorisationCode(),
+        bankResponse.responseCode(),
+        request.messageId()
+    ));
   }
 
 }

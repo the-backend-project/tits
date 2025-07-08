@@ -221,7 +221,7 @@ public abstract class AbstractPayment implements EntityModel {
                     .notify(request(rolledBackAuthorisationRequest()).to(Merchant).guaranteed())),
             from(ProcessingAuthorisation).to(Preauthorised)
                 .onEvent(PreauthorisationApproved)
-                .withData(_ -> Mono.just(""))
+                .withData(new ApprovedAuthorisationDataCreator())
                 .notify(request(approvedPreauthorisation()).to(Merchant).guaranteed())
                 .scheduledEvents(List.of(new ScheduledEvent(AuthorisationExpired, Duration.ofDays(7)))),
             from(ProcessingAuthorisation).toSelf().onEvent(Rollback).build(),
@@ -234,12 +234,15 @@ public abstract class AbstractPayment implements EntityModel {
                 .onEvent(AuthorisationApproved)
                 .withData(new ApprovedAuthorisationDataCreator())
                 .notify(request(approvedAuthorisation()).to(Merchant).guaranteed())
-                .trigger(data -> event(MerchantCredit, data.amount().requested()).onEntity(settlement)
+                .trigger(data -> event(MerchantCredit, data.authorisation().amount().requested()).onEntity(settlement)
                     .identifiedBy(secondaryId(
                         AcquirerBatchNumber,
-                        new AcquirerBatchNumber(data.merchantId(), data.acquirerBatchNumber())
+                        new AcquirerBatchNumber(
+                            data.authorisation().merchant().id(),
+                            data.acquirerResponse().batchNumber()
+                        )
                     ).createIfNotExists())
-                    .and(model(BatchNumber).group(data.merchantId()).last().createIfNotExists()))
+                    .and(model(BatchNumber).group(data.authorisation().merchant().id()).last().createIfNotExists()))
                 .scheduledEvents(List.of(new ScheduledEvent(AuthorisationExpired, Duration.ofDays(7))))
                 .reverse(builder -> builder.withData(new AuthorisationReversalDataCreator())
                     .trigger(data -> event(SettlementEvent.Type.MerchantCreditReversed, data.amount()).onEntity(
