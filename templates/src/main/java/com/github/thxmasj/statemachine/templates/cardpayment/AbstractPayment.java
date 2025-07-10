@@ -59,7 +59,6 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Stream;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthenticationResult;
-import reactor.core.publisher.Mono;
 
 public abstract class AbstractPayment implements EntityModel {
 
@@ -183,12 +182,12 @@ public abstract class AbstractPayment implements EntityModel {
                 .response("Payment token is inactive", new BadRequest()),
             from(ProcessingAuthentication).to(Begin)
                 .onEvent(AuthenticationFailed)
-                .withData(new AuthorisationDataCreator())
+                .withData(new AuthorisationRequestDataCreator())
                 .notify(request(failedAuthentication()).to(Acquirer).guaranteed())
                 .response(_ -> "", new BadRequest()),
             from(ProcessingAuthentication).to(Begin)
                 .onEvent(InvalidPaymentTokenOwnership)
-                .withData(new AuthorisationDataCreator())
+                .withData(new AuthorisationRequestDataCreator())
                 .notify(request(failedTokenValidation()).to(Acquirer)
                     .guaranteed()
                     .responseValidator(validateAuthorisationAdviceResponse()))
@@ -197,7 +196,7 @@ public abstract class AbstractPayment implements EntityModel {
             from(ProcessingAuthentication).toSelf().onEvent(RollbackRequest).response(new Created()),
             from(PaymentChoice).to(ProcessingAuthorisation)
                 .onEvent(PreauthorisationRequest)
-                .withData(new AuthorisationDataCreator())
+                .withData(new AuthorisationRequestDataCreator())
                 .notify(request(preauthorisation()).to(Acquirer).responseValidator(validatePreauthorisationResponse()))
                 .response(_ -> "", new Created())
                 .reverse(transition -> transition.withData(new PreauthorisationReversalDataCreator())
@@ -207,7 +206,7 @@ public abstract class AbstractPayment implements EntityModel {
                     .notify(request(rolledBackPreauthorisationRequest()).to(Merchant).guaranteed())),
             from(PaymentChoice).to(ProcessingAuthorisation)
                 .onEvent(AuthorisationRequest)
-                .withData(new AuthorisationDataCreator())
+                .withData(new AuthorisationRequestDataCreator())
                 .trigger(data -> event(BuiltinEventTypes.Status).onEntity(settlement)
                     .identifiedBy(model(BatchNumber).group(data.authorisation().merchant().id()).last()))
                 .notify(request(authorisation()).to(Acquirer).responseValidator(validateAuthorisationResponse()))
@@ -221,7 +220,7 @@ public abstract class AbstractPayment implements EntityModel {
                     .notify(request(rolledBackAuthorisationRequest()).to(Merchant).guaranteed())),
             from(ProcessingAuthorisation).to(Preauthorised)
                 .onEvent(PreauthorisationApproved)
-                .withData(new ApprovedAuthorisationDataCreator())
+                .withData(new AuthorisationResponseDataCreator())
                 .notify(request(approvedPreauthorisation()).to(Merchant).guaranteed())
                 .scheduledEvents(List.of(new ScheduledEvent(AuthorisationExpired, Duration.ofDays(7)))),
             from(ProcessingAuthorisation).toSelf().onEvent(Rollback).build(),
@@ -232,7 +231,7 @@ public abstract class AbstractPayment implements EntityModel {
                 .notify(request(failedAuthorisation()).to(Merchant).guaranteed()),
             from(ProcessingAuthorisation).to(Authorised)
                 .onEvent(AuthorisationApproved)
-                .withData(new ApprovedAuthorisationDataCreator())
+                .withData(new AuthorisationResponseDataCreator())
                 .notify(request(approvedAuthorisation()).to(Merchant).guaranteed())
                 .trigger(data -> event(MerchantCredit, data.authorisation().amount().requested()).onEntity(settlement)
                     .identifiedBy(secondaryId(
@@ -250,7 +249,7 @@ public abstract class AbstractPayment implements EntityModel {
                         .identifiedBy(model(BatchNumber).group(data.merchantId()).last()))),
             from(ProcessingAuthorisation).to(AuthorisationFailed)
                 .onEvent(AcquirerDeclined)
-                .withData(_ -> Mono.just(""))
+                .withData(new  AuthorisationResponseDataCreator())
                 .notify(request(declinedAuthorisation()).to(Merchant).guaranteed()),
             from(ProcessingCapture).to(Authorised)
                 .onEvent(CaptureApproved)

@@ -11,14 +11,14 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent
 import com.github.thxmasj.statemachine.DataCreator;
 import com.github.thxmasj.statemachine.Input;
 import com.github.thxmasj.statemachine.Requirements;
-import com.github.thxmasj.statemachine.templates.cardpayment.AuthorisationDataCreator.AuthorisationData;
+import com.github.thxmasj.statemachine.templates.cardpayment.AuthorisationRequestDataCreator.AuthorisationRequestData;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthenticationResult;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Authorisation;
 import reactor.core.publisher.Mono;
 
-public class AuthorisationDataCreator implements DataCreator<AuthorisationData> {
+public class AuthorisationRequestDataCreator implements DataCreator<AuthorisationRequestData> {
 
-  public record AuthorisationData(
+  public record AuthorisationRequestData(
       Authorisation authorisation,
       AuthenticationResult authenticationResult
   ) {}
@@ -32,8 +32,8 @@ public class AuthorisationDataCreator implements DataCreator<AuthorisationData> 
   }
 
   @Override
-  public Mono<AuthorisationData> execute(Input input) {
-    return Mono.just(new AuthorisationData(
+  public Mono<AuthorisationRequestData> execute(Input input) {
+    return Mono.just(new AuthorisationRequestData(
         input.one(PaymentRequest).getUnmarshalledData(Authorisation.class),
         input.one(AuthenticationApproved, AuthenticationFailed, InvalidPaymentTokenOwnership, InvalidPaymentTokenStatus, InvalidAuthenticationToken)
             .getUnmarshalledData(AuthenticationResult.class)
