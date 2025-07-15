@@ -78,6 +78,15 @@ public class TransitionModel<T> {
     return this;
   }
 
+  public <U> TransitionModel<T> response(Function<T, U> dataAdapter, Class<? extends OutgoingResponseCreator<U>> creatorType) {
+    this.outgoingResponses.add(new OutgoingResponseModel<>(
+        dataAdapter,
+        creatorType,
+        null
+    ));
+    return this;
+  }
+
   public TransitionModel<T> response(OutgoingResponseCreator<T> creator) {
     this.outgoingResponses.add(new OutgoingResponseModel<>(
         Function.identity(),
