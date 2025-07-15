@@ -8,7 +8,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
-import java.util.function.Function;
 
 public class Requirements {
 
@@ -116,7 +115,7 @@ public class Requirements {
   }
 
   public static  EventRequirement last(Class<?> dataType) {
-    return new EventRequirement(List.of(), Type.Last, dataType, null, null);
+    return new EventRequirement(List.of(), Type.Last, dataType, null);
   }
 
   public static  EventRequirement last(
@@ -177,8 +176,6 @@ public class Requirements {
 
     List<EventType> eventTypes();
 
-    NotificationRequirement notification();
-
   }
 
   public record NotificationRequirement(OutboxQueue queue, ExchangeType exchangeType, Class<?> dataType) {}
@@ -187,21 +184,35 @@ public class Requirements {
       List<EventType> eventTypes,
       Type type,
       Class<?> dataType,
-      NotificationRequirement notification,
-      Function<String, ?> loader
+      NotificationRequirement notification
   ) implements Requirement {
 
     public EventRequirement(List<EventType> eventTypes, Type type) {
-      this(Collections.unmodifiableList(eventTypes), type, null, null, null);
+      this(Collections.unmodifiableList(eventTypes), type, null, null);
     }
 
     public EventRequirement(List<EventType> eventTypes, Type type, NotificationRequirement notification) {
-      this(Collections.unmodifiableList(eventTypes), type, null, notification, null);
+      this(Collections.unmodifiableList(eventTypes), type, null, notification);
     }
 
     @Override
     public String toString() {
       return type().name() + "(" + eventTypes().stream().map(Object::toString).collect(joining(","))+ ")";
+    }
+
+    @Override
+    public boolean equals(Object o) {
+      if (o instanceof EventRequirement other) {
+        if (!eventTypes().equals(other.eventTypes()))
+          return false;
+        return type().equals(other.type());
+      }
+      return false;
+    }
+
+    @Override
+    public int hashCode() {
+      return eventTypes().hashCode() + type().hashCode();
     }
 
   }

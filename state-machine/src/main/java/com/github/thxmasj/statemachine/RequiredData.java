@@ -27,17 +27,10 @@ import reactor.core.publisher.Mono;
 
 public class RequiredData implements Input {
 
-  private record RequirementKey(List<EventType> eventTypes, Type type) {
-
-    private static  RequirementKey from(Requirement requirement) {
-      return new RequirementKey(requirement.eventTypes(), requirement.type());
-    }
-  }
-
   private final int nextEventNumber;
   private final Class<?> requirer;
   private final Requirements requirements;
-  private final Map<RequirementKey, List<Event>> filteredEvents = new HashMap<>();
+  private final Map<Requirement, List<Event>> filteredEvents = new HashMap<>();
   private final List<Event> events;
   private final Event currentEvent;
   private final Event triggerEvent;
@@ -135,7 +128,7 @@ public class RequiredData implements Input {
     for (var requirement : requirements.asList()) {
       FilterResult result = filter(requirement, events);
       if (result.events() != null) {
-        filteredEvents.put(RequirementKey.from(requirement), result.events());
+        filteredEvents.put(requirement, result.events());
       }
     }
     this.nextEventNumber = !events.isEmpty() ? events.getLast().eventNumber() + 1 : 1;
@@ -300,12 +293,13 @@ public class RequiredData implements Input {
                 requirements
             ))
         );
-    var result = filteredEvents.get(RequirementKey.from(requirement));
+    var result = filteredEvents.get(requirement);
     if (result == null)
       throw new MissingRequirement(format(
-          "%s requests result for a requirement which was not specified: %s",
+          "%s requests result for a requirement which was not specified: %s. Available requirements are: %s",
           requirer.getName(),
-          requirement
+          requirement,
+          filteredEvents
       ));
     return result;
   }
