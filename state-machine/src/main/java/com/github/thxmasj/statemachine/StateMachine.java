@@ -1704,16 +1704,16 @@ public class StateMachine {
         notificationModel.notificationCreator();
     var filteredEvents = new RequiredData(
         entity,
-        join(eventLog, newEvents),
-        currentEvent,
-        newEvents.getLast(),
+        join(eventLog, newEvents), // Need for timestamp
+        null,//currentEvent,
+        null,//newEvents.getLast(),
         processResults,
         processedEvents,
-        incomingNotification == null ? List.of() : List.of(incomingNotification),
-        creator.requirements(),
+        List.of(),//incomingNotification == null ? List.of() : List.of(incomingNotification),
+        Requirements.none(),
         notificationModel.notificationCreatorType() != null ? notificationModel.notificationCreatorType() : notificationModel.notificationCreator().getClass(),
-        incomingRequestByEvent,
-        outgoingRequestByEvent
+        null,//incomingRequestByEvent,
+        null//outgoingRequestByEvent
     );
     Entity parentEntity = filteredEvents.nestedEntities().stream()
         .filter(nestedEntity -> nestedEntity.model().equals(entity.model.parentEntity()))

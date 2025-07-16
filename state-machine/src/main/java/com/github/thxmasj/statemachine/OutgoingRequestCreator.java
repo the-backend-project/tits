@@ -4,7 +4,7 @@ import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import reactor.core.publisher.Mono;
 import java.util.UUID;
 
-public interface OutgoingRequestCreator<T> extends DataRequirer {
+public interface OutgoingRequestCreator<T> {
 
   Mono<HttpRequestMessage> create(
       T data,
