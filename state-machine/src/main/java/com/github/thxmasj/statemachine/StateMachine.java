@@ -1753,16 +1753,16 @@ public class StateMachine {
         notificationModel.creator();
     var filteredEvents = new RequiredData(
         entity,
-        join(eventLog, newEvents),
-        currentEvent,
-        newEvents.getLast(),
+        join(eventLog, newEvents), // For timestamp
+        null,//currentEvent,
+        null,//newEvents.getLast(),
         processResults,
         processedEvents,
-        incomingNotification == null ? List.of() : List.of(incomingNotification),
-        creator.requirements(),
+        List.of(),//incomingNotification == null ? List.of() : List.of(incomingNotification),
+        Requirements.none(),//creator.requirements(),
         creator.getClass(),
-        incomingRequestByEvent,
-        outgoingRequestByEvent
+        null,//incomingRequestByEvent,
+        null//outgoingRequestByEvent
     );
     return Mono.deferContextual(ctx -> !hasRequestId(ctx) ?
         Mono.just(correlationId(ctx) + ": No incoming request in context, so skipping outgoing response " + creator.getClass())
