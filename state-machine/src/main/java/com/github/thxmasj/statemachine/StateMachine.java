@@ -39,14 +39,12 @@ import com.github.thxmasj.statemachine.database.mssql.EventsByLastEntity;
 import com.github.thxmasj.statemachine.database.mssql.EventsByLookupId;
 import com.github.thxmasj.statemachine.database.mssql.EventsByMessageId;
 import com.github.thxmasj.statemachine.database.mssql.IncomingRequestByEvent;
-import com.github.thxmasj.statemachine.database.mssql.IncomingResponseByEvent;
 import com.github.thxmasj.statemachine.database.mssql.LastSecondaryId;
 import com.github.thxmasj.statemachine.database.mssql.MoveToDLQ;
 import com.github.thxmasj.statemachine.database.mssql.NextDeadline;
 import com.github.thxmasj.statemachine.database.mssql.OutgoingRequestByEvent;
 import com.github.thxmasj.statemachine.database.mssql.OutgoingResponseAndRequestDigestByRequest;
 import com.github.thxmasj.statemachine.database.mssql.ProcessBackedOff;
-import com.github.thxmasj.statemachine.database.mssql.ProcessNew;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
 import com.github.thxmasj.statemachine.database.mssql.SecondaryIdByEntityId;
 import com.github.thxmasj.statemachine.http.HttpClient;
@@ -105,7 +103,6 @@ public class StateMachine {
   private final OutgoingResponseAndRequestDigestByRequest outgoingResponseByRequest;
   private final IncomingRequestByEvent incomingRequestByEvent;
   private final OutgoingRequestByEvent outgoingRequestByEvent;
-  private final IncomingResponseByEvent incomingResponseByEvent;
   private final Map<UUID, OutgoingRequestCreator<?>> outgoingRequestCreators;
   private final Function<OutboxQueue, HttpClient> clients;
 
@@ -160,13 +157,11 @@ public class StateMachine {
     this.outgoingResponseByRequest = new OutgoingResponseAndRequestDigestByRequest(dataSource, schemaName);
     this.incomingRequestByEvent = new IncomingRequestByEvent(dataSource, entityModels, schemaName);
     this.outgoingRequestByEvent = new OutgoingRequestByEvent(dataSource, schemaName);
-    this.incomingResponseByEvent = new IncomingResponseByEvent(dataSource, entityModels, schemaName);
     this.listener = listener;
     this.singleClientPerEntity = singleClientPerEntity;
     this.clients = clients;
     // TODO: Differentiate delay spec per queue
     var backoff = new DelaySpecification(ofSeconds(10), ofSeconds(20), ofSeconds(100), 1.5);
-    var processNew = new ProcessNew(jdbcClient, entityModels, schemaName, clock, backoff);
     var processBackedOff = new ProcessBackedOff(jdbcClient, entityModels, schemaName, clock, backoff);
     Looper<ResolverStatus> resolverLooper = new Looper<>(
         "ResolverWorker",
@@ -694,7 +689,7 @@ public class StateMachine {
   }
 
   private RequiredData requiredData(
-      DataRequirer dataRequirer,
+      Object dataRequirer,
       Entity entity,
       List<Event> eventLog,
       List<Event> newEvents,
@@ -710,7 +705,7 @@ public class StateMachine {
         List.of(),
         List.of(),
         incomingNotification != null ? List.of(incomingNotification) : List.of(),
-        dataRequirer.requirements(),
+        dataRequirer instanceof DataRequirer dr ? dr.requirements() : Requirements.none(),
         dataRequirer.getClass(),
         incomingRequestByEvent,
         outgoingRequestByEvent
@@ -1274,12 +1269,26 @@ public class StateMachine {
         .toList();
   }
 
-  private <T> Mono<TransitionWithData<T>> transitionWithData(ActualTransition<T> transition, Entity entity, List<Event> eventLog, List<Event> newEvents, Notification incomingNotification) {
-    return createData(transition.model(), entity, eventLog, newEvents, transition.event(), incomingNotification).map(data -> new TransitionWithData<>(transition, data));
+  private <T> Mono<TransitionWithData<T>> transitionWithData(
+      ActualTransition<T> transition,
+      Entity entity,
+      List<Event> eventLog,
+      List<Event> newEvents,
+      Notification incomingNotification
+  ) {
+    return createData(transition.model(), entity, eventLog, newEvents, transition.event(), incomingNotification).map(
+        data -> new TransitionWithData<>(transition, data));
   }
 
-  private Flux<TransitionWithData<?>> transitionsWithData(List<ActualTransition<?>> transitions, Entity entity, List<Event> eventLog, List<Event> newEvents, Notification incomingNotification) {
-    return Flux.fromIterable(transitions).flatMap(transition -> transitionWithData(transition, entity, eventLog, newEvents, incomingNotification));
+  private Flux<TransitionWithData<?>> transitionsWithData(
+      List<ActualTransition<?>> transitions,
+      Entity entity,
+      List<Event> eventLog,
+      List<Event> newEvents,
+      Notification incomingNotification
+  ) {
+    return Flux.fromIterable(transitions)
+        .flatMap(transition -> transitionWithData(transition, entity, eventLog, newEvents, incomingNotification));
   }
 
   private Mono<ProcessResult> processEvents(
@@ -1892,6 +1901,17 @@ public class StateMachine {
       Event event
   ) {}
 
+  private TraversableState traverseTo(int eventNumber, EntityModel entityModel, List<Event> eventLog) {
+    TraversableState state = entityModel.begin();
+    // Skip till eventNumber
+    for (var event : eventLog) {
+      if (event.eventNumber() <= eventNumber) {
+        state = state.forward(event.type());
+      }
+    }
+    return state;
+  }
+
   /*
    * Get the list of transitions and their events from event log starting from startEventNumber.
    */
@@ -1903,13 +1923,8 @@ public class StateMachine {
       List<Event> transitionEvents,
       boolean reverse
   ) {
-    TraversableState state = entityModel.begin();
     // Skip till startEventNumber
-    for (var event : eventLog) {
-      if (event.eventNumber() <= startEventNumber) {
-        state = state.forward(event.type());
-      }
-    }
+    TraversableState state = traverseTo(startEventNumber, entityModel, eventLog);
     List<ActualTransition<?>> list = new ArrayList<>();
     for (var event : transitionEvents) {
       TransitionModel<?> transition = requireNonNull(state.transition(event.type()), "Transition for " + event.type() + " from " + state.state() + " not allowed");

@@ -56,16 +56,12 @@ public class PaymentEvent {
   public record Capture(
       String id,
       long amount,
-      String stan,
-      String authorisationCode,
       String simulation
   ) {}
 
   public record Refund(
       String id,
       long amount,
-      String stan,
-      String authorisationCode,
       boolean inStore,
       ZonedDateTime transactionTime
   ) {}
