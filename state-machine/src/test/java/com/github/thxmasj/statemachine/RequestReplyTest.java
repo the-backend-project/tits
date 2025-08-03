@@ -8,9 +8,9 @@ import static com.github.thxmasj.statemachine.RequestReplyTest.Entities.Lamp;
 import static com.github.thxmasj.statemachine.RequestReplyTest.Events.SwitchOff;
 import static com.github.thxmasj.statemachine.RequestReplyTest.Events.SwitchOn;
 import static com.github.thxmasj.statemachine.RequestReplyTest.Events.Toggle;
+import static com.github.thxmasj.statemachine.RequestReplyTest.Queues.DeviceListener;
 import static com.github.thxmasj.statemachine.RequestReplyTest.States.Off;
 import static com.github.thxmasj.statemachine.RequestReplyTest.States.On;
-import static com.github.thxmasj.statemachine.RequestReplyTest.Queues.DeviceListener;
 import static com.github.thxmasj.statemachine.StateMachine.ProcessResult.Status.Accepted;
 import static com.github.thxmasj.statemachine.TransitionModel.Builder.from;
 import static com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Method.POST;
@@ -104,11 +104,6 @@ public class RequestReplyTest {
       @Override
       public UUID id() {
         return UUID.fromString("59d3158c-7b2a-4312-a293-325858c2673f");
-      }
-
-      @Override
-      public List<EventType> eventTypes() {
-        return List.of(Events.values());
       }
 
       @Override

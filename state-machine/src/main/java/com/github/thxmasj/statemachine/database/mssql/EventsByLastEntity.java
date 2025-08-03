@@ -1,5 +1,6 @@
 package com.github.thxmasj.statemachine.database.mssql;
 
+import static com.github.thxmasj.statemachine.database.mssql.Mappers.eventType;
 import static java.util.Optional.ofNullable;
 import static java.util.stream.Collectors.joining;
 
@@ -145,7 +146,7 @@ public class EventsByLastEntity {
         while (rs.next()) {
           events.add(new Event(
               rs.getInt(1), // EventNumber
-              entityModel.eventType(UUID.fromString(rs.getString(2))), // Type
+              eventType(entityModel, UUID.fromString(rs.getString(2))), // Type
               rs.getObject(3, LocalDateTime.class), // Timestamp
               clock,
               rs.getString(4), // MessageId

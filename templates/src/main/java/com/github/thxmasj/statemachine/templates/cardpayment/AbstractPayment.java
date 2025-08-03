@@ -45,7 +45,6 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEv
 
 import com.github.thxmasj.statemachine.BuiltinEventTypes;
 import com.github.thxmasj.statemachine.EntityModel;
-import com.github.thxmasj.statemachine.EventType;
 import com.github.thxmasj.statemachine.IncomingResponseValidator;
 import com.github.thxmasj.statemachine.OutboxQueue;
 import com.github.thxmasj.statemachine.ScheduledEvent;
@@ -79,11 +78,6 @@ public abstract class AbstractPayment implements EntityModel {
   @Override
   public UUID id() {
     return id;
-  }
-
-  @Override
-  public List<EventType> eventTypes() {
-    return List.of(PaymentEvent.Type.values());
   }
 
   @Override

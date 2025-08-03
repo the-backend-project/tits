@@ -25,7 +25,6 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEv
 import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Type.Timeout;
 
 import com.github.thxmasj.statemachine.EntityModel;
-import com.github.thxmasj.statemachine.EventType;
 import com.github.thxmasj.statemachine.IncomingResponseValidator;
 import com.github.thxmasj.statemachine.OutboxQueue;
 import com.github.thxmasj.statemachine.State;
@@ -52,11 +51,6 @@ public abstract class AbstractSettlement implements EntityModel {
   @Override
   public List<SchemaNames.SecondaryIdModel> secondaryIds() {
     return List.of(Identifiers.values());
-  }
-
-  @Override
-  public List<EventType> eventTypes() {
-    return List.of(SettlementEvent.Type.values());
   }
 
   @Override

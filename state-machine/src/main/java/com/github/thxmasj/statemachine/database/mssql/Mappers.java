@@ -3,11 +3,14 @@ package com.github.thxmasj.statemachine.database.mssql;
 import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
 
+import com.github.thxmasj.statemachine.BuiltinEventTypes;
 import com.github.thxmasj.statemachine.EntityId;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.Event;
+import com.github.thxmasj.statemachine.EventType;
 import com.github.thxmasj.statemachine.OutboxElement;
 import com.github.thxmasj.statemachine.OutboxQueue;
+import com.github.thxmasj.statemachine.TransitionModel;
 import com.github.thxmasj.statemachine.database.MappingFailure;
 import com.github.thxmasj.statemachine.database.Row;
 import com.github.thxmasj.statemachine.message.http.HttpMessageParser;
@@ -17,10 +20,20 @@ import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.stream.Stream;
 
 public class Mappers {
 
-    static  Function<Row, Event> eventMapper(
+  static EventType eventType(
+      EntityModel entityModel,
+      UUID typeId
+  ) {
+    return Stream.concat(entityModel.transitions().stream().map(TransitionModel::eventType), Stream.of(BuiltinEventTypes.values()))
+        .filter(type -> typeId.equals(type.id()))
+        .findFirst().orElseThrow(() -> new MappingFailure("No event type has id " + typeId));
+  }
+
+  static  Function<Row, Event> eventMapper(
         EntityModel entityModel,
         Clock clock
     ) {
@@ -28,7 +41,7 @@ public class Mappers {
             try {
                 return new Event(
                         value(row, "EventNumber", Integer.class),
-                        entityModel.eventType(row.get("Type", UUID.class)),
+                        eventType(entityModel, row.get("Type", UUID.class)),
                         value(row, "Timestamp", LocalDateTime.class),
                         clock,
                         nullableString(row, "MessageId"),

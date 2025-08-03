@@ -192,7 +192,7 @@ public class StateMachine {
   }
 
   private EventLog emptyEventLog(EntityModel entityModel) {
-    return new EventLog(entityModel, entityModel.newEntityId(), List.of(), List.of());
+    return new EventLog(entityModel, newEntityId(), List.of(), List.of());
   }
 
   private EventLog emptyEventLog(EntityModel entityModel, EntityId entityId) {
@@ -266,7 +266,7 @@ public class StateMachine {
             // The state has already been resolved by another resolver or incoming request
             return Mono.just(ResolverStatus.Ok);
           }
-          var currentState = deadline.entityModel().begin().forward(eventLog.events().stream().map(Event::type).toList());
+          var currentState = begin(deadline.entityModel()).forward(eventLog.events().stream().map(Event::type).toList());
           if (currentState == null)
             return Mono.error(new RuntimeException("Invalid event log: " + eventLog.events().stream().map(Event::typeName).collect(joining(","))));
           EventType eventType = currentState.state().timeout().get().eventType();
@@ -405,7 +405,7 @@ public class StateMachine {
         .flatMap(eventLog -> {
           EntityId entityId = eventLog.entityId();
           List<Event> events = eventLog.events();
-          var currentState = eventTrigger.entityModel().begin().forward(eventLog.effectiveEvents().stream().map(Event::type).toList());
+          var currentState = begin(eventTrigger.entityModel()).forward(eventLog.effectiveEvents().stream().map(Event::type).toList());
           List<Event> scheduledEvents = scheduledEvents(eventTrigger.entityModel(), eventLog);
           int nextEventNumber = eventLog.lastEventNumber() + scheduledEvents.size() + 1;
           String messageId = incomingRequest.messageId().apply(entityId, eventTrigger.eventType());
@@ -466,7 +466,7 @@ public class StateMachine {
               );
         })
         .onErrorResume(UnknownEntity.class, e -> {
-          EntityId entityId = e.id() != null ? e.id() : eventTrigger.entityModel().newEntityId();
+          EntityId entityId = e.id() != null ? e.id() : newEntityId();
           String messageId = incomingRequest.messageId().apply(entityId, eventTrigger.eventType());
           return processEvents(
               emptyEventLog(eventTrigger.entityModel(), entityId),
@@ -722,7 +722,7 @@ public class StateMachine {
               } else if (mainEntitySelector.entityId() != null && mainEntitySelector.createIfNotExists()) {
                 return Mono.just(emptyEventLog(eventTrigger.entityModel(), mainEntitySelector.entityId()));
               } else if (mainEntitySelector.messageId() != null && mainEntitySelector.createIfNotExists()) {
-                return Mono.just(emptyEventLog(eventTrigger.entityModel(), entityModel.newEntityId()));
+                return Mono.just(emptyEventLog(eventTrigger.entityModel(), newEntityId()));
               } else {
                 return Mono.error(e);
               }
@@ -737,11 +737,11 @@ public class StateMachine {
                   .findFirst()
                   .orElse(0) :
               0;
-          var currentState = entityModel.begin()
+          var currentState = begin(entityModel)
               .forward(eventLog.effectiveEvents().stream().map(Event::type).toList());
           if (currentState == null)
             throw new RuntimeException(
-                "Cannot traverse from " + entityModel.begin().state() + " with " + eventLog.events()
+                "Cannot traverse from " + begin(entityModel).state() + " with " + eventLog.events()
                     .stream()
                     .map(Event::typeName)
                     .collect(joining(", ")));
@@ -878,7 +878,7 @@ public class StateMachine {
   private Mono<EventLog> fetchEventLog(Entity rootEntity, EntityModel entityModel, EntitySelector mainSelector, List<EntitySelector> allSelectors) {
     return switch (mainSelector) {
       case EntitySelector s when s.entityId() != null -> eventsByEntityId.execute(entityModel, s.entityId());
-      case EntitySelector s when s.secondaryId() != null && s.create() -> calculateNewIds(rootEntity, allSelectors).map(newIds -> new EventLog(entityModel, entityModel.newEntityId(), newIds, List.of()));
+      case EntitySelector s when s.secondaryId() != null && s.create() -> calculateNewIds(rootEntity, allSelectors).map(newIds -> new EventLog(entityModel, newEntityId(), newIds, List.of()));
       case EntitySelector s when s.secondaryId() != null -> eventsByLookupId.execute(entityModel, s.secondaryId());
       case EntitySelector s when s.last() != 0 -> eventsByLastEntity.execute(entityModel, s.secondaryIdModel(), s.group(), s.last());
       case EntitySelector s -> throw new IllegalStateException("Unexpected value: " + s);
@@ -895,7 +895,7 @@ public class StateMachine {
     return (rawSelectors.getFirst().next() ? next(rootEntity, rawSelectors.getFirst()).mergeWith(Flux.fromIterable(rawSelectors.subList(1, rawSelectors.size()))) : Flux.fromIterable(rawSelectors)).collectList()
         .flatMap(selectors -> fetchEventLog(rootEntity, entityModel, selectors.getFirst(), selectors)
             .flatMap(eventLog -> {
-              var currentState = entityModel.begin()
+              var currentState = begin(entityModel)
                   .forward(eventLog.effectiveEvents().stream().map(Event::type).toList());
               List<Event> scheduledEvents = scheduledEvents(entityModel, eventLog);
               var stateAfterScheduledEvents = currentState.forward(scheduledEvents.stream()
@@ -1013,7 +1013,7 @@ public class StateMachine {
   }
 
   private List<Event> scheduledEvents(EntityModel entityType, EventLog eventLog) {
-    return entityType.begin().forward(eventLog.effectiveEvents().stream().map(Event::type).toList()).state().timeout()
+    return begin(entityType).forward(eventLog.effectiveEvents().stream().map(Event::type).toList()).state().timeout()
         .filter(timeout -> ZonedDateTime.now(clock).isAfter(eventLog.effectiveEvents().getLast().timestamp().plus(timeout.duration())))
         .map(timeout -> List.of(new Event(eventLog.lastEventNumber() + 1, timeout.eventType(), clock)))
         .orElseGet(() -> {
@@ -1044,7 +1044,7 @@ public class StateMachine {
         join(secondaryIds, idsForNewEntity),
         eventLog.entityModel()
     );
-    var currentState = eventLog.entityModel().begin().forward(effectiveEventLog.stream().map(Event::type).toList());
+    var currentState = begin(eventLog.entityModel()).forward(effectiveEventLog.stream().map(Event::type).toList());
     TransitionModel<I, O> transitionModelForInput = (TransitionModel<I, O>)
         currentState.forward(scheduledEvents.stream().map(Event::type).toList()).transition(inputEvent.eventType());
     if (transitionModelForInput == null) {
@@ -1162,7 +1162,7 @@ public class StateMachine {
             }
           } else if (inputEvent.eventType().isCancel()) {
             startEventNumber = 0;
-            targetState = eventLog.entityModel().begin();
+            targetState = begin(eventLog.entityModel());
             transitionEvents = Event.join(effectiveEventLog, scheduledEvents);
             reverseTransitions = true;
             eventsToStore = newEvents;
@@ -2009,7 +2009,7 @@ public class StateMachine {
   ) {}
 
   private TraversableState traverseTo(int eventNumber, EntityModel entityModel, List<Event> eventLog) {
-    TraversableState state = entityModel.begin();
+    TraversableState state = begin(entityModel);
     // Skip till eventNumber
     for (var event : eventLog) {
       if (event.eventNumber() <= eventNumber) {
@@ -2099,7 +2099,7 @@ public class StateMachine {
   private TransitionModel<?, ?> transitionForEventNumber(EventLog eventLog, int eventNumber) {
     var events = eventLog.events();
     if (events.isEmpty()) return null;
-    TraversableState state = eventLog.entityModel().begin();
+    TraversableState state = begin(eventLog.entityModel());
     for (var event : events) {
       if (event.eventNumber() == eventNumber)
         return state.transition(event.type());
@@ -2110,14 +2110,22 @@ public class StateMachine {
 
   private TraversableState traverseTo(EntityModel entityModel, List<Event> eventLog, int eventNumber) {
     if (eventNumber == 0)
-      return entityModel.begin();
-    var state = entityModel.begin();
+      return begin(entityModel);
+    var state = begin(entityModel);
     for (var event : eventLog) {
       state = state.forward(event.type());
       if (event.eventNumber() == eventNumber)
         return state;
     }
     throw new IllegalArgumentException("No event with number " + eventNumber);
+  }
+
+  private EntityId newEntityId() {
+    return new EntityId.UUID(UUID.randomUUID());
+  }
+
+  private TraversableState begin(EntityModel model) {
+    return TraversableState.create(model);
   }
 
 }

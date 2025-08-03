@@ -39,11 +39,6 @@ public class Batching {
     ;
 
     @Override
-    public List<EventType> eventTypes() {
-      return List.of(Events.values());
-    }
-
-    @Override
     public State initialState() {
       return Begin;
     }
