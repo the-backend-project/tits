@@ -1,17 +1,18 @@
 package com.github.thxmasj.statemachine.templates.cardpayment;
 
 import com.github.thxmasj.statemachine.OutgoingRequestCreator;
-import com.github.thxmasj.statemachine.templates.cardpayment.AuthorisationResponseDataCreator.AuthorisationResponseData;
+import com.github.thxmasj.statemachine.Tuples.Tuple2;
 import com.github.thxmasj.statemachine.templates.cardpayment.ApprovedCaptureDataCreator.ApprovedCaptureData;
 import com.github.thxmasj.statemachine.templates.cardpayment.ApprovedCutOffDataCreator.ApprovedCutOffData;
 import com.github.thxmasj.statemachine.templates.cardpayment.ApprovedRefundDataCreator.ApprovedRefundData;
 import com.github.thxmasj.statemachine.templates.cardpayment.AuthenticationDataCreator.AuthenticationData;
-import com.github.thxmasj.statemachine.templates.cardpayment.AuthorisationRequestDataCreator.AuthorisationRequestData;
+import com.github.thxmasj.statemachine.templates.cardpayment.AuthorisationResponseDataCreator.AuthorisationResponseData;
 import com.github.thxmasj.statemachine.templates.cardpayment.AuthorisationReversalDataCreator.AuthorisationReversalData;
 import com.github.thxmasj.statemachine.templates.cardpayment.CaptureRequestDataCreator.CaptureRequestData;
 import com.github.thxmasj.statemachine.templates.cardpayment.CaptureRequestedTooLateDataCreator.CaptureRequestedTooLateData;
 import com.github.thxmasj.statemachine.templates.cardpayment.DeclinedRefundDataCreator.DeclinedRefundData;
 import com.github.thxmasj.statemachine.templates.cardpayment.FailedRefundDataCreator.FailedRefundData;
+import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthenticationResult;
 import com.github.thxmasj.statemachine.templates.cardpayment.PreauthorisationReversalDataCreator.PreauthorisationReversalData;
 import com.github.thxmasj.statemachine.templates.cardpayment.RefundRequestDataCreator.RefundRequestData;
 import com.github.thxmasj.statemachine.templates.cardpayment.RefundReversalDataCreator.RefundReversalData;
@@ -22,13 +23,13 @@ public class OutgoingRequests {
   public interface Authentication extends OutgoingRequestCreator<AuthenticationData> {
     default UUID id() {return UUID.fromString("bb64d867-2d78-47bf-af75-d8b6ae646aaa");}
   }
-  public interface Preauthorisation extends OutgoingRequestCreator<AuthorisationRequestData> {
+  public interface Preauthorisation extends OutgoingRequestCreator<Tuple2<PaymentEvent.Authorisation, AuthenticationResult>> {
     default UUID id() {return UUID.fromString("c0e84149-a4aa-4e37-900f-a520ea8c9327");}
   }
   public interface PreauthorisationReversal extends OutgoingRequestCreator<PreauthorisationReversalData> {
     default UUID id() {return UUID.fromString("6f311a5d-e8ab-413f-897e-b3fb813e17a2");}
   }
-  public interface Authorisation extends OutgoingRequestCreator<AuthorisationRequestData> {
+  public interface Authorisation extends OutgoingRequestCreator<Tuple2<PaymentEvent.Authorisation, AuthenticationResult>> {
     default UUID id() {return UUID.fromString("564a47ea-f414-4690-9700-19554dd81bf3");}
   }
   public interface AuthorisationReversal extends OutgoingRequestCreator<AuthorisationReversalData> {
@@ -40,13 +41,13 @@ public class OutgoingRequests {
   public interface RolledBackAuthorisationRequest extends OutgoingRequestCreator<AuthorisationReversalData> {
     default UUID id() {return UUID.fromString("86293a8d-03e8-4e89-9857-8d44bc31afac");}
   }
-  public interface FailedAuthentication extends OutgoingRequestCreator<AuthorisationRequestData> {
+  public interface FailedAuthentication extends OutgoingRequestCreator<Tuple2<PaymentEvent.Authorisation, AuthenticationResult>> {
     default UUID id() {return UUID.fromString("146935ba-372e-44bc-b4ac-4f0474c71daf");}
   }
-  public interface FailedTokenValidation extends OutgoingRequestCreator<AuthorisationRequestData> {
+  public interface FailedTokenValidation extends OutgoingRequestCreator<Tuple2<PaymentEvent.Authorisation, AuthenticationResult>> {
     default UUID id() {return UUID.fromString("f287fc81-0c89-4e35-98fe-1a5c5ecbfb2d");}
   }
-  public interface FailedAuthorisation extends OutgoingRequestCreator<AuthorisationRequestData> {
+  public interface FailedAuthorisation extends OutgoingRequestCreator<Tuple2<PaymentEvent.Authorisation, AuthenticationResult>> {
     default UUID id() {return UUID.fromString("b650af23-8d77-4172-a5b9-5663557310fc");}
   }
   public interface DeclinedAuthorisation extends OutgoingRequestCreator<AuthorisationResponseData> {

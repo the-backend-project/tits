@@ -36,7 +36,7 @@ public class Logger implements Listener {
   }
 
   @Override
-  public void actionExecuted(String correlationId, EntityId entityId, String actionName, String currentState, Event output) {
+  public void actionExecuted(String correlationId, EntityId entityId, String actionName, String currentState, EventType output) {
     log(header(entityId, correlationId) + " Action executed: " + actionName);
   }
 
@@ -55,10 +55,10 @@ public class Logger implements Listener {
       String correlationId,
       EntityId entityId,
       String sourceState,
-      Event resolveEvent,
+      EventType resolveEvent,
       String details
   ) {
-    log(header(entityId, correlationId) + " Resolving state " + sourceState + " with " + resolveEvent.typeName() + " failed: " + details);
+    log(header(entityId, correlationId) + " Resolving state " + sourceState + " with " + resolveEvent.name() + " failed: " + details);
   }
 
   @Override

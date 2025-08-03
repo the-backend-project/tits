@@ -16,6 +16,7 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.Queues.Acqui
 
 import com.github.thxmasj.statemachine.DataCreator;
 import com.github.thxmasj.statemachine.Input;
+import com.github.thxmasj.statemachine.InputEvent;
 import com.github.thxmasj.statemachine.Requirements;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Amount;
@@ -23,7 +24,7 @@ import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Author
 import com.github.thxmasj.statemachine.templates.cardpayment.PreauthorisationReversalDataCreator.PreauthorisationReversalData;
 import reactor.core.publisher.Mono;
 
-public class PreauthorisationReversalDataCreator implements DataCreator<PreauthorisationReversalData> {
+public class PreauthorisationReversalDataCreator implements DataCreator<Void, PreauthorisationReversalData> {
 
   public record PreauthorisationReversalData(
       HttpRequestMessage originalRequest,
@@ -41,22 +42,21 @@ public class PreauthorisationReversalDataCreator implements DataCreator<Preautho
   public Requirements requirements() {
     return Requirements.of(
         outgoingRequest(Acquirer, PreauthorisationRequest, String.class),
-        trigger(Cancel, Rollback, RollbackRequest, BankRequestFailed, BankRespondedIncomprehensibly),
         one(PaymentRequest),
         lastIfExists(PreauthorisationApproved)
     );
   }
 
   @Override
-  public Mono<PreauthorisationReversalData> execute(Input input) {
+  public Mono<PreauthorisationReversalData> execute(InputEvent<Void> inputEvent, Input input) {
     Authorisation paymentData = input.one(PaymentRequest).getUnmarshalledData(Authorisation.class);
     AcquirerResponse acquirerResponse = input.lastIfExists(PreauthorisationApproved)
         .map(e -> e.getUnmarshalledData(AcquirerResponse.class)).orElse(null);
     return input.outgoingRequest(Acquirer, PreauthorisationRequest, String.class)
         .map(originalRequest -> new PreauthorisationReversalData(
             originalRequest.httpMessage(),
-            input.trigger(Cancel, Rollback, RollbackRequest, BankRequestFailed, BankRespondedIncomprehensibly).clientId() != null,
-            input.trigger(Cancel, Rollback, RollbackRequest, BankRequestFailed, BankRespondedIncomprehensibly).type() != Cancel,
+            inputEvent.eventType() == Cancel || inputEvent.eventType() == RollbackRequest,
+            inputEvent.eventType() != Cancel,
             paymentData.merchant().id(),
             paymentData.merchant().aggregatorId(),
             paymentData.amount(),

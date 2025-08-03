@@ -10,11 +10,10 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEv
 import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Type.OutOfBalance;
 import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Type.SettlementApproved;
 
-import com.github.thxmasj.statemachine.Action;
 import com.github.thxmasj.statemachine.Choice;
 import com.github.thxmasj.statemachine.EntityId;
-import com.github.thxmasj.statemachine.Event;
 import com.github.thxmasj.statemachine.Input;
+import com.github.thxmasj.statemachine.InputEvent;
 import com.github.thxmasj.statemachine.Requirements;
 import com.github.thxmasj.statemachine.templates.cardpayment.AcquirerResponse.ReconciliationValues;
 import reactor.core.publisher.Mono;
@@ -33,7 +32,7 @@ public class Reconcile implements Choice<String> {
   }
 
   @Override
-  public Mono<Event> execute(EntityId entityId, Context<String> context, Input input) {
+  public Mono<InputEvent<String>> execute(EntityId entityId, Context<String> context, Input input) {
     return Mono.just(new ReconciliationValues(
             input.all(MerchantDebit).stream().map(e -> e.getUnmarshalledData(Long.class)).mapToLong(Long::longValue).sum(),
             (long) input.all(MerchantDebit).size(),

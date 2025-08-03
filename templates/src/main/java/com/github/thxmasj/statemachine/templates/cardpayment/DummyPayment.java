@@ -3,12 +3,12 @@ package com.github.thxmasj.statemachine.templates.cardpayment;
 import com.github.thxmasj.statemachine.EntityId;
 import com.github.thxmasj.statemachine.IncomingResponseValidator;
 import com.github.thxmasj.statemachine.Input;
+import com.github.thxmasj.statemachine.Tuples.Tuple2;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.templates.cardpayment.AuthorisationResponseDataCreator.AuthorisationResponseData;
 import com.github.thxmasj.statemachine.templates.cardpayment.ApprovedCaptureDataCreator.ApprovedCaptureData;
 import com.github.thxmasj.statemachine.templates.cardpayment.ApprovedRefundDataCreator.ApprovedRefundData;
 import com.github.thxmasj.statemachine.templates.cardpayment.AuthenticationDataCreator.AuthenticationData;
-import com.github.thxmasj.statemachine.templates.cardpayment.AuthorisationRequestDataCreator.AuthorisationRequestData;
 import com.github.thxmasj.statemachine.templates.cardpayment.AuthorisationReversalDataCreator.AuthorisationReversalData;
 import com.github.thxmasj.statemachine.templates.cardpayment.CaptureRequestDataCreator.CaptureRequestData;
 import com.github.thxmasj.statemachine.templates.cardpayment.CaptureRequestedTooLateDataCreator.CaptureRequestedTooLateData;
@@ -53,7 +53,7 @@ public class DummyPayment extends AbstractPayment{
     return new OutgoingRequests.Preauthorisation() {
       @Override
       public Mono<HttpRequestMessage> create(
-          AuthorisationRequestData data,
+          Tuple2<PaymentEvent.Authorisation, AuthenticationResult> data,
           EntityId entityId,
           String correlationId,
           Input input
@@ -92,7 +92,7 @@ public class DummyPayment extends AbstractPayment{
     return new OutgoingRequests.Authorisation() {
       @Override
       public Mono<HttpRequestMessage> create(
-          AuthorisationRequestData data,
+          Tuple2<PaymentEvent.Authorisation, AuthenticationResult> data,
           EntityId entityId,
           String correlationId,
           Input input
@@ -173,7 +173,7 @@ public class DummyPayment extends AbstractPayment{
     return new OutgoingRequests.FailedAuthentication() {
       @Override
       public Mono<HttpRequestMessage> create(
-          AuthorisationRequestData data,
+          Tuple2<PaymentEvent.Authorisation, AuthenticationResult> data,
           EntityId entityId,
           String correlationId,
           Input input
@@ -194,7 +194,7 @@ public class DummyPayment extends AbstractPayment{
     return new OutgoingRequests.FailedTokenValidation() {
       @Override
       public Mono<HttpRequestMessage> create(
-          AuthorisationRequestData data,
+          Tuple2<PaymentEvent.Authorisation, AuthenticationResult> data,
           EntityId entityId,
           String correlationId,
           Input input
@@ -214,7 +214,7 @@ public class DummyPayment extends AbstractPayment{
     return new OutgoingRequests.FailedAuthorisation() {
       @Override
       public Mono<HttpRequestMessage> create(
-          AuthorisationRequestData data,
+          Tuple2<PaymentEvent.Authorisation, AuthenticationResult> data,
           EntityId entityId,
           String correlationId,
           Input input

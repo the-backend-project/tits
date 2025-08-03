@@ -2,9 +2,9 @@ package com.github.thxmasj.statemachine;
 
 import reactor.core.publisher.Mono;
 
-public interface IncomingRequestValidator<OUTPUT_TYPE> extends DataRequirer {
+public interface IncomingRequestValidator<OUTPUT_TYPE> {
 
-  default Mono<Event> execute(
+  default Mono<InputEvent<OUTPUT_TYPE>> execute(
       EntityId entityId,
       Context<OUTPUT_TYPE> context,
       Input.IncomingRequest request,
@@ -15,15 +15,15 @@ public interface IncomingRequestValidator<OUTPUT_TYPE> extends DataRequirer {
 
   interface Context<OUTPUT_TYPE> {
 
-    Event invalidRequest(String errorMessage);
+    InputEvent<OUTPUT_TYPE> invalidRequest(String errorMessage);
 
-    Event invalidRequest(EventType eventType, OUTPUT_TYPE data, String errorMessage);
+    InputEvent<OUTPUT_TYPE> invalidRequest(EventType eventType, OUTPUT_TYPE data, String errorMessage);
 
-    Event invalidRequest(EventType eventType, OUTPUT_TYPE data);
+    InputEvent<OUTPUT_TYPE> invalidRequest(EventType eventType, OUTPUT_TYPE data);
 
-    Event validRequest(OUTPUT_TYPE data);
+    InputEvent<OUTPUT_TYPE> validRequest(OUTPUT_TYPE data);
 
-    Event validRequest();
+    InputEvent<OUTPUT_TYPE> validRequest();
 
   }
 

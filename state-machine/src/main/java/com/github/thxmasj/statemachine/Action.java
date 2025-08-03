@@ -4,7 +4,7 @@ import reactor.core.publisher.Mono;
 
 public interface Action<OUTPUT_TYPE> extends DataRequirer {
 
-  Mono<Event> execute(
+  Mono<InputEvent<OUTPUT_TYPE>> execute(
       EntityId entityId,
       Context<OUTPUT_TYPE> context,
       Input input
@@ -12,7 +12,7 @@ public interface Action<OUTPUT_TYPE> extends DataRequirer {
 
   interface Context<OUTPUT_TYPE> {
 
-    Event output(EventType eventType, OUTPUT_TYPE data);
+    InputEvent<OUTPUT_TYPE> output(EventType eventType, OUTPUT_TYPE data);
 
   }
 

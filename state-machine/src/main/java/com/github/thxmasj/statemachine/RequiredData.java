@@ -376,7 +376,7 @@ public class RequiredData implements Input {
               ? new FilterResult(List.of(l.getLast()))
               : new FilterResult(l)
           ));
-      case Current -> Optional.of(currentEvent)
+      case Current -> Optional.ofNullable(currentEvent)
           .filter(event -> requirement.eventTypes().contains(event.type()))
           .map(event -> new FilterResult(List.of(event)))
           .orElse(new FilterResult(

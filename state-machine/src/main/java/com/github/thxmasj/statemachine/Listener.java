@@ -28,7 +28,7 @@ public interface Listener {
             EntityId entityId,
             String actionName,
             String currentState,
-            Event output
+            EventType resultEvent
     );
 
     void inconsistentState(
@@ -42,7 +42,7 @@ public interface Listener {
         String correlationId,
         EntityId entityId,
         String sourceState,
-        Event resolveEvent,
+        EventType resolveEvent,
         String details
     );
 

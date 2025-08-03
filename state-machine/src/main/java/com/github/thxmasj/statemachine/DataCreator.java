@@ -2,8 +2,8 @@ package com.github.thxmasj.statemachine;
 
 import reactor.core.publisher.Mono;
 
-public interface DataCreator<T> extends DataRequirer {
+public interface DataCreator<I, O> extends DataRequirer {
 
-  Mono<T> execute(Input input);
+  Mono<O> execute(InputEvent<I> inputEvent, Input input);
 
 }

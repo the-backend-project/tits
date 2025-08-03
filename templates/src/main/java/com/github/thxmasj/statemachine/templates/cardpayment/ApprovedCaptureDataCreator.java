@@ -1,20 +1,19 @@
 package com.github.thxmasj.statemachine.templates.cardpayment;
 
-import static com.github.thxmasj.statemachine.Requirements.current;
 import static com.github.thxmasj.statemachine.Requirements.incomingRequest;
 import static com.github.thxmasj.statemachine.Requirements.one;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.CaptureApproved;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.CaptureRequest;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.PaymentRequest;
 
 import com.github.thxmasj.statemachine.DataCreator;
 import com.github.thxmasj.statemachine.Input;
+import com.github.thxmasj.statemachine.InputEvent;
 import com.github.thxmasj.statemachine.Requirements;
 import com.github.thxmasj.statemachine.templates.cardpayment.ApprovedCaptureDataCreator.ApprovedCaptureData;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Authorisation;
 import reactor.core.publisher.Mono;
 
-public class ApprovedCaptureDataCreator implements DataCreator<ApprovedCaptureData> {
+public class ApprovedCaptureDataCreator implements DataCreator<AcquirerResponse, ApprovedCaptureData> {
 
   public record ApprovedCaptureData(
       String merchantId,
@@ -32,24 +31,23 @@ public class ApprovedCaptureDataCreator implements DataCreator<ApprovedCaptureDa
   public final Requirements requirements() {
     return Requirements.of(
         one(PaymentRequest),
-        current(CaptureApproved),
         incomingRequest(CaptureRequest, String.class)
     );
   }
 
   @Override
-  public Mono<ApprovedCaptureData> execute(Input input) {
+  public Mono<ApprovedCaptureData> execute(InputEvent<AcquirerResponse> inputEvent, Input input) {
     var paymentData = input.one(PaymentRequest).getUnmarshalledData(Authorisation.class);
-    var bankResponse = input.current(CaptureApproved).getUnmarshalledData(AcquirerResponse.class);
+    var inputData = inputEvent.data();
     return input.incomingRequest(CaptureRequest, String.class).map(request -> new ApprovedCaptureData(
         paymentData.merchant().id(),
         paymentData.merchant().aggregatorId(),
-        bankResponse.amount(),
+        inputData.amount(),
         paymentData.merchantReference(),
-        bankResponse.batchNumber(),
-        bankResponse.stan(),
-        bankResponse.authorisationCode(),
-        bankResponse.responseCode(),
+        inputData.batchNumber(),
+        inputData.stan(),
+        inputData.authorisationCode(),
+        inputData.responseCode(),
         request.messageId()
     ));
   }

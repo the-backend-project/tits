@@ -11,6 +11,7 @@ import com.github.thxmasj.statemachine.Choice;
 import com.github.thxmasj.statemachine.EntityId;
 import com.github.thxmasj.statemachine.Event;
 import com.github.thxmasj.statemachine.Input;
+import com.github.thxmasj.statemachine.InputEvent;
 import com.github.thxmasj.statemachine.Requirements;
 import com.github.thxmasj.statemachine.State;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Authorisation;
@@ -28,7 +29,7 @@ public enum PaymentState implements State {
     }
 
     @Override
-    public Mono<Event> execute(EntityId entityId, Context<Void> context, Input input) {
+    public Mono<InputEvent<Void>> execute(EntityId entityId, Context<Void> context, Input input) {
       return Mono.just(context.output(
           input.one(PaymentRequest).getUnmarshalledData(Authorisation.class).capture() ?
               AuthorisationRequest :

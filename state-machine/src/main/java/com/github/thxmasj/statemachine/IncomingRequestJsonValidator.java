@@ -20,6 +20,7 @@ public class IncomingRequestJsonValidator<INPUT_TYPE, OUTPUT_TYPE>
       .configure(DeserializationFeature.ADJUST_DATES_TO_CONTEXT_TIME_ZONE, false)
       .setSerializationInclusion(JsonInclude.Include.NON_NULL);
   private final Class<INPUT_TYPE> inputType;
+  @SuppressWarnings("resource")
   private final Validator jsonValidator = Validation.byDefaultProvider()
       .configure()
       .messageInterpolator(new ParameterMessageInterpolator())
@@ -29,7 +30,7 @@ public class IncomingRequestJsonValidator<INPUT_TYPE, OUTPUT_TYPE>
   public IncomingRequestJsonValidator(Class<INPUT_TYPE> inputType) {this.inputType = inputType;}
 
   @Override
-  public final Mono<Event> execute(
+  public final Mono<InputEvent<OUTPUT_TYPE>> execute(
       EntityId entityId,
       Context<OUTPUT_TYPE> context,
       Input.IncomingRequest request,
@@ -47,7 +48,7 @@ public class IncomingRequestJsonValidator<INPUT_TYPE, OUTPUT_TYPE>
     return execute(entityId, context, request, input, jsonBody);
   }
 
-  public Mono<Event> execute(
+  public Mono<InputEvent<OUTPUT_TYPE>> execute(
       EntityId entityId,
       Context<OUTPUT_TYPE> context,
       Input.IncomingRequest request,

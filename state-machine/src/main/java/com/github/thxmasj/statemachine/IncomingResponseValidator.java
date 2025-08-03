@@ -28,7 +28,7 @@ public interface IncomingResponseValidator<OUTPUT_TYPE> extends DataRequirer {
     }
   }
 
-  record Result(Status status, String message, Event event) {
+  record Result(Status status, String message, InputEvent<?> inputEvent) {
     public enum Status {
       Ok,
       PermanentError,
@@ -38,13 +38,13 @@ public interface IncomingResponseValidator<OUTPUT_TYPE> extends DataRequirer {
 
   interface Context<OUTPUT_TYPE> {
 
-    Event requestUndelivered(String cause);
+    InputEvent<OUTPUT_TYPE> requestUndelivered(String cause);
 
-    Event validResponse(EventType eventType, OUTPUT_TYPE data);
+    InputEvent<OUTPUT_TYPE> validResponse(EventType eventType, OUTPUT_TYPE data);
 
-    Event invalidResponse(String cause);
+    InputEvent<OUTPUT_TYPE> invalidResponse(String cause);
 
-    Event rollback(String cause);
+    InputEvent<OUTPUT_TYPE> rollback(String cause);
 
   }
 

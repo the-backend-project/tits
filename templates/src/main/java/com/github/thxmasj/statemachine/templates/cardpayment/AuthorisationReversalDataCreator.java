@@ -16,13 +16,14 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.Queues.Acqui
 
 import com.github.thxmasj.statemachine.DataCreator;
 import com.github.thxmasj.statemachine.Input;
+import com.github.thxmasj.statemachine.InputEvent;
 import com.github.thxmasj.statemachine.Requirements;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.templates.cardpayment.AuthorisationReversalDataCreator.AuthorisationReversalData;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Authorisation;
 import reactor.core.publisher.Mono;
 
-public class AuthorisationReversalDataCreator implements DataCreator<AuthorisationReversalData> {
+public class AuthorisationReversalDataCreator implements DataCreator<Void, AuthorisationReversalData> {
 
   public record AuthorisationReversalData(
       HttpRequestMessage originalRequest,
@@ -41,22 +42,21 @@ public class AuthorisationReversalDataCreator implements DataCreator<Authorisati
   public Requirements requirements() {
     return Requirements.of(
         outgoingRequest(Acquirer, AuthorisationRequest, String.class),
-        trigger(Cancel, Rollback, RollbackRequest, BankRequestFailed, BankRespondedIncomprehensibly),
         one(PaymentRequest),
         lastIfExists(AuthorisationApproved)
     );
   }
 
   @Override
-  public Mono<AuthorisationReversalData> execute(Input input) {
+  public Mono<AuthorisationReversalData> execute(InputEvent<Void> inputEvent, Input input) {
     Authorisation paymentData = input.one(PaymentRequest).getUnmarshalledData(Authorisation.class);
     AcquirerResponse acquirerResponse = input.lastIfExists(AuthorisationApproved)
         .map(e -> e.getUnmarshalledData(AcquirerResponse.class)).orElse(null);
     return input.outgoingRequest(Acquirer, AuthorisationRequest, String.class)
         .map(originalRequest -> new AuthorisationReversalData(
             originalRequest.httpMessage(),
-            input.trigger(Cancel, Rollback, RollbackRequest, BankRequestFailed, BankRespondedIncomprehensibly).clientId() != null,
-            input.trigger(Cancel, Rollback, RollbackRequest, BankRequestFailed, BankRespondedIncomprehensibly).type() != Cancel,
+            inputEvent.eventType() == Cancel || inputEvent.eventType() == RollbackRequest,
+            inputEvent.eventType() != Cancel,
             paymentData.merchant().id(),
             paymentData.merchant().aggregatorId(),
             paymentData.amount().requested(),

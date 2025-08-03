@@ -134,21 +134,24 @@ public final class Event {
     return Stream.concat(list1.stream(), list2.stream()).toList();
   }
 
-  private static ObjectMapper objectMapper = new ObjectMapper()
+  private static final ObjectMapper objectMapper = new ObjectMapper()
       .registerModule(new JavaTimeModule())
       .configure(DeserializationFeature.ADJUST_DATES_TO_CONTEXT_TIME_ZONE, false)
       .setSerializationInclusion(Include.NON_NULL);
 
   private static <T> String marshal(EventType eventType, T data) {
-    if (data instanceof String s)
-      return s;
-    else if (data instanceof Number n)
-      return n.toString();
-    try {
-      return objectMapper.writerFor(eventType.dataType()).writeValueAsString(data);
-    } catch (JsonProcessingException e) {
-      throw new RuntimeException(e);
-    }
+    return switch (data) {
+      case String s -> s;
+      case Number n -> n.toString();
+      case null -> null;
+      default -> {
+        try {
+          yield objectMapper.writerFor(eventType.dataType()).writeValueAsString(data);
+        } catch (JsonProcessingException e) {
+          throw new RuntimeException(e);
+        }
+      }
+    };
   }
 
   private static <T> T unmarshal(EventType eventType, String data) {

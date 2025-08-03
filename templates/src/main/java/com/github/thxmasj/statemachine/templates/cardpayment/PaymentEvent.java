@@ -14,6 +14,7 @@ public class PaymentEvent {
       Boolean inStore,
       ZonedDateTime transactionTime,
       PaymentToken paymentToken,
+      String requestBody,
       String simulation
   ) {}
 
@@ -63,7 +64,8 @@ public class PaymentEvent {
       String id,
       long amount,
       boolean inStore,
-      ZonedDateTime transactionTime
+      ZonedDateTime transactionTime,
+      String simulation
   ) {}
 
   public enum Type implements EventType {

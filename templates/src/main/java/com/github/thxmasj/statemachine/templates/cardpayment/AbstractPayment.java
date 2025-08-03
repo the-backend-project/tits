@@ -53,12 +53,14 @@ import com.github.thxmasj.statemachine.State;
 import com.github.thxmasj.statemachine.TransitionModel;
 import com.github.thxmasj.statemachine.message.http.BadRequest;
 import com.github.thxmasj.statemachine.message.http.Created;
+import com.github.thxmasj.statemachine.templates.cardpayment.CaptureRequestDataCreator.CaptureRequestData;
+import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthenticationResult;
+import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Capture;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Stream;
-import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthenticationResult;
 
 public abstract class AbstractPayment implements EntityModel {
 
@@ -156,7 +158,7 @@ public abstract class AbstractPayment implements EntityModel {
   protected abstract IncomingResponseValidator<AcquirerResponse> validateRefundReversalResponse();
 
   @SafeVarargs
-  private static List<TransitionModel<?>> join(List<TransitionModel<?>>...lists) {
+  private static List<TransitionModel<?, ?>> join(List<TransitionModel<?, ?>>...lists) {
     if (lists.length == 0) return List.of();
     var stream = lists[0].stream();
     for (int i = 1; i < lists.length; i++) {
@@ -166,13 +168,14 @@ public abstract class AbstractPayment implements EntityModel {
   }
 
   @Override
-  public List<TransitionModel<?>> transitions() {
+  public List<TransitionModel<?, ?>> transitions() {
     return join(
         List.of(
             from(Begin).to(Begin).onEvent(RollbackRequest).response(new Created()),
             from(Begin).to(ProcessingAuthentication)
                 .onEvent(PaymentRequest)
                 .withData(new AuthenticationDataCreator())
+                //.store(authorisation -> authorisation)
                 .notify(request(authentication()).to(Authenticator).responseValidator(validateAuthenticationResponse())),
             from(ProcessingAuthentication).to(Begin)
                 .onEvent(InvalidAuthenticationToken)
@@ -182,12 +185,13 @@ public abstract class AbstractPayment implements EntityModel {
                 .response("Payment token is inactive", new BadRequest()),
             from(ProcessingAuthentication).to(Begin)
                 .onEvent(AuthenticationFailed)
-                .withData(new AuthorisationRequestDataCreator())
+                .withData(new AuthenticationFailedDataCreator())
+                //.store(authenticationResult -> authenticationResult)
                 .notify(request(failedAuthentication()).to(Acquirer).guaranteed())
                 .response(_ -> "", new BadRequest()),
             from(ProcessingAuthentication).to(Begin)
                 .onEvent(InvalidPaymentTokenOwnership)
-                .withData(new AuthorisationRequestDataCreator())
+                .withData(new AuthenticationFailedDataCreator())
                 .notify(request(failedTokenValidation()).to(Acquirer)
                     .guaranteed()
                     .responseValidator(validateAuthorisationAdviceResponse()))
@@ -208,7 +212,7 @@ public abstract class AbstractPayment implements EntityModel {
                 .onEvent(AuthorisationRequest)
                 .withData(new AuthorisationRequestDataCreator())
                 .trigger(data -> event(BuiltinEventTypes.Status).onEntity(settlement)
-                    .identifiedBy(model(BatchNumber).group(data.authorisation().merchant().id()).last()))
+                    .identifiedBy(model(BatchNumber).group(data.t1().merchant().id()).last()))
                 .notify(request(authorisation()).to(Acquirer).responseValidator(validateAuthorisationResponse()))
                 .response(_ -> "", new Created())
                 .reverse(builder -> builder.withData(new AuthorisationReversalDataCreator())
@@ -276,25 +280,29 @@ public abstract class AbstractPayment implements EntityModel {
     );
   }
 
-  private TransitionModel<?> captureRequestTransition(State anchor) {
+  private TransitionModel<Capture, CaptureRequestData> captureRequestTransition(State anchor) {
     return from(anchor).to(ProcessingCapture)
         .onEvent(CaptureRequest)
         .withData(new CaptureRequestDataCreator())
+        .filter(d -> d.alreadyCapturedAmount() + d.captureData().amount() <= d.authorisationData().amount().requested())
+        .orElseInvalidRequest("Capture amount too large")
+        //.store(data -> data.captureData()) // default: a) input or b) data or c) null? Now: a
         .trigger(data -> event(BuiltinEventTypes.Status).onEntity(settlement)
             .identifiedBy(model(BatchNumber).group(data.authorisationData().merchant().id()).last()))
         .response(_ -> "", new Created())
         .notify(request(capture()).to(Acquirer).guaranteed().responseValidator(validateCaptureResponse()));
   }
 
-  private TransitionModel<?> captureRequestedTooLateTransition(State anchor) {
+  private TransitionModel<?, ?> captureRequestedTooLateTransition(State anchor) {
     return from(anchor).toSelf()
         .onEvent(CaptureRequest)
         .withData(new CaptureRequestedTooLateDataCreator())
+        //.store(data -> data.captureData()) // same as input
         .notify(request(captureRequestedTooLate()).to(Acquirer).guaranteed())
         .response(_ -> "", new BadRequest());
   }
 
-  private List<TransitionModel<?>> refundTransitions(State anchor, int i) {
+  private List<TransitionModel<?, ?>> refundTransitions(State anchor, int i) {
     State processingState = new State() {
       @Override
       public String name() {
@@ -313,6 +321,8 @@ public abstract class AbstractPayment implements EntityModel {
         from(anchor).to(processingState)
             .onEvent(RefundRequest)
             .withData(new RefundRequestDataCreator())
+            .filter(d -> d.alreadyRefundedAmount() + d.refundData().amount() <= d.alreadyCapturedAmount())
+            .orElseInvalidRequest("Refund amount too large")
             .response(_ -> "", new Created())
             .notify(request(refundAuthorisation()).to(Acquirer).responseValidator(validateRefundResponse()))
             .reverse(transition -> transition.withData(new RefundReversalDataCreator())

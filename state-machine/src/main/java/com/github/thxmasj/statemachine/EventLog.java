@@ -24,9 +24,14 @@ public record EventLog(EntityModel entityModel, EntityId entityId, List<Secondar
     boolean skip = false;
     for (int i = effectiveEvents.size() - 1; i >= 0; i--) {
       if (effectiveEvents.get(i).type().isRollback()) {
-        if (effectiveEvents.get(i).data() == null || Integer.parseInt(effectiveEvents.get(i).data()) > 0) {
-          // Rollback arrived after incoming request => skip events backwards until incoming request
-          skip = true;
+        try {
+          if (effectiveEvents.get(i).data() == null || Integer.parseInt(effectiveEvents.get(i).data()) > 0) {
+            // Rollback arrived after incoming request => skip events backwards until incoming request
+            skip = true;
+          }
+        } catch (NumberFormatException e) {
+          throw new IllegalStateException("Rollback event without integer value: " + effectiveEvents.get(i).type() +
+              "=" + (effectiveEvents.get(i).data() != null ? "<" + effectiveEvents.get(i).data() + ">" : "N/A"));
         }
         // Always remove rollback event itself
         effectiveEvents.remove(i);

@@ -10,6 +10,5 @@ public record IncomingRequest(
     String clientId,
     BiFunction<EntityId, EventType, String> messageId,
     byte[] digest,
-    HttpRequestMessage requestMessage,
-    IncomingRequestValidator<?> validator
+    HttpRequestMessage requestMessage
 ) {}

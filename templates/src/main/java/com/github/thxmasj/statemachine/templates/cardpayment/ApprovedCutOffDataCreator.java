@@ -2,6 +2,7 @@ package com.github.thxmasj.statemachine.templates.cardpayment;
 
 import com.github.thxmasj.statemachine.DataCreator;
 import com.github.thxmasj.statemachine.Input;
+import com.github.thxmasj.statemachine.InputEvent;
 import com.github.thxmasj.statemachine.Requirements;
 import com.github.thxmasj.statemachine.templates.cardpayment.AcquirerResponse.ReconciliationValues;
 import com.github.thxmasj.statemachine.templates.cardpayment.ApprovedCutOffDataCreator.ApprovedCutOffData;
@@ -12,7 +13,7 @@ import static com.github.thxmasj.statemachine.Requirements.one;
 import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Type.CutOffRequest;
 import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Type.SettlementApproved;
 
-public class ApprovedCutOffDataCreator implements DataCreator<ApprovedCutOffData> {
+public class ApprovedCutOffDataCreator implements DataCreator<String, ApprovedCutOffData> {
 
   @Override
   public Requirements requirements() {
@@ -23,7 +24,7 @@ public class ApprovedCutOffDataCreator implements DataCreator<ApprovedCutOffData
   }
 
   @Override
-  public Mono<ApprovedCutOffData> execute(Input input) {
+  public Mono<ApprovedCutOffData> execute(InputEvent<String> inputEvent, Input input) {
     ReconciliationValues reconciliationValues = input.one(SettlementApproved)
         .getUnmarshalledData(AcquirerResponse.class)
         .reconciliationValues();
