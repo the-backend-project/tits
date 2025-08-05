@@ -16,8 +16,6 @@ public interface Input {
   record OutgoingRequest<T>(HttpRequestMessage httpMessage, int eventNumber) {}
   record IncomingResponse(HttpResponseMessage httpMessage, int eventNumber) {}
 
-  int nextEventNumber();
-
   <T> Mono<IncomingRequest> incomingRequest(EventType eventType, Class<T> type);
   <T> Mono<OutgoingRequest<T>> outgoingRequest(OutboxQueue queue, EventType eventType, Class<T> type);
 
@@ -27,14 +25,6 @@ public interface Input {
 
   Event one(EventType... eligibleEventTypes);
 
-  Optional<Event> oneIfExists(EventType eventType);
-
-  Event current(EventType eligibleEventType);
-
-  Event current(EventType... eligibleEventTypes);
-
-  Event trigger(EventType... eligibleEventTypes);
-
   Optional<Event> lastIfExists(EventType... eligibleEventTypes);
 
   Event last(EventType eventType);
@@ -42,8 +32,6 @@ public interface Input {
   Event last();
 
   Event last(Class<?> dataType);
-
-  Optional<Event> firstIfExists(EventType eventType);
 
   Entity entity();
 

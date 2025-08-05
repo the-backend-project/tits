@@ -14,13 +14,8 @@ public class Requirements {
   public enum Type {
     All,
     One,
-    OneIfExists,
-    FirstIfExists,
     Last,
-    LastIfExists,
-    Current,
-    CurrentIfExists,
-    Trigger
+    LastIfExists
   }
 
   private final List<Requirement> requirements;
@@ -87,23 +82,8 @@ public class Requirements {
     return new EventRequirement(Arrays.asList(eligibleEventTypes), Type.One, notification);
   }
 
-  public static  EventRequirement oneIfExists(EventType eventType) {
-    return new EventRequirement(List.of(eventType), Type.OneIfExists);
-  }
-
-  public static  EventRequirement oneIfExists(
-      NotificationRequirement notification,
-      EventType eventType
-  ) {
-    return new EventRequirement(List.of(eventType), Type.OneIfExists, notification);
-  }
-
   public static  EventRequirement all(EventType... eventTypes) {
     return new EventRequirement(Arrays.asList(eventTypes), Type.All);
-  }
-
-  public static  EventRequirement firstIfExists(EventType eventType) {
-    return new EventRequirement(List.of(eventType), Type.FirstIfExists);
   }
 
   public static  EventRequirement last(EventType eventType) {
@@ -136,17 +116,6 @@ public class Requirements {
     return new EventRequirement(List.of(eventType), Type.LastIfExists, notification);
   }
 
-  public static  EventRequirement trigger(EventType... eligibleEventTypes) {
-    return new EventRequirement(Arrays.asList(eligibleEventTypes), Type.Trigger);
-  }
-
-  public static  EventRequirement trigger(
-      NotificationRequirement notification,
-      EventType... eligibleEventTypes
-  ) {
-    return new EventRequirement(Arrays.asList(eligibleEventTypes), Type.Trigger, notification);
-  }
-
   public static  EventRequirement incomingRequest(EventType eventType, Class<?> dataType) {
     return last(notifications(null, ExchangeType.IncomingRequest, dataType), eventType);
   }
@@ -155,18 +124,7 @@ public class Requirements {
     return last(notifications(queue, ExchangeType.OutgoingRequest, dataType), eventType);
   }
 
-  public static  EventRequirement current(EventType... eligibleEventTypes) {
-    return new EventRequirement(Arrays.asList(eligibleEventTypes), Type.Current);
-  }
-
-  public static  EventRequirement current(
-      NotificationRequirement notification,
-      EventType... eligibleEventTypes
-  ) {
-    return new EventRequirement(Arrays.asList(eligibleEventTypes), Type.Current, notification);
-  }
-
-  public static <T> NotificationRequirement notifications(OutboxQueue queue, ExchangeType exchangeType, Class<T> dataType) {
+  private static <T> NotificationRequirement notifications(OutboxQueue queue, ExchangeType exchangeType, Class<T> dataType) {
     return new NotificationRequirement(queue, exchangeType, dataType);
   }
 

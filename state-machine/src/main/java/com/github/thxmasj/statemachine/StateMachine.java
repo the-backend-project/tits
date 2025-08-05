@@ -574,7 +574,6 @@ public class StateMachine {
         new Entity(eventLog.entityId(), eventLog.secondaryIds(), eventLog.entityModel()),
         eventLog.effectiveEvents(),
         scheduledEvents,
-        null,
         requestNotification
     );
     var incomingRequest = new Input.IncomingRequest(
@@ -677,15 +676,11 @@ public class StateMachine {
       Entity entity,
       List<Event> eventLog,
       List<Event> newEvents,
-      Event currentEvent,
       Notification incomingNotification
   ) {
-    Event triggerEvent = newEvents.isEmpty() ? null : newEvents.getLast(); // TODO: Should always be a trigger event
     return new RequiredData(
         entity,
         join(eventLog, newEvents),
-        currentEvent,
-        triggerEvent,
         List.of(),
         List.of(),
         incomingNotification != null ? List.of(incomingNotification) : List.of(),
@@ -1592,7 +1587,6 @@ public class StateMachine {
                         new Entity(entityId, eventLog.secondaryIds(), eventLog.entityModel()),
                         eventLog.effectiveEvents(),
                         List.of(),
-                        null,
                         responseNotification
                     )
                 ).map(output -> new ResponseValidationResult(output, responseNotification));
@@ -1834,8 +1828,6 @@ public class StateMachine {
     var filteredEvents = new RequiredData(
         entity,
         join(eventLog, newEvents), // Need for timestamp
-        null,//currentEvent,
-        null,//newEvents.getLast(),
         processResults,
         processedEvents,
         List.of(),//incomingNotification == null ? List.of() : List.of(incomingNotification),
@@ -1883,8 +1875,6 @@ public class StateMachine {
     var filteredEvents = new RequiredData(
         entity,
         join(eventLog, newEvents), // For timestamp
-        null,//currentEvent,
-        null,//newEvents.getLast(),
         processResults,
         processedEvents,
         List.of(),//incomingNotification == null ? List.of() : List.of(incomingNotification),
@@ -1935,8 +1925,6 @@ public class StateMachine {
             new RequiredData(
                 entity,
                 eventLog.effectiveEvents(),
-                lastEvent,
-                lastEvent,
                 List.of(),
                 List.of(),
                 notifications,
@@ -2073,7 +2061,7 @@ public class StateMachine {
     requireNonNull(transitionModel, "transitionModel is null for transitionEvent " + transitionEvent);
     DataCreator<I, O> dataCreator = dataCreator(transitionModel);
     if (dataCreator != null) {
-      RequiredData requiredData = requiredData(dataCreator, entity, eventLog, newEvents, transitionEvent, incomingNotification);
+      RequiredData requiredData = requiredData(dataCreator, entity, eventLog, newEvents, incomingNotification);
       return dataCreator.execute(inputEvent, requiredData);
     }
     return Mono.empty();

@@ -27,13 +27,10 @@ import reactor.core.publisher.Mono;
 
 public class RequiredData implements Input {
 
-  private final int nextEventNumber;
   private final Class<?> requirer;
   private final Requirements requirements;
   private final Map<Requirement, List<Event>> filteredEvents = new HashMap<>();
   private final List<Event> events;
-  private final Event currentEvent;
-  private final Event triggerEvent;
   private final Entity entity;
   private final List<Notification> inflightNotifications;
   private final List<ProcessResult> processResults;
@@ -104,8 +101,6 @@ public class RequiredData implements Input {
   public RequiredData(
       Entity entity,
       List<Event> events,
-      Event currentEvent,
-      Event triggerEvent,
       List<ProcessResult> processResults,
       List<Event> processedEvents,
       List<Notification> inflightNotifications,
@@ -117,8 +112,6 @@ public class RequiredData implements Input {
     this.requirer = requireNonNull(requirer);
     this.requirements = requirements;
     this.events = events;
-    this.currentEvent = currentEvent;
-    this.triggerEvent = triggerEvent;
     this.entity = entity;
     this.inflightNotifications = inflightNotifications;
     this.processResults = processResults;
@@ -131,12 +124,6 @@ public class RequiredData implements Input {
         filteredEvents.put(requirement, result.events());
       }
     }
-    this.nextEventNumber = !events.isEmpty() ? events.getLast().eventNumber() + 1 : 1;
-  }
-
-  @Override
-  public int nextEventNumber() {
-    return nextEventNumber;
   }
 
   @Override
@@ -179,26 +166,6 @@ public class RequiredData implements Input {
   }
 
   @Override
-  public Optional<Event> oneIfExists(EventType eventType) {
-    return filteredForOptionalRequirement(Type.OneIfExists, requirements.on(eventType));
-  }
-
-  @Override
-  public Event current(EventType eligibleEventType) {
-    return filteredForSingletonRequirement(Type.Current, requirements.on(eligibleEventType));
-  }
-
-  @Override
-  public final Event current(EventType... eligibleEventTypes) {
-    return filteredForSingletonRequirement(Type.Current, requirements.on(eligibleEventTypes));
-  }
-
-  @Override
-  public final Event trigger(EventType... eligibleEventTypes) {
-    return filteredForSingletonRequirement(Type.Trigger, requirements.on(eligibleEventTypes));
-  }
-
-  @Override
   public final Optional<Event> lastIfExists(EventType... eligibleEventTypes) {
     return filteredForOptionalRequirement(Type.LastIfExists, requirements.on(eligibleEventTypes));
   }
@@ -228,11 +195,6 @@ public class RequiredData implements Input {
       throw new MissingRequirement(requirer.getName() + ": last(): No requirements found");
     }
     return filteredForSingletonRequirement(Type.Last, matchingRequirements);
-  }
-
-  @Override
-  public Optional<Event> firstIfExists(EventType eventType) {
-    return filteredForOptionalRequirement(Type.FirstIfExists, requirements.on(eventType));
   }
 
   @Override
@@ -351,19 +313,6 @@ public class RequiredData implements Input {
           ))
               : new FilterResult(l)
       ));
-      case OneIfExists -> filter(requirement.eventTypes(), events).collect(collectingAndThen(toList(), l -> l.size() > 1
-              ? new FilterResult(format(
-              "Required zero or one event of types %s but found %d",
-              formatEventTypes(requirement),
-              l.size()
-          ))
-              : new FilterResult(l)
-      ));
-      case FirstIfExists ->
-          filter(requirement.eventTypes(), events).collect(collectingAndThen(toList(), l -> !l.isEmpty()
-              ? new FilterResult(List.of(l.getFirst()))
-              : new FilterResult(l)
-          ));
       case Last -> filter(requirement.eventTypes(), events).collect(collectingAndThen(toList(), l -> l.isEmpty()
               ? new FilterResult(format(
               "Required at least one event of type %s but found 0",
@@ -376,22 +325,6 @@ public class RequiredData implements Input {
               ? new FilterResult(List.of(l.getLast()))
               : new FilterResult(l)
           ));
-      case Current -> Optional.ofNullable(currentEvent)
-          .filter(event -> requirement.eventTypes().contains(event.type()))
-          .map(event -> new FilterResult(List.of(event)))
-          .orElse(new FilterResult(
-              format("Required at least one event of type %s but found 0", formatEventTypes(requirement))));
-      case CurrentIfExists -> Optional.of(currentEvent)
-          .filter(event -> requirement.eventTypes().contains(event.type()))
-          .map(event -> new FilterResult(List.of(event)))
-          .orElse(new FilterResult(List.of()));
-      case Trigger -> Optional.of(triggerEvent)
-          .filter(event -> requirement.eventTypes().contains(event.type()))
-          .map(event -> new FilterResult(List.of(event)))
-          .orElse(new FilterResult(
-              format("Required trigger event to be of type %s but was %s", formatEventTypes(requirement),
-                  triggerEvent.type()
-              )));
     };
   }
 
