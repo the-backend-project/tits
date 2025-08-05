@@ -74,7 +74,8 @@ public class PlantUMLFormatter {
   private String states(TraversableState state, Set<State> visited) {
     if (visited.contains(state.state())) return "";
     visited.add(state.state());
-    StringBuilder s = new StringBuilder(state.state().isChoice() ? conditionalState(state.state()) : state(state.state()));
+//    StringBuilder s = new StringBuilder(state.state().isChoice() ? conditionalState(state.state()) : state(state.state()));
+    StringBuilder s = new StringBuilder(state(state.state()));
     for (TraversableState targetState : state.targetStates()) {
       s.append(states(targetState, visited));
     }

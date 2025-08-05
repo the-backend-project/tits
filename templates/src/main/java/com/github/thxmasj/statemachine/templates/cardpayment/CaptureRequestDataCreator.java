@@ -2,10 +2,10 @@ package com.github.thxmasj.statemachine.templates.cardpayment;
 
 import static com.github.thxmasj.statemachine.Requirements.all;
 import static com.github.thxmasj.statemachine.Requirements.one;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.AuthenticationApproved;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.CaptureApproved;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.PaymentRequest;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.PreauthorisationApproved;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.PreauthorisationRequest;
 
 import com.github.thxmasj.statemachine.DataCreator;
 import com.github.thxmasj.statemachine.Input;
@@ -23,7 +23,7 @@ public class CaptureRequestDataCreator implements DataCreator<Capture, CaptureRe
   public Requirements requirements() {
     return Requirements.of(
         one(PaymentRequest),
-        one(AuthenticationApproved),
+        one(PreauthorisationRequest),
         one(PreauthorisationApproved),
         all(CaptureApproved)
 
@@ -32,20 +32,9 @@ public class CaptureRequestDataCreator implements DataCreator<Capture, CaptureRe
 
   @Override
   public Mono<CaptureRequestData> execute(InputEvent<Capture> inputEvent, Input input) {
-//    long authorisedAmount = input.one(PaymentRequest).getUnmarshalledData(Authorisation.class).amount().requested();
-//    long alreadyCapturedAmount = input.all(CaptureApproved).stream()
-//        .map(event -> event.getUnmarshalledData(AcquirerResponse.class))
-//        .map(AcquirerResponse::amount)
-//        .mapToLong(Long::longValue)
-//        .sum();
-//    if (alreadyCapturedAmount + captureRequest.getAmount().getValue() <= authorisedAmount) {
-//      return Mono.just(context.validRequest(data));
-//    } else {
-//      return Mono.just(context.invalidRequest("Capture amount too large"));
-//    }
     return Mono.just(new CaptureRequestData(
         input.one(PaymentRequest).getUnmarshalledData(Authorisation.class),
-        input.one(AuthenticationApproved).getUnmarshalledData(AuthenticationResult.class),
+        input.one(PreauthorisationRequest).getUnmarshalledData(AuthenticationResult.class),
         input.one(PreauthorisationApproved).getUnmarshalledData(AcquirerResponse.class),
         inputEvent.data(),
         input.all(CaptureApproved).stream()

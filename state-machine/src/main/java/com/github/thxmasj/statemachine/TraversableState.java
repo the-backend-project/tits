@@ -73,19 +73,17 @@ public class TraversableState {
           .response(_ -> "Unknown entity", new BadRequest());
       forwardTransitions.put(transition, create(node, transition, transitions, initialState, visitedStates));
     }
-    if (!state.isChoice()) {
-      if (forwardTransitions.keySet().stream().noneMatch(t -> t.eventType() == BuiltinEventTypes.InvalidRequest)) {
-        var transition = invalidRequestTransition(state);
-        forwardTransitions.put(transition, create(node, transition, transitions, initialState, visitedStates));
-      }
-      if (forwardTransitions.keySet().stream().noneMatch(t -> t.eventType() == BuiltinEventTypes.RejectedRequest)) {
-        var transition = rejectedRequestTransition(state);
-        forwardTransitions.put(transition, create(node, transition, transitions, initialState, visitedStates));
-      }
-      if (forwardTransitions.keySet().stream().noneMatch(t -> t.eventType() == BuiltinEventTypes.Status)) {
-        var transition = statusTransition(state);
-        forwardTransitions.put(transition, create(node, transition, transitions, initialState, visitedStates));
-      }
+    if (forwardTransitions.keySet().stream().noneMatch(t -> t.eventType() == BuiltinEventTypes.InvalidRequest)) {
+      var transition = invalidRequestTransition(state);
+      forwardTransitions.put(transition, create(node, transition, transitions, initialState, visitedStates));
+    }
+    if (forwardTransitions.keySet().stream().noneMatch(t -> t.eventType() == BuiltinEventTypes.RejectedRequest)) {
+      var transition = rejectedRequestTransition(state);
+      forwardTransitions.put(transition, create(node, transition, transitions, initialState, visitedStates));
+    }
+    if (forwardTransitions.keySet().stream().noneMatch(t -> t.eventType() == BuiltinEventTypes.Status)) {
+      var transition = statusTransition(state);
+      forwardTransitions.put(transition, create(node, transition, transitions, initialState, visitedStates));
     }
     return node;
   }

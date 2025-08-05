@@ -2,9 +2,10 @@ package com.github.thxmasj.statemachine.templates.cardpayment;
 
 import static com.github.thxmasj.statemachine.Requirements.all;
 import static com.github.thxmasj.statemachine.Requirements.one;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.AuthenticationApproved;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.AuthorisationRequest;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.CaptureApproved;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.PaymentRequest;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.PreauthorisationRequest;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.RefundApproved;
 
 import com.github.thxmasj.statemachine.DataCreator;
@@ -23,7 +24,7 @@ public class RefundRequestDataCreator implements DataCreator<Refund, RefundReque
   public final Requirements requirements() {
     return Requirements.of(
         one(PaymentRequest),
-        one(AuthenticationApproved),
+        one(AuthorisationRequest, PreauthorisationRequest),
         all(CaptureApproved),
         all(RefundApproved)
     );
@@ -49,7 +50,7 @@ public class RefundRequestDataCreator implements DataCreator<Refund, RefundReque
         .sum();
     return Mono.just(new RefundRequestData(
         authorisationData,
-        input.one(AuthenticationApproved).getUnmarshalledData(AuthenticationResult.class),
+        input.one(AuthorisationRequest, PreauthorisationRequest).getUnmarshalledData(AuthenticationResult.class),
         inputEvent.data(),
         alreadyCapturedAmount,
         alreadyRefundedAmount,

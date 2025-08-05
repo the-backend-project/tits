@@ -1,8 +1,9 @@
 package com.github.thxmasj.statemachine.templates.cardpayment;
 
 import static com.github.thxmasj.statemachine.Requirements.one;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.AuthenticationApproved;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.AuthorisationRequest;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.PaymentRequest;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.PreauthorisationRequest;
 
 import com.github.thxmasj.statemachine.DataCreator;
 import com.github.thxmasj.statemachine.Input;
@@ -20,7 +21,7 @@ public class CaptureRequestedTooLateDataCreator implements DataCreator<Capture, 
   public Requirements requirements() {
     return Requirements.of(
         one(PaymentRequest),
-        one(AuthenticationApproved)
+        one(AuthorisationRequest, PreauthorisationRequest)
     );
   }
 
@@ -28,7 +29,7 @@ public class CaptureRequestedTooLateDataCreator implements DataCreator<Capture, 
   public Mono<CaptureRequestedTooLateData> execute(InputEvent<Capture> inputEvent, Input input) {
     return Mono.just(new CaptureRequestedTooLateData(
             input.one(PaymentRequest).getUnmarshalledData(Authorisation.class),
-            input.one(AuthenticationApproved).getUnmarshalledData(AuthenticationResult.class),
+            input.one(AuthorisationRequest, PreauthorisationRequest).getUnmarshalledData(AuthenticationResult.class),
             inputEvent.data()
         ));
   }

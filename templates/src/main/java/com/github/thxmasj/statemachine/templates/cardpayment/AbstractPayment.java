@@ -10,7 +10,6 @@ import static com.github.thxmasj.statemachine.TransitionModel.Builder.from;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Identifiers.AcquirerBatchNumber;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Identifiers.BatchNumber;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.AcquirerDeclined;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.AuthenticationApproved;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.AuthenticationFailed;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.AuthorisationApproved;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.AuthorisationExpired;
@@ -32,7 +31,6 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.Begin;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.Expired;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.ExpiredAfterCapture;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.PaymentChoice;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.Preauthorised;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.ProcessingAuthentication;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.ProcessingAuthorisation;
@@ -50,6 +48,7 @@ import com.github.thxmasj.statemachine.OutboxQueue;
 import com.github.thxmasj.statemachine.ScheduledEvent;
 import com.github.thxmasj.statemachine.State;
 import com.github.thxmasj.statemachine.TransitionModel;
+import com.github.thxmasj.statemachine.Tuples.Tuple2;
 import com.github.thxmasj.statemachine.message.http.BadRequest;
 import com.github.thxmasj.statemachine.message.http.Created;
 import com.github.thxmasj.statemachine.templates.cardpayment.CaptureRequestDataCreator.CaptureRequestData;
@@ -190,11 +189,8 @@ public abstract class AbstractPayment implements EntityModel {
                     .guaranteed()
                     .responseValidator(validateAuthorisationAdviceResponse()))
                 .response(_ -> "", new BadRequest()),
-            from(ProcessingAuthentication).to(PaymentChoice)
-                .onEvent(AuthenticationApproved)
-                .withData(new IsCaptureDataCreator()),
             from(ProcessingAuthentication).toSelf().onEvent(RollbackRequest).response(new Created()),
-            from(PaymentChoice).to(ProcessingAuthorisation)
+            from(ProcessingAuthentication).to(ProcessingAuthorisation)
                 .onEvent(PreauthorisationRequest)
                 .withData(new AuthorisationRequestDataCreator())
                 .notify(request(preauthorisation()).to(Acquirer).responseValidator(validatePreauthorisationResponse()))
@@ -204,9 +200,10 @@ public abstract class AbstractPayment implements EntityModel {
                         .guaranteed()
                         .responseValidator(validatePreauthorisationReversalResponse()))
                     .notify(request(rolledBackPreauthorisationRequest()).to(Merchant).guaranteed())),
-            from(PaymentChoice).to(ProcessingAuthorisation)
+            from(ProcessingAuthentication).to(ProcessingAuthorisation)
                 .onEvent(AuthorisationRequest)
                 .withData(new AuthorisationRequestDataCreator())
+                .filter(d -> d.t1().capture()).orElse(PreauthorisationRequest, Tuple2::t2)
                 .trigger(data -> event(BuiltinEventTypes.Status).onEntity(settlement)
                     .identifiedBy(model(BatchNumber).group(data.t1().merchant().id()).last()))
                 .notify(request(authorisation()).to(Acquirer).responseValidator(validateAuthorisationResponse()))

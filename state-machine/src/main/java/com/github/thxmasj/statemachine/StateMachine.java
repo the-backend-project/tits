@@ -759,14 +759,6 @@ public class StateMachine {
                 "Cannot roll back to event number " + rollbackToEventNumber + " as that would roll back more than one request"
             );
           }
-          var newEvents = List.of(new Event(
-              lastEventNumber + 1,
-              incomingRequest.eventTrigger().eventType(),
-              clock,
-              messageId,
-              incomingRequest.clientId(),
-              rollbackToEventNumber + 1
-          ));
           Notification incomingNotification = incomingRequestNotification(lastEventNumber + 1, incomingRequest, messageId);
           return processEvents(eventLog, List.of(), new InputEvent<>(incomingRequest.eventTrigger().eventType(), rollbackToEventNumber + 1, null), incomingNotification, List.of())
               .flatMap(result -> result.status() == Status.Rejected ?
@@ -825,10 +817,6 @@ public class StateMachine {
 
     boolean isAccepted() {
       return status == Status.Accepted;
-    }
-
-    boolean isRepeated() {
-      return status == Status.Repeated;
     }
 
   }
@@ -1049,7 +1037,7 @@ public class StateMachine {
               new Entity(entityId, List.of(), eventLog.entityModel()),
               null,
               "State " + eventLog.entityModel() + "[id=" + eventLog.entityId().value() + "]:" + currentState.state()
-                  + " does not accept " + Stream.concat(scheduledEvents.stream().map(e -> e.type()), Stream.of(inputEvent.eventType()))
+                  + " does not accept " + Stream.concat(scheduledEvents.stream().map(Event::type), Stream.of(inputEvent.eventType()))
                   .map(et -> et.name() + " (" + et.id() + ")")
                   .toList()
           ), null
@@ -1124,18 +1112,13 @@ public class StateMachine {
             int numberOfEventToRollback;
             if (inputEvent.data() == null) {
               // No reference to an event to roll back to so roll back to previous state
-              TraversableState previousState = currentState;
               numberOfEventToRollback = eventLog.lastEventNumber();
               for (Event event : effectiveEventLog.reversed()) {
                 numberOfEventToRollback = event.eventNumber();
-                previousState = previousState.backward(event.type());
-                if (!previousState.state().isChoice())
-                  break;
+                break;
               }
-              System.out.println("numberOfEventToRollback (previous state): " + numberOfEventToRollback);
             } else {
               numberOfEventToRollback = Integer.parseInt(inputEvent.data().toString());
-              System.out.println("numberOfEventToRollback (inputEvent.data): " + numberOfEventToRollback);
             }
             if (numberOfEventToRollback > 0) {
               startEventNumber = numberOfEventToRollback - 1;
@@ -1145,10 +1128,6 @@ public class StateMachine {
                   scheduledEvents
               );
               reverseTransitions = true;
-//          eventsToStore = Event.join(
-//              newEvents,
-//              transitionEvents.stream().filter(e -> !e.type().isReversible()).toList()
-//          );
               eventsToStore = newEvents;
             } else {
               // Rollback arrived before incoming request
@@ -1169,56 +1148,6 @@ public class StateMachine {
             targetState = currentState.forward(newEvents.stream().map(Event::type).toList());
             if (targetState == null) {
               return Mono.just(new ChangeResult(new ProcessResult(Status.Rejected, entity, null, null), null));
-            }
-            if (targetState.state().isChoice()) {
-              Choice<I, O> choice;
-              try {
-                choice = targetState.state().choice();
-              } catch (Exception e) {
-                return Mono.error(e);
-              }
-              return executeChoice(
-                  newTransitionWithData.data(),
-                  inputEvent,
-                  entity,
-                  new EventLog(eventLog.entityModel(), entityId, List.of(), Event.join(effectiveEventLog, newEvents)),
-                  choice,
-                  targetState.state(),
-                  incomingNotification != null ? List.of(incomingNotification) : List.of()
-              )
-                  .flatMap(eventOutput -> {
-                    var newTargetState = targetState.forward(List.of(eventOutput.eventType()));
-                    if (newTargetState == null)
-                      return Mono.error(new IllegalStateException(
-                          "No possible model for choice output " + eventOutput.eventType().name()));
-                    return calculateChange(eventLog, newEvents, eventOutput, incomingNotification, idsForNewEntity);
-                  })
-                  .onErrorResume(
-                      t -> withCorrelationId(correlationId -> listener.changeFailed(
-                          correlationId,
-                          toListenerFormat(List.of(new Change(
-                                  eventLog.entityModel(),
-                                  entityId,
-                                  List.of(),
-                                  null,
-                                  null,
-                                  newEvents,
-                                  idsForNewEntity,
-                                  List.of(),
-                                  List.of(),
-                                  List.of(),
-                                  List.of(),
-                                  newEvents.getLast().timestamp(),
-                                  correlationId
-                              )
-                          )),
-                          t
-                      ))
-                          .thenReturn(new ChangeResult(
-                              new ProcessResult(Status.Failed, entity, null, t.getMessage()),
-                              null
-                          ))
-                  );
             }
             transitionEvents = scheduledEvents;
             reverseTransitions = false;
@@ -1283,7 +1212,6 @@ public class StateMachine {
                                     finalEventsToStore,
                                     effectiveEventLog,
                                     correlationId,
-                                    incomingNotification,
                                     processResults,
                                     processedEvents
                                 )).collectList()
@@ -1662,7 +1590,7 @@ public class StateMachine {
                   }
               );
         })
-        .onErrorResume(e -> backOffOrDie(queueElement, e + (e.getCause() != null ? " (cause: " + e.getCause() + ")" : "")));
+        .onErrorResume(e -> backOffOrDie(queueElement, e));
   }
 
   private static class ProcessEventsRaced extends RuntimeException {}
@@ -1714,6 +1642,10 @@ public class StateMachine {
   // TODO
   private final DelaySpecification backoff = new DelaySpecification(ofSeconds(10), ofMinutes(10), ofHours(5), 1.5);
 
+  private Mono<ForwardStatus> backOffOrDie(OutboxElement queueElement, Throwable e) {
+    return backOffOrDie(queueElement, e + (e.getCause() != null ? " (cause: " + e.getCause() + ")" : ""));
+  }
+
   private Mono<ForwardStatus> backOffOrDie(OutboxElement queueElement, String reason) {
     if (queueElement.nextAttemptAt() != null && backoff.isExhausted(queueElement.enqueuedAt(), queueElement.nextAttemptAt(), clock)) {
       return moveToDLQ.execute(queueElement, reason)
@@ -1748,7 +1680,6 @@ public class StateMachine {
       List<Event> newEvents,
       List<Event> eventLog,
       String correlationId,
-      Notification incomingNotification,
       List<ProcessResult> processResults,
       List<Event> processedEvents
   ) {
@@ -1761,7 +1692,6 @@ public class StateMachine {
             eventLog,
             outgoingRequestModel,
             correlationId,
-            incomingNotification,
             processResults,
             processedEvents
         ));
@@ -1818,7 +1748,6 @@ public class StateMachine {
       List<Event> eventLog,
       OutgoingRequestModel<O, U> notificationModel,
       String correlationId,
-      Notification incomingNotification,
       List<ProcessResult> processResults,
       List<Event> processedEvents
   ) {
@@ -1905,44 +1834,6 @@ public class StateMachine {
 
   private ZonedDateTime getDeadline(State targetState) {
     return targetState.timeout().map(timeout -> ZonedDateTime.now(clock).plus(timeout.duration())).orElse(null);
-  }
-
-  private <I, O> Mono<InputEvent<I>> executeChoice(
-      O processingData,
-      InputEvent<I> inputEvent,
-      Entity entity,
-      EventLog eventLog,
-      Choice<I, O> choice,
-      State currentState,
-      List<Notification> notifications
-  ) {
-    var lastEvent = eventLog.events().getLast();
-    return choice.execute(
-            processingData,
-            inputEvent,
-            eventLog.entityId(),
-            (eventType, data) -> new InputEvent<>(eventType, data, null),
-            new RequiredData(
-                entity,
-                eventLog.effectiveEvents(),
-                List.of(),
-                List.of(),
-                notifications,
-                Requirements.none(),
-                choice.getClass(),
-                incomingRequestByEvent,
-                outgoingRequestByEvent
-            )
-        )
-        .flatMap(output -> withCorrelationId(correlationId -> listener
-            .actionExecuted(
-                correlationId,
-                eventLog.entityId(),
-                choice.getClass().getSimpleName(),
-                currentState.toString(),
-                output.eventType()
-            )
-        ).thenReturn(output));
   }
 
   private Mono<ProcessResult> handleTransitionError(
