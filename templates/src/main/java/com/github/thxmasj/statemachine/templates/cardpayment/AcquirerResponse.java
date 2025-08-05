@@ -53,8 +53,8 @@ public record AcquirerResponse(
       return this;
     }
 
-    public Builder batchNumber(Integer netsSessionNumber) {
-      this.batchNumber = netsSessionNumber;
+    public Builder batchNumber(Integer batchNumber) {
+      this.batchNumber = batchNumber;
       return this;
     }
 

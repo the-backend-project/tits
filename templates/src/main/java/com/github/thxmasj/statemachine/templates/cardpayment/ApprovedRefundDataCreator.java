@@ -21,11 +21,11 @@ public class ApprovedRefundDataCreator implements DataCreator<AcquirerResponse, 
       String merchantAggregatorId,
       long amount,
       String merchantReference,
-      int bankBatchNumber,
+      int acquirerBatchNumber,
       String stan,
       String authorisationCode,
       String responseCode,
-      String messageId
+      String correlationId
   ) {}
 
   @Override

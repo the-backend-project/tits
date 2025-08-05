@@ -30,7 +30,7 @@ public class AuthorisationReversalDataCreator implements DataCreator<Void, Autho
       long amount,
       String merchantReference,
       String authorisationCode,
-      Integer netsSessionNumber,
+      Integer acquirerBatchNumber,
       String simulation
   ) {}
 

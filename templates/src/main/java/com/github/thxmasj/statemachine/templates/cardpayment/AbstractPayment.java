@@ -254,7 +254,7 @@ public abstract class AbstractPayment implements EntityModel {
                 .notify(request(approvedCapture()).to(Merchant).guaranteed())
                 .trigger(data -> event(MerchantCredit, data.amount()).onEntity(settlement).identifiedBy(secondaryId(
                     AcquirerBatchNumber,
-                    new AcquirerBatchNumber(data.merchantId(), data.netsSessionNumber())
+                    new AcquirerBatchNumber(data.merchantId(), data.acquirerBatchNumber())
                 ).createIfNotExists()).and(model(BatchNumber).group(data.merchantId()).last().createIfNotExists())),
             from(Preauthorised).to(Preauthorised).onEvent(Rollback).build(),
             from(Preauthorised).to(Expired).onEvent(AuthorisationExpired).build(),
@@ -336,7 +336,7 @@ public abstract class AbstractPayment implements EntityModel {
             .notify(request(approvedRefund()).to(Merchant).guaranteed())
             .trigger(data -> event(MerchantDebit, data.amount()).onEntity(settlement).identifiedBy(secondaryId(
                 AcquirerBatchNumber,
-                new AcquirerBatchNumber(data.merchantId(), data.bankBatchNumber())
+                new AcquirerBatchNumber(data.merchantId(), data.acquirerBatchNumber())
             ).createIfNotExists()).and(model(BatchNumber).group(data.merchantId()).last().createIfNotExists()))
             .reverse(transition -> transition.withData(new RefundReversalDataCreator())
                 .trigger(data -> event(SettlementEvent.Type.MerchantDebitReversed, data.amount()).onEntity(settlement)

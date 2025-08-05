@@ -20,11 +20,11 @@ public class ApprovedCaptureDataCreator implements DataCreator<AcquirerResponse,
       String merchantAggregatorId,
       long amount,
       String merchantReference,
-      int netsSessionNumber,
+      int acquirerBatchNumber,
       String stan,
       String authorisationCode,
       String responseCode,
-      String requestMessageId
+      String correlationId
   ) {}
 
   @Override
