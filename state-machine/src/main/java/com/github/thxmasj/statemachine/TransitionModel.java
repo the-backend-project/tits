@@ -205,6 +205,7 @@ public class TransitionModel<I, O> {
         "fromState=" + fromState +
         ", toState=" + toState +
         ", eventType=" + eventType +
+        ", filters=" + filters +
         ", dataCreatorType=" + dataCreatorType +
         ", dataCreator=" + dataCreator +
         ", eventTriggers=" + eventTriggers +

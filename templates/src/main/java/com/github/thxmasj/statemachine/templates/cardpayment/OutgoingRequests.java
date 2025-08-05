@@ -2,8 +2,8 @@ package com.github.thxmasj.statemachine.templates.cardpayment;
 
 import com.github.thxmasj.statemachine.OutgoingRequestCreator;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;
+import com.github.thxmasj.statemachine.templates.cardpayment.AcquirerResponse.ReconciliationValues;
 import com.github.thxmasj.statemachine.templates.cardpayment.ApprovedCaptureDataCreator.ApprovedCaptureData;
-import com.github.thxmasj.statemachine.templates.cardpayment.ApprovedCutOffDataCreator.ApprovedCutOffData;
 import com.github.thxmasj.statemachine.templates.cardpayment.ApprovedRefundDataCreator.ApprovedRefundData;
 import com.github.thxmasj.statemachine.templates.cardpayment.AuthenticationDataCreator.AuthenticationData;
 import com.github.thxmasj.statemachine.templates.cardpayment.AuthorisationResponseDataCreator.AuthorisationResponseData;
@@ -16,6 +16,7 @@ import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Authen
 import com.github.thxmasj.statemachine.templates.cardpayment.PreauthorisationReversalDataCreator.PreauthorisationReversalData;
 import com.github.thxmasj.statemachine.templates.cardpayment.RefundRequestDataCreator.RefundRequestData;
 import com.github.thxmasj.statemachine.templates.cardpayment.RefundReversalDataCreator.RefundReversalData;
+import com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Type.CutOff;
 import java.util.UUID;
 
 public class OutgoingRequests {
@@ -83,7 +84,7 @@ public class OutgoingRequests {
   public interface DeclinedRefund extends OutgoingRequestCreator<DeclinedRefundData> {
     default UUID id() {return UUID.fromString("70e88428-995a-4d86-8397-f54b3abcfdaa");}
   }
-  public interface ApprovedCutOff extends OutgoingRequestCreator<ApprovedCutOffData> {
+  public interface ApprovedCutOff extends OutgoingRequestCreator<Tuple2<CutOff, ReconciliationValues>> {
     default UUID id() {return UUID.fromString("f8002ded-f8ae-4d7e-a7de-44a7bba4d24d");}
   }
   public interface Reconciliation extends OutgoingRequestCreator<String> {

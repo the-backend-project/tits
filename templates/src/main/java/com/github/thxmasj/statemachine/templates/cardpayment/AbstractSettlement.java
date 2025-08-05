@@ -10,7 +10,6 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.Error;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.ProcessingSettlement;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.Reconciled;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.Settled;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Queues.Acquirer;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Queues.Merchant;
 import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Type.CutOffRequest;
@@ -21,7 +20,6 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEv
 import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Type.MerchantDebitReversed;
 import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Type.Open;
 import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Type.OutOfBalance;
-import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Type.SettlementApproved;
 import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Type.Timeout;
 
 import com.github.thxmasj.statemachine.EntityModel;
@@ -29,8 +27,12 @@ import com.github.thxmasj.statemachine.IncomingResponseValidator;
 import com.github.thxmasj.statemachine.OutboxQueue;
 import com.github.thxmasj.statemachine.State;
 import com.github.thxmasj.statemachine.TransitionModel;
+import com.github.thxmasj.statemachine.Tuples.Tuple2;
+import com.github.thxmasj.statemachine.Tuples.Tuple3;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames;
 import com.github.thxmasj.statemachine.message.http.Created;
+import com.github.thxmasj.statemachine.templates.cardpayment.AcquirerResponse.ReconciliationValues;
+import com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Type.CutOff;
 import java.util.List;
 import java.util.UUID;
 
@@ -84,12 +86,15 @@ public abstract class AbstractSettlement implements EntityModel {
         from(ProcessingSettlement).toSelf().onEvent(MerchantDebit).build(),
         from(ProcessingSettlement).toSelf().onEvent(MerchantCreditReversed).build(),
         from(ProcessingSettlement).toSelf().onEvent(MerchantDebitReversed).build(),
-        from(ProcessingSettlement).to(Settled).onEvent(SettlementApproved).build(),
+        from(ProcessingSettlement).to(Reconciled).onEvent(InBalance)
+            .withData(new ReconciliationValuesDataCreator())
+            .filter(d -> d.t2().equals(d.t3())).orElse(OutOfBalance, Tuple3::t3)
+            .notify(request(
+                (Tuple3<CutOff, ReconciliationValues, ReconciliationValues> d) -> new Tuple2<>(d.t1(), d.t2()),
+                approvedCutOff()
+            ).to(Merchant).guaranteed()),
         from(ProcessingSettlement).to(Error).onEvent(Timeout).build(),
-        from(Settled).to(Reconciled).onEvent(InBalance)
-            .withData(new ApprovedCutOffDataCreator())
-            .notify(request(approvedCutOff()).to(Merchant).guaranteed()),
-        from(Settled).to(Error).onEvent(OutOfBalance).build()
+        from(ProcessingSettlement).to(Error).onEvent(OutOfBalance).build()
     );
   }
 

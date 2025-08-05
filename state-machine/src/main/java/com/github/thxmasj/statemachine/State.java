@@ -1,14 +1,13 @@
 package com.github.thxmasj.statemachine;
 
 import java.time.Duration;
-import java.util.List;
 import java.util.Optional;
 
 public interface State {
 
   String name();
 
-  default Choice<?> choice() {
+  default <I, T> Choice<I, T> choice() {
     return null;
   }
 
@@ -16,10 +15,6 @@ public interface State {
 
   default Optional<Timeout> timeout() {
     return Optional.empty();
-  }
-
-  default List<Class<? extends Action<?>>> actions() {
-    return List.of();
   }
 
   default boolean isChoice() {

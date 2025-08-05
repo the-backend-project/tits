@@ -68,6 +68,16 @@ public record OutgoingRequestModel<T, U>(
       return builder;
     }
 
+    public static <T, U> Builder<T, U> request(
+        Function<T, U> dataAdapter,
+        OutgoingRequestCreator<U> notificationCreator
+    ) {
+      Builder<T, U> builder = new Builder<>();
+      builder.dataAdapter = dataAdapter;
+      builder.notificationCreator = notificationCreator;
+      return builder;
+    }
+
     public Builder<T, U> to(OutboxQueue queue) {
       this.queue = queue;
       return this;

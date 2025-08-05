@@ -190,7 +190,9 @@ public abstract class AbstractPayment implements EntityModel {
                     .guaranteed()
                     .responseValidator(validateAuthorisationAdviceResponse()))
                 .response(_ -> "", new BadRequest()),
-            from(ProcessingAuthentication).to(PaymentChoice).onEvent(AuthenticationApproved).build(),
+            from(ProcessingAuthentication).to(PaymentChoice)
+                .onEvent(AuthenticationApproved)
+                .withData(new IsCaptureDataCreator()),
             from(ProcessingAuthentication).toSelf().onEvent(RollbackRequest).response(new Created()),
             from(PaymentChoice).to(ProcessingAuthorisation)
                 .onEvent(PreauthorisationRequest)

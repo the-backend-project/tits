@@ -1095,7 +1095,7 @@ public class StateMachine {
         ))
         .flatMap(newTransitionWithData -> {
           for (var f : newTransitionWithData.transition().model().filters()) {
-            if (!f.filter().test(newTransitionWithData.data()))
+            if (!f.filter().test(newTransitionWithData.data())) {
               return calculateChange(
                   eventLog,
                   scheduledEvents,
@@ -1103,20 +1103,23 @@ public class StateMachine {
                   incomingNotification,
                   idsForNewEntity
               );
+            }
           }
           List<Event> newEvents = join(scheduledEvents, newTransitionWithData.transition().event());
           List<EventType> newEventTypes = newEvents.stream().map(Event::type).toList();
-          if (currentState.forward(newEventTypes) == null)
+          if (currentState.forward(newEventTypes) == null) {
+            String errorMessage = "State " + eventLog.entityModel() + "[id=" + eventLog.entityId().value() + "]:"
+                + currentState.state()
+                + " does not accept " + newEventTypes.stream().map(e -> e.name() + " (" + e.id() + ")").toList();
             return Mono.just(new ChangeResult(
                 new ProcessResult(
                     Status.Rejected,
                     new Entity(entityId, List.of(), eventLog.entityModel()),
                     null,
-                    "State " + eventLog.entityModel() + "[id=" + eventLog.entityId().value() + "]:"
-                        + currentState.state()
-                        + " does not accept " + newEventTypes.stream().map(e -> e.name() + " (" + e.id() + ")").toList()
+                    errorMessage
                 ), null
             ));
+          }
           List<Event> transitionEvents;
           List<Event> eventsToStore;
           TraversableState targetState;
@@ -1169,13 +1172,22 @@ public class StateMachine {
           } else {
             startEventNumber = eventLog.lastEventNumber();
             targetState = currentState.forward(newEvents.stream().map(Event::type).toList());
-            if (targetState == null)
+            if (targetState == null) {
               return Mono.just(new ChangeResult(new ProcessResult(Status.Rejected, entity, null, null), null));
+            }
             if (targetState.state().isChoice()) {
-              return executeAction(
+              Choice<I, O> choice;
+              try {
+                choice = targetState.state().choice();
+              } catch (Exception e) {
+                return Mono.error(e);
+              }
+              return executeChoice(
+                  newTransitionWithData.data(),
+                  inputEvent,
                   entity,
                   new EventLog(eventLog.entityModel(), entityId, List.of(), Event.join(effectiveEventLog, newEvents)),
-                  targetState.state().choice(),
+                  choice,
                   targetState.state(),
                   incomingNotification != null ? List.of(incomingNotification) : List.of()
               )
@@ -1236,7 +1248,8 @@ public class StateMachine {
                   ), Flux.just(newTransitionWithData)
               ).collectList()
               .flatMap(transitionsWithData -> Flux.fromIterable(transitionsWithData)
-                  .flatMap(actualTransition -> calculateNestedChanges(entity, actualTransition)).collectList()
+                  .flatMap(actualTransition -> calculateNestedChanges(entity, actualTransition))
+                  .collectList()
                   .flatMap(changeResultList -> {
                     ProcessResult negativeResult = changeResultList.stream()
                         .map(ChangeResult::result)
@@ -1904,15 +1917,19 @@ public class StateMachine {
     return targetState.timeout().map(timeout -> ZonedDateTime.now(clock).plus(timeout.duration())).orElse(null);
   }
 
-  private <T> Mono<InputEvent<T>> executeAction(
+  private <I, O> Mono<InputEvent<I>> executeChoice(
+      O processingData,
+      InputEvent<I> inputEvent,
       Entity entity,
       EventLog eventLog,
-      Action<T> action,
+      Choice<I, O> choice,
       State currentState,
       List<Notification> notifications
   ) {
     var lastEvent = eventLog.events().getLast();
-    return action.execute(
+    return choice.execute(
+            processingData,
+            inputEvent,
             eventLog.entityId(),
             (eventType, data) -> new InputEvent<>(eventType, data, null),
             new RequiredData(
@@ -1923,8 +1940,8 @@ public class StateMachine {
                 List.of(),
                 List.of(),
                 notifications,
-                action.requirements(),
-                action.getClass(),
+                Requirements.none(),
+                choice.getClass(),
                 incomingRequestByEvent,
                 outgoingRequestByEvent
             )
@@ -1933,7 +1950,7 @@ public class StateMachine {
             .actionExecuted(
                 correlationId,
                 eventLog.entityId(),
-                action.getClass().getSimpleName(),
+                choice.getClass().getSimpleName(),
                 currentState.toString(),
                 output.eventType()
             )

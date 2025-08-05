@@ -1,9 +1,5 @@
 package com.github.thxmasj.statemachine;
 
-import net.sourceforge.plantuml.FileFormat;
-import net.sourceforge.plantuml.FileFormatOption;
-import net.sourceforge.plantuml.SourceStringReader;
-
 import static java.util.function.Predicate.not;
 import static java.util.stream.Collectors.joining;
 
@@ -14,9 +10,11 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.util.HashSet;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Stream;
+import net.sourceforge.plantuml.FileFormat;
+import net.sourceforge.plantuml.FileFormatOption;
+import net.sourceforge.plantuml.SourceStringReader;
 
 public class PlantUMLFormatter {
 
@@ -131,10 +129,6 @@ public class PlantUMLFormatter {
         """,
         state.name(),
         Stream.of(
-            Optional.of(state.actions().stream().map(Class::getSimpleName).collect(joining(", ")))
-                .filter(not(String::isEmpty))
-                .map(s -> "action: " + s)
-                .orElse(""),
             state.timeout().map(timeout -> "timeout: " + timeout.eventType() + " after " + timeout.duration().toString()).orElse("")
         ).filter(not(String::isEmpty)).collect(joining("\\n"))
     );
