@@ -55,13 +55,13 @@ public class PaymentEvent {
   ) {}
 
   public record Capture(
-      String id,
+      String correlationId,
       long amount,
       String simulation
   ) {}
 
   public record Refund(
-      String id,
+      String correlationId,
       long amount,
       boolean inStore,
       ZonedDateTime transactionTime,

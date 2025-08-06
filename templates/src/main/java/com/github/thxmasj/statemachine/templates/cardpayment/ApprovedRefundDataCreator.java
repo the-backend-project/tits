@@ -50,7 +50,7 @@ public class ApprovedRefundDataCreator implements DataCreator<AcquirerResponse, 
             acquirerResponse.stan(),
             acquirerResponse.authorisationCode(),
             acquirerResponse.responseCode(),
-            refundData.id()
+            refundData.correlationId()
         ));
   }
 
