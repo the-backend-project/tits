@@ -58,4 +58,19 @@ public class IncomingRequestJsonValidator<INPUT_TYPE, OUTPUT_TYPE>
     return Mono.just(context.validRequest());
   }
 
+  public static <T> IncomingRequestJsonValidator<T, T> json(Class<T> type) {
+    return new IncomingRequestJsonValidator<>(type) {
+      @Override
+      public Mono<InputEvent<T>> execute(
+          EntityId entityId,
+          Context<T> context,
+          Input.IncomingRequest request,
+          Input input,
+          T jsonBody
+      ) {
+        return Mono.just(context.validRequest(jsonBody));
+      }
+    };
+  }
+
 }

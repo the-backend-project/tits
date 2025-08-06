@@ -13,6 +13,7 @@ import static java.util.Collections.unmodifiableList;
 import static java.util.Objects.requireNonNull;
 import static java.util.Objects.requireNonNullElse;
 import static java.util.Optional.ofNullable;
+import static java.util.function.Predicate.not;
 import static java.util.stream.Collectors.joining;
 import static java.util.stream.Collectors.toMap;
 
@@ -1175,20 +1176,21 @@ public class StateMachine {
                   .flatMap(actualTransition -> calculateNestedChanges(entity, actualTransition))
                   .collectList()
                   .flatMap(changeResultList -> {
-                    ProcessResult negativeResult = changeResultList.stream()
+                    ChangeResult failedChangeResult = changeResultList.stream()
                         .map(ChangeResult::result)
-                        .filter(result -> !result.isAccepted())
+                        .filter(not(ProcessResult::isAccepted))
                         .findFirst()
+                        .map(negativeResult -> new ChangeResult(
+                            new ProcessResult(
+                                negativeResult.status(),
+                                entity,
+                                negativeResult.responseMessage(),
+                                negativeResult.error()
+                            ), null
+                        ))
                         .orElse(null);
-                    if (negativeResult != null)
-                      return Mono.just(new ChangeResult(
-                          new ProcessResult(
-                              negativeResult.status(),
-                              entity,
-                              negativeResult.responseMessage(),
-                              negativeResult.error()
-                          ), null
-                      ));
+                    if (failedChangeResult != null)
+                      return Mono.just(failedChangeResult);
                     List<ProcessResult> processResults = changeResultList.stream()
                         .map(ChangeResult::result)
                         .toList();
@@ -1273,21 +1275,13 @@ public class StateMachine {
 
   private List<Event> addTransitionData(List<Event> events, List<?> datas) {
     return events.stream()
-        .map(event -> {
-              if (event.data() != null || datas.isEmpty())
-                return event;
-              Object data = datas.stream().filter(d -> event.type().dataType() == d.getClass()).findFirst().orElse(null);
-              if (data == null)
-                return event;
-              return new Event(
-                  event.eventNumber(),
-                  event.type(),
-                  clock,
-                  event.messageId(),
-                  event.clientId(),
-                  data
-              );
-            }
+        .map(event -> event.data() != null ?
+            event :
+            datas.stream()
+                .filter(d -> event.type().dataType() == d.getClass())
+                .findFirst()
+                .map(d -> new Event(event.eventNumber(), event.type(), clock, event.messageId(), event.clientId(), d))
+                .orElse(event)
         )
         .toList();
   }
