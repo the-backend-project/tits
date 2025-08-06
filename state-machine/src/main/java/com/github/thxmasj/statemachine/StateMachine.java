@@ -40,7 +40,6 @@ import com.github.thxmasj.statemachine.database.mssql.EventsByEntityId;
 import com.github.thxmasj.statemachine.database.mssql.EventsByLastEntity;
 import com.github.thxmasj.statemachine.database.mssql.EventsByLookupId;
 import com.github.thxmasj.statemachine.database.mssql.EventsByMessageId;
-import com.github.thxmasj.statemachine.database.mssql.IncomingRequestByEvent;
 import com.github.thxmasj.statemachine.database.mssql.LastSecondaryId;
 import com.github.thxmasj.statemachine.database.mssql.MoveToDLQ;
 import com.github.thxmasj.statemachine.database.mssql.NextDeadline;
@@ -103,7 +102,6 @@ public class StateMachine {
   private final MoveToDLQ moveToDLQ;
   private final NextDeadline nextDeadline;
   private final OutgoingResponseAndRequestDigestByRequest outgoingResponseByRequest;
-  private final IncomingRequestByEvent incomingRequestByEvent;
   private final OutgoingRequestByEvent outgoingRequestByEvent;
   private final Map<UUID, OutgoingRequestCreator<?>> outgoingRequestCreators;
   private final Function<OutboxQueue, HttpClient> clients;
@@ -157,7 +155,6 @@ public class StateMachine {
     this.moveToDLQ = new MoveToDLQ(jdbcClient, schemaName);
     this.nextDeadline = new NextDeadline(jdbcClient, clock, entityModels, schemaName);
     this.outgoingResponseByRequest = new OutgoingResponseAndRequestDigestByRequest(dataSource, schemaName);
-    this.incomingRequestByEvent = new IncomingRequestByEvent(dataSource, entityModels, schemaName);
     this.outgoingRequestByEvent = new OutgoingRequestByEvent(dataSource, schemaName);
     this.listener = listener;
     this.singleClientPerEntity = singleClientPerEntity;
@@ -441,7 +438,6 @@ public class StateMachine {
               validator,
               nextEventNumber,
               eventTrigger.eventType(),
-              requestNotification,
               scheduledEvents
           )
               .flatMap(inputEvent -> processEvents(
@@ -567,15 +563,13 @@ public class StateMachine {
       IncomingRequestValidator<T> validator,
       int currentEventNumber,
       EventType validEventType,
-      Notification requestNotification,
       List<Event> scheduledEvents
   ) {
     RequiredData requiredData = requiredData(
         validator,
         new Entity(eventLog.entityId(), eventLog.secondaryIds(), eventLog.entityModel()),
         eventLog.effectiveEvents(),
-        scheduledEvents,
-        requestNotification
+        scheduledEvents
     );
     var incomingRequest = new Input.IncomingRequest(
         requestMessage,
@@ -676,18 +670,15 @@ public class StateMachine {
       Object dataRequirer,
       Entity entity,
       List<Event> eventLog,
-      List<Event> newEvents,
-      Notification incomingNotification
+      List<Event> newEvents
   ) {
     return new RequiredData(
         entity,
         join(eventLog, newEvents),
         List.of(),
         List.of(),
-        incomingNotification != null ? List.of(incomingNotification) : List.of(),
         dataRequirer instanceof DataRequirer dr ? dr.requirements() : Requirements.none(),
         dataRequirer.getClass(),
-        incomingRequestByEvent,
         outgoingRequestByEvent
     );
   }
@@ -1050,8 +1041,7 @@ public class StateMachine {
         eventLog.effectiveEvents(),
         scheduledEvents,
         null,
-        inputEvent,
-        incomingNotification
+        inputEvent
     ).map(processingData -> new TransitionWithData<>(
             new ActualTransition<>(
                 transitionModelForInput,
@@ -1168,8 +1158,7 @@ public class StateMachine {
                       ),
                       entity,
                       effectiveEventLog,
-                      scheduledEvents,
-                      incomingNotification
+                      scheduledEvents
                   ), Flux.just(newTransitionWithData)
               ).collectList()
               .flatMap(transitionsWithData -> Flux.fromIterable(transitionsWithData)
@@ -1291,8 +1280,7 @@ public class StateMachine {
       ActualTransition<I, O> transition,
       Entity entity,
       List<Event> eventLog,
-      List<Event> newEvents,
-      Notification incomingNotification
+      List<Event> newEvents
   ) {
     return createData(
         transition.model(),
@@ -1300,8 +1288,7 @@ public class StateMachine {
         eventLog,
         newEvents,
         transition.event(),
-        new InputEvent<>(inputEvent.eventType(), null, null),
-        incomingNotification
+        new InputEvent<>(inputEvent.eventType(), null, null)
     )
         .map(data -> new TransitionWithData<>(transition, data))
         .defaultIfEmpty(new TransitionWithData<>(transition, null));
@@ -1312,15 +1299,14 @@ public class StateMachine {
       List<ActualTransition<Void, ?>> transitions,
       Entity entity,
       List<Event> eventLog,
-      List<Event> newEvents,
-      Notification incomingNotification
+      List<Event> newEvents
   ) {
     requireNonNull(transitions);
     requireNonNull(entity);
     requireNonNull(eventLog);
     requireNonNull(newEvents);
     return Flux.fromIterable(transitions)
-        .flatMap(transition -> transitionWithData(new InputEvent<>(inputEvent.eventType(), null, null), transition, entity, eventLog, newEvents, incomingNotification));
+        .flatMap(transition -> transitionWithData(new InputEvent<>(inputEvent.eventType(), null, null), transition, entity, eventLog, newEvents));
   }
 
   private <T> Mono<ProcessResult> processEvents(
@@ -1508,8 +1494,7 @@ public class StateMachine {
                         responseValidator,
                         new Entity(entityId, eventLog.secondaryIds(), eventLog.entityModel()),
                         eventLog.effectiveEvents(),
-                        List.of(),
-                        responseNotification
+                        List.of()
                     )
                 ).map(output -> new ResponseValidationResult(output, responseNotification));
               })
@@ -1753,10 +1738,9 @@ public class StateMachine {
         join(eventLog, newEvents), // Need for timestamp
         processResults,
         processedEvents,
-        List.of(),//incomingNotification == null ? List.of() : List.of(incomingNotification),
         Requirements.none(),
         notificationModel.notificationCreatorType() != null ? notificationModel.notificationCreatorType() : notificationModel.notificationCreator().getClass(),
-        null,//incomingRequestByEvent,
+        //incomingRequestByEvent,
         null//outgoingRequestByEvent
     );
     Entity parentEntity = filteredEvents.nestedEntities().stream()
@@ -1800,10 +1784,9 @@ public class StateMachine {
         join(eventLog, newEvents), // For timestamp
         processResults,
         processedEvents,
-        List.of(),//incomingNotification == null ? List.of() : List.of(incomingNotification),
         Requirements.none(),//creator.requirements(),
         creator.getClass(),
-        null,//incomingRequestByEvent,
+        //incomingRequestByEvent,
         null//outgoingRequestByEvent
     );
     return Mono.deferContextual(ctx -> !hasRequestId(ctx) ?
@@ -1940,13 +1923,12 @@ public class StateMachine {
       List<Event> eventLog,
       List<Event> newEvents,
       Event transitionEvent,
-      InputEvent<I> inputEvent,
-      Notification incomingNotification
+      InputEvent<I> inputEvent
   ) {
     requireNonNull(transitionModel, "transitionModel is null for transitionEvent " + transitionEvent);
     DataCreator<I, O> dataCreator = dataCreator(transitionModel);
     if (dataCreator != null) {
-      RequiredData requiredData = requiredData(dataCreator, entity, eventLog, newEvents, incomingNotification);
+      RequiredData requiredData = requiredData(dataCreator, entity, eventLog, newEvents);
       return dataCreator.execute(inputEvent, requiredData);
     }
     return Mono.empty();

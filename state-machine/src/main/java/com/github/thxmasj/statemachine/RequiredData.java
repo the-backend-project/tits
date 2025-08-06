@@ -6,14 +6,11 @@ import static java.util.stream.Collectors.collectingAndThen;
 import static java.util.stream.Collectors.joining;
 import static java.util.stream.Collectors.toList;
 
-import com.github.thxmasj.statemachine.Notification.OutgoingResponse;
-import com.github.thxmasj.statemachine.OutboxWorker.ExchangeType;
 import com.github.thxmasj.statemachine.Requirements.MissingRequirement;
 import com.github.thxmasj.statemachine.Requirements.Requirement;
 import com.github.thxmasj.statemachine.Requirements.Type;
 import com.github.thxmasj.statemachine.StateMachine.ProcessResult;
 import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Entity;
-import com.github.thxmasj.statemachine.database.mssql.IncomingRequestByEvent;
 import com.github.thxmasj.statemachine.database.mssql.OutgoingRequestByEvent;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
@@ -32,10 +29,8 @@ public class RequiredData implements Input {
   private final Map<Requirement, List<Event>> filteredEvents = new HashMap<>();
   private final List<Event> events;
   private final Entity entity;
-  private final List<Notification> inflightNotifications;
   private final List<ProcessResult> processResults;
   private final List<Event> processedEvents;
-  private final IncomingRequestByEvent incomingRequestByEvent;
   private final OutgoingRequestByEvent outgoingRequestByEvent;
 
   public static class RequirementsNotFulfilled extends RuntimeException {
@@ -45,57 +40,12 @@ public class RequiredData implements Input {
     }
   }
 
-  public static class GetNotificationFailed extends RequirementsNotFulfilled {
-
-    private GetNotificationFailed(String message) {
-      super(message);
-    }
-  }
-
-  private boolean isMatchingRequirement(Notification notification, ExchangeType exchangeType, OutboxQueue queue) {
-    return switch (notification) {
-      case Notification.IncomingRequest _ -> exchangeType == ExchangeType.IncomingRequest;
-      case Notification.OutgoingRequest outgoingRequest -> exchangeType == ExchangeType.OutgoingRequest && queue.equals(outgoingRequest.queue());
-      case Notification.IncomingResponse incomingResponse -> exchangeType == ExchangeType.IncomingResponse && queue.equals(incomingResponse.queue());
-      case OutgoingResponse _ -> exchangeType == ExchangeType.OutgoingResponse;
-    };
-  }
-
-  private Mono<HttpRequestMessage> getNotification(
+  private Mono<HttpRequestMessage> getOutgoingRequest(
       EntityId entityId,
-      EntityModel entityModel,
       Event event,
-      ExchangeType exchangeType,
       OutboxQueue queue
   ) {
-    //noinspection SwitchStatementWithTooFewBranches
-    return inflightNotifications.stream()
-        .filter(n -> n != null &&
-            n.eventNumber() == event.eventNumber() &&
-            isMatchingRequirement(n, exchangeType, queue)
-        )
-        .findFirst()
-        .map(n -> switch (n) {
-          case Notification.IncomingRequest rq -> Mono.just(rq.message());
-          default -> throw new IllegalStateException("Unexpected value: " + n);
-        })
-        .orElse(switch (exchangeType) {
-          case ExchangeType.IncomingRequest ->
-              incomingRequestByEvent.execute(entityModel, entityId, event.eventNumber());
-          case ExchangeType.OutgoingRequest -> outgoingRequestByEvent.execute(entityId, event.eventNumber());
-          default -> Mono.error(
-              new GetNotificationFailed(format(
-                  "No %s notification found for event %s with number %s of type %s and queue %s for requirer %s. Inflight notifications: %s. Events: %s",
-                  exchangeType,
-                  event.type(),
-                  event.eventNumber(),
-                  exchangeType,
-                  queue,
-                  requirer.getName(),
-                  inflightNotifications,
-                  events
-              )));
-        });
+    return outgoingRequestByEvent.execute(entityId, event.eventNumber());
   }
 
   public RequiredData(
@@ -103,20 +53,16 @@ public class RequiredData implements Input {
       List<Event> events,
       List<ProcessResult> processResults,
       List<Event> processedEvents,
-      List<Notification> inflightNotifications,
       Requirements requirements,
       Class<?> requirer,
-      IncomingRequestByEvent incomingRequestByEvent,
       OutgoingRequestByEvent outgoingRequestByEvent
   ) {
     this.requirer = requireNonNull(requirer);
     this.requirements = requirements;
     this.events = events;
     this.entity = entity;
-    this.inflightNotifications = inflightNotifications;
     this.processResults = processResults;
     this.processedEvents = processedEvents;
-    this.incomingRequestByEvent = incomingRequestByEvent;
     this.outgoingRequestByEvent = outgoingRequestByEvent;
     for (var requirement : requirements.asList()) {
       FilterResult result = filter(requirement, events);
@@ -127,22 +73,9 @@ public class RequiredData implements Input {
   }
 
   @Override
-  public <T> Mono<IncomingRequest> incomingRequest(EventType eventType, Class<T> type) {
-    final var event = last(eventType);
-    return getNotification(entity.id(), entity.model(), event, ExchangeType.IncomingRequest, null)
-        .map(message -> new IncomingRequest(
-                message,
-                event.messageId(),
-                event.clientId(),
-                event.eventNumber()
-            )
-        );
-  }
-
-  @Override
   public <T> Mono<OutgoingRequest<T>> outgoingRequest(OutboxQueue queue, EventType eventType, Class<T> type) {
     var loadedEvent = last(eventType);
-    return getNotification(entity.id(), entity.model(), loadedEvent, ExchangeType.OutgoingRequest, null)
+    return getOutgoingRequest(entity.id(), loadedEvent, queue)
         .map(message -> new OutgoingRequest<>(
                 message,
                 loadedEvent.eventNumber()

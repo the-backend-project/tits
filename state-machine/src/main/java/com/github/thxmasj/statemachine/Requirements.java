@@ -116,10 +116,6 @@ public class Requirements {
     return new EventRequirement(List.of(eventType), Type.LastIfExists, notification);
   }
 
-  public static  EventRequirement incomingRequest(EventType eventType, Class<?> dataType) {
-    return last(notifications(null, ExchangeType.IncomingRequest, dataType), eventType);
-  }
-
   public static  EventRequirement outgoingRequest(OutboxQueue queue, EventType eventType, Class<?> dataType) {
     return last(notifications(queue, ExchangeType.OutgoingRequest, dataType), eventType);
   }

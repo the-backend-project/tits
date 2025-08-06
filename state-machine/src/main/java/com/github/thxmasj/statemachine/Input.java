@@ -16,7 +16,6 @@ public interface Input {
   record OutgoingRequest<T>(HttpRequestMessage httpMessage, int eventNumber) {}
   record IncomingResponse(HttpResponseMessage httpMessage, int eventNumber) {}
 
-  <T> Mono<IncomingRequest> incomingRequest(EventType eventType, Class<T> type);
   <T> Mono<OutgoingRequest<T>> outgoingRequest(OutboxQueue queue, EventType eventType, Class<T> type);
 
   List<Event> all(EventType... eventTypes);
