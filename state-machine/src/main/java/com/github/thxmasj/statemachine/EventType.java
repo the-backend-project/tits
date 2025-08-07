@@ -20,10 +20,6 @@ public interface EventType {
     return false;
   }
 
-  default boolean isReversible() {
-    return true;
-  }
-
   default boolean isReadOnly() {
     return false;
   }
