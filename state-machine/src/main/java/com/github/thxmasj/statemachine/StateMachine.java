@@ -1611,20 +1611,63 @@ public class StateMachine {
   }
 
   private void logDeadByExhaustion(OutboxElement e, String reason) {
-    listener.forwardingDeadByExhaustion(e.requestId(), e.entityId(), e.queue().name(), e.enqueuedAt(), e.attempt(), e.eventNumber(), e.correlationId(), reason);
+    listener.forwardingDeadByExhaustion(
+        e.requestId(),
+        e.entityModel(),
+        e.queue().name(),
+        e.entityId(),
+        e.eventNumber(),
+        e.enqueuedAt(),
+        e.attempt(),
+        e.correlationId(),
+        reason
+    );
   }
 
   private void logForwarded(OutboxElement e, HttpResponseMessage responseMessage, String reason) {
-    listener.forwardingCompleted(e.requestId(), e.queue().name(), e.enqueuedAt(), e.attempt(), e.entityId(), e.eventNumber(), e.correlationId(), responseMessage, reason);
+    listener.forwardingCompleted(
+        e.requestId(),
+        e.entityModel(),
+        e.queue().name(),
+        e.entityId(),
+        e.eventNumber(),
+        e.enqueuedAt(),
+        e.attempt(),
+        e.correlationId(),
+        responseMessage,
+        reason
+    );
   }
 
   private void logBackoff(OutboxElement e, String reason) {
     // TODO: e.backoff() requires processedAt nextAttemptAt
-    listener.forwardingBackedOff(e.requestId(), e.queue().name(), e.enqueuedAt(), e.attempt(), e.entityId(), e.eventNumber(), e.correlationId(), reason, e.nextAttemptAt(), e.backoff());
+    listener.forwardingBackedOff(
+        e.requestId(),
+        e.entityModel(),
+        e.queue().name(),
+        e.entityId(),
+        e.eventNumber(),
+        e.enqueuedAt(),
+        e.attempt(),
+        e.correlationId(),
+        reason,
+        e.nextAttemptAt(),
+        e.backoff()
+    );
   }
 
   private void logDead(OutboxElement e, String reason) {
-    listener.forwardingDead(e.requestId(), e.entityId(), e.queue().name(), e.enqueuedAt(), e.attempt(), e.eventNumber(), e.correlationId(), reason);
+    listener.forwardingDead(
+        e.requestId(),
+        e.entityModel(),
+        e.queue().name(),
+        e.entityId(),
+        e.eventNumber(),
+        e.enqueuedAt(),
+        e.attempt(),
+        e.correlationId(),
+        reason
+    );
   }
 
   private <I, O> Flux<Message.OutgoingRequest> outgoingRequests(

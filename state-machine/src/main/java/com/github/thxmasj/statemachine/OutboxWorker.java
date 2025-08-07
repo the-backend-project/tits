@@ -42,11 +42,12 @@ public class OutboxWorker {
     return processBackedOff.execute(now, queue)
         .doOnNext(e -> listener.forwardingAttempt(
                 e.requestId(),
+                e.entityModel(),
                 e.queue().name(),
-                e.enqueuedAt(),
-                e.attempt(),
                 e.entityId(),
                 e.eventNumber(),
+                e.enqueuedAt(),
+                e.attempt(),
                 e.correlationId()
             )
         )

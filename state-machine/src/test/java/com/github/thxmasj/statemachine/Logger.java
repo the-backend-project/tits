@@ -36,11 +36,6 @@ public class Logger implements Listener {
   }
 
   @Override
-  public void actionExecuted(String correlationId, EntityId entityId, String actionName, String currentState, EventType output) {
-    log(header(entityId, correlationId) + " Action executed: " + actionName);
-  }
-
-  @Override
   public void inconsistentState(
           String correlationId,
           EntityId entityId,
@@ -87,33 +82,80 @@ public class Logger implements Listener {
   }
 
   @Override
-  public void forwardingAttempt(UUID requestId, String queue, ZonedDateTime enqueuedAt, int attempt, EntityId entityId, int eventNumber, String correlationId) {
+  public void forwardingAttempt(
+      UUID requestId,
+      EntityModel entityModel,
+      String queue,
+      EntityId entityId,
+      int eventNumber,
+      ZonedDateTime enqueuedAt,
+      int attempt,
+      String correlationId
+  ) {
     log("Forwarding attempt: " + requestId);
   }
 
   @Override
-  public void forwardingCompleted(UUID requestId, String queue, ZonedDateTime enqueuedAt, int attempt, EntityId entityId, int eventNumber, String correlationId, HttpResponseMessage receipt, String reason) {
+  public void forwardingCompleted(
+      UUID requestId,
+      EntityModel entityModel,
+      String queue,
+      EntityId entityId,
+      int eventNumber,
+      ZonedDateTime enqueuedAt,
+      int attempt,
+      String correlationId,
+      HttpResponseMessage receipt,
+      String reason
+  ) {
     log("Forwarding completed: " + requestId);
   }
 
   @Override
-  public void forwardingBackedOff(UUID requestId, String queue, ZonedDateTime enqueuedAt, int attempt, EntityId entityId, int eventNumber, String correlationId, String reason, ZonedDateTime nextAttemptAt, Duration backoff) {
+  public void forwardingBackedOff(
+      UUID requestId,
+      EntityModel entityModel,
+      String queue,
+      EntityId entityId,
+      int eventNumber,
+      ZonedDateTime enqueuedAt,
+      int attempt,
+      String correlationId,
+      String reason,
+      ZonedDateTime nextAttemptAt,
+      Duration backoff
+  ) {
     log(header(entityId, correlationId) + " Forwarding backed off: " + requestId +", Reason: " + reason);
   }
 
   @Override
-  public void forwardingDead(UUID requestId, EntityId entityId, String queue, ZonedDateTime enqueuedAt, int attempt, int eventNumber, String correlationId, String reason) {
+  public void forwardingDead(
+      UUID requestId,
+      EntityModel entityModel,
+      String queue,
+      EntityId entityId,
+      int eventNumber,
+      ZonedDateTime enqueuedAt,
+      int attempt,
+      String correlationId,
+      String reason
+  ) {
     log(header(entityId, correlationId) + " Forwarding failed: " + requestId + ", Reason: " + reason);
   }
 
   @Override
-  public void forwardingDeadByExhaustion(UUID requestId, EntityId entityId, String queue, ZonedDateTime enqueuedAt, int attempt, int eventNumber, String correlationId, String reason) {
+  public void forwardingDeadByExhaustion(
+      UUID requestId,
+      EntityModel entityModel,
+      String queue,
+      EntityId entityId,
+      int eventNumber,
+      ZonedDateTime enqueuedAt,
+      int attempt,
+      String correlationId,
+      String reason
+  ) {
     log(header(entityId, correlationId) + " Forwarding failed after maximum attempt time: " + requestId + ", Reason: " + reason);
-  }
-
-  @Override
-  public void forwardingRaced(String queue) {
-    log("Forwarding raced");
   }
 
   @Override

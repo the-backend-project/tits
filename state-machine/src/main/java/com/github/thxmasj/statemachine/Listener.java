@@ -23,14 +23,6 @@ public interface Listener {
             Throwable t
     );
 
-    void actionExecuted(
-            String correlationId,
-            EntityId entityId,
-            String actionName,
-            String currentState,
-            EventType resultEvent
-    );
-
     void inconsistentState(
             String correlationId,
             EntityId entityId,
@@ -87,21 +79,71 @@ public interface Listener {
 
     void processNextDeadlineFailed(Throwable t);
 
-    void forwardingAttempt(UUID requestId, String queue, ZonedDateTime enqueuedAt, int attempt, EntityId entityId, int eventNumber, String correlationId);
+  void forwardingAttempt(
+      UUID requestId,
+      EntityModel entityModel,
+      String queue,
+      EntityId entityId,
+      int eventNumber,
+      ZonedDateTime enqueuedAt,
+      int attempt,
+      String correlationId
+  );
 
-    void forwardingCompleted(UUID requestId, String queue, ZonedDateTime enqueuedAt, int attempt, EntityId entityId, int eventNumber, String correlationId, HttpResponseMessage receipt, String reason);
+  void forwardingCompleted(
+      UUID requestId,
+      EntityModel entityModel,
+      String queue,
+      EntityId entityId,
+      int eventNumber,
+      ZonedDateTime enqueuedAt,
+      int attempt,
+      String correlationId,
+      HttpResponseMessage receipt,
+      String reason
+  );
 
-    void forwardingBackedOff(UUID requestId, String queue, ZonedDateTime enqueuedAt, int attempt, EntityId entityId, int eventNumber, String correlationId, String reason, ZonedDateTime nextAttemptAt, Duration backoff);
+  void forwardingBackedOff(
+      UUID requestId,
+      EntityModel entityModel,
+      String queue,
+      EntityId entityId,
+      int eventNumber,
+      ZonedDateTime enqueuedAt,
+      int attempt,
+      String correlationId,
+      String reason,
+      ZonedDateTime nextAttemptAt,
+      Duration backoff
+  );
 
-    void forwardingDead(UUID requestId, EntityId entityId, String queue, ZonedDateTime enqueuedAt, int attempt, int eventNumber, String correlationId, String reason);
+  void forwardingDead(
+      UUID requestId,
+      EntityModel entityModel,
+      String queue,
+      EntityId entityId,
+      int eventNumber,
+      ZonedDateTime enqueuedAt,
+      int attempt,
+      String correlationId,
+      String reason
+  );
 
-    void forwardingDeadByExhaustion(UUID requestId, EntityId entityId, String queue, ZonedDateTime enqueuedAt, int attempt, int eventNumber, String correlationId, String reason);
+  void forwardingDeadByExhaustion(
+      UUID requestId,
+      EntityModel entityModel,
+      String queue,
+      EntityId entityId,
+      int eventNumber,
+      ZonedDateTime enqueuedAt,
+      int attempt,
+      String correlationId,
+      String reason
+  );
 
-    void forwardingRaced(String queue);
+  void forwardingDeadlock(String queue);
 
-    void forwardingDeadlock(String queue);
+  void forwardingError(String queue, Throwable error);
 
-    void forwardingError(String queue, Throwable error);
-
-    void forwardingEmptyQueue(String queue);
+  void forwardingEmptyQueue(String queue);
 }
