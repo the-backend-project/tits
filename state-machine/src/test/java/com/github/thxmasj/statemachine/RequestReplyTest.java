@@ -156,7 +156,6 @@ public class RequestReplyTest {
         "Test",
         Clock.systemUTC(),
         new Logger("RequestReplyTest"),
-        false,
         queue -> switch (queue) {
           case DeviceListener -> new NettyHttpClient(new NettyHttpClientBuilder().build());
           default -> null;

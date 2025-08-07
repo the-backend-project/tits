@@ -64,7 +64,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.Objects;
 import java.util.Random;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -89,7 +88,6 @@ public class StateMachine {
   private final Listener listener;
   private static final Random random = new Random();
   private static final Mono<Long> reattemptDelay = Mono.defer(() -> Mono.delay(Duration.ofMillis(100 + random.nextInt(1000))));
-  private final boolean singleClientPerEntity;
   @SuppressWarnings("ALL")
   private final List<Looper<?>> workers = new ArrayList<>();
   private final ChangeState changeState;
@@ -118,7 +116,6 @@ public class StateMachine {
       String role,
       Clock clock,
       Listener listener,
-      boolean singleClientPerEntity,
       Function<OutboxQueue, HttpClient> clients
   ) {
     this.outgoingRequestCreators =
@@ -158,7 +155,6 @@ public class StateMachine {
     this.outgoingResponseByRequest = new OutgoingResponseAndRequestDigestByRequest(dataSource, schemaName);
     this.outgoingRequestByEvent = new OutgoingRequestByEvent(dataSource, schemaName);
     this.listener = listener;
-    this.singleClientPerEntity = singleClientPerEntity;
     this.clients = clients;
     // TODO: Differentiate delay spec per queue
     var backoff = new DelaySpecification(ofSeconds(10), ofSeconds(20), ofSeconds(100), 1.5);
@@ -408,15 +404,6 @@ public class StateMachine {
           List<Event> scheduledEvents = scheduledEvents(eventTrigger.entityModel(), eventLog);
           int nextEventNumber = eventLog.lastEventNumber() + scheduledEvents.size() + 1;
           String messageId = incomingRequest.messageId().apply(entityId, eventTrigger.eventType());
-          if (eventTrigger.eventType() != BuiltinEventTypes.Status && singleClientPerEntity && events.stream()
-              .anyMatch(e -> e.isIncomingRequest() && !Objects.equals(e.clientId(), incomingRequest.clientId()))) {
-            return invalidRequest(
-                messageId,
-                incomingRequest,
-                eventLog,
-                "Client not allowed"
-            );
-          }
           Message requestMessage = incomingRequest(nextEventNumber, incomingRequest, messageId);
           var stateAfterScheduledEvents = currentState.forward(scheduledEvents.stream().map(Event::type).toList());
           if (stateAfterScheduledEvents == null) {
