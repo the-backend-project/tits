@@ -1,26 +1,27 @@
-package com.github.thxmasj.statemachine;
+package com.github.thxmasj.statemachine.message;
 
+import com.github.thxmasj.statemachine.*;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import java.time.Duration;
 import java.util.UUID;
 
-public abstract sealed class Notification permits
-    Notification.IncomingRequest,
-    Notification.OutgoingRequest,
-    Notification.IncomingResponse,
-    Notification.OutgoingResponse
+public abstract sealed class Message permits
+    Message.IncomingRequest,
+    Message.OutgoingRequest,
+    Message.IncomingResponse,
+    Message.OutgoingResponse
 {
 
   private final int eventNumber;
 
-  public Notification(
+  public Message(
       int eventNumber
   ) {
     this.eventNumber = eventNumber;
   }
 
-  public static final class IncomingResponse extends Notification {
+  public static final class IncomingResponse extends Message {
 
     private final HttpResponseMessage message;
     private final OutboxQueue queue;
@@ -59,7 +60,7 @@ public abstract sealed class Notification permits
 
   }
 
-  public static final class OutgoingRequest extends Notification {
+  public static final class OutgoingRequest extends Message {
 
     private final UUID id;
     private final HttpRequestMessage message;
@@ -126,7 +127,7 @@ public abstract sealed class Notification permits
 
   }
 
-  public static final class OutgoingResponse extends Notification {
+  public static final class OutgoingResponse extends Message {
 
     private final UUID requestId;
     private final HttpResponseMessage message;
@@ -151,7 +152,7 @@ public abstract sealed class Notification permits
 
   }
 
-  public static final class IncomingRequest extends Notification {
+  public static final class IncomingRequest extends Message {
 
     private final UUID id;
     private final HttpRequestMessage message;
@@ -173,6 +174,17 @@ public abstract sealed class Notification permits
       this.messageId = messageId;
       this.clientId = clientId;
       this.digest = digest;
+    }
+
+    public IncomingRequest withMessageId(String newMessageId) {
+      return new Message.IncomingRequest(
+          id(),
+          eventNumber(),
+          message(),
+          newMessageId,
+          clientId(),
+          digest()
+      );
     }
 
     public UUID id() {

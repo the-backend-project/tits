@@ -7,8 +7,8 @@ import reactor.core.publisher.Mono;
 
 public record OutgoingRequestModel<T, U>(
     Function<T, U> dataAdapter,
-    Class<? extends OutgoingRequestCreator<U>> notificationCreatorType,
-    OutgoingRequestCreator<U> notificationCreator,
+    Class<? extends OutgoingRequestCreator<U>> creatorType,
+    OutgoingRequestCreator<U> creator,
     OutboxQueue queue,
     boolean guaranteed,
     int maxRetryAttempts,
@@ -36,45 +36,45 @@ public record OutgoingRequestModel<T, U>(
   public static class Builder<T, U> {
 
     private Function<T, U> dataAdapter;
-    private Class<? extends OutgoingRequestCreator<U>> notificationCreatorType;
-    private OutgoingRequestCreator<U> notificationCreator;
+    private Class<? extends OutgoingRequestCreator<U>> creatorType;
+    private OutgoingRequestCreator<U> creator;
     private OutboxQueue queue;
     private boolean guaranteed;
     private int maxRetryAttempts = 0;
     private Duration retryInterval;
     private IncomingResponseValidator<?> responseValidator;
 
-    public static <T> Builder<T, T> request(Class<? extends OutgoingRequestCreator<T>> notificationCreatorType) {
+    public static <T> Builder<T, T> request(Class<? extends OutgoingRequestCreator<T>> creatorType) {
       Builder<T, T> builder = new Builder<>();
       builder.dataAdapter = Function.identity();
-      builder.notificationCreatorType = notificationCreatorType;
+      builder.creatorType = creatorType;
       return builder;
     }
 
     public static <T, U> Builder<T, U> request(
         Function<T, U> dataAdapter,
-        Class<? extends OutgoingRequestCreator<U>> notificationCreatorType
+        Class<? extends OutgoingRequestCreator<U>> creatorType
     ) {
       Builder<T, U> builder = new Builder<>();
       builder.dataAdapter = dataAdapter;
-      builder.notificationCreatorType = notificationCreatorType;
+      builder.creatorType = creatorType;
       return builder;
     }
 
-    public static <T> Builder<T, T> request(OutgoingRequestCreator<T> notificationCreator) {
+    public static <T> Builder<T, T> request(OutgoingRequestCreator<T> creator) {
       Builder<T, T> builder = new Builder<>();
       builder.dataAdapter = Function.identity();
-      builder.notificationCreator = notificationCreator;
+      builder.creator = creator;
       return builder;
     }
 
     public static <T, U> Builder<T, U> request(
         Function<T, U> dataAdapter,
-        OutgoingRequestCreator<U> notificationCreator
+        OutgoingRequestCreator<U> creator
     ) {
       Builder<T, U> builder = new Builder<>();
       builder.dataAdapter = dataAdapter;
-      builder.notificationCreator = notificationCreator;
+      builder.creator = creator;
       return builder;
     }
 
@@ -100,14 +100,14 @@ public record OutgoingRequestModel<T, U>(
     }
 
     public OutgoingRequestModel<T, U> build() {
-      if (notificationCreator == null && notificationCreatorType == null)
+      if (creator == null && creatorType == null)
         throw new IllegalArgumentException("Creator (type) not specified");
-      if (notificationCreator != null && notificationCreatorType != null)
+      if (creator != null && creatorType != null)
         throw new IllegalArgumentException("Both creator and creator type specified");
       return new OutgoingRequestModel<>(
           dataAdapter,
-          notificationCreatorType,
-          notificationCreator,
+          creatorType,
+          creator,
           queue,
           guaranteed,
           maxRetryAttempts,

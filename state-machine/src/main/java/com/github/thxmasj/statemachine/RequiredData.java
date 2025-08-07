@@ -6,9 +6,9 @@ import static java.util.stream.Collectors.collectingAndThen;
 import static java.util.stream.Collectors.joining;
 import static java.util.stream.Collectors.toList;
 
-import com.github.thxmasj.statemachine.Requirements.MissingRequirement;
 import com.github.thxmasj.statemachine.Requirements.Requirement;
-import com.github.thxmasj.statemachine.Requirements.Type;
+import com.github.thxmasj.statemachine.Requirements.MissingRequirement;
+import com.github.thxmasj.statemachine.Requirements.Requirement.Type;
 import com.github.thxmasj.statemachine.StateMachine.ProcessResult;
 import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Entity;
 import com.github.thxmasj.statemachine.database.mssql.OutgoingRequestByEvent;
@@ -85,22 +85,22 @@ public class RequiredData implements Input {
 
   @Override
   public final List<Event> all(EventType... eventTypes) {
-    return filteredForRequirement(Type.All, requirements.on(eventTypes));
+    return filteredForRequirement(Requirement.Type.All, requirements.on(eventTypes));
   }
 
   @Override
   public Event one(EventType eventType) {
-    return filteredForSingletonRequirement(Type.One, requirements.on(eventType));
+    return filteredForSingletonRequirement(Requirement.Type.One, requirements.on(eventType));
   }
 
   @Override
   public final Event one(EventType... eligibleEventTypes) {
-    return filteredForSingletonRequirement(Type.One, requirements.on(eligibleEventTypes));
+    return filteredForSingletonRequirement(Requirement.Type.One, requirements.on(eligibleEventTypes));
   }
 
   @Override
   public final Optional<Event> lastIfExists(EventType... eligibleEventTypes) {
-    return filteredForOptionalRequirement(Type.LastIfExists, requirements.on(eligibleEventTypes));
+    return filteredForOptionalRequirement(Requirement.Type.LastIfExists, requirements.on(eligibleEventTypes));
   }
 
   @Override
@@ -109,7 +109,7 @@ public class RequiredData implements Input {
     if (matchingRequirements.isEmpty()) {
       throw new MissingRequirement(requirer.getName() + ": last(" + eventType + "): No requirements found for " + eventType);
     }
-    return filteredForSingletonRequirement(Type.Last, matchingRequirements);
+    return filteredForSingletonRequirement(Requirement.Type.Last, matchingRequirements);
   }
 
   @Override
@@ -118,7 +118,7 @@ public class RequiredData implements Input {
     if (matchingRequirements.isEmpty()) {
       throw new MissingRequirement(requirer.getName() + ": last(): No requirements found");
     }
-    return filteredForSingletonRequirement(Type.Last, matchingRequirements);
+    return filteredForSingletonRequirement(Requirement.Type.Last, matchingRequirements);
   }
 
   @Override
@@ -127,7 +127,7 @@ public class RequiredData implements Input {
     if (matchingRequirements.isEmpty()) {
       throw new MissingRequirement(requirer.getName() + ": last(): No requirements found");
     }
-    return filteredForSingletonRequirement(Type.Last, matchingRequirements);
+    return filteredForSingletonRequirement(Requirement.Type.Last, matchingRequirements);
   }
 
   @Override

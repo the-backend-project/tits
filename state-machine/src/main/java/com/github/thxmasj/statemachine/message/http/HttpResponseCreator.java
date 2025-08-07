@@ -9,7 +9,7 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.github.thxmasj.statemachine.EntityId;
 import com.github.thxmasj.statemachine.Input;
-import com.github.thxmasj.statemachine.Notification.IncomingRequest;
+import com.github.thxmasj.statemachine.message.Message.IncomingRequest;
 import com.github.thxmasj.statemachine.OutgoingResponseCreator;
 import java.time.ZonedDateTime;
 import java.util.LinkedHashMap;

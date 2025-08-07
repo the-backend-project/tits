@@ -6,10 +6,10 @@ import static java.util.stream.IntStream.range;
 import com.github.thxmasj.statemachine.EntityId;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.Event;
-import com.github.thxmasj.statemachine.Notification.IncomingRequest;
-import com.github.thxmasj.statemachine.Notification.IncomingResponse;
-import com.github.thxmasj.statemachine.Notification.OutgoingRequest;
-import com.github.thxmasj.statemachine.Notification.OutgoingResponse;
+import com.github.thxmasj.statemachine.message.Message.IncomingRequest;
+import com.github.thxmasj.statemachine.message.Message.IncomingResponse;
+import com.github.thxmasj.statemachine.message.Message.OutgoingRequest;
+import com.github.thxmasj.statemachine.message.Message.OutgoingResponse;
 import com.github.thxmasj.statemachine.SecondaryId;
 import com.github.thxmasj.statemachine.TraversableState;
 import com.github.thxmasj.statemachine.database.ChangeRaced;
@@ -120,16 +120,16 @@ public class ChangeState {
       String correlationId
   ) {}
 
-  public record OutboxElement(int changeIndex, int notificationIndex, UUID requestId, byte[] elementId) {}
+  public record OutboxElement(int changeIndex, int messageIndex, UUID requestId, byte[] elementId) {}
 
   public Flux<OutboxElement> execute(List<Change> changes) {
     String sql =
         """
         SET XACT_ABORT ON;
         BEGIN TRANSACTION;
-        DECLARE @OutboxElement         TABLE (ChangeIndex TINYINT, NotificationIndex TINYINT, RequestId UNIQUEIDENTIFIER);
-        DECLARE @QueueElement          TABLE (ChangeIndex TINYINT, NotificationIndex TINYINT, RequestId UNIQUEIDENTIFIER, ElementId BINARY(8), Guaranteed BIT);
-        DECLARE @QueueElementToProcess TABLE (ChangeIndex TINYINT, NotificationIndex TINYINT, RequestId UNIQUEIDENTIFIER, ElementId BINARY(8));
+        DECLARE @OutboxElement         TABLE (ChangeIndex TINYINT, MessageIndex TINYINT, RequestId UNIQUEIDENTIFIER);
+        DECLARE @QueueElement          TABLE (ChangeIndex TINYINT, MessageIndex TINYINT, RequestId UNIQUEIDENTIFIER, ElementId BINARY(8), Guaranteed BIT);
+        DECLARE @QueueElementToProcess TABLE (ChangeIndex TINYINT, MessageIndex TINYINT, RequestId UNIQUEIDENTIFIER, ElementId BINARY(8));
         """ + IntStream.range(0, changes.size()).mapToObj(i -> insertSql(
             i,
             "p" + i + "_",
@@ -143,7 +143,7 @@ public class ChangeState {
             changes.get(i).deadline != null
         )).collect(joining("\n")) +
         """
-        SELECT ChangeIndex, NotificationIndex, RequestId, ElementId FROM @QueueElementToProcess ORDER BY ChangeIndex ASC, NotificationIndex ASC
+        SELECT ChangeIndex, MessageIndex, RequestId, ElementId FROM @QueueElementToProcess ORDER BY ChangeIndex ASC, MessageIndex ASC
         COMMIT TRANSACTION;
         """;
     Builder spec = databaseClient.sql(sql).name("ChangeState");
@@ -151,7 +151,7 @@ public class ChangeState {
       bind(spec.parameterPrefix("p" + i + "_"), changes.get(i));
     return spec.map(row -> new OutboxElement(
             row.get("ChangeIndex", Integer.class),
-            row.get("NotificationIndex", Integer.class),
+            row.get("MessageIndex", Integer.class),
             row.get("RequestId", UUID.class),
             row.get("ElementId", byte[].class)
         ))
@@ -317,7 +317,7 @@ public class ChangeState {
           :outgoingRequestGuaranteedDelivery{i},
           :correlationId,
           :timestamp0,
-          (SELECT RequestId FROM @OutboxElement WHERE ChangeIndex={changeIndex} AND NotificationIndex={i})
+          (SELECT RequestId FROM @OutboxElement WHERE ChangeIndex={changeIndex} AND MessageIndex={i})
         );
         """.replace("{changeIndex}", String.valueOf(changeIndex))
             .replace("{i}", String.valueOf(i))
@@ -328,8 +328,8 @@ public class ChangeState {
 
     sql +=
         """
-        INSERT INTO @QueueElementToProcess (ChangeIndex, NotificationIndex, RequestId, ElementId)
-        SELECT ChangeIndex, NotificationIndex, RequestId, ElementId FROM @QueueElement
+        INSERT INTO @QueueElementToProcess (ChangeIndex, MessageIndex, RequestId, ElementId)
+        SELECT ChangeIndex, MessageIndex, RequestId, ElementId FROM @QueueElement
         WHERE Guaranteed = 0;
         """;
 
@@ -354,7 +354,7 @@ public class ChangeState {
         )
         OUTPUT {changeIndex}, {i}, inserted.RequestId, inserted.ElementId INTO @QueueElementToProcess
         SELECT
-          (SELECT ElementId FROM @QueueElement WHERE ChangeIndex = {changeIndex} AND NotificationIndex = {i}),
+          (SELECT ElementId FROM @QueueElement WHERE ChangeIndex = {changeIndex} AND MessageIndex = {i}),
           :outgoingRequestQueueId{i},
           :entityModelId,
           @entityId{changeIndex},
@@ -366,7 +366,7 @@ public class ChangeState {
           :timestamp0,
           1,
           (DATEADD(millisecond, 10*1000, :timestamp0)), -- TODO: (DATEADD(millisecond, :minimumBackoff*1000, :now))
-          (SELECT RequestId FROM @OutboxElement WHERE ChangeIndex={changeIndex} AND NotificationIndex={i})
+          (SELECT RequestId FROM @OutboxElement WHERE ChangeIndex={changeIndex} AND MessageIndex={i})
         WHERE @entityId{changeIndex} NOT IN (
           SELECT EntityId
           FROM [{schema}].[OutboxDeadLetterQueue]

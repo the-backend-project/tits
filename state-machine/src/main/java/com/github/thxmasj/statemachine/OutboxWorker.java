@@ -21,20 +21,6 @@ public class OutboxWorker {
   private final Listener listener;
   private final ProcessBackedOff processBackedOff;
 
-  public enum ExchangeType {
-    OutgoingRequest(0),
-    IncomingResponse(1),
-    OutgoingResponse(6),
-    IncomingRequest(7);
-
-    public final int value;
-
-    ExchangeType(int value) {
-      this.value = value;
-    }
-
-  }
-
   public enum ForwardStatus {Ok, Dead, Empty, Backoff, Error, Deadlock}
 
   public OutboxWorker(

@@ -1,22 +1,16 @@
 package com.github.thxmasj.statemachine;
 
+import com.github.thxmasj.statemachine.Requirements.Requirement.OutgoingRequest;
+
 import static java.util.stream.Collectors.joining;
 import static java.util.stream.Collectors.toList;
 
-import com.github.thxmasj.statemachine.OutboxWorker.ExchangeType;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
 public class Requirements {
-
-  public enum Type {
-    All,
-    One,
-    Last,
-    LastIfExists
-  }
 
   private final List<Requirement> requirements;
 
@@ -42,7 +36,7 @@ public class Requirements {
 
   public final List<Requirement> on(Class<?> dataType) {
     return requirements.stream()
-        .filter(r -> r instanceof EventRequirement er && dataType.equals(er.dataType()))
+        .filter(r -> r instanceof Requirement er && dataType.equals(er.dataType()))
         .collect(toList());
   }
 
@@ -51,13 +45,6 @@ public class Requirements {
   }
 
   private static  Requirements of(List<Requirement> reqs) {
-//    Set tmp = new HashSet<>();
-//    for (var requirement : reqs) {
-//      if (!(requirement instanceof EntityRequirement || requirement instanceof EntityIfExistsRequirement)
-//          && !tmp.addAll(requirement.eventTypes())) {
-//        throw new IllegalArgumentException("Only one requirement per event type allowed");
-//      }
-//    }
     return new Requirements(reqs);
   }
 
@@ -71,82 +58,50 @@ public class Requirements {
     return new Requirements(List.of());
   }
 
-  public static  EventRequirement one(EventType... eligibleEventTypes) {
-    return new EventRequirement(Arrays.asList(eligibleEventTypes), Type.One);
+  public static Requirement one(EventType... eligibleEventTypes) {
+    return new Requirement(Arrays.asList(eligibleEventTypes), Requirement.Type.One);
   }
 
-  public static  EventRequirement one(
-      NotificationRequirement notification,
-      EventType... eligibleEventTypes
-  ) {
-    return new EventRequirement(Arrays.asList(eligibleEventTypes), Type.One, notification);
+  public static Requirement all(EventType... eventTypes) {
+    return new Requirement(Arrays.asList(eventTypes), Requirement.Type.All);
   }
 
-  public static  EventRequirement all(EventType... eventTypes) {
-    return new EventRequirement(Arrays.asList(eventTypes), Type.All);
+  public static Requirement last(EventType eventType) {
+    return new Requirement(List.of(eventType), Requirement.Type.Last);
   }
 
-  public static  EventRequirement last(EventType eventType) {
-    return new EventRequirement(List.of(eventType), Type.Last);
+  public static Requirement last() {
+    return new Requirement(List.of(), Requirement.Type.Last);
   }
 
-  public static  EventRequirement last() {
-    return new EventRequirement(List.of(), Type.Last);
+  public static Requirement last(Class<?> dataType) {
+    return new Requirement(List.of(), Requirement.Type.Last, dataType, null);
   }
 
-  public static  EventRequirement last(Class<?> dataType) {
-    return new EventRequirement(List.of(), Type.Last, dataType, null);
+  public static Requirement lastIfExists(EventType eventType) {
+    return new Requirement(List.of(eventType), Requirement.Type.LastIfExists);
   }
 
-  public static  EventRequirement last(
-      NotificationRequirement notification,
-      EventType eventType
-  ) {
-    return new EventRequirement(List.of(eventType), Type.Last, notification);
+  public static Requirement outgoingRequest(OutboxQueue queue, EventType eventType, Class<?> dataType) {
+    return new Requirement(List.of(eventType), Requirement.Type.Last, new OutgoingRequest(queue, dataType));
   }
 
-  public static  EventRequirement lastIfExists(EventType eventType) {
-    return new EventRequirement(List.of(eventType), Type.LastIfExists);
-  }
-
-  public static  EventRequirement lastIfExists(
-      NotificationRequirement notification,
-      EventType eventType
-  ) {
-    return new EventRequirement(List.of(eventType), Type.LastIfExists, notification);
-  }
-
-  public static  EventRequirement outgoingRequest(OutboxQueue queue, EventType eventType, Class<?> dataType) {
-    return last(notifications(queue, ExchangeType.OutgoingRequest, dataType), eventType);
-  }
-
-  private static <T> NotificationRequirement notifications(OutboxQueue queue, ExchangeType exchangeType, Class<T> dataType) {
-    return new NotificationRequirement(queue, exchangeType, dataType);
-  }
-
-  public interface Requirement {
-
-    Type type();
-
-    List<EventType> eventTypes();
-
-  }
-
-  public record NotificationRequirement(OutboxQueue queue, ExchangeType exchangeType, Class<?> dataType) {}
-
-  public record EventRequirement(
+  public record Requirement(
       List<EventType> eventTypes,
       Type type,
       Class<?> dataType,
-      NotificationRequirement notification
-  ) implements Requirement {
+      OutgoingRequest outgoingRequest
+  ) {
 
-    public EventRequirement(List<EventType> eventTypes, Type type) {
+    public enum Type {All, One, Last, LastIfExists}
+    public record OutgoingRequest(OutboxQueue queue, Class<?> dataType) {}
+
+    public Requirement(List<EventType> eventTypes, Type type) {
       this(Collections.unmodifiableList(eventTypes), type, null, null);
     }
 
-    public EventRequirement(List<EventType> eventTypes, Type type, NotificationRequirement notification) {
-      this(Collections.unmodifiableList(eventTypes), type, null, notification);
+    public Requirement(List<EventType> eventTypes, Type type, OutgoingRequest outgoingRequest) {
+      this(Collections.unmodifiableList(eventTypes), type, null, outgoingRequest);
     }
 
     @Override
@@ -156,7 +111,7 @@ public class Requirements {
 
     @Override
     public boolean equals(Object o) {
-      if (o instanceof EventRequirement other) {
+      if (o instanceof Requirement other) {
         if (!eventTypes().equals(other.eventTypes()))
           return false;
         return type().equals(other.type());

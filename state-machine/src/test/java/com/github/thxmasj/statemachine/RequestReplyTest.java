@@ -84,7 +84,7 @@ public class RequestReplyTest {
     };
   }
 
-  static class LampNotification implements OutgoingRequestCreator<String> {
+  static class LampRequest implements OutgoingRequestCreator<String> {
 
     @Override
     public Mono<HttpRequestMessage> create(String data, EntityId entityId, String correlationId, Input input) {
@@ -118,7 +118,7 @@ public class RequestReplyTest {
             from(On).to(Off).onEvent(SwitchOff).build(),
             from(Off).to(On).onEvent(Toggle)
                 .response((_, _, _, _, _) -> Mono.just(new HttpResponseMessage(200, "OK", "Light is on!")))
-                .notify(request(new LampNotification()).to(DeviceListener).guaranteed()),
+                .notify(request(new LampRequest()).to(DeviceListener).guaranteed()),
             from(Off).to(On).onEvent(SwitchOn).build()
         );
       }

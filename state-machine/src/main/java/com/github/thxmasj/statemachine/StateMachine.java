@@ -20,7 +20,8 @@ import static java.util.stream.Collectors.toMap;
 import com.github.thxmasj.statemachine.EventTrigger.EntitySelector;
 import com.github.thxmasj.statemachine.IncomingRequestValidator.Context;
 import com.github.thxmasj.statemachine.IncomingResponseValidator.Result;
-import com.github.thxmasj.statemachine.Notification.OutgoingResponse;
+import com.github.thxmasj.statemachine.message.Message;
+import com.github.thxmasj.statemachine.message.Message.OutgoingResponse;
 import com.github.thxmasj.statemachine.OutboxWorker.ForwardStatus;
 import com.github.thxmasj.statemachine.RequiredData.RequirementsNotFulfilled;
 import com.github.thxmasj.statemachine.Requirements.MissingRequirement;
@@ -131,8 +132,8 @@ public class StateMachine {
                     .map(TransitionModel::reverse)
                     .flatMap(t -> t.outgoingRequests().stream())
             )
-            .filter(r -> r.notificationCreator() != null)
-            .map(OutgoingRequestModel::notificationCreator)
+            .filter(r -> r.creator() != null)
+            .map(OutgoingRequestModel::creator)
             .distinct()
             .collect(toMap(OutgoingRequestCreator::id, nc -> nc));
     this.requestMapper = requestMapper;
@@ -314,14 +315,14 @@ public class StateMachine {
       String reason
   ) {
     return invalidRequest(
-        incomingRequestNotification(eventLog.lastEventNumber() + 1, incomingRequest, messageId),
+        incomingRequest(eventLog.lastEventNumber() + 1, incomingRequest, messageId),
         eventLog,
         reason
     );
   }
 
   private Mono<ProcessResult> invalidRequest(
-      Notification.IncomingRequest incomingRequest,
+      Message.IncomingRequest incomingRequest,
       EventLog eventLog,
       String reason
   ) {
@@ -341,7 +342,7 @@ public class StateMachine {
   ) {
     return processEventForInvalidOrRejectedRequest(
         BuiltinEventTypes.RejectedRequest,
-        incomingRequestNotification(eventLog.lastEventNumber() + 1, incomingRequest, messageId),
+        incomingRequest(eventLog.lastEventNumber() + 1, incomingRequest, messageId),
         eventLog,
         reason
     );
@@ -349,7 +350,7 @@ public class StateMachine {
 
   private Mono<ProcessResult> processEventForInvalidOrRejectedRequest(
       EventType eventType,
-      Notification.IncomingRequest incomingRequest,
+      Message.IncomingRequest incomingRequest,
       EventLog eventLog,
       String reason
   ) {
@@ -416,7 +417,7 @@ public class StateMachine {
                 "Client not allowed"
             );
           }
-          Notification requestNotification = incomingRequestNotification(nextEventNumber, incomingRequest, messageId);
+          Message requestMessage = incomingRequest(nextEventNumber, incomingRequest, messageId);
           var stateAfterScheduledEvents = currentState.forward(scheduledEvents.stream().map(Event::type).toList());
           if (stateAfterScheduledEvents == null) {
             // TODO: Handle better. InconsistentState?
@@ -444,7 +445,7 @@ public class StateMachine {
                   eventLog,
                   scheduledEvents,
                   inputEvent,
-                  requestNotification,
+                  requestMessage,
                   eventLog.events().isEmpty() && !eventTrigger.entitySelectors().isEmpty() && eventTrigger.entitySelectors().getFirst().secondaryId() != null ?
                       List.of(eventTrigger.entitySelectors().getFirst().secondaryId()) :
                       List.of()
@@ -469,7 +470,7 @@ public class StateMachine {
               emptyEventLog(eventTrigger.entityModel(), entityId),
               List.of(),
               new InputEvent<>(BuiltinEventTypes.UnknownEntity, null, null),
-              incomingRequestNotification(1, incomingRequest, messageId),
+              incomingRequest(1, incomingRequest, messageId),
               List.of()
           );
         })
@@ -483,12 +484,12 @@ public class StateMachine {
         );
   }
 
-  private Notification.IncomingRequest incomingRequestNotification(
+  private Message.IncomingRequest incomingRequest(
       int eventNumber,
       IncomingRequest incomingRequest,
       String messageId
   ) {
-    return new Notification.IncomingRequest(
+    return new Message.IncomingRequest(
         incomingRequest.id(),
         eventNumber,
         new HttpRequestMessage(
@@ -497,20 +498,6 @@ public class StateMachine {
             stripAuthorizationHeader(incomingRequest.requestMessage().headers()),
             incomingRequest.requestMessage().body()
         ),
-        messageId,
-        incomingRequest.clientId(),
-        incomingRequest.digest()
-    );
-  }
-
-  private Notification.IncomingRequest incomingRequestNotification(
-      Notification.IncomingRequest incomingRequest,
-      String messageId
-  ) {
-    return new Notification.IncomingRequest(
-        incomingRequest.id(),
-        incomingRequest.eventNumber(),
-        incomingRequest.message(),
         messageId,
         incomingRequest.clientId(),
         incomingRequest.digest()
@@ -684,7 +671,7 @@ public class StateMachine {
   }
 
   private record IncomingResponseStatus(
-      Notification.IncomingResponse response,
+      Message.IncomingResponse response,
       ProcessResult processResult,
       IncomingResponseValidator.Result validationResult
   ) {}
@@ -751,8 +738,8 @@ public class StateMachine {
                 "Cannot roll back to event number " + rollbackToEventNumber + " as that would roll back more than one request"
             );
           }
-          Notification incomingNotification = incomingRequestNotification(lastEventNumber + 1, incomingRequest, messageId);
-          return processEvents(eventLog, List.of(), new InputEvent<>(incomingRequest.eventTrigger().eventType(), rollbackToEventNumber + 1, null), incomingNotification, List.of())
+          Message incomingRequestMessage = incomingRequest(lastEventNumber + 1, incomingRequest, messageId);
+          return processEvents(eventLog, List.of(), new InputEvent<>(incomingRequest.eventTrigger().eventType(), rollbackToEventNumber + 1, null), incomingRequestMessage, List.of())
               .flatMap(result -> result.status() == Status.Rejected ?
                   rejectedRequest(
                       messageId,
@@ -775,7 +762,7 @@ public class StateMachine {
   private boolean isUnrepeatable(int attempt, ProcessResult.Status processStatus, boolean stateIsPendingChange) {
     // A rejected event might be repeatable if current state is pending change shortly.
     // Using 100 reattempts, then, as we delay for 100 ms to cover changes arriving within 10 seconds (which should
-    // cover synchronous notification exchanges). TODO: Use a backoff algorithm instead in that case
+    // cover synchronous outbox exchanges). TODO: Use a backoff algorithm instead in that case
     return
         !(processStatus == Status.Rejected && attempt < 100 && stateIsPendingChange) &&
         !(processStatus == Status.Raced && attempt < 3);
@@ -1008,7 +995,7 @@ public class StateMachine {
       EventLog eventLog,
       List<Event> scheduledEvents,
       InputEvent<I> inputEvent,
-      Notification incomingNotification,
+      Message inflightMessage,
       List<SecondaryId> idsForNewEntity
   ) {
     List<Event> effectiveEventLog = eventLog.effectiveEvents();
@@ -1049,8 +1036,8 @@ public class StateMachine {
                     eventLog.lastEventNumber() + scheduledEvents.size() + 1,
                     inputEvent.eventType(),
                     clock,
-                    incomingNotification instanceof Notification.IncomingRequest ir ? ir.messageId() : null,
-                    incomingNotification instanceof Notification.IncomingRequest ir ? ir.clientId() : null,
+                    inflightMessage instanceof Message.IncomingRequest ir ? ir.messageId() : null,
+                    inflightMessage instanceof Message.IncomingRequest ir ? ir.clientId() : null,
                     inputEvent.data()
                 )
             ), processingData
@@ -1061,8 +1048,8 @@ public class StateMachine {
                 eventLog.lastEventNumber() + scheduledEvents.size() + 1,
                 inputEvent.eventType(),
                 clock,
-                incomingNotification instanceof Notification.IncomingRequest ir ? ir.messageId() : null,
-                incomingNotification instanceof Notification.IncomingRequest ir ? ir.clientId() : null,
+                inflightMessage instanceof Message.IncomingRequest ir ? ir.messageId() : null,
+                inflightMessage instanceof Message.IncomingRequest ir ? ir.clientId() : null,
                 inputEvent.data()
             )
             ), null
@@ -1074,7 +1061,7 @@ public class StateMachine {
                   eventLog,
                   scheduledEvents,
                   f.alternative().apply(newTransitionWithData.data()),
-                  incomingNotification,
+                  inflightMessage,
                   idsForNewEntity
               );
             }
@@ -1216,12 +1203,12 @@ public class StateMachine {
                                         ),
                                         finalEventsToStore,
                                         effectiveEventLog,
-                                        incomingNotification,
+                                        inflightMessage,
                                         processResults,
                                         processedEvents
                                     )).collectList())
                             )
-                            .flatMap(outgoingNotifications -> correlationId().map(correlationId -> new ChangeResult(
+                            .flatMap(outgoingMessages -> correlationId().map(correlationId -> new ChangeResult(
                                 new ProcessResult(
                                     Status.Accepted,
                                     new Entity(
@@ -1246,11 +1233,11 @@ public class StateMachine {
                                         targetState,
                                         finalEventsToStore,
                                         join(secondaryIdsToAdd, idsForNewEntity),
-                                        incomingNotification instanceof Notification.IncomingRequest ir ? List.of(ir)
+                                        inflightMessage instanceof Message.IncomingRequest ir ? List.of(ir)
                                             : List.of(),
-                                        outgoingNotifications.getT2(),
-                                        outgoingNotifications.getT1(),
-                                        incomingNotification instanceof Notification.IncomingResponse ir ? List.of(ir)
+                                        outgoingMessages.getT2(),
+                                        outgoingMessages.getT1(),
+                                        inflightMessage instanceof Message.IncomingResponse ir ? List.of(ir)
                                             : List.of(),
                                         getDeadline(targetState.state()),
                                         correlationId
@@ -1313,10 +1300,10 @@ public class StateMachine {
       EventLog eventLog,
       List<Event> scheduledEvents,
       InputEvent<T> inputEvent,
-      Notification incomingNotification,
+      Message inflightMessage,
       List<SecondaryId> idsForNewEntity
   ) {
-    return calculateChange(eventLog, scheduledEvents, inputEvent, incomingNotification, idsForNewEntity)
+    return calculateChange(eventLog, scheduledEvents, inputEvent, inflightMessage, idsForNewEntity)
         .onErrorResume(t -> Mono.just(new ChangeResult(
                 new ProcessResult(
                     Status.Failed,
@@ -1355,10 +1342,10 @@ public class StateMachine {
                         e.data()
                 )).toList(),
                 change.newSecondaryIds().stream().map(SecondaryId::toString).toList(),
-                change.incomingRequests().stream().map(Notification.IncomingRequest::message).toList(),
-                change.outgoingResponses().stream().map(Notification.OutgoingResponse::message).toList(),
-                change.outgoingRequests().stream().map(Notification.OutgoingRequest::message).toList(),
-                change.incomingResponses().stream().map(Notification.IncomingResponse::message).toList()
+                change.incomingRequests().stream().map(Message.IncomingRequest::message).toList(),
+                change.outgoingResponses().stream().map(Message.OutgoingResponse::message).toList(),
+                change.outgoingRequests().stream().map(Message.OutgoingRequest::message).toList(),
+                change.incomingResponses().stream().map(Message.IncomingResponse::message).toList()
             )
         )
         .toList();
@@ -1408,7 +1395,7 @@ public class StateMachine {
                             changes.get(q.changeIndex()),
                             q.elementId(),
                             q.requestId(),
-                            changes.get(q.changeIndex()).outgoingRequests().get(q.notificationIndex()),
+                            changes.get(q.changeIndex()).outgoingRequests().get(q.messageIndex()),
                             correlationId
                         ).contextWrite(ctx).subscribe()
                     )
@@ -1428,7 +1415,7 @@ public class StateMachine {
       ChangeState.Change change,
       byte[] queueElementId,
       UUID requestId,
-      Notification.OutgoingRequest outgoingRequest,
+      Message.OutgoingRequest outgoingRequest,
       String correlationId
   ) {
     var queueElement = new OutboxElement(
@@ -1454,7 +1441,7 @@ public class StateMachine {
     return doForward(queueElement, 0, null).contextWrite(Correlation.contextOf(queueElement.correlationId()));
   }
 
-  private record ResponseValidationResult(Result validationResult, Notification.IncomingResponse response) {}
+  private record ResponseValidationResult(Result validationResult, Message.IncomingResponse response) {}
 
   private Mono<ForwardStatus> doForward(OutboxElement queueElement, int maxRetryAttempts, Duration retryInterval) {
     HttpRequestMessage requestMessage;
@@ -1483,7 +1470,7 @@ public class StateMachine {
           ).responseValidator();
           return clients.apply(queueElement.queue()).exchange(requestMessage)
               .flatMap(responseMessage -> {
-                var responseNotification = responseNotification(queueElement, responseMessage);
+                var responseMessageOnQueue = responseMessageOnQueue(queueElement, responseMessage);
                 return validateResponse(
                     requestMessage,
                     responseMessage,
@@ -1496,7 +1483,7 @@ public class StateMachine {
                         eventLog.effectiveEvents(),
                         List.of()
                     )
-                ).map(output -> new ResponseValidationResult(output, responseNotification));
+                ).map(output -> new ResponseValidationResult(output, responseMessageOnQueue));
               })
               .flatMap(validationOutput -> validationOutput.validationResult().status() == Result.Status.TransientError ?
                   Mono.error(new TransientError(validationOutput)) :
@@ -1581,12 +1568,12 @@ public class StateMachine {
             ofNullable(transitionForEvent.reverse()).stream()
                 .flatMap(reverseTransition -> reverseTransition.outgoingRequests().stream())
         )
-        .filter(notificationSpecification -> {
-              if (!notificationSpecification.queue().equals(queue))
+        .filter(model -> {
+              if (!model.queue().equals(queue))
                 return false;
-              OutgoingRequestCreator<?> c = notificationSpecification.notificationCreator();
+              OutgoingRequestCreator<?> c = model.creator();
               if (c == null)
-                c = beanRegistry.getBean(notificationSpecification.notificationCreatorType());
+                c = beanRegistry.getBean(model.creatorType());
               return c.id().equals(requestModelId);
             }
         )
@@ -1607,8 +1594,8 @@ public class StateMachine {
     }
   }
 
-  private Notification.IncomingResponse responseNotification(OutboxElement queueElement, HttpResponseMessage responseMessage) {
-    return new Notification.IncomingResponse(
+  private Message.IncomingResponse responseMessageOnQueue(OutboxElement queueElement, HttpResponseMessage responseMessage) {
+    return new Message.IncomingResponse(
         // Synchronous response will always trigger an event following directly the request event
         queueElement.eventNumber() + 1,
         responseMessage,
@@ -1653,7 +1640,7 @@ public class StateMachine {
     listener.forwardingDead(e.requestId(), e.entityId(), e.queue().name(), e.enqueuedAt(), e.attempt(), e.eventNumber(), e.correlationId(), reason);
   }
 
-  private <I, O> Flux<Notification.OutgoingRequest> outgoingRequests(
+  private <I, O> Flux<Message.OutgoingRequest> outgoingRequests(
       TransitionWithData<I, O> transition,
       Entity entity,
       List<Event> newEvents,
@@ -1663,7 +1650,7 @@ public class StateMachine {
       List<Event> processedEvents
   ) {
     return Flux.fromIterable(transition.transition().model().outgoingRequests())
-        .flatMap(outgoingRequestModel -> createOutgoingRequestNotification(
+        .flatMap(outgoingRequestModel -> createOutgoingRequest(
             transition,
             entity,
             transition.transition().event(),
@@ -1676,24 +1663,24 @@ public class StateMachine {
         ));
   }
 
-  private <I, O> Flux<Notification.OutgoingResponse> outgoingResponses(
+  private <I, O> Flux<Message.OutgoingResponse> outgoingResponses(
       TransitionWithData<I, O> transition,
       Entity entity,
       List<Event> newEvents,
       List<Event> eventLog,
-      Notification incomingNotification,
+      Message inflightMessage,
       List<ProcessResult> processResults,
       List<Event> processedEvents
   ) {
     return Flux.fromIterable(transition.transition().model().outgoingResponses())
-        .flatMap(outgoingResponseModel -> createOutgoingResponseNotification(
+        .flatMap(outgoingResponseModel -> createOutgoingResponse(
             transition,
             entity,
             transition.transition().event(),
             newEvents,
             eventLog,
             outgoingResponseModel,
-            incomingNotification,
+            inflightMessage,
             processResults,
             processedEvents
         ));
@@ -1719,66 +1706,65 @@ public class StateMachine {
     return secondaryIdFlux;
   }
 
-  private <I, O, U> Mono<Notification.OutgoingRequest> createOutgoingRequestNotification(
+  private <I, O, U> Mono<Message.OutgoingRequest> createOutgoingRequest(
       TransitionWithData<I, O> transition,
       Entity entity,
       Event currentEvent,
       List<Event> newEvents,
       List<Event> eventLog,
-      OutgoingRequestModel<O, U> notificationModel,
+      OutgoingRequestModel<O, U> model,
       String correlationId,
       List<ProcessResult> processResults,
       List<Event> processedEvents
   ) {
-    OutgoingRequestCreator<U> creator = notificationModel.notificationCreatorType() != null ?
-        beanRegistry.getBean(notificationModel.notificationCreatorType()) :
-        notificationModel.notificationCreator();
+    OutgoingRequestCreator<U> creator = model.creatorType() != null ?
+        beanRegistry.getBean(model.creatorType()) :
+        model.creator();
     var filteredEvents = new RequiredData(
         entity,
         join(eventLog, newEvents), // Need for timestamp
         processResults,
         processedEvents,
         Requirements.none(),
-        notificationModel.notificationCreatorType() != null ? notificationModel.notificationCreatorType() : notificationModel.notificationCreator().getClass(),
-        //incomingRequestByEvent,
+        model.creatorType() != null ? model.creatorType() : model.creator().getClass(),
         null//outgoingRequestByEvent
     );
     Entity parentEntity = filteredEvents.nestedEntities().stream()
         .filter(nestedEntity -> nestedEntity.model().equals(entity.model.parentEntity()))
         .findFirst().orElse(null);
     return creator.create(
-            notificationModel.dataAdapter().apply(transition.data()),
+            model.dataAdapter().apply(transition.data()),
             entity.id(),
             correlationId,
             filteredEvents
         )
-        .map(message -> new Notification.OutgoingRequest(
+        .map(message -> new Message.OutgoingRequest(
             UUID.randomUUID(),
             currentEvent.eventNumber(),
             message,
-            notificationModel.queue(),
+            model.queue(),
             creator.id(),
-            notificationModel.guaranteed(),
-            notificationModel.maxRetryAttempts(),
-            notificationModel.retryInterval(),
+            model.guaranteed(),
+            model.maxRetryAttempts(),
+            model.retryInterval(),
             parentEntity != null ? parentEntity.id() : null
         ));
   }
 
-  private <I, O, U> Mono<Notification.OutgoingResponse> createOutgoingResponseNotification(
+  private <I, O, U> Mono<Message.OutgoingResponse> createOutgoingResponse(
       TransitionWithData<I, O> transition,
       Entity entity,
       Event currentEvent,
       List<Event> newEvents,
       List<Event> eventLog,
-      OutgoingResponseModel<O, U> notificationModel,
-      Notification incomingNotification,
+      OutgoingResponseModel<O, U> model,
+      Message inflightMessage,
       List<ProcessResult> processResults,
       List<Event> processedEvents
   ) {
-    OutgoingResponseCreator<U> creator = notificationModel.creatorType() != null ?
-        beanRegistry.getBean(notificationModel.creatorType()) :
-        notificationModel.creator();
+    OutgoingResponseCreator<U> creator = model.creatorType() != null ?
+        beanRegistry.getBean(model.creatorType()) :
+        model.creator();
     var filteredEvents = new RequiredData(
         entity,
         join(eventLog, newEvents), // For timestamp
@@ -1786,7 +1772,6 @@ public class StateMachine {
         processedEvents,
         Requirements.none(),//creator.requirements(),
         creator.getClass(),
-        //incomingRequestByEvent,
         null//outgoingRequestByEvent
     );
     return Mono.deferContextual(ctx -> !hasRequestId(ctx) ?
@@ -1794,13 +1779,13 @@ public class StateMachine {
             .doOnNext(System.out::println)
             .then(Mono.empty()) :
         creator.create(
-            notificationModel.dataAdapter().apply(transition.data()),
-            incomingNotification instanceof Notification.IncomingRequest rq ? rq : null,
+            model.dataAdapter().apply(transition.data()),
+            inflightMessage instanceof Message.IncomingRequest rq ? rq : null,
             entity.id(),
             correlationId(ctx),
             filteredEvents
         )
-        .map(message -> new Notification.OutgoingResponse(
+        .map(message -> new Message.OutgoingResponse(
                 currentEvent.eventNumber(),
                 message,
                 requestId(ctx)
@@ -1822,7 +1807,7 @@ public class StateMachine {
     EntityModel entityModel = changes.getLast().entityModel();
     TraversableState currentState = changes.getLast().sourceState();
     List<Event> newEvents = changes.getLast().newEvents();
-    List<Notification.IncomingRequest> incomingRequests = changes.getLast().incomingRequests();
+    List<Message.IncomingRequest> incomingRequests = changes.getLast().incomingRequests();
     var event0 = newEvents.getFirst();
     Supplier<Mono<ProcessResult>> handleRaceOrError = () -> {
       if (e instanceof ChangeRaced cr) {
@@ -1834,7 +1819,7 @@ public class StateMachine {
       }
     };
     if (e instanceof DuplicateMessage) {
-      Notification.IncomingRequest incomingRequest = incomingRequests.getFirst();
+      Message.IncomingRequest incomingRequest = incomingRequests.getFirst();
       return outgoingResponseByRequest.execute(incomingRequest.messageId(), incomingRequest.clientId())
           .single()
           .flatMap(originalRequest -> (Arrays.equals(originalRequest.requestDigest(), incomingRequest.digest())) ?
@@ -1847,7 +1832,7 @@ public class StateMachine {
               )
               :
               invalidRequest(
-                  incomingRequestNotification(incomingRequest, "C" + incomingRequest.messageId()),
+                  incomingRequest.withMessageId("C" + incomingRequest.messageId()),
                   eventLog,
                   "Message identifier '" + incomingRequest.messageId() + "' not unique"
               ))
