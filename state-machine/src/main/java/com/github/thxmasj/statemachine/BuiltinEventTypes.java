@@ -1,42 +1,40 @@
 package com.github.thxmasj.statemachine;
 
+import java.util.List;
 import java.util.UUID;
 
-public enum BuiltinEventTypes implements EventType {
+import static com.github.thxmasj.statemachine.EventType.of;
 
-  InvalidRequest(UUID.fromString("23d52456-e8b7-4409-aa9d-0998ef903471")), // Incoming request is not according to incoming requests model.
-  RejectedRequest(UUID.fromString("21318498-78a3-4f81-97dc-07bb1467c455")), // Incoming request is valid but not allowed for the entity's current state.
-  FailedRequest(UUID.fromString("de1feadd-8023-4581-acab-d629d174e523")), // Incoming request failed miserably (error not handled, bug).
-  RequestUndelivered(UUID.fromString("98ef4100-34e8-426b-9fb8-539626821537")), // Outgoing request not delivered (f.ex. connection failure)
-  InvalidResponse(UUID.fromString("450679ab-bc60-46cb-bb97-d171c34c2750")),
-  Rollback(UUID.fromString("58aa1e1f-e75d-40ba-9e87-ca7fc42e491d")) {
-    @Override
-    public boolean isRollback() {
-      return true;
-    }
-  },
-  InconsistentState(UUID.fromString("7d4792e3-35b4-471f-9619-cac7051fa45c")),
-  UnknownEntity(UUID.fromString("2ffed3fc-3efd-404c-9b11-f5a99fb47a5f")) {
-    @Override
-    public boolean isReadOnly() {
-      return true;
-    }
-  },
-  Status(UUID.fromString("324dc75d-e83d-4b9b-8ad9-b3521184def6")) {
-    @Override
-    public boolean isReadOnly() {
-      return true;
-    }
-  }
-  ;
+public interface BuiltinEventTypes {
 
-  private final UUID id;
+  EventType<String, String>
+    // Incoming request is not according to incoming requests model.
+    InvalidRequest = of("InvalidRequest", UUID.fromString("23d52456-e8b7-4409-aa9d-0998ef903471"), String.class),
+    // Incoming request is valid but not allowed for the entity's current state.
+    RejectedRequest = of("RejectedRequest", UUID.fromString("21318498-78a3-4f81-97dc-07bb1467c455"), String.class);
+    // Incoming request failed miserably (error not handled, bug).
+  EventType<Long, Long>
+    Rollback = new EventType<>("Rollback", UUID.fromString("58aa1e1f-e75d-40ba-9e87-ca7fc42e491d"), Long.class, Long.class, true, false, false);
+  EventType<Void, Void>
+    FailedRequest = of("FailedRequest", UUID.fromString("de1feadd-8023-4581-acab-d629d174e523")),
+    // Outgoing request not delivered (f.ex. connection failure)
+    RequestUndelivered = of("RequestUndelivered", UUID.fromString("98ef4100-34e8-426b-9fb8-539626821537")),
+    InvalidResponse = of("InvalidResponse", UUID.fromString("450679ab-bc60-46cb-bb97-d171c34c2750")),
+    InconsistentState = of("InconsistentState", UUID.fromString("7d4792e3-35b4-471f-9619-cac7051fa45c")),
+    UnknownEntity = new EventType<>("UnknownEntity", UUID.fromString("2ffed3fc-3efd-404c-9b11-f5a99fb47a5f"), Void.class, Void.class, false, false, true),
+    Status = new EventType<>("Status", UUID.fromString("324dc75d-e83d-4b9b-8ad9-b3521184def6"), Void.class, Void.class, false, false, true)
+    ;
 
-  BuiltinEventTypes(UUID id) {this.id = id;}
-
-  @Override
-  public UUID id() {
-    return id;
-  }
+  List<EventType<?, ?>> ALL = List.of(
+      InvalidRequest,
+      RejectedRequest,
+      FailedRequest,
+      RequestUndelivered,
+      InvalidResponse,
+      Rollback,
+      InconsistentState,
+      UnknownEntity,
+      Status
+  );
 
 }

@@ -4,11 +4,11 @@ import static com.github.thxmasj.statemachine.Requirements.last;
 import static com.github.thxmasj.statemachine.Requirements.lastIfExists;
 import static com.github.thxmasj.statemachine.Requirements.one;
 import static com.github.thxmasj.statemachine.Requirements.outgoingRequest;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.Cancel;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.PaymentRequest;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.RefundApproved;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.RefundRequest;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.RollbackRequest;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Cancel;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.PaymentRequest;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.RefundApproved;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.RefundRequest;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.RollbackRequest;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Queues.Acquirer;
 
 import com.github.thxmasj.statemachine.DataCreator;
@@ -21,7 +21,7 @@ import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Refund
 import com.github.thxmasj.statemachine.templates.cardpayment.RefundReversalDataCreator.RefundReversalData;
 import reactor.core.publisher.Mono;
 
-public class RefundReversalDataCreator implements DataCreator<Void, RefundReversalData> {
+public class RefundReversalDataCreator implements DataCreator<Long, RefundReversalData> {
 
   public record RefundReversalData(
       HttpRequestMessage originalRequest,
@@ -46,7 +46,7 @@ public class RefundReversalDataCreator implements DataCreator<Void, RefundRevers
   }
 
   @Override
-  public Mono<RefundReversalData> execute(InputEvent<Void> inputEvent, Input input) {
+  public Mono<RefundReversalData> execute(InputEvent<Long> inputEvent, Input input) {
     Authorisation paymentData = input.one(PaymentRequest).getUnmarshalledData(Authorisation.class);
     Refund refundData = input.last(RefundRequest).getUnmarshalledData(Refund.class);
     AcquirerResponse acquirerResponse = input.lastIfExists(RefundApproved)

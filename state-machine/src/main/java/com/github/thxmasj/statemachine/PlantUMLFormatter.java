@@ -87,7 +87,7 @@ public class PlantUMLFormatter {
     visited.add(state.state());
     StringBuilder s = new StringBuilder();
     for (var transition : state.forwardTransitions()) {
-      if (hideBuiltin && transition.eventType() instanceof BuiltinEventTypes) continue;
+      if (hideBuiltin && BuiltinEventTypes.ALL.contains(transition.eventType())) continue;
       var targetState = state.forward(transition.eventType());
       s.append(String.format(
           "%s --> %s: %s\n",

@@ -3,10 +3,8 @@ package com.github.thxmasj.statemachine.templates;
 import static com.github.thxmasj.statemachine.BuiltinEventTypes.Status;
 import static com.github.thxmasj.statemachine.EventTriggerBuilder.event;
 import static com.github.thxmasj.statemachine.IncomingRequestModel.validator;
-import static com.github.thxmasj.statemachine.TransitionModel.Builder.from;
+import static com.github.thxmasj.statemachine.TransitionModel.Builder.onEvent;
 import static com.github.thxmasj.statemachine.templates.Batching.EntityTypes.Item;
-import static com.github.thxmasj.statemachine.templates.Batching.Events.AddToBatch;
-import static com.github.thxmasj.statemachine.templates.Batching.Events.CreateItem;
 import static com.github.thxmasj.statemachine.templates.Batching.States.Begin;
 
 import com.github.thxmasj.statemachine.EntityModel;
@@ -46,7 +44,7 @@ public class Batching {
     @Override
     public List<TransitionModel<?, ?>> transitions() {
       return List.of(
-          from(Begin).to(Begin).onEvent(CreateItem)
+          onEvent(CreateItem).from(Begin).to(Begin)
               .response("Item created", new Created())
               .trigger(_ -> event(AddToBatch).onEntity(Batch).create()));
     }
@@ -54,22 +52,12 @@ public class Batching {
 
   }
 
-  public enum Events implements EventType {
-    CreateItem(UUID.fromString("b6c4ed96-4cfc-4258-a222-3a51064b35f7")),
-    DeleteItem(UUID.fromString("485935f8-2f80-4228-8278-42e84e2d262d")),
-    AddToBatch(UUID.fromString("ef054730-344c-4d1b-98a9-5aa7204a2eab")),
-    DeleteFromBatch(UUID.fromString("8dc15503-2a4d-491b-b258-82f209d32825")),
+  static EventType<Void, Void>
+    CreateItem = EventType.of("CreateItem", UUID.fromString("b6c4ed96-4cfc-4258-a222-3a51064b35f7")),
+    DeleteItem = EventType.of("DeleteItem", UUID.fromString("485935f8-2f80-4228-8278-42e84e2d262d")),
+    AddToBatch = EventType.of("AddToBatch", UUID.fromString("ef054730-344c-4d1b-98a9-5aa7204a2eab")),
+    DeleteFromBatch = EventType.of("DeleteFromBatch", UUID.fromString("8dc15503-2a4d-491b-b258-82f209d32825"))
     ;
-
-    private final UUID id;
-
-    Events(UUID id) {this.id = id;}
-
-    @Override
-    public UUID id() {
-      return id;
-    }
-  }
 
   public enum States implements State {
     Begin

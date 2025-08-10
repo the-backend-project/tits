@@ -3,11 +3,11 @@ package com.github.thxmasj.statemachine.templates.cardpayment;
 import static com.github.thxmasj.statemachine.Requirements.lastIfExists;
 import static com.github.thxmasj.statemachine.Requirements.one;
 import static com.github.thxmasj.statemachine.Requirements.outgoingRequest;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.AuthorisationApproved;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.AuthorisationRequest;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.Cancel;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.PaymentRequest;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.RollbackRequest;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthorisationApproved;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthorisationRequest;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Cancel;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.PaymentRequest;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.RollbackRequest;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Queues.Acquirer;
 
 import com.github.thxmasj.statemachine.DataCreator;
@@ -19,7 +19,7 @@ import com.github.thxmasj.statemachine.templates.cardpayment.AuthorisationRevers
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Authorisation;
 import reactor.core.publisher.Mono;
 
-public class AuthorisationReversalDataCreator implements DataCreator<Void, AuthorisationReversalData> {
+public class AuthorisationReversalDataCreator implements DataCreator<Long, AuthorisationReversalData> {
 
   public record AuthorisationReversalData(
       HttpRequestMessage originalRequest,
@@ -44,7 +44,7 @@ public class AuthorisationReversalDataCreator implements DataCreator<Void, Autho
   }
 
   @Override
-  public Mono<AuthorisationReversalData> execute(InputEvent<Void> inputEvent, Input input) {
+  public Mono<AuthorisationReversalData> execute(InputEvent<Long> inputEvent, Input input) {
     Authorisation paymentData = input.one(PaymentRequest).getUnmarshalledData(Authorisation.class);
     AcquirerResponse acquirerResponse = input.lastIfExists(AuthorisationApproved)
         .map(e -> e.getUnmarshalledData(AcquirerResponse.class)).orElse(null);

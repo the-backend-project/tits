@@ -16,17 +16,17 @@ public interface Input {
   record OutgoingRequest<T>(HttpRequestMessage httpMessage, int eventNumber) {}
   record IncomingResponse(HttpResponseMessage httpMessage, int eventNumber) {}
 
-  <T> Mono<OutgoingRequest<T>> outgoingRequest(OutboxQueue queue, EventType eventType, Class<T> type);
+  <T> Mono<OutgoingRequest<T>> outgoingRequest(OutboxQueue queue, EventType<?, ?> eventType, Class<T> type);
 
-  List<Event> all(EventType... eventTypes);
+  List<Event> all(EventType<?, ?>... eventTypes);
 
-  Event one(EventType eventType);
+  Event one(EventType<?, ?> eventType);
 
-  Event one(EventType... eligibleEventTypes);
+  Event one(EventType<?, ?>... eligibleEventTypes);
 
-  Optional<Event> lastIfExists(EventType... eligibleEventTypes);
+  Optional<Event> lastIfExists(EventType<?, ?>... eligibleEventTypes);
 
-  Event last(EventType eventType);
+  Event last(EventType<?, ?> eventType);
 
   Event last();
 
@@ -42,7 +42,7 @@ public interface Input {
 
   ProcessResult processResult(EntityModel entityType, EntityId entityId);
 
-  Event processedEvent(EventType eventType);
+  Event processedEvent(EventType<?, ?> eventType);
 
   ZonedDateTime timestamp();
 

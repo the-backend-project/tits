@@ -12,10 +12,10 @@ public interface DataCreator<I, O> extends DataRequirer {
     return (inputEvent, _) -> Mono.just(inputEvent.data());
   }
 
-  static <T> DataCreator<Void, T> fromEvent(EventType eventType, Class<T> dataType) {
+  static <I, O> DataCreator<I, O> fromEvent(EventType<?, ?> eventType, Class<O> dataType) {
     return new DataCreator<>() {
       @Override
-      public Mono<T> execute(InputEvent<Void> inputEvent, Input input) {
+      public Mono<O> execute(InputEvent<I> inputEvent, Input input) {
         return Mono.just(input.one(eventType).getUnmarshalledData(dataType));
       }
 

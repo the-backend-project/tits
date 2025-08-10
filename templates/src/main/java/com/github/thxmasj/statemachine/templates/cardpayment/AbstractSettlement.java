@@ -3,7 +3,7 @@ package com.github.thxmasj.statemachine.templates.cardpayment;
 import static com.github.thxmasj.statemachine.EntitySelectorBuilder.model;
 import static com.github.thxmasj.statemachine.EventTriggerBuilder.event;
 import static com.github.thxmasj.statemachine.OutgoingRequestModel.Builder.request;
-import static com.github.thxmasj.statemachine.TransitionModel.Builder.from;
+import static com.github.thxmasj.statemachine.TransitionModel.Builder.onEvent;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Identifiers.AcquirerBatchNumber;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Identifiers.BatchNumber;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.Begin;
@@ -12,15 +12,15 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.Reconciled;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Queues.Acquirer;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Queues.Merchant;
-import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Type.CutOffRequest;
-import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Type.InBalance;
-import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Type.MerchantCredit;
-import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Type.MerchantCreditReversed;
-import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Type.MerchantDebit;
-import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Type.MerchantDebitReversed;
-import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Type.Open;
-import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Type.OutOfBalance;
-import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Type.Timeout;
+import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.CutOffRequest;
+import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.InBalance;
+import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.MerchantCredit;
+import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.MerchantCreditReversed;
+import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.MerchantDebit;
+import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.MerchantDebitReversed;
+import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Open;
+import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.OutOfBalance;
+import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Timeout;
 
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.IncomingResponseValidator;
@@ -28,11 +28,11 @@ import com.github.thxmasj.statemachine.OutboxQueue;
 import com.github.thxmasj.statemachine.State;
 import com.github.thxmasj.statemachine.TransitionModel;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;
-import com.github.thxmasj.statemachine.Tuples.Tuple3;
+import com.github.thxmasj.statemachine.Tuples.Tuple4;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames;
 import com.github.thxmasj.statemachine.message.http.Created;
 import com.github.thxmasj.statemachine.templates.cardpayment.AcquirerResponse.ReconciliationValues;
-import com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Type.CutOff;
+import com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.CutOff;
 import java.util.List;
 import java.util.UUID;
 
@@ -69,12 +69,12 @@ public abstract class AbstractSettlement implements EntityModel {
   @Override
   public List<TransitionModel<?, ?>> transitions() {
     return List.of(
-        from(Begin).toSelf().onEvent(Open).build(),
-        from(Begin).toSelf().onEvent(MerchantCredit).build(),
-        from(Begin).toSelf().onEvent(MerchantDebit).build(),
-        from(Begin).toSelf().onEvent(MerchantCreditReversed).build(),
-        from(Begin).toSelf().onEvent(MerchantDebitReversed).build(),
-        from(Begin).to(ProcessingSettlement).onEvent(CutOffRequest)
+        onEvent(Open).from(Begin).toSelf().build(),
+        onEvent(MerchantCredit).from(Begin).toSelf().build(),
+        onEvent(MerchantDebit).from(Begin).toSelf().build(),
+        onEvent(MerchantCreditReversed).from(Begin).toSelf().build(),
+        onEvent(MerchantDebitReversed).from(Begin).toSelf().build(),
+        onEvent(CutOffRequest).from(Begin).to(ProcessingSettlement)
             .response(new Created())
             .trigger(_ -> event(Open).onEntity(this)
                 .identifiedBy(model(BatchNumber).next().create())
@@ -82,19 +82,19 @@ public abstract class AbstractSettlement implements EntityModel {
             )
             .notify(request(reconciliation()).to(Acquirer).guaranteed().responseValidator(validateSettlementResponse())),
         // For previous batch to stay open for ongoing capture exchanges when cut-off is performed
-        from(ProcessingSettlement).toSelf().onEvent(MerchantCredit).build(),
-        from(ProcessingSettlement).toSelf().onEvent(MerchantDebit).build(),
-        from(ProcessingSettlement).toSelf().onEvent(MerchantCreditReversed).build(),
-        from(ProcessingSettlement).toSelf().onEvent(MerchantDebitReversed).build(),
-        from(ProcessingSettlement).to(Reconciled).onEvent(InBalance)
+        onEvent(MerchantCredit).from(ProcessingSettlement).toSelf().build(),
+        onEvent(MerchantDebit).from(ProcessingSettlement).toSelf().build(),
+        onEvent(MerchantCreditReversed).from(ProcessingSettlement).toSelf().build(),
+        onEvent(MerchantDebitReversed).from(ProcessingSettlement).toSelf().build(),
+        onEvent(InBalance).from(ProcessingSettlement).to(Reconciled)
             .withData(new ReconciliationValuesDataCreator())
-            .filter(d -> d.t2().equals(d.t3())).orElse(OutOfBalance, Tuple3::t3)
+            .filter(d -> d.t2().equals(d.t3())).orElse(OutOfBalance, Tuple4::t4)
             .notify(request(
-                (Tuple3<CutOff, ReconciliationValues, ReconciliationValues> d) -> new Tuple2<>(d.t1(), d.t2()),
+                (Tuple4<CutOff, ReconciliationValues, ReconciliationValues, AcquirerResponse> d) -> new Tuple2<>(d.t1(), d.t2()),
                 approvedCutOff()
             ).to(Merchant).guaranteed()),
-        from(ProcessingSettlement).to(Error).onEvent(Timeout).build(),
-        from(ProcessingSettlement).to(Error).onEvent(OutOfBalance).build()
+        onEvent(Timeout).from(ProcessingSettlement).to(Error).build(),
+        onEvent(OutOfBalance).from(ProcessingSettlement).to(Error).build()
     );
   }
 

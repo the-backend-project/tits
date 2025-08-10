@@ -229,8 +229,8 @@ public class StateMachine {
       String correlationId = requireNonNullElse(requestModel.correlationId(), requireNonNullElse(message.headerValue("X-Correlation-Id"), "processRequest"));
       Sinks.One<HttpResponseMessage> responseSink = Sinks.one();
       return (switch (incomingRequest.eventTrigger().eventType()) {
-        case EventType type when type.isCancel() || type.isRollback() -> doProcessRollback(1, incomingRequest);
-        case EventType _ -> doProcessIncomingRequest(1, incomingRequest, validator);
+        case EventType<?, ?> type when type.isCancel() || type.isRollback() -> doProcessRollback(1, incomingRequest);
+        case EventType<?, ?> _ -> doProcessIncomingRequest(1, incomingRequest, validator);
       })
           .flatMap(processResult -> processResult.responseMessage() != null ?
               Mono.just(processResult) :
@@ -261,10 +261,11 @@ public class StateMachine {
             // The state has already been resolved by another resolver or incoming request
             return Mono.just(ResolverStatus.Ok);
           }
-          var currentState = begin(deadline.entityModel()).forward(eventLog.events().stream().map(Event::type).toList());
+          var currentState = begin(deadline.entityModel())
+              .forward(eventLog.events().stream().map(Event::type).toList());
           if (currentState == null)
             return Mono.error(new RuntimeException("Invalid event log: " + eventLog.events().stream().map(Event::typeName).collect(joining(","))));
-          EventType eventType = currentState.state().timeout().get().eventType();
+          EventType<?, ?> eventType = currentState.state().timeout().get().eventType();
           return processEvents(
               eventLog,
               List.of(),
@@ -305,19 +306,6 @@ public class StateMachine {
   }
 
   private Mono<ProcessResult> invalidRequest(
-      String messageId,
-      IncomingRequest incomingRequest,
-      EventLog eventLog,
-      String reason
-  ) {
-    return invalidRequest(
-        incomingRequest(eventLog.lastEventNumber() + 1, incomingRequest, messageId),
-        eventLog,
-        reason
-    );
-  }
-
-  private Mono<ProcessResult> invalidRequest(
       Message.IncomingRequest incomingRequest,
       EventLog eventLog,
       String reason
@@ -345,7 +333,7 @@ public class StateMachine {
   }
 
   private Mono<ProcessResult> processEventForInvalidOrRejectedRequest(
-      EventType eventType,
+      EventType<?, ?> eventType,
       Message.IncomingRequest incomingRequest,
       EventLog eventLog,
       String reason
@@ -399,7 +387,6 @@ public class StateMachine {
     )
         .flatMap(eventLog -> {
           EntityId entityId = eventLog.entityId();
-          List<Event> events = eventLog.events();
           var currentState = begin(eventTrigger.entityModel()).forward(eventLog.effectiveEvents().stream().map(Event::type).toList());
           List<Event> scheduledEvents = scheduledEvents(eventTrigger.entityModel(), eventLog);
           int nextEventNumber = eventLog.lastEventNumber() + scheduledEvents.size() + 1;
@@ -514,8 +501,7 @@ public class StateMachine {
                 inboxEntry.responseMessage()
             ) :
             invalidRequest(
-                messageId,
-                incomingRequest,
+                incomingRequest(eventLog.lastEventNumber() + 1, incomingRequest, messageId),
                 eventLog,
                 "Message identifier not unique"
             )
@@ -536,7 +522,7 @@ public class StateMachine {
       HttpRequestMessage requestMessage,
       IncomingRequestValidator<T> validator,
       int currentEventNumber,
-      EventType validEventType,
+      EventType<?, ?> validEventType,
       List<Event> scheduledEvents
   ) {
     RequiredData requiredData = requiredData(
@@ -582,10 +568,10 @@ public class StateMachine {
 
   private static class IncomingRequestContext<DATA_TYPE> implements Context<DATA_TYPE> {
 
-    private final EventType validRequestEventType;
+    private final EventType<?, ?> validRequestEventType;
 
     private IncomingRequestContext(
-        EventType validRequestEventType
+        EventType<?, ?> validRequestEventType
     ) {
       this.validRequestEventType = validRequestEventType;
     }
@@ -596,12 +582,12 @@ public class StateMachine {
     }
 
     @Override
-    public InputEvent<DATA_TYPE> invalidRequest(EventType eventType, DATA_TYPE data, String errorMessage) {
+    public InputEvent<DATA_TYPE> invalidRequest(EventType<?, ?> eventType, DATA_TYPE data, String errorMessage) {
       return new InputEvent<>(eventType, data, errorMessage);
     }
 
     @Override
-    public InputEvent<DATA_TYPE> invalidRequest(EventType eventType, DATA_TYPE data) {
+    public InputEvent<DATA_TYPE> invalidRequest(EventType<?, ?> eventType, DATA_TYPE data) {
       return new InputEvent<>(eventType, data, null);
     }
 
@@ -625,7 +611,7 @@ public class StateMachine {
     }
 
     @Override
-    public InputEvent<DATA_TYPE> validResponse(EventType eventType, DATA_TYPE data) {
+    public InputEvent<DATA_TYPE> validResponse(EventType<?, ?> eventType, DATA_TYPE data) {
       return new InputEvent<>(eventType, data, null);
     }
 
@@ -838,7 +824,7 @@ public class StateMachine {
       Entity rootEntity,
       List<EntitySelector> rawSelectors,
       EntityModel entityModel,
-      EventType eventType,
+      EventType<?, ?> eventType,
       Object eventData
   ) {
     return (rawSelectors.getFirst().next() ? next(rootEntity, rawSelectors.getFirst()).mergeWith(Flux.fromIterable(rawSelectors.subList(1, rawSelectors.size()))) : Flux.fromIterable(rawSelectors)).collectList()
@@ -948,7 +934,7 @@ public class StateMachine {
 
   private Mono<ChangeResult> calculateNestedChangeForNewEntity(
       EntityModel entityModel,
-      EventType eventType,
+      EventType<?, ?> eventType,
       Object eventData,
       List<SecondaryId> idsForNewEntity
   ) {
@@ -966,7 +952,7 @@ public class StateMachine {
         .filter(timeout -> ZonedDateTime.now(clock).isAfter(eventLog.effectiveEvents().getLast().timestamp().plus(timeout.duration())))
         .map(timeout -> List.of(new Event(eventLog.lastEventNumber() + 1, timeout.eventType(), clock)))
         .orElseGet(() -> {
-          List<EventType> scheduledEventTypes = scheduledEvents(new Entity(eventLog.entityId(), eventLog.secondaryIds(), entityType), eventLog.effectiveEvents(), ZonedDateTime.now(clock))
+          List<EventType<?, ?>> scheduledEventTypes = scheduledEvents(new Entity(eventLog.entityId(), eventLog.secondaryIds(), entityType), eventLog.effectiveEvents(), ZonedDateTime.now(clock))
               .stream()
               .toList();
           return IntStream
@@ -1054,7 +1040,7 @@ public class StateMachine {
             }
           }
           List<Event> newEvents = join(scheduledEvents, newTransitionWithData.transition().event());
-          List<EventType> newEventTypes = newEvents.stream().map(Event::type).toList();
+          List<? extends EventType<?, ?>> newEventTypes = newEvents.stream().map(Event::type).toList();
           if (currentState.forward(newEventTypes) == null) {
             String errorMessage = "State " + eventLog.entityModel() + "[id=" + eventLog.entityId().value() + "]:"
                 + currentState.state()
@@ -1270,7 +1256,7 @@ public class StateMachine {
 
   private Flux<TransitionWithData<?, ?>> transitionsWithData(
       InputEvent<?> inputEvent,
-      List<ActualTransition<Void, ?>> transitions,
+      List<ActualTransition<?, ?>> transitions,
       Entity entity,
       List<Event> eventLog,
       List<Event> newEvents
@@ -1910,7 +1896,7 @@ public class StateMachine {
   /*
    * Get the list of transitions and their events from event log starting from startEventNumber.
    */
-  private List<ActualTransition<Void, ?>> actualTransitions(
+  private List<ActualTransition<?, ?>> actualTransitions(
       int startEventNumber,
       EntityModel entityModel,
       List<Event> eventLog,
@@ -1920,9 +1906,9 @@ public class StateMachine {
   ) {
     // Skip till startEventNumber
     TraversableState state = traverseTo(startEventNumber, entityModel, eventLog);
-    List<ActualTransition<Void, ?>> list = new ArrayList<>();
+    List<ActualTransition<?, ?>> list = new ArrayList<>();
     for (var event : transitionEvents) {
-      TransitionModel<Void, ?> transition = (TransitionModel<Void, ?>) requireNonNull(state.transition(event.type()), "Transition for " + event.type() + " from " + state.state() + " not allowed");
+      TransitionModel<?, ?> transition = requireNonNull(state.transition(event.type()), "Transition for " + event.type() + " from " + state.state() + " not allowed");
       if (reverse && !newEvents.contains(event)) // New events never trigger reverse transitions
         transition = transition.reverse();
       if (transition != null) // Reverse transitions might not be defined
@@ -1956,8 +1942,8 @@ public class StateMachine {
     return dataCreator;
   }
 
-  private List<EventType> scheduledEvents(Entity entity, List<Event> eventLog, ZonedDateTime deadline) {
-    var scheduledEvents = new ArrayList<EventType>();
+  private List<EventType<?, ?>> scheduledEvents(Entity entity, List<Event> eventLog, ZonedDateTime deadline) {
+    var scheduledEvents = new ArrayList<EventType<?, ?>>();
     for (var actualTransition : actualTransitions(0, entity.model(), eventLog, List.of(), eventLog, false)) {
       scheduledEvents.addAll(
           actualTransition.model().scheduledEvents().stream()
@@ -1969,7 +1955,7 @@ public class StateMachine {
     return unmodifiableList(scheduledEvents);
   }
 
-  private boolean isPendingIncomingResponse(EventLog eventLog) {
+  private boolean isPendingIncomingResponse(EventLog ignoredEventLog) {
     return false;
 //    TransitionModel<?> lastTransition = lastTransition(eventLog);
 //    return lastTransition != null && lastTransition.outgoingRequests()

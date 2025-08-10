@@ -18,7 +18,7 @@ public enum PaymentState implements State {
   Expired,
   ExpiredAfterCapture,
   ProcessingRefund(new Timeout(ofMillis(6600), Rollback)),
-  ProcessingSettlement(new Timeout(Duration.ofHours(5), SettlementEvent.Type.Timeout)),
+  ProcessingSettlement(new Timeout(Duration.ofHours(5), SettlementEvent.Timeout)),
   Reconciled,
   Error
   ;

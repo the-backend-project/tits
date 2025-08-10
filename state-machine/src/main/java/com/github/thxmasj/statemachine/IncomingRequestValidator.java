@@ -17,9 +17,9 @@ public interface IncomingRequestValidator<OUTPUT_TYPE> {
 
     InputEvent<OUTPUT_TYPE> invalidRequest(String errorMessage);
 
-    InputEvent<OUTPUT_TYPE> invalidRequest(EventType eventType, OUTPUT_TYPE data, String errorMessage);
+    InputEvent<OUTPUT_TYPE> invalidRequest(EventType<?, ?> eventType, OUTPUT_TYPE data, String errorMessage);
 
-    InputEvent<OUTPUT_TYPE> invalidRequest(EventType eventType, OUTPUT_TYPE data);
+    InputEvent<OUTPUT_TYPE> invalidRequest(EventType<?, ?> eventType, OUTPUT_TYPE data);
 
     InputEvent<OUTPUT_TYPE> validRequest(OUTPUT_TYPE data);
 

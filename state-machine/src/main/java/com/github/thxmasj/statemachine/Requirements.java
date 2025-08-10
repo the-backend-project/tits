@@ -22,13 +22,13 @@ public class Requirements {
     return Collections.unmodifiableList(requirements);
   }
 
-  public List<Requirement> on(EventType type) {
+  public List<Requirement> on(EventType<?, ?> type) {
     return requirements.stream()
         .filter(r -> r.eventTypes().contains(type))
         .collect(toList());
   }
 
-  public final List<Requirement> on(EventType... types) {
+  public final List<Requirement> on(EventType<?, ?>... types) {
     return requirements.stream()
         .filter(r -> r.eventTypes().equals(List.of(types)))
         .collect(toList());
@@ -58,15 +58,15 @@ public class Requirements {
     return new Requirements(List.of());
   }
 
-  public static Requirement one(EventType... eligibleEventTypes) {
+  public static Requirement one(EventType<?, ?>... eligibleEventTypes) {
     return new Requirement(Arrays.asList(eligibleEventTypes), Requirement.Type.One);
   }
 
-  public static Requirement all(EventType... eventTypes) {
+  public static Requirement all(EventType<?, ?>... eventTypes) {
     return new Requirement(Arrays.asList(eventTypes), Requirement.Type.All);
   }
 
-  public static Requirement last(EventType eventType) {
+  public static Requirement last(EventType<?, ?> eventType) {
     return new Requirement(List.of(eventType), Requirement.Type.Last);
   }
 
@@ -78,16 +78,16 @@ public class Requirements {
     return new Requirement(List.of(), Requirement.Type.Last, dataType, null);
   }
 
-  public static Requirement lastIfExists(EventType eventType) {
+  public static Requirement lastIfExists(EventType<?, ?> eventType) {
     return new Requirement(List.of(eventType), Requirement.Type.LastIfExists);
   }
 
-  public static Requirement outgoingRequest(OutboxQueue queue, EventType eventType, Class<?> dataType) {
+  public static Requirement outgoingRequest(OutboxQueue queue, EventType<?, ?> eventType, Class<?> dataType) {
     return new Requirement(List.of(eventType), Requirement.Type.Last, new OutgoingRequest(queue, dataType));
   }
 
   public record Requirement(
-      List<EventType> eventTypes,
+      List<EventType<?, ?>> eventTypes,
       Type type,
       Class<?> dataType,
       OutgoingRequest outgoingRequest
@@ -96,11 +96,11 @@ public class Requirements {
     public enum Type {All, One, Last, LastIfExists}
     public record OutgoingRequest(OutboxQueue queue, Class<?> dataType) {}
 
-    public Requirement(List<EventType> eventTypes, Type type) {
+    public Requirement(List<EventType<?, ?>> eventTypes, Type type) {
       this(Collections.unmodifiableList(eventTypes), type, null, null);
     }
 
-    public Requirement(List<EventType> eventTypes, Type type, OutgoingRequest outgoingRequest) {
+    public Requirement(List<EventType<?, ?>> eventTypes, Type type, OutgoingRequest outgoingRequest) {
       this(Collections.unmodifiableList(eventTypes), type, null, outgoingRequest);
     }
 

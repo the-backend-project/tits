@@ -40,7 +40,7 @@ public interface IncomingResponseValidator<OUTPUT_TYPE> extends DataRequirer {
 
     InputEvent<OUTPUT_TYPE> requestUndelivered(String cause);
 
-    InputEvent<OUTPUT_TYPE> validResponse(EventType eventType, OUTPUT_TYPE data);
+    InputEvent<OUTPUT_TYPE> validResponse(EventType<?, ?> eventType, OUTPUT_TYPE data);
 
     InputEvent<OUTPUT_TYPE> invalidResponse(String cause);
 

@@ -4,43 +4,44 @@ import com.github.thxmasj.statemachine.EventTrigger.EntitySelector;
 import java.util.ArrayList;
 import java.util.List;
 
-public class EventTriggerBuilder {
+public class EventTriggerBuilder<I, O> {
 
   private final List<EntitySelector> entitySelectors = new ArrayList<>();
   private boolean create;
-  private EventType eventType;
-  private Object data;
+  private final EventType<I, O> eventType;
+  private I data;
   private EntityModel entityModel;
 
-  public static EventTriggerBuilder event(EventType eventType, Object data) {
-    var builder = new EventTriggerBuilder();
-    builder.eventType = eventType;
+  private EventTriggerBuilder(EventType<I, O> et) {
+    this.eventType = et;
+  }
+
+  public static <I, O> EventTriggerBuilder<I, O> event(EventType<I, O> eventType, I data) {
+    var builder = new EventTriggerBuilder<>(eventType);
     builder.data = data;
     return builder;
   }
 
-  public static EventTriggerBuilder event(EventType eventType) {
-    var builder = new EventTriggerBuilder();
-    builder.eventType = eventType;
-    return builder;
+  public static <I, O> EventTriggerBuilder<I, O> event(EventType<I, O> eventType) {
+    return new EventTriggerBuilder<>(eventType);
   }
 
-  public EventTriggerBuilder onEntity(EntityModel entityModel) {
+  public EventTriggerBuilder<I, O> onEntity(EntityModel entityModel) {
     this.entityModel = entityModel;
     return this;
   }
 
-  public EventTriggerBuilder create() {
+  public EventTriggerBuilder<I, O> create() {
     this.create = true;
     return this;
   }
 
-  public EventTriggerBuilder identifiedBy(EntitySelectorBuilder builder) {
+  public EventTriggerBuilder<I, O> identifiedBy(EntitySelectorBuilder builder) {
     this.entitySelectors.add(builder.build());
     return this;
   }
 
-  public EventTriggerBuilder and(EntitySelectorBuilder builder) {
+  public EventTriggerBuilder<I, O> and(EntitySelectorBuilder builder) {
     return identifiedBy(builder);
   }
 

@@ -6,26 +6,26 @@ import static com.github.thxmasj.statemachine.EntitySelectorBuilder.model;
 import static com.github.thxmasj.statemachine.EntitySelectorBuilder.secondaryId;
 import static com.github.thxmasj.statemachine.EventTriggerBuilder.event;
 import static com.github.thxmasj.statemachine.OutgoingRequestModel.Builder.request;
-import static com.github.thxmasj.statemachine.TransitionModel.Builder.from;
+import static com.github.thxmasj.statemachine.TransitionModel.Builder.onEvent;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Identifiers.AcquirerBatchNumber;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Identifiers.BatchNumber;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.AcquirerDeclined;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.AuthenticationFailed;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.AuthorisationApproved;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.AuthorisationExpired;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.AuthorisationRequest;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.Cancel;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.CaptureApproved;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.CaptureRequest;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.InvalidAuthenticationToken;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.InvalidPaymentTokenOwnership;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.InvalidPaymentTokenStatus;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.PaymentRequest;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.PreauthorisationApproved;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.PreauthorisationRequest;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.RefundApproved;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.RefundRequest;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Type.RollbackRequest;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AcquirerDeclined;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthenticationFailed;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthorisationApproved;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthorisationExpired;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthorisationRequest;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Cancel;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.CaptureApproved;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.CaptureRequest;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.InvalidAuthenticationToken;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.InvalidPaymentTokenOwnership;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.InvalidPaymentTokenStatus;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.PaymentRequest;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.PreauthorisationApproved;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.PreauthorisationRequest;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.RefundApproved;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.RefundRequest;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.RollbackRequest;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.AuthorisationFailed;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.Authorised;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.Begin;
@@ -38,8 +38,8 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState
 import static com.github.thxmasj.statemachine.templates.cardpayment.Queues.Acquirer;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Queues.Authenticator;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Queues.Merchant;
-import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Type.MerchantCredit;
-import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Type.MerchantDebit;
+import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.MerchantCredit;
+import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.MerchantDebit;
 
 import com.github.thxmasj.statemachine.BuiltinEventTypes;
 import com.github.thxmasj.statemachine.EntityModel;
@@ -164,34 +164,28 @@ public abstract class AbstractPayment implements EntityModel {
   public List<TransitionModel<?, ?>> transitions() {
     return join(
         List.of(
-            from(Begin).to(Begin).onEvent(RollbackRequest).response(new Created()),
-            from(Begin).to(ProcessingAuthentication)
-                .onEvent(PaymentRequest)
+            onEvent(RollbackRequest).from(Begin).toSelf().response(new Created()),
+            onEvent(PaymentRequest).from(Begin).to(ProcessingAuthentication)
                 .withData(new AuthenticationDataCreator())
                 //.store(authorisation -> authorisation)
                 .notify(request(authentication()).to(Authenticator).responseValidator(validateAuthenticationResponse())),
-            from(ProcessingAuthentication).to(Begin)
-                .onEvent(InvalidAuthenticationToken)
+            onEvent(InvalidAuthenticationToken).from(ProcessingAuthentication).to(Begin)
                 .response(new BadRequest()),
-            from(ProcessingAuthentication).to(Begin)
-                .onEvent(InvalidPaymentTokenStatus)
+            onEvent(InvalidPaymentTokenStatus).from(ProcessingAuthentication).to(Begin)
                 .response("Payment token is inactive", new BadRequest()),
-            from(ProcessingAuthentication).to(Begin)
-                .onEvent(AuthenticationFailed)
+            onEvent(AuthenticationFailed).from(ProcessingAuthentication).to(Begin)
                 .withData(new AuthenticationFailedDataCreator())
                 //.store(authenticationResult -> authenticationResult)
                 .notify(request(failedAuthentication()).to(Acquirer).guaranteed())
                 .response(_ -> "", new BadRequest()),
-            from(ProcessingAuthentication).to(Begin)
-                .onEvent(InvalidPaymentTokenOwnership)
+            onEvent(InvalidPaymentTokenOwnership).from(ProcessingAuthentication).to(Begin)
                 .withData(new AuthenticationFailedDataCreator())
                 .notify(request(failedTokenValidation()).to(Acquirer)
                     .guaranteed()
                     .responseValidator(validateAuthorisationAdviceResponse()))
                 .response(_ -> "", new BadRequest()),
-            from(ProcessingAuthentication).toSelf().onEvent(RollbackRequest).response(new Created()),
-            from(ProcessingAuthentication).to(ProcessingAuthorisation)
-                .onEvent(PreauthorisationRequest)
+            onEvent(RollbackRequest).from(ProcessingAuthentication).toSelf().response(new Created()),
+            onEvent(PreauthorisationRequest).from(ProcessingAuthentication).to(ProcessingAuthorisation)
                 .withData(new AuthorisationRequestDataCreator())
                 .notify(request(preauthorisation()).to(Acquirer).responseValidator(validatePreauthorisationResponse()))
                 .response(_ -> "", new Created())
@@ -200,8 +194,7 @@ public abstract class AbstractPayment implements EntityModel {
                         .guaranteed()
                         .responseValidator(validatePreauthorisationReversalResponse()))
                     .notify(request(rolledBackPreauthorisationRequest()).to(Merchant).guaranteed())),
-            from(ProcessingAuthentication).to(ProcessingAuthorisation)
-                .onEvent(AuthorisationRequest)
+            onEvent(AuthorisationRequest).from(ProcessingAuthentication).to(ProcessingAuthorisation)
                 .withData(new AuthorisationRequestDataCreator())
                 .filter(d -> d.t1().capture()).orElse(PreauthorisationRequest, Tuple2::t2)
                 .trigger(data -> event(BuiltinEventTypes.Status).onEntity(settlement)
@@ -215,19 +208,16 @@ public abstract class AbstractPayment implements EntityModel {
                         .guaranteed()
                         .responseValidator(validateAuthorisationReversalResponse()))
                     .notify(request(rolledBackAuthorisationRequest()).to(Merchant).guaranteed())),
-            from(ProcessingAuthorisation).to(Preauthorised)
-                .onEvent(PreauthorisationApproved)
+            onEvent(PreauthorisationApproved).from(ProcessingAuthorisation).to(Preauthorised)
                 .withData(new AuthorisationResponseDataCreator())
                 .notify(request(approvedPreauthorisation()).to(Merchant).guaranteed())
                 .scheduledEvents(List.of(new ScheduledEvent(AuthorisationExpired, Duration.ofDays(7)))),
-            from(ProcessingAuthorisation).toSelf().onEvent(Rollback).build(),
-            from(ProcessingAuthorisation).toSelf().onEvent(RollbackRequest).response(new Created()),
-            from(ProcessingAuthorisation).to(AuthorisationFailed)
-                .onEvent(RequestUndelivered)
+            onEvent(Rollback).from(ProcessingAuthorisation).toSelf().build(),
+            onEvent(RollbackRequest).from(ProcessingAuthorisation).toSelf().response(new Created()),
+            onEvent(RequestUndelivered).from(ProcessingAuthorisation).to(AuthorisationFailed)
                 .withData(new AuthorisationRequestUndeliveredData())
                 .notify(request(failedAuthorisation()).to(Merchant).guaranteed()),
-            from(ProcessingAuthorisation).to(Authorised)
-                .onEvent(AuthorisationApproved)
+            onEvent(AuthorisationApproved).from(ProcessingAuthorisation).to(Authorised)
                 .withData(new AuthorisationResponseDataCreator())
                 .notify(request(approvedAuthorisation()).to(Merchant).guaranteed())
                 .trigger(data -> event(MerchantCredit, data.authorisation().amount().requested()).onEntity(settlement)
@@ -241,28 +231,25 @@ public abstract class AbstractPayment implements EntityModel {
                     .and(model(BatchNumber).group(data.authorisation().merchant().id()).last().createIfNotExists()))
                 .scheduledEvents(List.of(new ScheduledEvent(AuthorisationExpired, Duration.ofDays(7))))
                 .reverse(builder -> builder.withData(new AuthorisationReversalDataCreator())
-                    .trigger(data -> event(SettlementEvent.Type.MerchantCreditReversed, data.amount()).onEntity(
-                            settlement)
+                    .trigger(data -> event(SettlementEvent.MerchantCreditReversed, data.amount()).onEntity(settlement)
                         .identifiedBy(model(BatchNumber).group(data.merchantId()).last()))),
-            from(ProcessingAuthorisation).to(AuthorisationFailed)
-                .onEvent(AcquirerDeclined)
+            onEvent(AcquirerDeclined).from(ProcessingAuthorisation).to(AuthorisationFailed)
                 .withData(new  AuthorisationResponseDataCreator())
                 .notify(request(declinedAuthorisation()).to(Merchant).guaranteed()),
-            from(ProcessingCapture).to(Authorised)
-                .onEvent(CaptureApproved)
+            onEvent(CaptureApproved).from(ProcessingCapture).to(Authorised)
                 .withData(new ApprovedCaptureDataCreator())
                 .notify(request(approvedCapture()).to(Merchant).guaranteed())
                 .trigger(data -> event(MerchantCredit, data.amount()).onEntity(settlement).identifiedBy(secondaryId(
                     AcquirerBatchNumber,
                     new AcquirerBatchNumber(data.merchantId(), data.acquirerBatchNumber())
                 ).createIfNotExists()).and(model(BatchNumber).group(data.merchantId()).last().createIfNotExists())),
-            from(Preauthorised).to(Preauthorised).onEvent(Rollback).build(),
-            from(Preauthorised).to(Expired).onEvent(AuthorisationExpired).build(),
-            from(Preauthorised).to(Preauthorised).onEvent(RollbackRequest).response(new Created()),
-            from(Preauthorised).to(Preauthorised).onEvent(Cancel).response(new Created()),
-            from(Authorised).toSelf().onEvent(Rollback).build(),
-            from(Authorised).toSelf().onEvent(RollbackRequest).response(new Created()),
-            from(Authorised).to(ExpiredAfterCapture).onEvent(AuthorisationExpired).build(),
+            onEvent(Rollback).from(Preauthorised).to(Preauthorised).build(),
+            onEvent(AuthorisationExpired).from(Preauthorised).to(Expired).build(),
+            onEvent(RollbackRequest).from(Preauthorised).to(Preauthorised).response(new Created()),
+            onEvent(Cancel).from(Preauthorised).to(Preauthorised).response(new Created()),
+            onEvent(Rollback).from(Authorised).toSelf().build(),
+            onEvent(RollbackRequest).from(Authorised).toSelf().response(new Created()),
+            onEvent(AuthorisationExpired).from(Authorised).to(ExpiredAfterCapture).build(),
             captureRequestTransition(Preauthorised),
             captureRequestTransition(Authorised),
             captureRequestedTooLateTransition(Expired),
@@ -274,8 +261,7 @@ public abstract class AbstractPayment implements EntityModel {
   }
 
   private TransitionModel<Capture, CaptureRequestData> captureRequestTransition(State anchor) {
-    return from(anchor).to(ProcessingCapture)
-        .onEvent(CaptureRequest)
+    return onEvent(CaptureRequest).from(anchor).to(ProcessingCapture)
         .withData(new CaptureRequestDataCreator())
         .filter(d -> d.alreadyCapturedAmount() + d.captureData().amount() <= d.authorisationData().amount().requested())
         .orElseInvalidRequest("Capture amount too large")
@@ -287,8 +273,7 @@ public abstract class AbstractPayment implements EntityModel {
   }
 
   private TransitionModel<?, ?> captureRequestedTooLateTransition(State anchor) {
-    return from(anchor).toSelf()
-        .onEvent(CaptureRequest)
+    return onEvent(CaptureRequest).from(anchor).toSelf()
         .withData(new CaptureRequestedTooLateDataCreator())
         //.store(data -> data.captureData()) // same as input
         .notify(request(captureRequestedTooLate()).to(Acquirer).guaranteed())
@@ -311,8 +296,7 @@ public abstract class AbstractPayment implements EntityModel {
       }
     };
     return List.of(
-        from(anchor).to(processingState)
-            .onEvent(RefundRequest)
+        onEvent(RefundRequest).from(anchor).to(processingState)
             .withData(new RefundRequestDataCreator())
             .filter(d -> d.alreadyRefundedAmount() + d.refundData().amount() <= d.alreadyCapturedAmount())
             .orElseInvalidRequest("Refund amount too large")
@@ -324,14 +308,12 @@ public abstract class AbstractPayment implements EntityModel {
                 .notify(request(refundReversal()).to(Acquirer)
                     .guaranteed()
                     .responseValidator(validateRefundReversalResponse()))),
-        from(processingState).toSelf().onEvent(Rollback).build(),
-        from(processingState).toSelf().onEvent(RollbackRequest).response(new Created()),
-        from(processingState).to(anchor)
-            .onEvent(RequestUndelivered)
+        onEvent(Rollback).from(processingState).toSelf().build(),
+        onEvent(RollbackRequest).from(processingState).toSelf().response(new Created()),
+        onEvent(RequestUndelivered).from(processingState).to(anchor)
             .withData(new FailedRefundDataCreator())
             .notify(request(failedRefund()).to(Merchant).guaranteed()),
-        from(processingState).to(anchor)
-            .onEvent(RefundApproved)
+        onEvent(RefundApproved).from(processingState).to(anchor)
             .withData(new ApprovedRefundDataCreator())
             .notify(request(approvedRefund()).to(Merchant).guaranteed())
             .trigger(data -> event(MerchantDebit, data.amount()).onEntity(settlement).identifiedBy(secondaryId(
@@ -339,10 +321,9 @@ public abstract class AbstractPayment implements EntityModel {
                 new AcquirerBatchNumber(data.merchantId(), data.acquirerBatchNumber())
             ).createIfNotExists()).and(model(BatchNumber).group(data.merchantId()).last().createIfNotExists()))
             .reverse(transition -> transition.withData(new RefundReversalDataCreator())
-                .trigger(data -> event(SettlementEvent.Type.MerchantDebitReversed, data.amount()).onEntity(settlement)
+                .trigger(data -> event(SettlementEvent.MerchantDebitReversed, data.amount()).onEntity(settlement)
                     .identifiedBy(model(BatchNumber).group(data.merchantId()).last()))),
-        from(processingState).to(anchor)
-            .onEvent(AcquirerDeclined)
+        onEvent(AcquirerDeclined).from(processingState).to(anchor)
             .withData(new DeclinedRefundDataCreator())
             .notify(request(declinedRefund()).to(Merchant).guaranteed())
     );

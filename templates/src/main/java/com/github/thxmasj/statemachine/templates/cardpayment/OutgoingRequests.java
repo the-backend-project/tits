@@ -16,7 +16,7 @@ import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Authen
 import com.github.thxmasj.statemachine.templates.cardpayment.PreauthorisationReversalDataCreator.PreauthorisationReversalData;
 import com.github.thxmasj.statemachine.templates.cardpayment.RefundRequestDataCreator.RefundRequestData;
 import com.github.thxmasj.statemachine.templates.cardpayment.RefundReversalDataCreator.RefundReversalData;
-import com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Type.CutOff;
+import com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.CutOff;
 import java.util.UUID;
 
 public class OutgoingRequests {

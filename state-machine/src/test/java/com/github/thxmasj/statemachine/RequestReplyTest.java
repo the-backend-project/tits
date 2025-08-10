@@ -5,14 +5,11 @@ import static com.github.thxmasj.statemachine.IncomingRequestModel.validator;
 import static com.github.thxmasj.statemachine.IncomingRequestModelBuilder.fromRequestLine;
 import static com.github.thxmasj.statemachine.OutgoingRequestModel.Builder.request;
 import static com.github.thxmasj.statemachine.RequestReplyTest.Entities.Lamp;
-import static com.github.thxmasj.statemachine.RequestReplyTest.Events.SwitchOff;
-import static com.github.thxmasj.statemachine.RequestReplyTest.Events.SwitchOn;
-import static com.github.thxmasj.statemachine.RequestReplyTest.Events.Toggle;
 import static com.github.thxmasj.statemachine.RequestReplyTest.Queues.DeviceListener;
 import static com.github.thxmasj.statemachine.RequestReplyTest.States.Off;
 import static com.github.thxmasj.statemachine.RequestReplyTest.States.On;
 import static com.github.thxmasj.statemachine.StateMachine.ProcessResult.Status.Accepted;
-import static com.github.thxmasj.statemachine.TransitionModel.Builder.from;
+import static com.github.thxmasj.statemachine.TransitionModel.Builder.onEvent;
 import static com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Method.POST;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -58,22 +55,11 @@ public class RequestReplyTest {
 
   enum States implements State {On, Off}
 
-  enum Events implements EventType {
-    Toggle(UUID.fromString("46b0211e-f583-49b3-a6e7-8d13742e0260")),
-    SwitchOn(UUID.fromString("5e9a8a9d-6a21-41cf-82dc-857fe1e4c4e0")),
-    SwitchOff(UUID.fromString("8e1483c8-b649-43b8-b352-5094a94c0dad")),
+  static EventType<Void, Void>
+    Toggle = EventType.of("Toggle", UUID.fromString("46b0211e-f583-49b3-a6e7-8d13742e0260")),
+    SwitchOn = EventType.of("SwitchOn", UUID.fromString("5e9a8a9d-6a21-41cf-82dc-857fe1e4c4e0")),
+    SwitchOff = EventType.of("SwitchOff", UUID.fromString("8e1483c8-b649-43b8-b352-5094a94c0dad"))
     ;
-
-    private final UUID id;
-
-    Events(UUID id) {this.id = id;}
-
-    @Override
-    public UUID id() {
-      return id;
-    }
-
-  }
 
   enum Queues implements OutboxQueue {
     DeviceListener {
@@ -84,10 +70,10 @@ public class RequestReplyTest {
     };
   }
 
-  static class LampRequest implements OutgoingRequestCreator<String> {
+  static class LampRequest implements OutgoingRequestCreator<Void> {
 
     @Override
-    public Mono<HttpRequestMessage> create(String data, EntityId entityId, String correlationId, Input input) {
+    public Mono<HttpRequestMessage> create(Void data, EntityId entityId, String correlationId, Input input) {
       return Mono.just(new HttpRequestMessage(POST, URI.create(
           "http://localhost:" + server.getAddress().getPort() + "/lamps/" + entityId.value()
       )));
@@ -114,12 +100,13 @@ public class RequestReplyTest {
       @Override
       public List<TransitionModel<?, ?>> transitions() {
         return List.of(
-            from(On).to(Off).onEvent(Toggle).build(),
-            from(On).to(Off).onEvent(SwitchOff).build(),
-            from(Off).to(On).onEvent(Toggle)
-                .response((_, _, _, _, _) -> Mono.just(new HttpResponseMessage(200, "OK", "Light is on!")))
-                .notify(request(new LampRequest()).to(DeviceListener).guaranteed()),
-            from(Off).to(On).onEvent(SwitchOn).build()
+            onEvent(Toggle).from(On).to(Off).build(),
+            onEvent(SwitchOff).from(On).to(Off).build(),
+            onEvent(Toggle).from(Off).to(On)
+                .withData((_, _) -> Mono.<Void>empty())
+                .notify(request(new LampRequest()).to(DeviceListener).guaranteed())
+                .response((_, _, _, _, _) -> Mono.just(new HttpResponseMessage(200, "OK", "Light is on!"))),
+            onEvent(SwitchOn).from(Off).to(On).build()
         );
       }
     }

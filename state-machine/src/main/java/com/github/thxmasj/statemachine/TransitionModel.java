@@ -1,6 +1,7 @@
 package com.github.thxmasj.statemachine;
 
 import static com.github.thxmasj.statemachine.BuiltinEventTypes.InvalidRequest;
+import static com.github.thxmasj.statemachine.BuiltinEventTypes.Rollback;
 import static java.util.Objects.requireNonNull;
 
 import java.util.ArrayList;
@@ -13,18 +14,18 @@ public class TransitionModel<I, O> {
 
   private final State fromState;
   private final State toState;
-  private final EventType eventType;
+  private final EventType<I, ?> eventType;
   private final Class<? extends DataCreator<I, O>> dataCreatorType;
   private final DataCreator<I, O> dataCreator;
   private final List<Filter<O>> filters = new ArrayList<>();
-  private final List<Function<O, EventTriggerBuilder>> eventTriggers = new ArrayList<>();
+  private final List<Function<O, EventTriggerBuilder<?, ?>>> eventTriggers = new ArrayList<>();
   private final List<OutgoingRequestModel<O, ?>> outgoingRequests = new ArrayList<>();
   private final List<OutgoingResponseModel<O, ?>> outgoingResponses = new ArrayList<>();
-  private TransitionModel<Void, ?> reverse;
+  private TransitionModel<Long, ?> reverse;
   private final List<Function<O, SecondaryId>> newIdentifiers = new ArrayList<>();
   private List<ScheduledEvent> scheduledEvents = List.of();
 
-  private TransitionModel(State fromState, State toState, EventType eventType, DataCreator<I, O> dataCreator, Class<? extends DataCreator<I, O>> dataCreatorType) {
+  private TransitionModel(State fromState, State toState, EventType<I, ?> eventType, DataCreator<I, O> dataCreator, Class<? extends DataCreator<I, O>> dataCreatorType) {
     this.fromState = requireNonNull(fromState);
     this.toState = requireNonNull(toState);
     this.eventType = requireNonNull(eventType);
@@ -32,11 +33,11 @@ public class TransitionModel<I, O> {
     this.dataCreatorType = dataCreatorType;
   }
 
-  private TransitionModel(State fromState, State toState, EventType eventType, DataCreator<I, O> dataCreator) {
+  private TransitionModel(State fromState, State toState, EventType<I, ?> eventType, DataCreator<I, O> dataCreator) {
     this(fromState, toState, eventType, dataCreator, null);
   }
 
-  private TransitionModel(State fromState, State toState, EventType eventType, Class<? extends DataCreator<I, O>> dataCreatorType) {
+  private TransitionModel(State fromState, State toState, EventType<I, ?> eventType, Class<? extends DataCreator<I, O>> dataCreatorType) {
     this(fromState, toState, eventType, null, dataCreatorType);
   }
 
@@ -49,17 +50,12 @@ public class TransitionModel<I, O> {
       this.filter = filter;
     }
 
-    public <T> TransitionModel<I, O> orElse(EventType eventType, T data) {
-      owner.filters.add(new Filter<>(filter, _ -> new InputEvent<>(eventType, data, null)));
-      return owner;
-    }
-
-    public <T> TransitionModel<I, O> orElseInvalidRequest(String errorMessage) {
+    public TransitionModel<I, O> orElseInvalidRequest(String errorMessage) {
       owner.filters.add(new Filter<>(filter, _ -> new InputEvent<>(InvalidRequest, null, errorMessage)));
       return owner;
     }
 
-    public <T> TransitionModel<I, O> orElse(EventType eventType, Function<O, T> dataAdapter) {
+    public <T> TransitionModel<I, O> orElse(EventType<T, ?> eventType, Function<O, T> dataAdapter) {
       owner.filters.add(new Filter<>(filter, data -> new InputEvent<>(eventType, dataAdapter.apply(data), null)));
       return owner;
     }
@@ -76,13 +72,14 @@ public class TransitionModel<I, O> {
     return this;
   }
 
-  public TransitionModel<I, O> trigger(Function<O, EventTriggerBuilder>builder) {
+  public TransitionModel<I, O> trigger(Function<O, EventTriggerBuilder<?, ?>> builder) {
     this.eventTriggers.add(builder);
     return this;
   }
 
-  public TransitionModel<I, O> reverse(Function<TransitionModel.Builder, TransitionModel<Void, ?>> builder) {
-    this.reverse = builder.apply(Builder.from(toState).to(fromState).onEvent(eventType));
+  public TransitionModel<I, O> reverse(Function<TransitionModel.Builder<Long>, TransitionModel<Long, ?>> builder) {
+//    this.reverse = builder.apply(Builder.onEvent(eventType).from(toState).to(fromState));
+    this.reverse = builder.apply(Builder.onEvent(Rollback).from(toState).to(fromState));
     return this;
   }
 
@@ -150,7 +147,7 @@ public class TransitionModel<I, O> {
     return toState;
   }
 
-  public EventType eventType() {
+  public EventType<I, ?> eventType() {
     return eventType;
   }
 
@@ -166,11 +163,11 @@ public class TransitionModel<I, O> {
     return outgoingResponses;
   }
 
-  public List<Function<O, EventTriggerBuilder>> eventTriggers() {
+  public List<Function<O, EventTriggerBuilder<?, ?>>> eventTriggers() {
     return eventTriggers;
   }
 
-  public TransitionModel<Void, ?> reverse() {
+  public TransitionModel<Long, ?> reverse() {
     return reverse;
   }
 
@@ -208,51 +205,51 @@ public class TransitionModel<I, O> {
         '}';
   }
 
-  public static class Builder {
+  public static class Builder<I> {
     private State fromState;
     private State toState;
-    private EventType eventType;
+    private EventType<I, ?> eventType;
 
-    public static Builder from(State fromState) {
-      var b = new Builder();
-      b.fromState = fromState;
-      return b;
+    public Builder<I> from(State fromState) {
+      this.fromState = fromState;
+      return this;
     }
 
-    public Builder to(State toState) {
+    public Builder<I> to(State toState) {
       this.toState = toState;
       return this;
     }
 
-    public Builder toSelf() {
+    public Builder<I> toSelf() {
       this.toState = fromState;
       return this;
     }
 
-    public Builder onEvent(EventType eventType) {
-      this.eventType = eventType;
-      return this;
+    public static <I> Builder<I> onEvent(EventType<I, ?> eventType) {
+      var b = new Builder<I>();
+      b.eventType = eventType;
+      return b;
     }
 
-    public <I, O> TransitionModel<I, O> withData(DataCreator<I, O> dataCreator) {
+    public <O> TransitionModel<I, O> withData(DataCreator<I, O> dataCreator) {
       return new TransitionModel<>(fromState, toState, eventType, dataCreator);
     }
 
-    public <I, O> TransitionModel<I, O> withData(Class<? extends DataCreator<I, O>> dataCreatorType) {
+    public <O> TransitionModel<I, O> withData(Class<? extends DataCreator<I, O>> dataCreatorType) {
       return new TransitionModel<>(fromState, toState, eventType, dataCreatorType);
     }
 
-    public TransitionModel<String, String> response(OutgoingResponseCreator<String> creator) {
-      return new TransitionModel<String, String>(fromState, toState, eventType, null, null)
+    public <O> TransitionModel<I, O> response(OutgoingResponseCreator<O> creator) {
+      return new TransitionModel<>(fromState, toState, eventType, (DataCreator<I, O>)null, null)
           .response(creator);
     }
 
-    public TransitionModel<String, String> response(String data, OutgoingResponseCreator<String> creator) {
-      return new TransitionModel<String, String>(fromState, toState, eventType, (_, _) -> Mono.just(data), null)
+    public <O> TransitionModel<I, O> response(O data, OutgoingResponseCreator<O> creator) {
+      return new TransitionModel<>(fromState, toState, eventType, (_, _) -> Mono.just(data), null)
           .response(creator);
     }
 
-    public TransitionModel<String, String> build() {
+    public <O> TransitionModel<I, O> build() {
       return new TransitionModel<>(fromState, toState, eventType, null, null);
     }
 

@@ -1,6 +1,6 @@
 package com.github.thxmasj.statemachine;
 
-import static com.github.thxmasj.statemachine.TransitionModel.Builder.from;
+import static com.github.thxmasj.statemachine.TransitionModel.Builder.onEvent;
 import static java.util.Objects.requireNonNullElse;
 
 import com.github.thxmasj.statemachine.message.http.BadRequest;
@@ -66,9 +66,9 @@ public class TraversableState {
         forwardTransitions.put(transition, create(node, transition, transitions, initialState, visitedStates));
     }
     if (initial && forwardTransitions.keySet().stream().noneMatch(t -> t.eventType() == BuiltinEventTypes.UnknownEntity)) {
-      var transition = from(state)
+      var transition = onEvent(BuiltinEventTypes.UnknownEntity)
+          .from(state)
           .to(state)
-          .onEvent(BuiltinEventTypes.UnknownEntity)
           .withData((_, _) -> Mono.just(""))
           .response(_ -> "Unknown entity", new BadRequest());
       forwardTransitions.put(transition, create(node, transition, transitions, initialState, visitedStates));
@@ -97,9 +97,9 @@ public class TraversableState {
   }
 
   private static TransitionModel<?, ?> statusTransition(State state) {
-    return from(state)
+    return onEvent(BuiltinEventTypes.Status)
+        .from(state)
         .to(state)
-        .onEvent(BuiltinEventTypes.Status)
         .withData((_, _) -> Mono.just(state.name()))
         .response(new OK());
   }
@@ -112,10 +112,10 @@ public class TraversableState {
     return builtinTransition(state, BuiltinEventTypes.RejectedRequest, new UnprocessableEntity());
   }
 
-  private static TransitionModel<String, String> builtinTransition(State state, BuiltinEventTypes eventType, OutgoingResponseCreator<String> response) {
-    return from(state)
+  private static TransitionModel<String, String> builtinTransition(State state, EventType<String, ?> eventType, OutgoingResponseCreator<String> response) {
+    return onEvent(eventType)
+        .from(state)
         .to(state)
-        .onEvent(eventType)
         .withData(new StringFromInvalidOrRejectedRequestEvent())
         .response(response);
   }
@@ -124,7 +124,7 @@ public class TraversableState {
     return forwardTransitions.values();
   }
 
-  public TransitionModel<?, ?> transition(EventType eventType) {
+  public TransitionModel<?, ?> transition(EventType<?, ?> eventType) {
     for (var transition : forwardTransitions.keySet()) {
       if (transition.eventType() == eventType)
         return transition;
@@ -132,7 +132,7 @@ public class TraversableState {
     return null;
   }
 
-  public TraversableState backward(EventType eventType) {
+  public TraversableState backward(EventType<?, ?> eventType) {
     return backwardTransitions.entrySet()
         .stream()
         .filter(e -> e.getKey().eventType() == eventType)
@@ -141,11 +141,11 @@ public class TraversableState {
         .orElse(null);
   }
 
-  public TraversableState forward(EventType eventType) {
+  public TraversableState forward(EventType<?, ?> eventType) {
     return forward(List.of(eventType));
   }
 
-  public TraversableState forward(List<? extends EventType> eventTypes) {
+  public TraversableState forward(List<? extends EventType<?, ?>> eventTypes) {
     var traverser = this;
     for (var eventType : eventTypes) {
 //      if (eventType.isRollback()) {

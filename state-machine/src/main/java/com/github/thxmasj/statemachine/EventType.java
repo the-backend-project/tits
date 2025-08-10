@@ -2,26 +2,38 @@ package com.github.thxmasj.statemachine;
 
 import java.util.UUID;
 
-public interface EventType {
+public record EventType<I, O>(
+    String name,
+    UUID id,
+    Class<I> dataType,
+    Class<O> outputDataType,
+    boolean isRollback,
+    boolean isCancel,
+    boolean isReadOnly
+) {
 
-  String name();
-
-  UUID id();
-
-  default Class<?> dataType() {
-    return null;
+  public EventType(String name, UUID id, Class<I> inputDataType, Class<O> outputDataType) {
+    this(name, id, inputDataType, outputDataType, false, false, false);
   }
 
-  default boolean isRollback() {
-    return false;
+  public static <T> EventType<T, T> of(String name, UUID id, Class<T> dataType) {
+    return new EventType<>(name, id, dataType, dataType);
   }
 
-  default boolean isCancel() {
-    return false;
+  public static EventType<Void, Void> of(String name, UUID id) {
+    return new EventType<>(name, id, Void.class, Void.class);
   }
 
-  default boolean isReadOnly() {
-    return false;
+  public static EventType<Void, Void> rollback(String name, UUID id) {
+    return new EventType<>(name, id, Void.class, Void.class, true, false, false);
+  }
+
+  public static EventType<Void, Void> cancel(String name, UUID id) {
+    return new EventType<>(name, id, Void.class, Void.class, false, true, false);
+  }
+
+  public static <T> EventType<T, T> readOnly(String name, UUID id, Class<T> dataType) {
+    return new EventType<>(name, id, dataType, dataType, false, false, true);
   }
 
 }

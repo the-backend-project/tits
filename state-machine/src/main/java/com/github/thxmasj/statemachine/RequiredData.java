@@ -73,7 +73,7 @@ public class RequiredData implements Input {
   }
 
   @Override
-  public <T> Mono<OutgoingRequest<T>> outgoingRequest(OutboxQueue queue, EventType eventType, Class<T> type) {
+  public <T> Mono<OutgoingRequest<T>> outgoingRequest(OutboxQueue queue, EventType<?, ?> eventType, Class<T> type) {
     var loadedEvent = last(eventType);
     return getOutgoingRequest(entity.id(), loadedEvent, queue)
         .map(message -> new OutgoingRequest<>(
@@ -84,27 +84,27 @@ public class RequiredData implements Input {
   }
 
   @Override
-  public final List<Event> all(EventType... eventTypes) {
+  public final List<Event> all(EventType<?, ?>... eventTypes) {
     return filteredForRequirement(Requirement.Type.All, requirements.on(eventTypes));
   }
 
   @Override
-  public Event one(EventType eventType) {
+  public Event one(EventType<?, ?> eventType) {
     return filteredForSingletonRequirement(Requirement.Type.One, requirements.on(eventType));
   }
 
   @Override
-  public final Event one(EventType... eligibleEventTypes) {
+  public final Event one(EventType<?, ?>... eligibleEventTypes) {
     return filteredForSingletonRequirement(Requirement.Type.One, requirements.on(eligibleEventTypes));
   }
 
   @Override
-  public final Optional<Event> lastIfExists(EventType... eligibleEventTypes) {
+  public final Optional<Event> lastIfExists(EventType<?, ?>... eligibleEventTypes) {
     return filteredForOptionalRequirement(Requirement.Type.LastIfExists, requirements.on(eligibleEventTypes));
   }
 
   @Override
-  public Event last(EventType eventType) {
+  public Event last(EventType<?, ?> eventType) {
     var matchingRequirements = requirements.on(eventType);
     if (matchingRequirements.isEmpty()) {
       throw new MissingRequirement(requirer.getName() + ": last(" + eventType + "): No requirements found for " + eventType);
@@ -166,7 +166,7 @@ public class RequiredData implements Input {
   }
 
   @Override
-  public Event processedEvent(EventType eventType) {
+  public Event processedEvent(EventType<?, ?> eventType) {
     return processedEvents.stream().filter(e -> e.type() == eventType).findFirst().orElseThrow();
   }
 
@@ -266,7 +266,7 @@ public class RequiredData implements Input {
   }
 
   private static  Stream<Event> filter(
-      List<EventType> types,
+      List<EventType<?, ?>> types,
       List<Event> events
   ) {
     return types.isEmpty() ?

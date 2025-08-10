@@ -24,11 +24,14 @@ import java.util.stream.Stream;
 
 public class Mappers {
 
-  static EventType eventType(
+  static EventType<?, ?> eventType(
       EntityModel entityModel,
       UUID typeId
   ) {
-    return Stream.concat(entityModel.transitions().stream().map(TransitionModel::eventType), Stream.of(BuiltinEventTypes.values()))
+    return Stream.concat(
+            entityModel.transitions().stream().map(TransitionModel::eventType),
+            BuiltinEventTypes.ALL.stream()
+        )
         .filter(type -> typeId.equals(type.id()))
         .findFirst().orElseThrow(() -> new MappingFailure("No event type has id " + typeId));
   }
