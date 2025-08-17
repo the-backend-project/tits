@@ -103,7 +103,7 @@ public class RequestReplyTest {
             onEvent(Toggle).from(On).to(Off).build(),
             onEvent(SwitchOff).from(On).to(Off).build(),
             onEvent(Toggle).from(Off).to(On)
-                .withData((_, _) -> Mono.<Void>empty())
+                .withData((_, _, _) -> Mono.<Void>empty())
                 .notify(request(new LampRequest()).to(DeviceListener).guaranteed())
                 .response((_, _, _, _, _) -> Mono.just(new HttpResponseMessage(200, "OK", "Light is on!"))),
             onEvent(SwitchOn).from(Off).to(On).build()
@@ -155,7 +155,7 @@ public class RequestReplyTest {
     String lampId = UUID.randomUUID().toString();
     ProcessResult result = stateMachine.processRequest("PUT /lamps/" + lampId).block(Duration.ofSeconds(1));
     assertEquals(Accepted, result.status());
-    assertEquals("Light is on!", result.responseMessage());
+    assertEquals("Light is on!", result.responseMessage().body());
   }
 
 

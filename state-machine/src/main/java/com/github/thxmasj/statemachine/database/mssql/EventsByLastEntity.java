@@ -142,9 +142,9 @@ public class EventsByLastEntity {
         EntityId entityId = ofNullable(rs.getObject(1, UUID.class)).map(EntityId.UUID::new).orElse(null);
         statement.getMoreResults();
         rs = statement.getResultSet();
-        List<Event> events = new ArrayList<>();
+        List<Event<?>> events = new ArrayList<>();
         while (rs.next()) {
-          events.add(new Event(
+          events.add(new Event<>(
               rs.getInt(1), // EventNumber
               eventType(entityModel, UUID.fromString(rs.getString(2))), // Type
               rs.getObject(3, LocalDateTime.class), // Timestamp

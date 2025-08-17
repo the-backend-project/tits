@@ -1,8 +1,5 @@
 package com.github.thxmasj.statemachine.templates.cardpayment;
 
-import static com.github.thxmasj.statemachine.Requirements.last;
-import static com.github.thxmasj.statemachine.Requirements.lastIfExists;
-import static com.github.thxmasj.statemachine.Requirements.one;
 import static com.github.thxmasj.statemachine.Requirements.outgoingRequest;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Cancel;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.PaymentRequest;
@@ -12,6 +9,8 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent
 import static com.github.thxmasj.statemachine.templates.cardpayment.Queues.Acquirer;
 
 import com.github.thxmasj.statemachine.DataCreator;
+import com.github.thxmasj.statemachine.Event;
+import com.github.thxmasj.statemachine.EventLog;
 import com.github.thxmasj.statemachine.Input;
 import com.github.thxmasj.statemachine.InputEvent;
 import com.github.thxmasj.statemachine.Requirements;
@@ -38,19 +37,16 @@ public class RefundReversalDataCreator implements DataCreator<Long, RefundRevers
   @Override
   public final Requirements requirements() {
     return Requirements.of(
-        one(PaymentRequest),
-        last(RefundRequest),
-        outgoingRequest(Acquirer, RefundRequest, String.class),
-        lastIfExists(RefundApproved)
+        outgoingRequest(Acquirer, RefundRequest, Refund.class)
     );
   }
 
   @Override
-  public Mono<RefundReversalData> execute(InputEvent<Long> inputEvent, Input input) {
-    Authorisation paymentData = input.one(PaymentRequest).getUnmarshalledData(Authorisation.class);
-    Refund refundData = input.last(RefundRequest).getUnmarshalledData(Refund.class);
-    AcquirerResponse acquirerResponse = input.lastIfExists(RefundApproved)
-        .map(e -> e.getUnmarshalledData(AcquirerResponse.class))
+  public Mono<RefundReversalData> execute(InputEvent<Long> inputEvent, EventLog eventLog, Input input) {
+    Authorisation paymentData = eventLog.one(PaymentRequest).getUnmarshalledData();
+    Refund refundData = eventLog.last(RefundRequest).getUnmarshalledData();
+    AcquirerResponse acquirerResponse = eventLog.lastIfExists(RefundApproved)
+        .map(Event::getUnmarshalledData)
         .orElse(null);
     return input.outgoingRequest(Acquirer, RefundRequest, String.class)
         .map(originalRequest -> new RefundReversalData(

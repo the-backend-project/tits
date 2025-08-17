@@ -8,6 +8,7 @@ import static com.github.thxmasj.statemachine.EventType.of;
 public interface BuiltinEventTypes {
 
   EventType<String, String>
+    InconsistentState = of("InconsistentState", UUID.fromString("7d4792e3-35b4-471f-9619-cac7051fa45c"), String.class),
     // Incoming request is not according to incoming requests model.
     InvalidRequest = of("InvalidRequest", UUID.fromString("23d52456-e8b7-4409-aa9d-0998ef903471"), String.class),
     // Incoming request is valid but not allowed for the entity's current state.
@@ -20,7 +21,6 @@ public interface BuiltinEventTypes {
     // Outgoing request not delivered (f.ex. connection failure)
     RequestUndelivered = of("RequestUndelivered", UUID.fromString("98ef4100-34e8-426b-9fb8-539626821537")),
     InvalidResponse = of("InvalidResponse", UUID.fromString("450679ab-bc60-46cb-bb97-d171c34c2750")),
-    InconsistentState = of("InconsistentState", UUID.fromString("7d4792e3-35b4-471f-9619-cac7051fa45c")),
     UnknownEntity = new EventType<>("UnknownEntity", UUID.fromString("2ffed3fc-3efd-404c-9b11-f5a99fb47a5f"), Void.class, Void.class, false, false, true),
     Status = new EventType<>("Status", UUID.fromString("324dc75d-e83d-4b9b-8ad9-b3521184def6"), Void.class, Void.class, false, false, true)
     ;

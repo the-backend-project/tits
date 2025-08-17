@@ -1,16 +1,15 @@
 package com.github.thxmasj.statemachine.templates.cardpayment;
 
-import static com.github.thxmasj.statemachine.Requirements.all;
-import static com.github.thxmasj.statemachine.Requirements.one;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.CaptureApproved;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.PaymentRequest;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.PreauthorisationApproved;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.PreauthorisationRequest;
 
 import com.github.thxmasj.statemachine.DataCreator;
+import com.github.thxmasj.statemachine.Event;
+import com.github.thxmasj.statemachine.EventLog;
 import com.github.thxmasj.statemachine.Input;
 import com.github.thxmasj.statemachine.InputEvent;
-import com.github.thxmasj.statemachine.Requirements;
 import com.github.thxmasj.statemachine.templates.cardpayment.CaptureRequestDataCreator.CaptureRequestData;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthenticationResult;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Authorisation;
@@ -20,25 +19,14 @@ import reactor.core.publisher.Mono;
 public class CaptureRequestDataCreator implements DataCreator<Capture, CaptureRequestData> {
 
   @Override
-  public Requirements requirements() {
-    return Requirements.of(
-        one(PaymentRequest),
-        one(PreauthorisationRequest),
-        one(PreauthorisationApproved),
-        all(CaptureApproved)
-
-    );
-  }
-
-  @Override
-  public Mono<CaptureRequestData> execute(InputEvent<Capture> inputEvent, Input input) {
+  public Mono<CaptureRequestData> execute(InputEvent<Capture> inputEvent, EventLog eventLog, Input unused) {
     return Mono.just(new CaptureRequestData(
-        input.one(PaymentRequest).getUnmarshalledData(Authorisation.class),
-        input.one(PreauthorisationRequest).getUnmarshalledData(AuthenticationResult.class),
-        input.one(PreauthorisationApproved).getUnmarshalledData(AcquirerResponse.class),
+        eventLog.one(PaymentRequest).getUnmarshalledData(),
+        eventLog.one(PreauthorisationRequest).getUnmarshalledData(),
+        eventLog.one(PreauthorisationApproved).getUnmarshalledData(),
         inputEvent.data(),
-        input.all(CaptureApproved).stream()
-            .map(event -> event.getUnmarshalledData(AcquirerResponse.class))
+        eventLog.all(CaptureApproved).stream()
+            .map(Event::getUnmarshalledData)
             .map(AcquirerResponse::amount)
             .mapToLong(Long::longValue)
             .sum()

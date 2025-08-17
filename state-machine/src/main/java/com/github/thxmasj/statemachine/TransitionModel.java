@@ -245,7 +245,7 @@ public class TransitionModel<I, O> {
     }
 
     public <O> TransitionModel<I, O> response(O data, OutgoingResponseCreator<O> creator) {
-      return new TransitionModel<>(fromState, toState, eventType, (_, _) -> Mono.just(data), null)
+      return new TransitionModel<>(fromState, toState, eventType, (_, _, _) -> Mono.just(data), null)
           .response(creator);
     }
 

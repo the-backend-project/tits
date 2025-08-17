@@ -13,39 +13,39 @@ import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.stream.Stream;
 
-public final class Event {
+public final class Event<T> {
 
   private final Integer eventNumber;
-  private final EventType<?, ?> type;
+  private final EventType<?, T> type;
   private final ZonedDateTime timestamp;
   private final String messageId;
   private final String clientId;
   private String data;
-  private Object unmarshalledData;
+  private T unmarshalledData;
 
-  public Event(Integer eventNumber, EventType<?, ?> type, Clock clock, String messageId, String clientId) {
+  public Event(Integer eventNumber, EventType<?, T> type, Clock clock, String messageId, String clientId) {
     this(eventNumber, type, LocalDateTime.ofInstant(clock.instant(), clock.getZone()), clock, messageId, clientId, null);
   }
 
-  public <T> Event(Integer eventNumber, EventType<?, ?> type, Clock clock, String messageId, String clientId, T data) {
+  public Event(Integer eventNumber, EventType<?, T> type, Clock clock, String messageId, String clientId, T data) {
     this(eventNumber, type, LocalDateTime.ofInstant(clock.instant(), clock.getZone()), clock, messageId, clientId, marshal(type, data));
     this.unmarshalledData = data;
   }
 
-  public <T> Event(Integer eventNumber, EventType<?, ?> type, Clock clock, T data) {
+  public Event(Integer eventNumber, EventType<?, T> type, Clock clock, T data) {
     this(eventNumber, type, LocalDateTime.ofInstant(clock.instant(), clock.getZone()), clock, null, null, marshal(type, data));
     this.unmarshalledData = data;
   }
 
-  public Event(Integer eventNumber, EventType<?, ?> type, Clock clock, String messageId, String clientId, String data) {
+  public Event(Integer eventNumber, EventType<?, T> type, Clock clock, String messageId, String clientId, String data) {
     this(eventNumber, type, LocalDateTime.ofInstant(clock.instant(), clock.getZone()), clock, messageId, clientId, data);
   }
 
-  public Event(Integer eventNumber, EventType<?, ?> type, Clock clock) {
+  public Event(Integer eventNumber, EventType<?, T> type, Clock clock) {
     this(eventNumber, type, LocalDateTime.ofInstant(clock.instant(), clock.getZone()), clock, null, null, null);
   }
 
-  public Event(Integer eventNumber, EventType<?, ?> type, LocalDateTime timestamp, Clock clock, String messageId, String clientId, String data) {
+  public Event(Integer eventNumber, EventType<?, T> type, LocalDateTime timestamp, Clock clock, String messageId, String clientId, String data) {
     requireNonNull(eventNumber);
     requireNonNull(type);
     this.eventNumber = eventNumber;
@@ -96,19 +96,11 @@ public final class Event {
         '}';
   }
 
-  public <T> T getUnmarshalledData() {
+  public T getUnmarshalledData() {
     if (unmarshalledData == null && data != null) {
       unmarshalledData = unmarshal(type, data);
     }
-    return (T) unmarshalledData;
-  }
-
-  public <T> T getUnmarshalledData(Class<T> dataType) {
-    if (type.dataType() == null)
-      throw new IllegalArgumentException("Event " + type() + " does not have data type " + dataType.getName() + " but is null");
-    if (type.dataType() != dataType)
-      throw new IllegalArgumentException("Event " + type() + " does not have data type " + dataType.getName() + " but " + type.dataType().getName());
-    return getUnmarshalledData();
+    return unmarshalledData;
   }
 
   public String getMarshalledData() {
@@ -130,7 +122,7 @@ public final class Event {
     return Stream.concat(Stream.of(head), events.stream()).toList();
   }
 
-  static <EVENT> List<EVENT> join(List<EVENT> list1, List<EVENT> list2) {
+  static List<Event<?>> join(List<Event<?>> list1, List<Event<?>> list2) {
     return Stream.concat(list1.stream(), list2.stream()).toList();
   }
 
@@ -154,7 +146,7 @@ public final class Event {
     };
   }
 
-  private static <T> T unmarshal(EventType<?, ?> eventType, String data) {
+  private static <T> T unmarshal(EventType<?, T> eventType, String data) {
     if (eventType.dataType() == String.class)
       return (T) data;
     if (eventType.dataType() == Integer.class)

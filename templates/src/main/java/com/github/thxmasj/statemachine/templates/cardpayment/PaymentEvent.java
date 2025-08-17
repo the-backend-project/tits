@@ -77,6 +77,7 @@ public interface PaymentEvent {
   EventType<AuthenticationResult, AuthenticationResult> InvalidAuthenticationToken = EventType.of("InvalidAuthenticationToken", UUID.fromString("de24bd56-5ad1-4b1e-b567-8eb719c0ff51"), AuthenticationResult.class);
   EventType<AuthenticationResult, AuthenticationResult> AuthorisationRequest = EventType.of("AuthorisationRequest", UUID.fromString("4391c1cf-1cda-4627-9d9d-fe8b18b8b6cb"), AuthenticationResult.class);
   EventType<AcquirerResponse, AcquirerResponse> AuthorisationApproved = EventType.of("AuthorisationApproved", UUID.fromString("4a3821a0-dbba-448b-8175-c40e4a771df4"), AcquirerResponse.class);
+  EventType<AcquirerResponse, AcquirerResponse> AuthorisationAdviceApproved = EventType.of("AuthorisationAdviceApproved", UUID.fromString("c1fd88f3-2821-4c4d-bee1-52750f10f554"), AcquirerResponse.class);
   EventType<Capture, Capture> CaptureRequest = EventType.of("CaptureRequest", UUID.fromString("b4cef9f9-c9dd-40e4-a627-25ba529aec2e"), Capture.class);
   EventType<AcquirerResponse, AcquirerResponse> CaptureApproved = EventType.of("CaptureApproved", UUID.fromString("6186a241-f9e0-40ae-b444-6ce5e2509dcc"), AcquirerResponse.class);
   EventType<Refund, Refund> RefundRequest = EventType.of("RefundRequest", UUID.fromString("4f6d6f15-f8a4-477e-b750-dc52a1f245eb"), Refund.class);

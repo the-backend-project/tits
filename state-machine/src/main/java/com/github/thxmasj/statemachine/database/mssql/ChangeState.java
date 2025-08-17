@@ -41,7 +41,7 @@ public class ChangeState {
   }
 
   private void bind(Builder spec, Change change) {
-    List<Event> events = change.newEvents();
+    List<Event<?>> events = change.newEvents();
     ZonedDateTime deadline = change.deadline();
     String correlationId = change.correlationId();
     if (change.entityId() != null)
@@ -110,7 +110,7 @@ public class ChangeState {
       List<SecondaryId> secondaryIds,
       TraversableState sourceState,
       TraversableState targetState,
-      List<Event> newEvents,
+      List<Event<?>> newEvents,
       List<SecondaryId> newSecondaryIds,
       List<IncomingRequest> incomingRequests,
       List<OutgoingResponse> outgoingResponses,

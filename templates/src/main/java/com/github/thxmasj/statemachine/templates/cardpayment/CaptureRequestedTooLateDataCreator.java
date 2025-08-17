@@ -1,14 +1,13 @@
 package com.github.thxmasj.statemachine.templates.cardpayment;
 
-import static com.github.thxmasj.statemachine.Requirements.one;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthorisationRequest;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.PaymentRequest;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.PreauthorisationRequest;
 
 import com.github.thxmasj.statemachine.DataCreator;
+import com.github.thxmasj.statemachine.EventLog;
 import com.github.thxmasj.statemachine.Input;
 import com.github.thxmasj.statemachine.InputEvent;
-import com.github.thxmasj.statemachine.Requirements;
 import com.github.thxmasj.statemachine.templates.cardpayment.CaptureRequestedTooLateDataCreator.CaptureRequestedTooLateData;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthenticationResult;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Authorisation;
@@ -18,18 +17,10 @@ import reactor.core.publisher.Mono;
 public class CaptureRequestedTooLateDataCreator implements DataCreator<Capture, CaptureRequestedTooLateData> {
 
   @Override
-  public Requirements requirements() {
-    return Requirements.of(
-        one(PaymentRequest),
-        one(AuthorisationRequest, PreauthorisationRequest)
-    );
-  }
-
-  @Override
-  public Mono<CaptureRequestedTooLateData> execute(InputEvent<Capture> inputEvent, Input input) {
+  public Mono<CaptureRequestedTooLateData> execute(InputEvent<Capture> inputEvent, EventLog eventLog, Input unused) {
     return Mono.just(new CaptureRequestedTooLateData(
-            input.one(PaymentRequest).getUnmarshalledData(Authorisation.class),
-            input.one(AuthorisationRequest, PreauthorisationRequest).getUnmarshalledData(AuthenticationResult.class),
+            eventLog.one(PaymentRequest).getUnmarshalledData(),
+            eventLog.one(AuthorisationRequest, PreauthorisationRequest).getUnmarshalledData(),
             inputEvent.data()
         ));
   }

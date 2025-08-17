@@ -1,6 +1,7 @@
 package com.github.thxmasj.statemachine.templates.cardpayment;
 
 import com.github.thxmasj.statemachine.DataCreator;
+import com.github.thxmasj.statemachine.EventLog;
 import com.github.thxmasj.statemachine.Input;
 import com.github.thxmasj.statemachine.InputEvent;
 import com.github.thxmasj.statemachine.templates.cardpayment.AuthenticationDataCreator.AuthenticationData;
@@ -10,7 +11,7 @@ import reactor.core.publisher.Mono;
 public class AuthenticationDataCreator implements DataCreator<Authorisation, AuthenticationData> {
 
   @Override
-  public Mono<AuthenticationData> execute(InputEvent<Authorisation> inputEvent, Input input) {
+  public Mono<AuthenticationData> execute(InputEvent<Authorisation> inputEvent, EventLog eventLog, Input unused) {
     return Mono.just(new AuthenticationData(
         inputEvent.data().requestBody(),
         inputEvent.data().simulation()

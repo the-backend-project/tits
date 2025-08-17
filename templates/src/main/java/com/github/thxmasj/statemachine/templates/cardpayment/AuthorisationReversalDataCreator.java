@@ -1,7 +1,5 @@
 package com.github.thxmasj.statemachine.templates.cardpayment;
 
-import static com.github.thxmasj.statemachine.Requirements.lastIfExists;
-import static com.github.thxmasj.statemachine.Requirements.one;
 import static com.github.thxmasj.statemachine.Requirements.outgoingRequest;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthorisationApproved;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthorisationRequest;
@@ -11,11 +9,14 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent
 import static com.github.thxmasj.statemachine.templates.cardpayment.Queues.Acquirer;
 
 import com.github.thxmasj.statemachine.DataCreator;
+import com.github.thxmasj.statemachine.Event;
+import com.github.thxmasj.statemachine.EventLog;
 import com.github.thxmasj.statemachine.Input;
 import com.github.thxmasj.statemachine.InputEvent;
 import com.github.thxmasj.statemachine.Requirements;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.templates.cardpayment.AuthorisationReversalDataCreator.AuthorisationReversalData;
+import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthenticationResult;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Authorisation;
 import reactor.core.publisher.Mono;
 
@@ -37,17 +38,15 @@ public class AuthorisationReversalDataCreator implements DataCreator<Long, Autho
   @Override
   public Requirements requirements() {
     return Requirements.of(
-        outgoingRequest(Acquirer, AuthorisationRequest, String.class),
-        one(PaymentRequest),
-        lastIfExists(AuthorisationApproved)
+        outgoingRequest(Acquirer, AuthorisationRequest, AuthenticationResult.class)
     );
   }
 
   @Override
-  public Mono<AuthorisationReversalData> execute(InputEvent<Long> inputEvent, Input input) {
-    Authorisation paymentData = input.one(PaymentRequest).getUnmarshalledData(Authorisation.class);
-    AcquirerResponse acquirerResponse = input.lastIfExists(AuthorisationApproved)
-        .map(e -> e.getUnmarshalledData(AcquirerResponse.class)).orElse(null);
+  public Mono<AuthorisationReversalData> execute(InputEvent<Long> inputEvent, EventLog eventLog, Input input) {
+    Authorisation paymentData = eventLog.one(PaymentRequest).getUnmarshalledData();
+    AcquirerResponse acquirerResponse = eventLog.lastIfExists(AuthorisationApproved)
+        .map(Event::getUnmarshalledData).orElse(null);
     return input.outgoingRequest(Acquirer, AuthorisationRequest, String.class)
         .map(originalRequest -> new AuthorisationReversalData(
             originalRequest.httpMessage(),

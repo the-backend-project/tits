@@ -69,7 +69,7 @@ public class TraversableState {
       var transition = onEvent(BuiltinEventTypes.UnknownEntity)
           .from(state)
           .to(state)
-          .withData((_, _) -> Mono.just(""))
+          .withData((_, _, _) -> Mono.just(""))
           .response(_ -> "Unknown entity", new BadRequest());
       forwardTransitions.put(transition, create(node, transition, transitions, initialState, visitedStates));
     }
@@ -91,7 +91,7 @@ public class TraversableState {
   private static class StringFromInvalidOrRejectedRequestEvent implements DataCreator<String, String> {
 
     @Override
-    public Mono<String> execute(InputEvent<String> inputEvent, Input input) {
+    public Mono<String> execute(InputEvent<String> inputEvent, EventLog eventLog, Input input) {
       return Mono.just(requireNonNullElse(inputEvent.errorMessage(), "<error message missing>"));
     }
   }
@@ -100,7 +100,7 @@ public class TraversableState {
     return onEvent(BuiltinEventTypes.Status)
         .from(state)
         .to(state)
-        .withData((_, _) -> Mono.just(state.name()))
+        .withData((_, _, _) -> Mono.just(state.name()))
         .response(new OK());
   }
 

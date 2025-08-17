@@ -1,7 +1,5 @@
 package com.github.thxmasj.statemachine.templates.cardpayment;
 
-import static com.github.thxmasj.statemachine.Requirements.all;
-import static com.github.thxmasj.statemachine.Requirements.one;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthorisationRequest;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.CaptureApproved;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.PaymentRequest;
@@ -9,9 +7,10 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.RefundApproved;
 
 import com.github.thxmasj.statemachine.DataCreator;
+import com.github.thxmasj.statemachine.Event;
+import com.github.thxmasj.statemachine.EventLog;
 import com.github.thxmasj.statemachine.Input;
 import com.github.thxmasj.statemachine.InputEvent;
-import com.github.thxmasj.statemachine.Requirements;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthenticationResult;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Authorisation;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Refund;
@@ -21,36 +20,26 @@ import reactor.core.publisher.Mono;
 public class RefundRequestDataCreator implements DataCreator<Refund, RefundRequestData> {
 
   @Override
-  public final Requirements requirements() {
-    return Requirements.of(
-        one(PaymentRequest),
-        one(AuthorisationRequest, PreauthorisationRequest),
-        all(CaptureApproved),
-        all(RefundApproved)
-    );
-  }
-
-  @Override
-  public Mono<RefundRequestData> execute(InputEvent<Refund> inputEvent, Input input) {
-    Authorisation authorisationData = input.one(PaymentRequest).getUnmarshalledData(Authorisation.class);
+  public Mono<RefundRequestData> execute(InputEvent<Refund> inputEvent, EventLog eventLog, Input unused) {
+    Authorisation authorisationData = eventLog.one(PaymentRequest).getUnmarshalledData();
     long alreadyCapturedAmount;
     if (authorisationData.capture()) {
       alreadyCapturedAmount = authorisationData.amount().requested();
     } else {
-      alreadyCapturedAmount = input.all(CaptureApproved).stream()
-          .map(event -> event.getUnmarshalledData(AcquirerResponse.class))
+      alreadyCapturedAmount = eventLog.all(CaptureApproved).stream()
+          .map(Event::getUnmarshalledData)
           .map(AcquirerResponse::amount)
           .mapToLong(Long::longValue)
           .sum();
     }
-    long alreadyRefundedAmount = input.all(RefundApproved).stream()
-        .map(event -> event.getUnmarshalledData(AcquirerResponse.class))
+    long alreadyRefundedAmount = eventLog.all(RefundApproved).stream()
+        .map(Event::getUnmarshalledData)
         .map(AcquirerResponse::amount)
         .mapToLong(Long::longValue)
         .sum();
     return Mono.just(new RefundRequestData(
         authorisationData,
-        input.one(AuthorisationRequest, PreauthorisationRequest).getUnmarshalledData(AuthenticationResult.class),
+        eventLog.one(AuthorisationRequest, PreauthorisationRequest).getUnmarshalledData(),
         inputEvent.data(),
         alreadyCapturedAmount,
         alreadyRefundedAmount,

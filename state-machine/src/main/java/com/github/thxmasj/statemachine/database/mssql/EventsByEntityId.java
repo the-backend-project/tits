@@ -67,7 +67,7 @@ public class EventsByEntityId {
       ) {
         statement.execute();
         ResultSet rs = statement.getResultSet();
-        List<Event> events = new ArrayList<>();
+        List<Event<?>> events = new ArrayList<>();
         while (rs.next()) {
           events.add(eventMapper(entityModel, clock).apply(new JDBCRow(rs)));
         }

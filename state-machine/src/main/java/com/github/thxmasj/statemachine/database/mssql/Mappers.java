@@ -36,13 +36,13 @@ public class Mappers {
         .findFirst().orElseThrow(() -> new MappingFailure("No event type has id " + typeId));
   }
 
-  static  Function<Row, Event> eventMapper(
+  static  Function<Row, Event<?>> eventMapper(
         EntityModel entityModel,
         Clock clock
     ) {
         return (row) -> {
             try {
-                return new Event(
+                return new Event<>(
                         value(row, "EventNumber", Integer.class),
                         eventType(entityModel, row.get("Type", UUID.class)),
                         value(row, "Timestamp", LocalDateTime.class),
