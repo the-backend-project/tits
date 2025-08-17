@@ -21,8 +21,6 @@ import static java.util.stream.Collectors.toMap;
 import com.github.thxmasj.statemachine.EventTrigger.EntitySelector;
 import com.github.thxmasj.statemachine.IncomingRequestValidator.Context;
 import com.github.thxmasj.statemachine.IncomingResponseValidator.Result;
-import com.github.thxmasj.statemachine.message.Message;
-import com.github.thxmasj.statemachine.message.Message.OutgoingResponse;
 import com.github.thxmasj.statemachine.OutboxWorker.ForwardStatus;
 import com.github.thxmasj.statemachine.RequiredData.RequirementsNotFulfilled;
 import com.github.thxmasj.statemachine.Requirements.MissingRequirement;
@@ -52,6 +50,8 @@ import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdMod
 import com.github.thxmasj.statemachine.database.mssql.SecondaryIdByEntityId;
 import com.github.thxmasj.statemachine.http.HttpClient;
 import com.github.thxmasj.statemachine.http.RequestMapper;
+import com.github.thxmasj.statemachine.message.Message;
+import com.github.thxmasj.statemachine.message.Message.OutgoingResponse;
 import com.github.thxmasj.statemachine.message.http.HttpMessageParser;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
@@ -70,7 +70,6 @@ import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
-import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import javax.sql.DataSource;
@@ -636,7 +635,7 @@ public class StateMachine {
       List<Event<?>> scheduledEvents
   ) {
     return new RequiredData(
-        entity,
+        entity.id(),
         join(eventLog, scheduledEvents),
         List.of(),
         List.of(),
@@ -1179,11 +1178,7 @@ public class StateMachine {
                                 .zipWith(Flux.fromIterable(transitionsWithData)
                                     .flatMap(transition0 -> outgoingResponses(
                                         transition0,
-                                        new Entity(
-                                            entity.id(),
-                                            join(entity.secondaryIds(), secondaryIdsToAdd),
-                                            entity.model()
-                                        ),
+                                        entity.id(),
                                         finalEventsToStore,
                                         effectiveEventLog,
                                         inflightMessage,
@@ -1699,7 +1694,7 @@ public class StateMachine {
 
   private <I, O> Flux<Message.OutgoingResponse> outgoingResponses(
       TransitionWithData<I, O> transition,
-      Entity entity,
+      EntityId entityId,
       List<Event<?>> newEvents,
       List<Event<?>> eventLog,
       Message inflightMessage,
@@ -1709,7 +1704,7 @@ public class StateMachine {
     return Flux.fromIterable(transition.transition().model().outgoingResponses())
         .flatMap(outgoingResponseModel -> createOutgoingResponse(
             transition,
-            entity,
+            entityId,
             transition.transition().event(),
             newEvents,
             eventLog,
@@ -1755,7 +1750,7 @@ public class StateMachine {
         beanRegistry.getBean(model.creatorType()) :
         model.creator();
     var filteredEvents = new RequiredData(
-        entity,
+        entity.id(),
         join(eventLog, newEvents), // Need for timestamp
         processResults,
         processedEvents,
@@ -1787,7 +1782,7 @@ public class StateMachine {
 
   private <I, O, U> Mono<Message.OutgoingResponse> createOutgoingResponse(
       TransitionWithData<I, O> transition,
-      Entity entity,
+      EntityId entityId,
       Event<?> currentEvent,
       List<Event<?>> newEvents,
       List<Event<?>> eventLog,
@@ -1800,7 +1795,7 @@ public class StateMachine {
         beanRegistry.getBean(model.creatorType()) :
         model.creator();
     var filteredEvents = new RequiredData(
-        entity,
+        entityId,
         join(eventLog, newEvents), // For timestamp
         processResults,
         processedEvents,
@@ -1815,7 +1810,7 @@ public class StateMachine {
         creator.create(
             model.dataAdapter().apply(transition.data()),
             inflightMessage instanceof Message.IncomingRequest rq ? rq : null,
-            entity.id(),
+            entityId,
             correlationId(ctx),
             filteredEvents
         )

@@ -17,8 +17,6 @@ public interface Input {
 
   <T> Mono<OutgoingRequest<T>> outgoingRequest(OutboxQueue queue, EventType<?, ?> eventType, Class<T> type);
 
-  Entity entity();
-
   List<Entity> nestedEntities();
 
   Entity nestedEntity(String entityName);

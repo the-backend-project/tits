@@ -75,7 +75,8 @@ public abstract class AbstractSettlement implements EntityModel {
         onEvent(MerchantCreditReversed).from(Begin).toSelf().build(),
         onEvent(MerchantDebitReversed).from(Begin).toSelf().build(),
         onEvent(CutOffRequest).from(Begin).to(ProcessingSettlement)
-            .response(new Created())
+            .withData(new CutOffRequestDataCreator())
+            .response(_ -> "", new Created())
             .trigger(_ -> event(Open).onEntity(this)
                 .identifiedBy(model(BatchNumber).next().create())
                 .and(model(AcquirerBatchNumber).next().create())

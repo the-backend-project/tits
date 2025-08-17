@@ -21,7 +21,7 @@ public class RequiredData implements Input {
   private final Class<?> requirer;
   private final Requirements requirements;
   private final List<Event<?>> events;
-  private final Entity entity;
+  private final EntityId entityId;
   private final List<ProcessResult> processResults;
   private final List<Event<?>> processedEvents;
   private final OutgoingRequestByEvent outgoingRequestByEvent;
@@ -42,7 +42,7 @@ public class RequiredData implements Input {
   }
 
   public RequiredData(
-      Entity entity,
+      EntityId entityId,
       List<Event<?>> events,
       List<ProcessResult> processResults,
       List<Event<?>> processedEvents,
@@ -53,7 +53,7 @@ public class RequiredData implements Input {
     this.requirer = requireNonNull(requirer);
     this.requirements = requirements;
     this.events = events;
-    this.entity = entity;
+    this.entityId = entityId;
     this.processResults = processResults;
     this.processedEvents = processedEvents;
     this.outgoingRequestByEvent = outgoingRequestByEvent;
@@ -62,7 +62,7 @@ public class RequiredData implements Input {
   @Override
   public <T> Mono<OutgoingRequest<T>> outgoingRequest(OutboxQueue queue, EventType<?, ?> eventType, Class<T> type) {
     var loadedEvent = last(eventType);
-    return getOutgoingRequest(entity.id(), loadedEvent, queue)
+    return getOutgoingRequest(entityId, loadedEvent, queue)
         .map(message -> new OutgoingRequest<>(
                 message,
                 loadedEvent.eventNumber()
@@ -76,11 +76,6 @@ public class RequiredData implements Input {
       throw new MissingRequirement(requirer.getName() + ": last(" + eventType + "): No requirements found for " + eventType);
     }
     return filteredForSingletonRequirement(Requirement.Type.Last, matchingRequirements);
-  }
-
-  @Override
-  public Entity entity() {
-    return entity;
   }
 
   @Override

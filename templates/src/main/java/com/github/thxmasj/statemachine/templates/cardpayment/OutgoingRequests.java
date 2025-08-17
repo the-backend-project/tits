@@ -87,7 +87,7 @@ public class OutgoingRequests {
   public interface ApprovedCutOff extends OutgoingRequestCreator<Tuple2<CutOff, ReconciliationValues>> {
     default UUID id() {return UUID.fromString("f8002ded-f8ae-4d7e-a7de-44a7bba4d24d");}
   }
-  public interface Reconciliation extends OutgoingRequestCreator<String> {
+  public interface Reconciliation extends OutgoingRequestCreator<Tuple2<BatchNumber, AcquirerBatchNumber>> {
     default UUID id() {return UUID.fromString("7c676c66-6465-4dc6-b4e5-f9266ad52c1e");}
   }
 }
