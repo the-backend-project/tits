@@ -4,14 +4,14 @@ import reactor.core.publisher.Mono;
 
 public interface DataCreator<I, O> extends DataRequirer {
 
-  Mono<O> execute(InputEvent<I> inputEvent, EventLog eventLog, Input input);
+  Mono<O> execute(InputEvent<I> inputEvent, EventLog eventLog);
 
   static <T> DataCreator<T, T> fromInput(Class<T> unused) {
-    return (inputEvent, _, _) -> Mono.just(inputEvent.data());
+    return (inputEvent, _) -> Mono.just(inputEvent.data());
   }
 
   static <I, O> DataCreator<I, O> fromEvent(EventType<?, O> eventType) {
-    return (_, eventLog, _) -> Mono.just(eventLog.one(eventType).getUnmarshalledData());
+    return (_, eventLog) -> Mono.just(eventLog.one(eventType).getUnmarshalledData());
   }
 
 }

@@ -5,7 +5,6 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent
 
 import com.github.thxmasj.statemachine.DataCreator;
 import com.github.thxmasj.statemachine.EventLog;
-import com.github.thxmasj.statemachine.Input;
 import com.github.thxmasj.statemachine.InputEvent;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthenticationResult;
@@ -18,8 +17,7 @@ public class AuthorisationRequestDataCreator
   @Override
   public Mono<Tuple2<Authorisation, AuthenticationResult>> execute(
       InputEvent<AuthenticationResult> inputEvent,
-      EventLog eventLog,
-      Input unused
+      EventLog eventLog
   ) {
     return Mono.just(tuple(
         eventLog.one(PaymentRequest).getUnmarshalledData(),

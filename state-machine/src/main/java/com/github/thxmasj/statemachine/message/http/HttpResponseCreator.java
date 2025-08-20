@@ -8,8 +8,6 @@ import com.fasterxml.jackson.databind.ObjectWriter;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.github.thxmasj.statemachine.EntityId;
-import com.github.thxmasj.statemachine.Input;
-import com.github.thxmasj.statemachine.message.Message.IncomingRequest;
 import com.github.thxmasj.statemachine.OutgoingResponseCreator;
 import java.time.ZonedDateTime;
 import java.util.LinkedHashMap;
@@ -35,17 +33,14 @@ public class HttpResponseCreator implements OutgoingResponseCreator<String> {
   @Override
   public Mono<HttpResponseMessage> create(
       String data,
-      IncomingRequest incomingRequest,
-      EntityId entityId,
-      String correlationId,
-      Input input
+      ResponseContext context
   ) {
     return Mono.just(
         new HttpResponseMessage(
             statusCode,
             reasonPhrase,
-            headers(correlationId, data),
-            json(body(entityId, data, input.timestamp()))
+            headers(context.correlationId(), data),
+            json(body(context.entityId(), data, context.timestamp()))
         )
     );
   }

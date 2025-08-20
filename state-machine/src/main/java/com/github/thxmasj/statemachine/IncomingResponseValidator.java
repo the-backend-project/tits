@@ -11,8 +11,7 @@ public interface IncomingResponseValidator<OUTPUT_TYPE> extends DataRequirer {
       EntityId entityId,
       Context<OUTPUT_TYPE> context,
       HttpRequestMessage requestMessage,
-      Input.IncomingResponse response,
-      Input input
+      Input.IncomingResponse response
   );
 
   static Status status(HttpResponseMessage responseMessage) {

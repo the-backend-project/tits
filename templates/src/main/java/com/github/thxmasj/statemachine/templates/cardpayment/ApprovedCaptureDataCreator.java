@@ -5,7 +5,6 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent
 
 import com.github.thxmasj.statemachine.DataCreator;
 import com.github.thxmasj.statemachine.EventLog;
-import com.github.thxmasj.statemachine.Input;
 import com.github.thxmasj.statemachine.InputEvent;
 import com.github.thxmasj.statemachine.templates.cardpayment.ApprovedCaptureDataCreator.ApprovedCaptureData;
 import reactor.core.publisher.Mono;
@@ -25,7 +24,7 @@ public class ApprovedCaptureDataCreator implements DataCreator<AcquirerResponse,
   ) {}
 
   @Override
-  public Mono<ApprovedCaptureData> execute(InputEvent<AcquirerResponse> inputEvent, EventLog eventLog, Input unused) {
+  public Mono<ApprovedCaptureData> execute(InputEvent<AcquirerResponse> inputEvent, EventLog eventLog) {
     var paymentData = eventLog.one(PaymentRequest).getUnmarshalledData();
     var acquirerResponse = inputEvent.data();
     var captureData = eventLog.last(CaptureRequest).getUnmarshalledData();

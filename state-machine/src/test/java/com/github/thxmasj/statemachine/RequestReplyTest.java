@@ -73,9 +73,9 @@ public class RequestReplyTest {
   static class LampRequest implements OutgoingRequestCreator<Void> {
 
     @Override
-    public Mono<HttpRequestMessage> create(Void data, EntityId entityId, String correlationId, Input input) {
+    public Mono<HttpRequestMessage> create(Void data, Context context) {
       return Mono.just(new HttpRequestMessage(POST, URI.create(
-          "http://localhost:" + server.getAddress().getPort() + "/lamps/" + entityId.value()
+          "http://localhost:" + server.getAddress().getPort() + "/lamps/" + context.entityId().value()
       )));
     }
 
@@ -103,9 +103,9 @@ public class RequestReplyTest {
             onEvent(Toggle).from(On).to(Off).build(),
             onEvent(SwitchOff).from(On).to(Off).build(),
             onEvent(Toggle).from(Off).to(On)
-                .withData((_, _, _) -> Mono.<Void>empty())
+                .withData((_, _) -> Mono.<Void>empty())
                 .notify(request(new LampRequest()).to(DeviceListener).guaranteed())
-                .response((_, _, _, _, _) -> Mono.just(new HttpResponseMessage(200, "OK", "Light is on!"))),
+                .response((_, _) -> Mono.just(new HttpResponseMessage(200, "OK", "Light is on!"))),
             onEvent(SwitchOn).from(Off).to(On).build()
         );
       }

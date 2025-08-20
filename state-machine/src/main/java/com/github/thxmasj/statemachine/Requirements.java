@@ -48,7 +48,7 @@ public class Requirements {
     return new Requirements(List.of());
   }
 
-  public static <T> Requirement<T> outgoingRequest(OutboxQueue queue, EventType<?, T> eventType, Class<T> dataType) {
+  public static <T> Requirement<T> outgoingRequest(OutboxQueue queue, EventType<?, T> eventType, Class<?> dataType) {
     return new Requirement<>(List.of(eventType), Requirement.Type.Last, new OutgoingRequest(queue, dataType));
   }
 

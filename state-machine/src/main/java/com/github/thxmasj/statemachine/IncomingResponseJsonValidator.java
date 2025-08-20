@@ -38,11 +38,10 @@ public abstract class IncomingResponseJsonValidator<INPUT_TYPE, OUTPUT_TYPE>
       EntityId entityId,
       Context<OUTPUT_TYPE> context,
       HttpRequestMessage requestMessage,
-      Input.IncomingResponse response,
-      Input input
+      Input.IncomingResponse response
   ) {
     if (response.httpMessage().statusCode() < 200 || response.httpMessage().statusCode() >= 300)
-      return execute(entityId, context, requestMessage, response, input, null);
+      return execute(entityId, context, requestMessage, response, null);
     else if (response.httpMessage().body() == null)
       return Mono.just(new Result(Status.PermanentError, "Missing response message", context.rollback("Missing response message")));
     INPUT_TYPE jsonBody;
@@ -60,7 +59,7 @@ public abstract class IncomingResponseJsonValidator<INPUT_TYPE, OUTPUT_TYPE>
           context.rollback(violationMessage)
       ));
     }
-    return execute(entityId, context, requestMessage, response, input, jsonBody);
+    return execute(entityId, context, requestMessage, response, jsonBody);
   }
 
   public abstract Mono<Result> execute(
@@ -68,7 +67,6 @@ public abstract class IncomingResponseJsonValidator<INPUT_TYPE, OUTPUT_TYPE>
       Context<OUTPUT_TYPE> context,
       HttpRequestMessage requestMessage,
       Input.IncomingResponse response,
-      Input input,
       INPUT_TYPE jsonBody
   );
 
@@ -80,7 +78,6 @@ public abstract class IncomingResponseJsonValidator<INPUT_TYPE, OUTPUT_TYPE>
           Context<T> context,
           HttpRequestMessage requestMessage,
           Input.IncomingResponse response,
-          Input input,
           T jsonBody
       ) {
         return Mono.just(new Result(Status.Ok, null, context.validResponse(eventType, jsonBody)));

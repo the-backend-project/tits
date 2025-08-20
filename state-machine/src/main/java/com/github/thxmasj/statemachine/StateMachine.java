@@ -22,7 +22,8 @@ import com.github.thxmasj.statemachine.EventTrigger.EntitySelector;
 import com.github.thxmasj.statemachine.IncomingRequestValidator.Context;
 import com.github.thxmasj.statemachine.IncomingResponseValidator.Result;
 import com.github.thxmasj.statemachine.OutboxWorker.ForwardStatus;
-import com.github.thxmasj.statemachine.RequiredData.RequirementsNotFulfilled;
+import com.github.thxmasj.statemachine.OutgoingRequestCreator.ReversalContext;
+import com.github.thxmasj.statemachine.OutgoingResponseCreator.ResponseContext;
 import com.github.thxmasj.statemachine.Requirements.MissingRequirement;
 import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Entity;
 import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Status;
@@ -414,8 +415,8 @@ public class StateMachine {
               incomingRequest.requestMessage(),
               validator,
               nextEventNumber,
-              eventTrigger.eventType(),
-              scheduledEvents
+              eventTrigger.eventType()
+              //scheduledEvents
           )
               .flatMap(inputEvent -> processEvents(
                   eventLog,
@@ -453,7 +454,7 @@ public class StateMachine {
         .onErrorResume(t -> withCorrelationId(correlationId -> listener.clientRequestFailed(
                 correlationId,
                 eventTrigger.entitySelectors().isEmpty() ? null : eventTrigger.entitySelectors().getFirst().entityId(),
-                new Event(-1, eventTrigger.eventType(), clock),
+                new Event<>(-1, eventTrigger.eventType(), clock),
                 t
             ))
                 .then(Mono.error(t))
@@ -524,15 +525,9 @@ public class StateMachine {
       HttpRequestMessage requestMessage,
       IncomingRequestValidator<T> validator,
       int currentEventNumber,
-      EventType<?, ?> validEventType,
-      List<Event<?>> scheduledEvents
+      EventType<?, ?> validEventType
+//      List<Event<?>> scheduledEvents
   ) {
-    RequiredData requiredData = requiredData(
-        validator,
-        new Entity(eventLog.entityId(), eventLog.secondaryIds(), eventLog.entityModel()),
-        eventLog.effectiveEvents(),
-        scheduledEvents
-    );
     var incomingRequest = new Input.IncomingRequest(
         requestMessage,
         messageId,
@@ -542,8 +537,7 @@ public class StateMachine {
     return validator.execute(
         eventLog.entityId(),
         new IncomingRequestContext<>(validEventType),
-        incomingRequest,
-        requiredData
+        incomingRequest
     );
   }
 
@@ -552,8 +546,7 @@ public class StateMachine {
       HttpResponseMessage responseMessage,
       IncomingResponseValidator<?> validator,
       EntityId entityId,
-      int currentEventNumber,
-      RequiredData requiredData
+      int currentEventNumber
   ) {
     return validator.execute(
         entityId,
@@ -563,8 +556,7 @@ public class StateMachine {
         new Input.IncomingResponse(
             responseMessage,
             currentEventNumber
-        ),
-        requiredData
+        )
     );
   }
 
@@ -626,23 +618,6 @@ public class StateMachine {
     public InputEvent<DATA_TYPE> rollback(String cause) {
       return new InputEvent<>(Rollback, null, cause);
     }
-  }
-
-  private RequiredData requiredData(
-      Object dataRequirer,
-      Entity entity,
-      List<Event<?>> eventLog,
-      List<Event<?>> scheduledEvents
-  ) {
-    return new RequiredData(
-        entity.id(),
-        join(eventLog, scheduledEvents),
-        List.of(),
-        List.of(),
-        dataRequirer instanceof DataRequirer dr ? dr.requirements() : Requirements.none(),
-        dataRequirer.getClass(),
-        outgoingRequestByEvent
-    );
   }
 
   private record IncomingResponseStatus(
@@ -1013,7 +988,7 @@ public class StateMachine {
     ).map(processingData -> new TransitionWithData<>(
             new ActualTransition<>(
                 transitionModelForInput,
-                new Event(
+                new Event<>(
                     eventLog.lastEventNumber() + scheduledEvents.size() + 1,
                     inputEvent.eventType(),
                     clock,
@@ -1073,7 +1048,7 @@ public class StateMachine {
             if (inputEvent.data() == null) {
               // No reference to an event to roll back to so roll back to previous state
               numberOfEventToRollback = eventLog.lastEventNumber();
-              for (Event event : effectiveEventLog.reversed()) {
+              for (Event<?> event : effectiveEventLog.reversed()) {
                 numberOfEventToRollback = event.eventNumber();
                 break;
               }
@@ -1168,9 +1143,9 @@ public class StateMachine {
                                     transitionsWithData)
                                 .flatMap(transition0 -> outgoingRequests(
                                     transition0,
+                                    inputEvent,
                                     new Entity(entity.id(), join(entity.secondaryIds(), secondaryIdsToAdd), entity.model()),
                                     finalEventsToStore,
-                                    effectiveEventLog,
                                     correlationId,
                                     processResults,
                                     processedEvents
@@ -1180,7 +1155,6 @@ public class StateMachine {
                                         transition0,
                                         entity.id(),
                                         finalEventsToStore,
-                                        effectiveEventLog,
                                         inflightMessage,
                                         processResults,
                                         processedEvents
@@ -1462,13 +1436,7 @@ public class StateMachine {
                     responseMessage,
                     responseValidator,
                     entityId,
-                    eventLog.lastEventNumber() + 1,
-                    requiredData(
-                        responseValidator,
-                        new Entity(entityId, eventLog.secondaryIds(), eventLog.entityModel()),
-                        eventLog.effectiveEvents(),
-                        List.of()
-                    )
+                    eventLog.lastEventNumber() + 1
                 ).map(output -> new ResponseValidationResult(output, responseMessageOnQueue));
               })
               .flatMap(validationOutput -> validationOutput.validationResult().status() == Result.Status.TransientError ?
@@ -1671,9 +1639,9 @@ public class StateMachine {
 
   private <I, O> Flux<Message.OutgoingRequest> outgoingRequests(
       TransitionWithData<I, O> transition,
+      InputEvent<?> inputEvent,
       Entity entity,
       List<Event<?>> newEvents,
-      List<Event<?>> eventLog,
       String correlationId,
       List<ProcessResult> processResults,
       List<Event<?>> processedEvents
@@ -1681,10 +1649,10 @@ public class StateMachine {
     return Flux.fromIterable(transition.transition().model().outgoingRequests())
         .flatMap(outgoingRequestModel -> createOutgoingRequest(
             transition,
+            inputEvent,
             entity,
             transition.transition().event(),
             newEvents,
-            eventLog,
             outgoingRequestModel,
             correlationId,
             processResults,
@@ -1696,7 +1664,6 @@ public class StateMachine {
       TransitionWithData<I, O> transition,
       EntityId entityId,
       List<Event<?>> newEvents,
-      List<Event<?>> eventLog,
       Message inflightMessage,
       List<ProcessResult> processResults,
       List<Event<?>> processedEvents
@@ -1707,7 +1674,6 @@ public class StateMachine {
             entityId,
             transition.transition().event(),
             newEvents,
-            eventLog,
             outgoingResponseModel,
             inflightMessage,
             processResults,
@@ -1737,10 +1703,10 @@ public class StateMachine {
 
   private <I, O, U> Mono<Message.OutgoingRequest> createOutgoingRequest(
       TransitionWithData<I, O> transition,
+      InputEvent<?> inputEvent,
       Entity entity,
       Event<?> currentEvent,
       List<Event<?>> newEvents,
-      List<Event<?>> eventLog,
       OutgoingRequestModel<O, U> model,
       String correlationId,
       List<ProcessResult> processResults,
@@ -1749,24 +1715,135 @@ public class StateMachine {
     OutgoingRequestCreator<U> creator = model.creatorType() != null ?
         beanRegistry.getBean(model.creatorType()) :
         model.creator();
-    var filteredEvents = new RequiredData(
-        entity.id(),
-        join(eventLog, newEvents), // Need for timestamp
-        processResults,
-        processedEvents,
-        Requirements.none(),
-        model.creatorType() != null ? model.creatorType() : model.creator().getClass(),
-        null//outgoingRequestByEvent
-    );
-    Entity parentEntity = filteredEvents.nestedEntities().stream()
+    Entity parentEntity = processResults.stream()
+        .filter(r -> r.entity() != null).map(ProcessResult::entity)
         .filter(nestedEntity -> nestedEntity.model().equals(entity.model.parentEntity()))
         .findFirst().orElse(null);
-    return creator.create(
+    return (inputEvent.eventType().isRollback() ?
+        outgoingRequestByEvent.execute(entity.id(), currentEvent.eventNumber())
+            .flatMap(originalMessage -> creator.reversed(
             model.dataAdapter().apply(transition.data()),
-            entity.id(),
-            correlationId,
-            filteredEvents
-        )
+            new ReversalContext() {
+
+              @Override
+              public HttpRequestMessage originalRequest() {
+                return originalMessage;
+              }
+
+              @Override
+              public EntityId entityId() {
+                return entity.id();
+              }
+
+              @Override
+              public String correlationId() {
+                return correlationId;
+              }
+
+              @Override
+              public ZonedDateTime timestamp() {
+                return newEvents.getLast().timestamp();
+              }
+
+              @Override
+              public List<Entity> nestedEntities() {
+                //noinspection SimplifyStreamApiCallChains
+                return processResults.stream().filter(r -> r.entity() != null).map(ProcessResult::entity).toList();
+              }
+
+              @Override
+              public Entity nestedEntity(String entityName) {
+                return nestedEntities().stream()
+                    .filter(entity -> entity.model().name().equals(entityName))
+                    .findFirst()
+                    .orElse(null);
+              }
+
+              @Override
+              public SecondaryId secondaryId(String entityName, SecondaryIdModel idModel) {
+                var entity = nestedEntity(entityName);
+                if (entity == null)
+                  throw new RequirementsNotFulfilled("No nested entity " + entityName);
+                return entity.secondaryIds().stream()
+                    .filter(sid -> sid.model() == idModel)
+                    .findFirst()
+                    .orElseThrow(() -> new RequirementsNotFulfilled("No secondary id " + entityName + "/" + idModel.name()));
+              }
+
+              @Override
+              public ProcessResult processResult(EntityModel entityType, EntityId entityId) {
+                return processResults.stream().filter(r -> r.entity().model() == entityType && r.entity().id().equals(entityId)).findFirst().orElseThrow();
+              }
+
+              @Override
+              public <T> Event<T> processedEvent(EventType<?, T> eventType) {
+                return processedEvents.stream()
+                    .map(e -> (Event<T>) e)
+                    .filter(e -> e.type() == eventType)
+                    .findFirst()
+                    .orElseThrow();
+              }
+            }
+
+        )) :
+        creator.create(
+            model.dataAdapter().apply(transition.data()),
+            new OutgoingRequestCreator.Context() {
+              @Override
+              public EntityId entityId() {
+                return entity.id();
+              }
+
+              @Override
+              public String correlationId() {
+                return correlationId;
+              }
+
+              @Override
+              public ZonedDateTime timestamp() {
+                return newEvents.getLast().timestamp();
+              }
+
+              @Override
+              public List<Entity> nestedEntities() {
+                //noinspection SimplifyStreamApiCallChains
+                return processResults.stream().filter(r -> r.entity() != null).map(ProcessResult::entity).toList();
+              }
+
+              @Override
+              public Entity nestedEntity(String entityName) {
+                return nestedEntities().stream()
+                    .filter(entity -> entity.model().name().equals(entityName))
+                    .findFirst()
+                    .orElse(null);
+              }
+
+              @Override
+              public SecondaryId secondaryId(String entityName, SecondaryIdModel idModel) {
+                var entity = nestedEntity(entityName);
+                if (entity == null)
+                  throw new RequirementsNotFulfilled("No nested entity " + entityName);
+                return entity.secondaryIds().stream()
+                    .filter(sid -> sid.model() == idModel)
+                    .findFirst()
+                    .orElseThrow(() -> new RequirementsNotFulfilled("No secondary id " + entityName + "/" + idModel.name()));
+              }
+
+              @Override
+              public ProcessResult processResult(EntityModel entityType, EntityId entityId) {
+                return processResults.stream().filter(r -> r.entity().model() == entityType && r.entity().id().equals(entityId)).findFirst().orElseThrow();
+              }
+
+              @Override
+              public <T> Event<T> processedEvent(EventType<?, T> eventType) {
+                return processedEvents.stream()
+                    .map(e -> (Event<T>) e)
+                    .filter(e -> e.type() == eventType)
+                    .findFirst()
+                    .orElseThrow();
+              }
+            }
+        ))
         .map(message -> new Message.OutgoingRequest(
             UUID.randomUUID(),
             currentEvent.eventNumber(),
@@ -1785,7 +1862,6 @@ public class StateMachine {
       EntityId entityId,
       Event<?> currentEvent,
       List<Event<?>> newEvents,
-      List<Event<?>> eventLog,
       OutgoingResponseModel<O, U> model,
       Message inflightMessage,
       List<ProcessResult> processResults,
@@ -1794,26 +1870,73 @@ public class StateMachine {
     OutgoingResponseCreator<U> creator = model.creatorType() != null ?
         beanRegistry.getBean(model.creatorType()) :
         model.creator();
-    var filteredEvents = new RequiredData(
-        entityId,
-        join(eventLog, newEvents), // For timestamp
-        processResults,
-        processedEvents,
-        Requirements.none(),//creator.requirements(),
-        creator.getClass(),
-        null//outgoingRequestByEvent
-    );
     return Mono.deferContextual(ctx -> !hasRequestId(ctx) ?
         Mono.just(correlationId(ctx) + ": No incoming request in context, so skipping outgoing response " + creator.getClass())
             .doOnNext(System.out::println)
             .then(Mono.empty()) :
         creator.create(
-            model.dataAdapter().apply(transition.data()),
-            inflightMessage instanceof Message.IncomingRequest rq ? rq : null,
-            entityId,
-            correlationId(ctx),
-            filteredEvents
-        )
+                model.dataAdapter().apply(transition.data()),
+                new ResponseContext() {
+                  @Override
+                  public Message.IncomingRequest incomingRequest() {
+                    return inflightMessage instanceof Message.IncomingRequest rq ? rq : null;
+                  }
+
+                  @Override
+                  public EntityId entityId() {
+                    return entityId;
+                  }
+
+                  @Override
+                  public String correlationId() {
+                    return Correlation.correlationId(ctx);
+                  }
+
+                  @Override
+                  public ZonedDateTime timestamp() {
+                    return newEvents.getLast().timestamp();
+                  }
+
+                  @Override
+                  public List<Entity> nestedEntities() {
+                    //noinspection SimplifyStreamApiCallChains
+                    return processResults.stream().filter(r -> r.entity() != null).map(ProcessResult::entity).toList();
+                  }
+
+                  @Override
+                  public Entity nestedEntity(String entityName) {
+                    return nestedEntities().stream()
+                        .filter(entity -> entity.model().name().equals(entityName))
+                        .findFirst()
+                        .orElse(null);
+                  }
+
+                  @Override
+                  public SecondaryId secondaryId(String entityName, SecondaryIdModel idModel) {
+                    var entity = nestedEntity(entityName);
+                    if (entity == null)
+                      throw new RequirementsNotFulfilled("No nested entity " + entityName);
+                    return entity.secondaryIds().stream()
+                        .filter(sid -> sid.model() == idModel)
+                        .findFirst()
+                        .orElseThrow(() -> new RequirementsNotFulfilled("No secondary id " + entityName + "/" + idModel.name()));
+                  }
+
+                  @Override
+                  public ProcessResult processResult(EntityModel entityType, EntityId entityId) {
+                    return processResults.stream().filter(r -> r.entity().model() == entityType && r.entity().id().equals(entityId)).findFirst().orElseThrow();
+                  }
+
+                  @Override
+                  public <T> Event<T> processedEvent(EventType<?, T> eventType) {
+                    return processedEvents.stream()
+                        .map(e -> (Event<T>) e)
+                        .filter(e -> e.type() == eventType)
+                        .findFirst()
+                        .orElseThrow();
+                  }
+                }
+            )
         .map(message -> new Message.OutgoingResponse(
                 currentEvent.eventNumber(),
                 message,
@@ -1943,8 +2066,7 @@ public class StateMachine {
     DataCreator<I, O> dataCreator = dataCreator(transitionModel);
     if (dataCreator != null) {
       eventLog = new EventLog(eventLog.entityModel(), eventLog.entityId(), entity.secondaryIds, join(eventLog.events(), scheduledEvents));
-      RequiredData requiredData = requiredData(dataCreator, entity, eventLog.effectiveEvents(), scheduledEvents);
-      return dataCreator.execute(inputEvent, eventLog, requiredData);
+      return dataCreator.execute(inputEvent, eventLog);
     }
     return Mono.empty();
   }

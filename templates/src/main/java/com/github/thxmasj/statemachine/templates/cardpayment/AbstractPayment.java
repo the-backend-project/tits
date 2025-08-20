@@ -2,6 +2,7 @@ package com.github.thxmasj.statemachine.templates.cardpayment;
 
 import static com.github.thxmasj.statemachine.BuiltinEventTypes.RequestUndelivered;
 import static com.github.thxmasj.statemachine.BuiltinEventTypes.Rollback;
+import static com.github.thxmasj.statemachine.DataCreator.fromEvent;
 import static com.github.thxmasj.statemachine.EntitySelectorBuilder.model;
 import static com.github.thxmasj.statemachine.EntitySelectorBuilder.secondaryId;
 import static com.github.thxmasj.statemachine.EventTriggerBuilder.event;
@@ -230,9 +231,9 @@ public abstract class AbstractPayment implements EntityModel {
                     ).createIfNotExists())
                     .and(model(BatchNumber).group(data.authorisation().merchant().id()).last().createIfNotExists()))
                 .scheduledEvents(List.of(new ScheduledEvent(AuthorisationExpired, Duration.ofDays(7))))
-                .reverse(builder -> builder.withData(new AuthorisationReversalDataCreator())
-                    .trigger(data -> event(SettlementEvent.MerchantCreditReversed, data.amount()).onEntity(settlement)
-                        .identifiedBy(model(BatchNumber).group(data.merchantId()).last()))),
+                .reverse(builder -> builder.withData(fromEvent(PaymentRequest))
+                    .trigger(data -> event(SettlementEvent.MerchantCreditReversed, data.amount().requested()).onEntity(settlement)
+                        .identifiedBy(model(BatchNumber).group(data.merchant().id()).last()))),
             onEvent(AcquirerDeclined).from(ProcessingAuthorisation).to(AuthorisationFailed)
                 .withData(new  AuthorisationResponseDataCreator())
                 .notify(request(declinedAuthorisation()).to(Merchant).guaranteed()),

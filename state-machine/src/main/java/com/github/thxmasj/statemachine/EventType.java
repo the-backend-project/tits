@@ -29,7 +29,7 @@ public record EventType<I, O>(
   }
 
   public static EventType<Void, Void> cancel(String name, UUID id) {
-    return new EventType<>(name, id, Void.class, Void.class, false, true, false);
+    return new EventType<>(name, id, Void.class, Void.class, true, true, false);
   }
 
   public static <T> EventType<T, T> readOnly(String name, UUID id, Class<T> dataType) {

@@ -7,7 +7,6 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent
 
 import com.github.thxmasj.statemachine.DataCreator;
 import com.github.thxmasj.statemachine.EventLog;
-import com.github.thxmasj.statemachine.Input;
 import com.github.thxmasj.statemachine.InputEvent;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthenticationResult;
@@ -17,7 +16,7 @@ import reactor.core.publisher.Mono;
 class AuthorisationRequestUndeliveredData implements DataCreator<Void, Tuple2<Authorisation, AuthenticationResult>> {
 
   @Override
-  public Mono<Tuple2<Authorisation, AuthenticationResult>> execute(InputEvent<Void> inputEvent, EventLog eventLog, Input unused) {
+  public Mono<Tuple2<Authorisation, AuthenticationResult>> execute(InputEvent<Void> inputEvent, EventLog eventLog) {
     return Mono.just(tuple(
         eventLog.one(PaymentRequest).getUnmarshalledData(),
         eventLog.one(AuthorisationRequest, PreauthorisationRequest).getUnmarshalledData()

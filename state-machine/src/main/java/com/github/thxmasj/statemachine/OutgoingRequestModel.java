@@ -18,7 +18,7 @@ public record OutgoingRequestModel<T, U>(
 
   public OutgoingRequestModel {
     if (responseValidator == null)
-      responseValidator = (IncomingResponseValidator<Object>) (_, _, _, response, _) -> Mono.just(new Result(
+      responseValidator = (IncomingResponseValidator<Object>) (_, _, _, response) -> Mono.just(new Result(
           IncomingResponseValidator.status(response.httpMessage()),
           response.httpMessage().statusLine(),
           null

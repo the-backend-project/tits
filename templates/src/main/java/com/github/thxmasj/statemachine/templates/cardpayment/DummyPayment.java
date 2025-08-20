@@ -1,14 +1,12 @@
 package com.github.thxmasj.statemachine.templates.cardpayment;
 
-import com.github.thxmasj.statemachine.EntityId;
 import com.github.thxmasj.statemachine.IncomingResponseValidator;
-import com.github.thxmasj.statemachine.Input;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
-import com.github.thxmasj.statemachine.templates.cardpayment.AuthorisationResponseDataCreator.AuthorisationResponseData;
 import com.github.thxmasj.statemachine.templates.cardpayment.ApprovedCaptureDataCreator.ApprovedCaptureData;
 import com.github.thxmasj.statemachine.templates.cardpayment.ApprovedRefundDataCreator.ApprovedRefundData;
 import com.github.thxmasj.statemachine.templates.cardpayment.AuthenticationDataCreator.AuthenticationData;
+import com.github.thxmasj.statemachine.templates.cardpayment.AuthorisationResponseDataCreator.AuthorisationResponseData;
 import com.github.thxmasj.statemachine.templates.cardpayment.AuthorisationReversalDataCreator.AuthorisationReversalData;
 import com.github.thxmasj.statemachine.templates.cardpayment.CaptureRequestDataCreator.CaptureRequestData;
 import com.github.thxmasj.statemachine.templates.cardpayment.CaptureRequestedTooLateDataCreator.CaptureRequestedTooLateData;
@@ -32,12 +30,7 @@ public class DummyPayment extends AbstractPayment{
   protected Authentication authentication() {
     return new OutgoingRequests.Authentication() {
       @Override
-      public Mono<HttpRequestMessage> create(
-          AuthenticationData data,
-          EntityId entityId,
-          String correlationId,
-          Input input
-      ) {
+      public Mono<HttpRequestMessage> create(AuthenticationData data, Context context) {
         return null;
       }
 
@@ -54,9 +47,7 @@ public class DummyPayment extends AbstractPayment{
       @Override
       public Mono<HttpRequestMessage> create(
           Tuple2<PaymentEvent.Authorisation, AuthenticationResult> data,
-          EntityId entityId,
-          String correlationId,
-          Input input
+          Context context
       ) {
         return null;
       }
@@ -74,9 +65,7 @@ public class DummyPayment extends AbstractPayment{
       @Override
       public Mono<HttpRequestMessage> create(
           PreauthorisationReversalData data,
-          EntityId entityId,
-          String correlationId,
-          Input input
+          Context context
       ) {
         return null;
       }
@@ -93,9 +82,7 @@ public class DummyPayment extends AbstractPayment{
       @Override
       public Mono<HttpRequestMessage> create(
           Tuple2<PaymentEvent.Authorisation, AuthenticationResult> data,
-          EntityId entityId,
-          String correlationId,
-          Input input
+          Context context
       ) {
         return null;
       }
@@ -113,9 +100,7 @@ public class DummyPayment extends AbstractPayment{
       @Override
       public Mono<HttpRequestMessage> create(
           AuthorisationReversalData data,
-          EntityId entityId,
-          String correlationId,
-          Input input
+          Context context
       ) {
         return null;
       }
@@ -134,9 +119,7 @@ public class DummyPayment extends AbstractPayment{
       @Override
       public Mono<HttpRequestMessage> create(
           PreauthorisationReversalData data,
-          EntityId entityId,
-          String correlationId,
-          Input input
+          Context context
       ) {
         return null;
       }
@@ -154,9 +137,7 @@ public class DummyPayment extends AbstractPayment{
       @Override
       public Mono<HttpRequestMessage> create(
           AuthorisationReversalData data,
-          EntityId entityId,
-          String correlationId,
-          Input input
+          Context context
       ) {
         return null;
       }
@@ -174,9 +155,7 @@ public class DummyPayment extends AbstractPayment{
       @Override
       public Mono<HttpRequestMessage> create(
           Tuple2<PaymentEvent.Authorisation, AuthenticationResult> data,
-          EntityId entityId,
-          String correlationId,
-          Input input
+          Context context
       ) {
         return null;
       }
@@ -195,9 +174,7 @@ public class DummyPayment extends AbstractPayment{
       @Override
       public Mono<HttpRequestMessage> create(
           Tuple2<PaymentEvent.Authorisation, AuthenticationResult> data,
-          EntityId entityId,
-          String correlationId,
-          Input input
+          Context context
       ) {
         return null;
       }
@@ -215,9 +192,7 @@ public class DummyPayment extends AbstractPayment{
       @Override
       public Mono<HttpRequestMessage> create(
           Tuple2<PaymentEvent.Authorisation, AuthenticationResult> data,
-          EntityId entityId,
-          String correlationId,
-          Input input
+          Context context
       ) {
         return null;
       }
@@ -233,7 +208,10 @@ public class DummyPayment extends AbstractPayment{
   protected OutgoingRequests.DeclinedAuthorisation declinedAuthorisation() {
     return new OutgoingRequests.DeclinedAuthorisation() {
       @Override
-      public Mono<HttpRequestMessage> create(AuthorisationResponseData data, EntityId entityId, String correlationId, Input input) {
+      public Mono<HttpRequestMessage> create(
+          AuthorisationResponseData data,
+          Context context
+      ) {
         return null;
       }
 
@@ -248,7 +226,10 @@ public class DummyPayment extends AbstractPayment{
   protected OutgoingRequests.ApprovedPreauthorisation approvedPreauthorisation() {
     return new OutgoingRequests.ApprovedPreauthorisation() {
       @Override
-      public Mono<HttpRequestMessage> create(AuthorisationResponseData data, EntityId entityId, String correlationId, Input input) {
+      public Mono<HttpRequestMessage> create(
+          AuthorisationResponseData data,
+          Context context
+      ) {
         return null;
       }
 
@@ -263,7 +244,10 @@ public class DummyPayment extends AbstractPayment{
   protected OutgoingRequests.ApprovedCapture approvedCapture() {
     return new OutgoingRequests.ApprovedCapture() {
       @Override
-      public Mono<HttpRequestMessage> create(ApprovedCaptureData data, EntityId entityId, String correlationId, Input input) {
+      public Mono<HttpRequestMessage> create(
+          ApprovedCaptureData data,
+          Context context
+      ) {
         return null;
       }
 
@@ -280,9 +264,7 @@ public class DummyPayment extends AbstractPayment{
       @Override
       public Mono<HttpRequestMessage> create(
           AuthorisationResponseData data,
-          EntityId entityId,
-          String correlationId,
-          Input input
+          Context context
       ) {
         return null;
       }
@@ -298,7 +280,10 @@ public class DummyPayment extends AbstractPayment{
   protected OutgoingRequests.Capture capture() {
     return new OutgoingRequests.Capture() {
       @Override
-      public Mono<HttpRequestMessage> create(CaptureRequestData data, EntityId entityId, String correlationId, Input input) {
+      public Mono<HttpRequestMessage> create(
+          CaptureRequestData data,
+          Context context
+      ) {
         return null;
       }
 
@@ -315,9 +300,7 @@ public class DummyPayment extends AbstractPayment{
       @Override
       public Mono<HttpRequestMessage> create(
           CaptureRequestedTooLateData data,
-          EntityId entityId,
-          String correlationId,
-          Input input
+          Context context
       ) {
         return null;
       }
@@ -333,7 +316,10 @@ public class DummyPayment extends AbstractPayment{
   protected OutgoingRequests.RefundAuthorisation refundAuthorisation() {
     return new OutgoingRequests.RefundAuthorisation() {
       @Override
-      public Mono<HttpRequestMessage> create(RefundRequestData data, EntityId entityId, String correlationId, Input input) {
+      public Mono<HttpRequestMessage> create(
+          RefundRequestData data,
+          Context context
+      ) {
         return null;
       }
 
@@ -348,7 +334,10 @@ public class DummyPayment extends AbstractPayment{
   protected OutgoingRequests.RefundReversal refundReversal() {
     return new OutgoingRequests.RefundReversal() {
       @Override
-      public Mono<HttpRequestMessage> create(RefundReversalData data, EntityId entityId, String correlationId, Input input) {
+      public Mono<HttpRequestMessage> create(
+          RefundReversalData data,
+          Context context
+      ) {
         return null;
       }
 
@@ -363,7 +352,10 @@ public class DummyPayment extends AbstractPayment{
   protected OutgoingRequests.FailedRefund failedRefund() {
     return new OutgoingRequests.FailedRefund() {
       @Override
-      public Mono<HttpRequestMessage> create(FailedRefundData data, EntityId entityId, String correlationId, Input input) {
+      public Mono<HttpRequestMessage> create(
+          FailedRefundData data,
+          Context context
+      ) {
         return null;
       }
 
@@ -378,7 +370,10 @@ public class DummyPayment extends AbstractPayment{
   protected OutgoingRequests.ApprovedRefund approvedRefund() {
     return new OutgoingRequests.ApprovedRefund() {
       @Override
-      public Mono<HttpRequestMessage> create(ApprovedRefundData data, EntityId entityId, String correlationId, Input input) {
+      public Mono<HttpRequestMessage> create(
+          ApprovedRefundData data,
+          Context context
+      ) {
         return null;
       }
 
@@ -393,7 +388,10 @@ public class DummyPayment extends AbstractPayment{
   protected OutgoingRequests.DeclinedRefund declinedRefund() {
     return new OutgoingRequests.DeclinedRefund() {
       @Override
-      public Mono<HttpRequestMessage> create(DeclinedRefundData data, EntityId entityId, String correlationId, Input input) {
+      public Mono<HttpRequestMessage> create(
+          DeclinedRefundData data,
+          Context context
+      ) {
         return null;
       }
 

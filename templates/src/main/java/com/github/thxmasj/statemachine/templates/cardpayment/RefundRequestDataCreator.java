@@ -9,7 +9,6 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent
 import com.github.thxmasj.statemachine.DataCreator;
 import com.github.thxmasj.statemachine.Event;
 import com.github.thxmasj.statemachine.EventLog;
-import com.github.thxmasj.statemachine.Input;
 import com.github.thxmasj.statemachine.InputEvent;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthenticationResult;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Authorisation;
@@ -20,7 +19,7 @@ import reactor.core.publisher.Mono;
 public class RefundRequestDataCreator implements DataCreator<Refund, RefundRequestData> {
 
   @Override
-  public Mono<RefundRequestData> execute(InputEvent<Refund> inputEvent, EventLog eventLog, Input unused) {
+  public Mono<RefundRequestData> execute(InputEvent<Refund> inputEvent, EventLog eventLog) {
     Authorisation authorisationData = eventLog.one(PaymentRequest).getUnmarshalledData();
     long alreadyCapturedAmount;
     if (authorisationData.capture()) {

@@ -7,8 +7,7 @@ public interface IncomingRequestValidator<OUTPUT_TYPE> {
   default Mono<InputEvent<OUTPUT_TYPE>> execute(
       EntityId entityId,
       Context<OUTPUT_TYPE> context,
-      Input.IncomingRequest request,
-      Input input
+      Input.IncomingRequest request
   ) {
     return Mono.just(context.validRequest());
   }

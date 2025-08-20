@@ -5,7 +5,6 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent
 
 import com.github.thxmasj.statemachine.DataCreator;
 import com.github.thxmasj.statemachine.EventLog;
-import com.github.thxmasj.statemachine.Input;
 import com.github.thxmasj.statemachine.InputEvent;
 import com.github.thxmasj.statemachine.templates.cardpayment.ApprovedRefundDataCreator.ApprovedRefundData;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Authorisation;
@@ -27,7 +26,7 @@ public class ApprovedRefundDataCreator implements DataCreator<AcquirerResponse, 
   ) {}
 
   @Override
-  public Mono<ApprovedRefundData> execute(InputEvent<AcquirerResponse> inputEvent, EventLog eventLog, Input unused) {
+  public Mono<ApprovedRefundData> execute(InputEvent<AcquirerResponse> inputEvent, EventLog eventLog) {
     Authorisation authorisationData = eventLog.one(PaymentRequest).getUnmarshalledData();
     AcquirerResponse acquirerResponse = inputEvent.data();
     Refund refundData = eventLog.last(RefundRequest).getUnmarshalledData();

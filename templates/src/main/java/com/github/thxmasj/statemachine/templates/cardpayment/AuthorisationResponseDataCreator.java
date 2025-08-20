@@ -4,7 +4,6 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent
 
 import com.github.thxmasj.statemachine.DataCreator;
 import com.github.thxmasj.statemachine.EventLog;
-import com.github.thxmasj.statemachine.Input;
 import com.github.thxmasj.statemachine.InputEvent;
 import com.github.thxmasj.statemachine.templates.cardpayment.AuthorisationResponseDataCreator.AuthorisationResponseData;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Authorisation;
@@ -18,7 +17,7 @@ public class AuthorisationResponseDataCreator implements DataCreator<AcquirerRes
   ) {}
 
   @Override
-  public Mono<AuthorisationResponseData> execute(InputEvent<AcquirerResponse> inputEvent, EventLog eventLog, Input unused) {
+  public Mono<AuthorisationResponseData> execute(InputEvent<AcquirerResponse> inputEvent, EventLog eventLog) {
     return Mono.just(new AuthorisationResponseData(
         eventLog.one(PaymentRequest).getUnmarshalledData(),
         inputEvent.data()

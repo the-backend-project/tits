@@ -33,8 +33,7 @@ public class IncomingRequestJsonValidator<INPUT_TYPE, OUTPUT_TYPE>
   public final Mono<InputEvent<OUTPUT_TYPE>> execute(
       EntityId entityId,
       Context<OUTPUT_TYPE> context,
-      Input.IncomingRequest request,
-      Input input
+      Input.IncomingRequest request
   ) {
     INPUT_TYPE jsonBody;
     try {
@@ -45,14 +44,13 @@ public class IncomingRequestJsonValidator<INPUT_TYPE, OUTPUT_TYPE>
     var violations = jsonValidator.validate(jsonBody);
     if (!violations.isEmpty())
       return Mono.just(context.invalidRequest(new ConstraintViolationException(violations).getMessage()));
-    return execute(entityId, context, request, input, jsonBody);
+    return execute(entityId, context, request, jsonBody);
   }
 
   public Mono<InputEvent<OUTPUT_TYPE>> execute(
       EntityId entityId,
       Context<OUTPUT_TYPE> context,
       Input.IncomingRequest request,
-      Input input,
       INPUT_TYPE jsonBody
   ) {
     return Mono.just(context.validRequest());
@@ -65,7 +63,6 @@ public class IncomingRequestJsonValidator<INPUT_TYPE, OUTPUT_TYPE>
           EntityId entityId,
           Context<T> context,
           Input.IncomingRequest request,
-          Input input,
           T jsonBody
       ) {
         return Mono.just(context.validRequest(jsonBody));

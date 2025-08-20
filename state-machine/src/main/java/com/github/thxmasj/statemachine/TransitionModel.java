@@ -78,7 +78,6 @@ public class TransitionModel<I, O> {
   }
 
   public TransitionModel<I, O> reverse(Function<TransitionModel.Builder<Long>, TransitionModel<Long, ?>> builder) {
-//    this.reverse = builder.apply(Builder.onEvent(eventType).from(toState).to(fromState));
     this.reverse = builder.apply(Builder.onEvent(Rollback).from(toState).to(fromState));
     return this;
   }
@@ -245,7 +244,7 @@ public class TransitionModel<I, O> {
     }
 
     public <O> TransitionModel<I, O> response(O data, OutgoingResponseCreator<O> creator) {
-      return new TransitionModel<>(fromState, toState, eventType, (_, _, _) -> Mono.just(data), null)
+      return new TransitionModel<>(fromState, toState, eventType, (_, _) -> Mono.just(data), null)
           .response(creator);
     }
 

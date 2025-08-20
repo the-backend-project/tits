@@ -10,7 +10,6 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEv
 import com.github.thxmasj.statemachine.DataCreator;
 import com.github.thxmasj.statemachine.Event;
 import com.github.thxmasj.statemachine.EventLog;
-import com.github.thxmasj.statemachine.Input;
 import com.github.thxmasj.statemachine.InputEvent;
 import com.github.thxmasj.statemachine.Tuples.Tuple4;
 import com.github.thxmasj.statemachine.templates.cardpayment.AcquirerResponse.ReconciliationValues;
@@ -23,8 +22,7 @@ public class ReconciliationValuesDataCreator
   @Override
   public Mono<Tuple4<CutOff, ReconciliationValues, ReconciliationValues, AcquirerResponse>> execute(
       InputEvent<AcquirerResponse> inputEvent,
-      EventLog eventLog,
-      Input unused
+      EventLog eventLog
   ) {
     return Mono.just(tuple(
         eventLog.one(CutOffRequest).getUnmarshalledData(),
