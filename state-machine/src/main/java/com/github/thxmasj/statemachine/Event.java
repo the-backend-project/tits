@@ -28,12 +28,12 @@ public final class Event<T> {
   }
 
   public Event(Integer eventNumber, EventType<?, T> type, Clock clock, String messageId, String clientId, T data) {
-    this(eventNumber, type, LocalDateTime.ofInstant(clock.instant(), clock.getZone()), clock, messageId, clientId, marshal(type, data));
+    this(eventNumber, type, LocalDateTime.ofInstant(clock.instant(), clock.getZone()), clock, messageId, clientId, marshal(data));
     this.unmarshalledData = data;
   }
 
   public Event(Integer eventNumber, EventType<?, T> type, Clock clock, T data) {
-    this(eventNumber, type, LocalDateTime.ofInstant(clock.instant(), clock.getZone()), clock, null, null, marshal(type, data));
+    this(eventNumber, type, LocalDateTime.ofInstant(clock.instant(), clock.getZone()), clock, null, null, marshal(data));
     this.unmarshalledData = data;
   }
 
@@ -105,7 +105,7 @@ public final class Event<T> {
 
   public String getMarshalledData() {
     if (data == null && unmarshalledData != null) {
-      data = marshal(type, unmarshalledData);
+      data = marshal(unmarshalledData);
     }
     return data;
   }
@@ -131,14 +131,14 @@ public final class Event<T> {
       .configure(DeserializationFeature.ADJUST_DATES_TO_CONTEXT_TIME_ZONE, false)
       .setSerializationInclusion(Include.NON_NULL);
 
-  private static <T> String marshal(EventType<?, ?> eventType, T data) {
+  private static <T> String marshal(T data) {
     return switch (data) {
       case String s -> s;
       case Number n -> n.toString();
       case null -> null;
       default -> {
         try {
-          yield objectMapper.writerFor(eventType.dataType()).writeValueAsString(data);
+          yield objectMapper.writeValueAsString(data);
         } catch (JsonProcessingException e) {
           throw new RuntimeException(e);
         }
@@ -147,14 +147,12 @@ public final class Event<T> {
   }
 
   private static <T> T unmarshal(EventType<?, T> eventType, String data) {
-    if (eventType.dataType() == String.class)
+    if (eventType.outputDataType() == String.class)
       return (T) data;
-    if (eventType.dataType() == Integer.class)
+    if (eventType.outputDataType() == Integer.class)
       return (T) Integer.valueOf(data);
-    if (eventType.dataType() == null)
-      return null;
     try {
-      return objectMapper.readerFor(eventType.dataType()).readValue(data);
+      return objectMapper.readerFor(eventType.outputDataType()).readValue(data);
     } catch (JsonProcessingException e) {
       throw new RuntimeException(e);
     }

@@ -16,6 +16,10 @@ public record EventType<I, O>(
     this(name, id, inputDataType, outputDataType, false, false, false);
   }
 
+  public static <I, O> EventType<I, O> of(String name, UUID id, Class<I> inputDataType, Class<O> outputDataType) {
+    return new EventType<>(name, id, inputDataType, outputDataType);
+  }
+
   public static <T> EventType<T, T> of(String name, UUID id, Class<T> dataType) {
     return new EventType<>(name, id, dataType, dataType);
   }
