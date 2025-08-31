@@ -14,7 +14,7 @@ import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Author
 import com.github.thxmasj.statemachine.templates.cardpayment.PreauthorisationReversalDataCreator.PreauthorisationReversalData;
 import reactor.core.publisher.Mono;
 
-public class PreauthorisationReversalDataCreator implements DataCreator<Long, PreauthorisationReversalData> {
+public class PreauthorisationReversalDataCreator implements DataCreator<Void, PreauthorisationReversalData> {
 
   public record PreauthorisationReversalData(
       boolean clientOriginated,
@@ -28,7 +28,7 @@ public class PreauthorisationReversalDataCreator implements DataCreator<Long, Pr
   ) {}
 
   @Override
-  public Mono<PreauthorisationReversalData> execute(InputEvent<Long> inputEvent, EventLog eventLog) {
+  public Mono<PreauthorisationReversalData> execute(InputEvent<Void> inputEvent, EventLog eventLog) {
     Authorisation paymentData = eventLog.one(PaymentRequest).getUnmarshalledData();
     AcquirerResponse acquirerResponse = eventLog.lastIfExists(PreauthorisationApproved)
         .map(Event::getUnmarshalledData).orElse(null);

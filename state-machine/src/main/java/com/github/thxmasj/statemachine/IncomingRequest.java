@@ -6,9 +6,8 @@ import java.util.function.BiFunction;
 
 public record IncomingRequest(
     UUID id,
-    EventTrigger eventTrigger,
     String clientId,
-    BiFunction<EntityId, EventType, String> messageId,
+    BiFunction<EntityId, EventType<?, ?>, String> messageId,
     byte[] digest,
     HttpRequestMessage requestMessage
 ) {}

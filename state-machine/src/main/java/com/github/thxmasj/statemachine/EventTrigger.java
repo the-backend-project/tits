@@ -3,7 +3,7 @@ package com.github.thxmasj.statemachine;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
 import java.util.List;
 
-public class EventTrigger {
+public class EventTrigger<I> {
 
   public record EntitySelector(
       EntityId entityId,
@@ -19,15 +19,15 @@ public class EventTrigger {
   ) {}
 
   private final List<EntitySelector> entitySelectors;
-  private final EventType eventType;
-  private final Object data;
+  private final EventType<I, ?> eventType;
+  private final I data;
   private final EntityModel entityModel;
   private final boolean createEntity;
 
   public EventTrigger(
       List<EntitySelector> entitySelectors,
-      EventType eventType,
-      Object data,
+      EventType<I, ?> eventType,
+      I data,
       EntityModel entityModel,
       boolean createEntity
   ) {
@@ -42,11 +42,11 @@ public class EventTrigger {
     return entitySelectors;
   }
 
-  public EventType eventType() {
+  public EventType<I, ?> eventType() {
     return eventType;
   }
 
-  public Object data() {
+  public I data() {
     return data;
   }
 

@@ -4,7 +4,12 @@ import reactor.core.publisher.Mono;
 
 public interface IncomingRequestValidator<OUTPUT_TYPE> {
 
-  default Mono<InputEvent<OUTPUT_TYPE>> execute(
+  sealed interface Result permits Result.Valid, Result.Invalid {
+    record Valid<OUTPUT_TYPE>(InputEvent<OUTPUT_TYPE> value) implements Result {}
+    record Invalid(InputEvent<String> error) implements Result {}
+  }
+
+  default Mono<Result> execute(
       EntityId entityId,
       Context<OUTPUT_TYPE> context,
       Input.IncomingRequest request
@@ -14,15 +19,15 @@ public interface IncomingRequestValidator<OUTPUT_TYPE> {
 
   interface Context<OUTPUT_TYPE> {
 
-    InputEvent<OUTPUT_TYPE> invalidRequest(String errorMessage);
+    Result invalidRequest(String errorMessage);
 
-    InputEvent<OUTPUT_TYPE> invalidRequest(EventType<?, ?> eventType, OUTPUT_TYPE data, String errorMessage);
+    Result invalidRequest(EventType<OUTPUT_TYPE, ?> eventType, OUTPUT_TYPE data, String errorMessage);
 
-    InputEvent<OUTPUT_TYPE> invalidRequest(EventType<?, ?> eventType, OUTPUT_TYPE data);
+    Result invalidRequest(EventType<OUTPUT_TYPE, ?> eventType, OUTPUT_TYPE data);
 
-    InputEvent<OUTPUT_TYPE> validRequest(OUTPUT_TYPE data);
+    Result validRequest(OUTPUT_TYPE data);
 
-    InputEvent<OUTPUT_TYPE> validRequest();
+    Result validRequest();
 
   }
 

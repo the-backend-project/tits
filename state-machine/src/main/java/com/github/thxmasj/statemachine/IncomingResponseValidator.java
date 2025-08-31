@@ -35,15 +35,15 @@ public interface IncomingResponseValidator<OUTPUT_TYPE> extends DataRequirer {
     }
   }
 
-  interface Context<OUTPUT_TYPE> {
+  interface Context<T> {
 
-    InputEvent<OUTPUT_TYPE> requestUndelivered(String cause);
+    InputEvent<String> requestUndelivered(String cause);
 
-    InputEvent<OUTPUT_TYPE> validResponse(EventType<?, ?> eventType, OUTPUT_TYPE data);
+    InputEvent<T> validResponse(EventType<T, ?> eventType, T data);
 
-    InputEvent<OUTPUT_TYPE> invalidResponse(String cause);
+    InputEvent<String> invalidResponse(String cause);
 
-    InputEvent<OUTPUT_TYPE> rollback(String cause);
+    InputEvent<Void> rollback(String cause);
 
   }
 

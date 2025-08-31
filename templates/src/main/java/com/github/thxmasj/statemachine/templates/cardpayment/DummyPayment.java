@@ -2,19 +2,19 @@ package com.github.thxmasj.statemachine.templates.cardpayment;
 
 import com.github.thxmasj.statemachine.IncomingResponseValidator;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;
+import com.github.thxmasj.statemachine.Tuples.Tuple3;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.templates.cardpayment.ApprovedCaptureDataCreator.ApprovedCaptureData;
 import com.github.thxmasj.statemachine.templates.cardpayment.ApprovedRefundDataCreator.ApprovedRefundData;
 import com.github.thxmasj.statemachine.templates.cardpayment.AuthenticationDataCreator.AuthenticationData;
-import com.github.thxmasj.statemachine.templates.cardpayment.AuthorisationResponseDataCreator.AuthorisationResponseData;
 import com.github.thxmasj.statemachine.templates.cardpayment.AuthorisationReversalDataCreator.AuthorisationReversalData;
 import com.github.thxmasj.statemachine.templates.cardpayment.CaptureRequestDataCreator.CaptureRequestData;
-import com.github.thxmasj.statemachine.templates.cardpayment.CaptureRequestedTooLateDataCreator.CaptureRequestedTooLateData;
 import com.github.thxmasj.statemachine.templates.cardpayment.DeclinedRefundDataCreator.DeclinedRefundData;
 import com.github.thxmasj.statemachine.templates.cardpayment.FailedRefundDataCreator.FailedRefundData;
 import com.github.thxmasj.statemachine.templates.cardpayment.OutgoingRequests.Authentication;
 import com.github.thxmasj.statemachine.templates.cardpayment.OutgoingRequests.Authorisation;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthenticationResult;
+import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Capture;
 import com.github.thxmasj.statemachine.templates.cardpayment.PreauthorisationReversalDataCreator.PreauthorisationReversalData;
 import com.github.thxmasj.statemachine.templates.cardpayment.RefundRequestDataCreator.RefundRequestData;
 import com.github.thxmasj.statemachine.templates.cardpayment.RefundReversalDataCreator.RefundReversalData;
@@ -209,7 +209,7 @@ public class DummyPayment extends AbstractPayment{
     return new OutgoingRequests.DeclinedAuthorisation() {
       @Override
       public Mono<HttpRequestMessage> create(
-          AuthorisationResponseData data,
+          Tuple2<PaymentEvent.Authorisation, AcquirerResponse> data,
           Context context
       ) {
         return null;
@@ -227,7 +227,7 @@ public class DummyPayment extends AbstractPayment{
     return new OutgoingRequests.ApprovedPreauthorisation() {
       @Override
       public Mono<HttpRequestMessage> create(
-          AuthorisationResponseData data,
+          Tuple2<PaymentEvent.Authorisation, AcquirerResponse> data,
           Context context
       ) {
         return null;
@@ -263,7 +263,7 @@ public class DummyPayment extends AbstractPayment{
     return new OutgoingRequests.ApprovedAuthorisation() {
       @Override
       public Mono<HttpRequestMessage> create(
-          AuthorisationResponseData data,
+          Tuple2<PaymentEvent.Authorisation, AcquirerResponse> data,
           Context context
       ) {
         return null;
@@ -299,7 +299,7 @@ public class DummyPayment extends AbstractPayment{
     return new OutgoingRequests.CaptureTooLate() {
       @Override
       public Mono<HttpRequestMessage> create(
-          CaptureRequestedTooLateData data,
+          Tuple3<PaymentEvent.Authorisation, AuthenticationResult, Capture> data,
           Context context
       ) {
         return null;

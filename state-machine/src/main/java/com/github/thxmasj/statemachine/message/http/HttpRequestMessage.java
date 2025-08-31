@@ -1,6 +1,7 @@
 package com.github.thxmasj.statemachine.message.http;
 
 import static java.util.stream.Collectors.joining;
+import static java.util.stream.Collectors.toMap;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -112,6 +113,19 @@ public class HttpRequestMessage {
     } catch (JsonProcessingException e) {
       throw new RuntimeException(e);
     }
+  }
+
+  public HttpRequestMessage withoutHeader(String header) {
+    if (!headers.containsKey(header))
+      return this;
+    return new HttpRequestMessage(
+        method,
+        uri,
+        headers.entrySet().stream()
+            .filter(e -> !e.getKey().equalsIgnoreCase(header))
+            .collect(toMap(Entry::getKey, Entry::getValue)),
+        body
+    );
   }
 
   @Override

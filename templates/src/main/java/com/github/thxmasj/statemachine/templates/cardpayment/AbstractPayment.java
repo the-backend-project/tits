@@ -8,6 +8,7 @@ import static com.github.thxmasj.statemachine.EntitySelectorBuilder.secondaryId;
 import static com.github.thxmasj.statemachine.EventTriggerBuilder.event;
 import static com.github.thxmasj.statemachine.OutgoingRequestModel.Builder.request;
 import static com.github.thxmasj.statemachine.TransitionModel.Builder.onEvent;
+import static com.github.thxmasj.statemachine.Tuples.tuple;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Identifiers.AcquirerBatchNumber;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Identifiers.BatchNumber;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AcquirerDeclined;
@@ -50,11 +51,18 @@ import com.github.thxmasj.statemachine.ScheduledEvent;
 import com.github.thxmasj.statemachine.State;
 import com.github.thxmasj.statemachine.TransitionModel;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;
+import com.github.thxmasj.statemachine.Tuples.Tuple3;
 import com.github.thxmasj.statemachine.message.http.BadRequest;
 import com.github.thxmasj.statemachine.message.http.Created;
+import com.github.thxmasj.statemachine.templates.cardpayment.ApprovedCaptureDataCreator.ApprovedCaptureData;
+import com.github.thxmasj.statemachine.templates.cardpayment.ApprovedRefundDataCreator.ApprovedRefundData;
+import com.github.thxmasj.statemachine.templates.cardpayment.AuthenticationDataCreator.AuthenticationData;
 import com.github.thxmasj.statemachine.templates.cardpayment.CaptureRequestDataCreator.CaptureRequestData;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthenticationResult;
+import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Authorisation;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Capture;
+import com.github.thxmasj.statemachine.templates.cardpayment.RefundRequestDataCreator.RefundRequestData;
+import reactor.core.publisher.Mono;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
@@ -152,7 +160,7 @@ public abstract class AbstractPayment implements EntityModel {
   protected abstract IncomingResponseValidator<AcquirerResponse> validateRefundReversalResponse();
 
   @SafeVarargs
-  private static List<TransitionModel<?, ?>> join(List<TransitionModel<?, ?>>...lists) {
+  private static List<TransitionModel<?, ?, ?>> join(List<TransitionModel<?, ?, ?>>...lists) {
     if (lists.length == 0) return List.of();
     var stream = lists[0].stream();
     for (int i = 1; i < lists.length; i++) {
@@ -162,46 +170,48 @@ public abstract class AbstractPayment implements EntityModel {
   }
 
   @Override
-  public List<TransitionModel<?, ?>> transitions() {
+  public List<TransitionModel<?, ?, ?>> transitions() {
     return join(
         List.of(
             onEvent(RollbackRequest).from(Begin).toSelf().response(new Created()),
             onEvent(PaymentRequest).from(Begin).to(ProcessingAuthentication)
                 .withData(new AuthenticationDataCreator())
-                //.store(authorisation -> authorisation)
-                .notify(request(authentication()).to(Authenticator).responseValidator(validateAuthenticationResponse())),
+                .output(Tuple2::t1)
+                .notify(request((Tuple2<Authorisation, AuthenticationData> data) -> data.t2(), authentication())
+                    .to(Authenticator).responseValidator(validateAuthenticationResponse())),
             onEvent(InvalidAuthenticationToken).from(ProcessingAuthentication).to(Begin)
-                .response(new BadRequest()),
+                .response("Invalid authentication token", new BadRequest()),
             onEvent(InvalidPaymentTokenStatus).from(ProcessingAuthentication).to(Begin)
                 .response("Payment token is inactive", new BadRequest()),
             onEvent(AuthenticationFailed).from(ProcessingAuthentication).to(Begin)
-                .withData(new AuthenticationFailedDataCreator())
-                //.store(authenticationResult -> authenticationResult)
+                .withData((input, log) -> Mono.just(tuple(log.one(PaymentRequest).getUnmarshalledData(), input.data())))
                 .notify(request(failedAuthentication()).to(Acquirer).guaranteed())
-                .response(_ -> "", new BadRequest()),
+                .response("Authentication failed", new BadRequest()),
             onEvent(InvalidPaymentTokenOwnership).from(ProcessingAuthentication).to(Begin)
-                .withData(new AuthenticationFailedDataCreator())
+                .withData((input, log) -> Mono.just(tuple(log.one(PaymentRequest).getUnmarshalledData(), input.data())))
                 .notify(request(failedTokenValidation()).to(Acquirer)
                     .guaranteed()
                     .responseValidator(validateAuthorisationAdviceResponse()))
-                .response(_ -> "", new BadRequest()),
+                .response("Payment token is not accessible", new BadRequest()),
             onEvent(RollbackRequest).from(ProcessingAuthentication).toSelf().response(new Created()),
             onEvent(PreauthorisationRequest).from(ProcessingAuthentication).to(ProcessingAuthorisation)
-                .withData(new AuthorisationRequestDataCreator())
+                .withData(((input, log) -> Mono.just(tuple(log.one(PaymentRequest).getUnmarshalledData(), input.data()))))
+                .output(Tuple2::t2)
                 .notify(request(preauthorisation()).to(Acquirer).responseValidator(validatePreauthorisationResponse()))
-                .response(_ -> "", new Created())
+                .response("", new Created())
                 .reverse(transition -> transition.withData(new PreauthorisationReversalDataCreator())
                     .notify(request(preauthorisationReversal()).to(Acquirer)
                         .guaranteed()
                         .responseValidator(validatePreauthorisationReversalResponse()))
                     .notify(request(rolledBackPreauthorisationRequest()).to(Merchant).guaranteed())),
             onEvent(AuthorisationRequest).from(ProcessingAuthentication).to(ProcessingAuthorisation)
-                .withData(new AuthorisationRequestDataCreator())
+                .withData(((input, log) -> Mono.just(tuple(log.one(PaymentRequest).getUnmarshalledData(), input.data()))))
                 .filter(d -> d.t1().capture()).orElse(PreauthorisationRequest, Tuple2::t2)
+                .output(Tuple2::t2)
                 .trigger(data -> event(BuiltinEventTypes.Status).onEntity(settlement)
                     .identifiedBy(model(BatchNumber).group(data.t1().merchant().id()).last()))
                 .notify(request(authorisation()).to(Acquirer).responseValidator(validateAuthorisationResponse()))
-                .response(_ -> "", new Created())
+                .response("", new Created())
                 .reverse(builder -> builder.withData(new AuthorisationReversalDataCreator())
                     .trigger(data -> event(BuiltinEventTypes.Status).onEntity(settlement)
                         .identifiedBy(model(BatchNumber).group(data.merchantId()).last().createIfNotExists()))
@@ -210,39 +220,45 @@ public abstract class AbstractPayment implements EntityModel {
                         .responseValidator(validateAuthorisationReversalResponse()))
                     .notify(request(rolledBackAuthorisationRequest()).to(Merchant).guaranteed())),
             onEvent(PreauthorisationApproved).from(ProcessingAuthorisation).to(Preauthorised)
-                .withData(new AuthorisationResponseDataCreator())
+                .withData(((input, log) -> Mono.just(tuple(log.one(PaymentRequest).getUnmarshalledData(), input.data()))))
+                .output(Tuple2::t2)
                 .notify(request(approvedPreauthorisation()).to(Merchant).guaranteed())
                 .scheduledEvents(List.of(new ScheduledEvent(AuthorisationExpired, Duration.ofDays(7)))),
             onEvent(Rollback).from(ProcessingAuthorisation).toSelf().build(),
             onEvent(RollbackRequest).from(ProcessingAuthorisation).toSelf().response(new Created()),
             onEvent(RequestUndelivered).from(ProcessingAuthorisation).to(AuthorisationFailed)
-                .withData(new AuthorisationRequestUndeliveredData())
+                .withData((_, log) -> Mono.just(tuple(
+                    log.one(PaymentRequest).getUnmarshalledData(),
+                    log.one(AuthorisationRequest, PreauthorisationRequest).getUnmarshalledData()
+                )))
                 .notify(request(failedAuthorisation()).to(Merchant).guaranteed()),
             onEvent(AuthorisationApproved).from(ProcessingAuthorisation).to(Authorised)
-                .withData(new AuthorisationResponseDataCreator())
+                .withData(((input, log) -> Mono.just(tuple(log.one(PaymentRequest).getUnmarshalledData(), input.data()))))
+                .output(Tuple2::t2)
                 .notify(request(approvedAuthorisation()).to(Merchant).guaranteed())
-                .trigger(data -> event(MerchantCredit, data.authorisation().amount().requested()).onEntity(settlement)
+                .trigger(data -> event(MerchantCredit, data.t1().amount().requested()).onEntity(settlement)
                     .identifiedBy(secondaryId(
                         AcquirerBatchNumber,
                         new AcquirerBatchNumber(
-                            data.authorisation().merchant().id(),
-                            data.acquirerResponse().batchNumber()
+                            data.t1().merchant().id(),
+                            data.t2().batchNumber()
                         )
                     ).createIfNotExists())
-                    .and(model(BatchNumber).group(data.authorisation().merchant().id()).last().createIfNotExists()))
+                    .and(model(BatchNumber).group(data.t1().merchant().id()).last().createIfNotExists()))
                 .scheduledEvents(List.of(new ScheduledEvent(AuthorisationExpired, Duration.ofDays(7))))
                 .reverse(builder -> builder.withData(fromEvent(PaymentRequest))
                     .trigger(data -> event(SettlementEvent.MerchantCreditReversed, data.amount().requested()).onEntity(settlement)
                         .identifiedBy(model(BatchNumber).group(data.merchant().id()).last()))),
             onEvent(AcquirerDeclined).from(ProcessingAuthorisation).to(AuthorisationFailed)
-                .withData(new  AuthorisationResponseDataCreator())
+                .withData(((input, log) -> Mono.just(tuple(log.one(PaymentRequest).getUnmarshalledData(), input.data()))))
                 .notify(request(declinedAuthorisation()).to(Merchant).guaranteed()),
             onEvent(CaptureApproved).from(ProcessingCapture).to(Authorised)
                 .withData(new ApprovedCaptureDataCreator())
+                .output(ApprovedCaptureData::acquirerResponse)
                 .notify(request(approvedCapture()).to(Merchant).guaranteed())
-                .trigger(data -> event(MerchantCredit, data.amount()).onEntity(settlement).identifiedBy(secondaryId(
+                .trigger(data -> event(MerchantCredit, data.acquirerResponse().amount()).onEntity(settlement).identifiedBy(secondaryId(
                     AcquirerBatchNumber,
-                    new AcquirerBatchNumber(data.merchantId(), data.acquirerBatchNumber())
+                    new AcquirerBatchNumber(data.merchantId(), data.acquirerResponse().batchNumber())
                 ).createIfNotExists()).and(model(BatchNumber).group(data.merchantId()).last().createIfNotExists())),
             onEvent(Rollback).from(Preauthorised).to(Preauthorised).build(),
             onEvent(AuthorisationExpired).from(Preauthorised).to(Expired).build(),
@@ -261,27 +277,31 @@ public abstract class AbstractPayment implements EntityModel {
     );
   }
 
-  private TransitionModel<Capture, CaptureRequestData> captureRequestTransition(State anchor) {
+  private TransitionModel<Capture, CaptureRequestData, Capture> captureRequestTransition(State anchor) {
     return onEvent(CaptureRequest).from(anchor).to(ProcessingCapture)
         .withData(new CaptureRequestDataCreator())
         .filter(d -> d.alreadyCapturedAmount() + d.captureData().amount() <= d.authorisationData().amount().requested())
         .orElseInvalidRequest("Capture amount too large")
-        //.store(data -> data.captureData()) // default: a) input or b) data or c) null? Now: a
+        .output(CaptureRequestData::captureData)
         .trigger(data -> event(BuiltinEventTypes.Status).onEntity(settlement)
             .identifiedBy(model(BatchNumber).group(data.authorisationData().merchant().id()).last()))
         .response(_ -> "", new Created())
         .notify(request(capture()).to(Acquirer).guaranteed().responseValidator(validateCaptureResponse()));
   }
 
-  private TransitionModel<?, ?> captureRequestedTooLateTransition(State anchor) {
+  private TransitionModel<?, ?, ?> captureRequestedTooLateTransition(State anchor) {
     return onEvent(CaptureRequest).from(anchor).toSelf()
-        .withData(new CaptureRequestedTooLateDataCreator())
-        //.store(data -> data.captureData()) // same as input
+        .withData((input, log) -> Mono.just(tuple(
+            log.one(PaymentRequest).getUnmarshalledData(),
+            log.one(AuthorisationRequest, PreauthorisationRequest).getUnmarshalledData(),
+            input.data()
+        )))
+        .output(Tuple3::t3)
         .notify(request(captureRequestedTooLate()).to(Acquirer).guaranteed())
-        .response(_ -> "", new BadRequest());
+        .response("Capture requested too late", new BadRequest());
   }
 
-  private List<TransitionModel<?, ?>> refundTransitions(State anchor, int i) {
+  private List<TransitionModel<?, ?, ?>> refundTransitions(State anchor, int i) {
     State processingState = new State() {
       @Override
       public String name() {
@@ -301,7 +321,8 @@ public abstract class AbstractPayment implements EntityModel {
             .withData(new RefundRequestDataCreator())
             .filter(d -> d.alreadyRefundedAmount() + d.refundData().amount() <= d.alreadyCapturedAmount())
             .orElseInvalidRequest("Refund amount too large")
-            .response(_ -> "", new Created())
+            .output(RefundRequestData::refundData)
+            .response("", new Created())
             .notify(request(refundAuthorisation()).to(Acquirer).responseValidator(validateRefundResponse()))
             .reverse(transition -> transition.withData(new RefundReversalDataCreator())
                 .trigger(data -> event(BuiltinEventTypes.Status).onEntity(settlement)
@@ -316,10 +337,11 @@ public abstract class AbstractPayment implements EntityModel {
             .notify(request(failedRefund()).to(Merchant).guaranteed()),
         onEvent(RefundApproved).from(processingState).to(anchor)
             .withData(new ApprovedRefundDataCreator())
+            .output(ApprovedRefundData::acquirerResponse)
             .notify(request(approvedRefund()).to(Merchant).guaranteed())
             .trigger(data -> event(MerchantDebit, data.amount()).onEntity(settlement).identifiedBy(secondaryId(
                 AcquirerBatchNumber,
-                new AcquirerBatchNumber(data.merchantId(), data.acquirerBatchNumber())
+                new AcquirerBatchNumber(data.merchantId(), data.acquirerResponse().batchNumber())
             ).createIfNotExists()).and(model(BatchNumber).group(data.merchantId()).last().createIfNotExists()))
             .reverse(transition -> transition.withData(new RefundReversalDataCreator())
                 .trigger(data -> event(SettlementEvent.MerchantDebitReversed, data.amount()).onEntity(settlement)

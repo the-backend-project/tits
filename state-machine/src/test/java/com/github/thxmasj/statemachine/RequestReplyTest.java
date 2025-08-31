@@ -98,7 +98,7 @@ public class RequestReplyTest {
       }
 
       @Override
-      public List<TransitionModel<?, ?>> transitions() {
+      public List<TransitionModel<?, ?, ?>> transitions() {
         return List.of(
             onEvent(Toggle).from(On).to(Off).build(),
             onEvent(SwitchOff).from(On).to(Off).build(),

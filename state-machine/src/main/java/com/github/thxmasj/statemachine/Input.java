@@ -5,7 +5,7 @@ import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 
 public interface Input {
 
-  record IncomingRequest(HttpRequestMessage httpMessage, String messageId, String clientId, int eventNumber) {}
+  record IncomingRequest(HttpRequestMessage httpMessage, String messageId, String clientId) {}
   record IncomingResponse(HttpResponseMessage httpMessage, int eventNumber) {}
 
 }

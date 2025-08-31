@@ -14,14 +14,11 @@ import reactor.core.publisher.Mono;
 public class ApprovedRefundDataCreator implements DataCreator<AcquirerResponse, ApprovedRefundData> {
 
     public record ApprovedRefundData(
+      AcquirerResponse acquirerResponse,
       String merchantId,
       String merchantAggregatorId,
       long amount,
       String merchantReference,
-      int acquirerBatchNumber,
-      String stan,
-      String authorisationCode,
-      String responseCode,
       String correlationId
   ) {}
 
@@ -31,16 +28,13 @@ public class ApprovedRefundDataCreator implements DataCreator<AcquirerResponse, 
     AcquirerResponse acquirerResponse = inputEvent.data();
     Refund refundData = eventLog.last(RefundRequest).getUnmarshalledData();
     return Mono.just(new ApprovedRefundData(
-            authorisationData.merchant().id(),
-            authorisationData.merchant().aggregatorId(),
-            refundData.amount(),
-            authorisationData.merchantReference(),
-            acquirerResponse.batchNumber(),
-            acquirerResponse.stan(),
-            acquirerResponse.authorisationCode(),
-            acquirerResponse.responseCode(),
-            refundData.correlationId()
-        ));
+        acquirerResponse,
+        authorisationData.merchant().id(),
+        authorisationData.merchant().aggregatorId(),
+        refundData.amount(),
+        authorisationData.merchantReference(),
+        refundData.correlationId()
+    ));
   }
 
 }

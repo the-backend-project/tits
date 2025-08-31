@@ -18,7 +18,7 @@ import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Refund
 import com.github.thxmasj.statemachine.templates.cardpayment.RefundReversalDataCreator.RefundReversalData;
 import reactor.core.publisher.Mono;
 
-public class RefundReversalDataCreator implements DataCreator<Long, RefundReversalData> {
+public class RefundReversalDataCreator implements DataCreator<Void, RefundReversalData> {
 
   public record RefundReversalData(
       boolean clientOriginated,
@@ -39,7 +39,7 @@ public class RefundReversalDataCreator implements DataCreator<Long, RefundRevers
   }
 
   @Override
-  public Mono<RefundReversalData> execute(InputEvent<Long> inputEvent, EventLog eventLog) {
+  public Mono<RefundReversalData> execute(InputEvent<Void> inputEvent, EventLog eventLog) {
     Authorisation paymentData = eventLog.one(PaymentRequest).getUnmarshalledData();
     Refund refundData = eventLog.last(RefundRequest).getUnmarshalledData();
     AcquirerResponse acquirerResponse = eventLog.lastIfExists(RefundApproved)

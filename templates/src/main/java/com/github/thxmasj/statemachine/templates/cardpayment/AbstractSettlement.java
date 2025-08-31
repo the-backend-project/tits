@@ -4,6 +4,7 @@ import static com.github.thxmasj.statemachine.EntitySelectorBuilder.model;
 import static com.github.thxmasj.statemachine.EventTriggerBuilder.event;
 import static com.github.thxmasj.statemachine.OutgoingRequestModel.Builder.request;
 import static com.github.thxmasj.statemachine.TransitionModel.Builder.onEvent;
+import static com.github.thxmasj.statemachine.Tuples.tuple;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Identifiers.AcquirerBatchNumber;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Identifiers.BatchNumber;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.Begin;
@@ -28,13 +29,16 @@ import com.github.thxmasj.statemachine.OutboxQueue;
 import com.github.thxmasj.statemachine.State;
 import com.github.thxmasj.statemachine.TransitionModel;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;
+import com.github.thxmasj.statemachine.Tuples.Tuple3;
 import com.github.thxmasj.statemachine.Tuples.Tuple4;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames;
 import com.github.thxmasj.statemachine.message.http.Created;
 import com.github.thxmasj.statemachine.templates.cardpayment.AcquirerResponse.ReconciliationValues;
 import com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.CutOff;
+import reactor.core.publisher.Mono;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Function;
 
 public abstract class AbstractSettlement implements EntityModel {
 
@@ -67,26 +71,43 @@ public abstract class AbstractSettlement implements EntityModel {
   protected abstract OutgoingRequests.ApprovedCutOff approvedCutOff();
 
   @Override
-  public List<TransitionModel<?, ?>> transitions() {
+  public List<TransitionModel<?, ?, ?>> transitions() {
     return List.of(
         onEvent(Open).from(Begin).toSelf().build(),
-        onEvent(MerchantCredit).from(Begin).toSelf().build(),
-        onEvent(MerchantDebit).from(Begin).toSelf().build(),
-        onEvent(MerchantCreditReversed).from(Begin).toSelf().build(),
-        onEvent(MerchantDebitReversed).from(Begin).toSelf().build(),
+        onEvent(MerchantCredit).from(Begin).toSelf()
+            .withData((input, _) -> Mono.just(input.data()))
+            .output(Function.identity()),
+        onEvent(MerchantDebit).from(Begin).toSelf()
+            .withData((input, _) -> Mono.just(input.data()))
+            .output(Function.identity()),
+        onEvent(MerchantCreditReversed).from(Begin).toSelf()
+            .withData((input, _) -> Mono.just(input.data()))
+            .output(Function.identity()),
+        onEvent(MerchantDebitReversed).from(Begin).toSelf()
+            .withData((input, _) -> Mono.just(input.data()))
+            .output(Function.identity()),
         onEvent(CutOffRequest).from(Begin).to(ProcessingSettlement)
             .withData(new CutOffRequestDataCreator())
+            .output(Tuple3::t1)
             .response(_ -> "", new Created())
             .trigger(_ -> event(Open).onEntity(this)
                 .identifiedBy(model(BatchNumber).next().create())
                 .and(model(AcquirerBatchNumber).next().create())
             )
-            .notify(request(reconciliation()).to(Acquirer).guaranteed().responseValidator(validateSettlementResponse())),
+            .notify(request((Tuple3<CutOff, BatchNumber, AcquirerBatchNumber> d) -> tuple(d.t2(), d.t3()), reconciliation()).to(Acquirer).guaranteed().responseValidator(validateSettlementResponse())),
         // For previous batch to stay open for ongoing capture exchanges when cut-off is performed
-        onEvent(MerchantCredit).from(ProcessingSettlement).toSelf().build(),
-        onEvent(MerchantDebit).from(ProcessingSettlement).toSelf().build(),
-        onEvent(MerchantCreditReversed).from(ProcessingSettlement).toSelf().build(),
-        onEvent(MerchantDebitReversed).from(ProcessingSettlement).toSelf().build(),
+        onEvent(MerchantCredit).from(ProcessingSettlement).toSelf()
+            .withData((input, _) -> Mono.just(input.data()))
+            .output(Function.identity()),
+        onEvent(MerchantDebit).from(ProcessingSettlement).toSelf()
+            .withData((input, _) -> Mono.just(input.data()))
+            .output(Function.identity()),
+        onEvent(MerchantCreditReversed).from(ProcessingSettlement).toSelf()
+            .withData((input, _) -> Mono.just(input.data()))
+            .output(Function.identity()),
+        onEvent(MerchantDebitReversed).from(ProcessingSettlement).toSelf()
+            .withData((input, _) -> Mono.just(input.data()))
+            .output(Function.identity()),
         onEvent(InBalance).from(ProcessingSettlement).to(Reconciled)
             .withData(new ReconciliationValuesDataCreator())
             .filter(d -> d.t2().equals(d.t3())).orElse(OutOfBalance, Tuple4::t4)

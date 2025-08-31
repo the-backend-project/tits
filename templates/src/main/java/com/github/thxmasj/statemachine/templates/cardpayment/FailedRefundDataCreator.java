@@ -10,10 +10,10 @@ import com.github.thxmasj.statemachine.templates.cardpayment.FailedRefundDataCre
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Authorisation;
 import reactor.core.publisher.Mono;
 
-public class FailedRefundDataCreator implements DataCreator<Void, FailedRefundData> {
+public class FailedRefundDataCreator implements DataCreator<String, FailedRefundData> {
 
   @Override
-  public Mono<FailedRefundData> execute(InputEvent<Void> inputEvent, EventLog eventLog) {
+  public Mono<FailedRefundData> execute(InputEvent<String> inputEvent, EventLog eventLog) {
     return Mono.just(new FailedRefundData(
         eventLog.one(PaymentRequest).getUnmarshalledData(),
         eventLog.last(RefundRequest).getUnmarshalledData().correlationId()

@@ -42,7 +42,7 @@ public class Batching {
     }
 
     @Override
-    public List<TransitionModel<?, ?>> transitions() {
+    public List<TransitionModel<?, ?, ?>> transitions() {
       return List.of(
           onEvent(CreateItem).from(Begin).to(Begin)
               .response("Item created", new Created())

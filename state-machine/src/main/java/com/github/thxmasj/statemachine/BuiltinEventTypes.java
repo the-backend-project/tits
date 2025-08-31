@@ -4,6 +4,8 @@ import java.util.List;
 import java.util.UUID;
 
 import static com.github.thxmasj.statemachine.EventType.of;
+import static com.github.thxmasj.statemachine.EventType.readOnly;
+import static com.github.thxmasj.statemachine.EventType.rollback;
 
 public interface BuiltinEventTypes {
 
@@ -12,18 +14,17 @@ public interface BuiltinEventTypes {
     // Incoming request is not according to incoming requests model.
     InvalidRequest = of("InvalidRequest", UUID.fromString("23d52456-e8b7-4409-aa9d-0998ef903471"), String.class),
     // Incoming request is valid but not allowed for the entity's current state.
-    RejectedRequest = of("RejectedRequest", UUID.fromString("21318498-78a3-4f81-97dc-07bb1467c455"), String.class);
-    // Incoming request failed miserably (error not handled, bug).
-  EventType<Long, Long>
-    Rollback = new EventType<>("Rollback", UUID.fromString("58aa1e1f-e75d-40ba-9e87-ca7fc42e491d"), Long.class, Long.class, true, false, false);
-  EventType<Void, Void>
-    FailedRequest = of("FailedRequest", UUID.fromString("de1feadd-8023-4581-acab-d629d174e523")),
+    RejectedRequest = of("RejectedRequest", UUID.fromString("21318498-78a3-4f81-97dc-07bb1467c455"), String.class),
     // Outgoing request not delivered (f.ex. connection failure)
-    RequestUndelivered = of("RequestUndelivered", UUID.fromString("98ef4100-34e8-426b-9fb8-539626821537")),
-    InvalidResponse = of("InvalidResponse", UUID.fromString("450679ab-bc60-46cb-bb97-d171c34c2750")),
-    UnknownEntity = new EventType<>("UnknownEntity", UUID.fromString("2ffed3fc-3efd-404c-9b11-f5a99fb47a5f"), Void.class, Void.class, false, false, true),
-    Status = new EventType<>("Status", UUID.fromString("324dc75d-e83d-4b9b-8ad9-b3521184def6"), Void.class, Void.class, false, false, true)
-    ;
+    RequestUndelivered = of("RequestUndelivered", UUID.fromString("98ef4100-34e8-426b-9fb8-539626821537"), String.class),
+    InvalidResponse = of("InvalidResponse", UUID.fromString("450679ab-bc60-46cb-bb97-d171c34c2750"), String.class);
+  EventType<Void, Long>
+    Rollback = rollback("Rollback", UUID.fromString("58aa1e1f-e75d-40ba-9e87-ca7fc42e491d"));
+  EventType<Void, Void>
+    // Incoming request failed miserably (error not handled, bug).
+    FailedRequest = of("FailedRequest", UUID.fromString("de1feadd-8023-4581-acab-d629d174e523")),
+    UnknownEntity = readOnly("UnknownEntity", UUID.fromString("2ffed3fc-3efd-404c-9b11-f5a99fb47a5f"), Void.class),
+    Status = readOnly("Status", UUID.fromString("324dc75d-e83d-4b9b-8ad9-b3521184def6"), Void.class);
 
   List<EventType<?, ?>> ALL = List.of(
       InvalidRequest,

@@ -17,7 +17,7 @@ import com.github.thxmasj.statemachine.templates.cardpayment.AuthorisationRevers
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Authorisation;
 import reactor.core.publisher.Mono;
 
-public class AuthorisationReversalDataCreator implements DataCreator<Long, AuthorisationReversalData> {
+public class AuthorisationReversalDataCreator implements DataCreator<Void, AuthorisationReversalData> {
 
   public record AuthorisationReversalData(
       boolean clientOriginated,
@@ -39,7 +39,7 @@ public class AuthorisationReversalDataCreator implements DataCreator<Long, Autho
   }
 
   @Override
-  public Mono<AuthorisationReversalData> execute(InputEvent<Long> inputEvent, EventLog eventLog) {
+  public Mono<AuthorisationReversalData> execute(InputEvent<Void> inputEvent, EventLog eventLog) {
     Authorisation paymentData = eventLog.one(PaymentRequest).getUnmarshalledData();
     AcquirerResponse acquirerResponse = eventLog.lastIfExists(AuthorisationApproved)
         .map(Event::getUnmarshalledData).orElse(null);

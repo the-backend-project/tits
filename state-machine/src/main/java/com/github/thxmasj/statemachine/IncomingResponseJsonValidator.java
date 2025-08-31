@@ -70,7 +70,7 @@ public abstract class IncomingResponseJsonValidator<INPUT_TYPE, OUTPUT_TYPE>
       INPUT_TYPE jsonBody
   );
 
-  public static <T> IncomingResponseJsonValidator<T, T> jsonResponse(Class<T> dataType, EventType eventType) {
+  public static <T> IncomingResponseJsonValidator<T, T> jsonResponse(Class<T> dataType, EventType<T, ?> eventType) {
     return new IncomingResponseJsonValidator<>(dataType) {
       @Override
       public Mono<Result> execute(

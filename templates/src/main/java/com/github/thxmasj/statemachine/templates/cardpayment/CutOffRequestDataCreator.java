@@ -5,14 +5,14 @@ import static com.github.thxmasj.statemachine.Tuples.tuple;
 import com.github.thxmasj.statemachine.DataCreator;
 import com.github.thxmasj.statemachine.EventLog;
 import com.github.thxmasj.statemachine.InputEvent;
-import com.github.thxmasj.statemachine.Tuples.Tuple2;
+import com.github.thxmasj.statemachine.Tuples.Tuple3;
 import com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.CutOff;
 import reactor.core.publisher.Mono;
 
-public class CutOffRequestDataCreator implements DataCreator<CutOff, Tuple2<BatchNumber, AcquirerBatchNumber>> {
+public class CutOffRequestDataCreator implements DataCreator<CutOff, Tuple3<CutOff, BatchNumber, AcquirerBatchNumber>> {
 
   @Override
-  public Mono<Tuple2<BatchNumber, AcquirerBatchNumber>> execute(InputEvent<CutOff> inputEvent, EventLog eventLog) {
+  public Mono<Tuple3<CutOff, BatchNumber, AcquirerBatchNumber>> execute(InputEvent<CutOff> inputEvent, EventLog eventLog) {
     BatchNumber currentId = eventLog.secondaryIds().stream()
         .filter(id -> id.model() == Identifiers.BatchNumber)
         .map(id -> (BatchNumber)id.data())
@@ -23,6 +23,6 @@ public class CutOffRequestDataCreator implements DataCreator<CutOff, Tuple2<Batc
         .map(id -> (AcquirerBatchNumber)id.data())
         .findFirst()
         .orElseThrow();
-    return Mono.just(tuple(currentId, currentNetsSession));
+    return Mono.just(tuple(inputEvent.data(), currentId, currentNetsSession));
   }
 }

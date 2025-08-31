@@ -27,7 +27,7 @@ public final class Event<T> {
     this(eventNumber, type, LocalDateTime.ofInstant(clock.instant(), clock.getZone()), clock, messageId, clientId, null);
   }
 
-  public Event(Integer eventNumber, EventType<?, T> type, Clock clock, String messageId, String clientId, T data) {
+  public <I> Event(Integer eventNumber, EventType<I, T> type, Clock clock, String messageId, String clientId, T data) {
     this(eventNumber, type, LocalDateTime.ofInstant(clock.instant(), clock.getZone()), clock, messageId, clientId, marshal(data));
     this.unmarshalledData = data;
   }
@@ -46,6 +46,9 @@ public final class Event<T> {
   }
 
   public Event(Integer eventNumber, EventType<?, T> type, LocalDateTime timestamp, Clock clock, String messageId, String clientId, String data) {
+    // TODO: Not ready for this yet...
+    //    if (type.outputDataType().value() != Void.class)
+    //      requireNonNull(data);
     requireNonNull(eventNumber);
     requireNonNull(type);
     this.eventNumber = eventNumber;
@@ -147,12 +150,12 @@ public final class Event<T> {
   }
 
   private static <T> T unmarshal(EventType<?, T> eventType, String data) {
-    if (eventType.outputDataType() == String.class)
+    if (eventType.outputDataType().value() == String.class)
       return (T) data;
-    if (eventType.outputDataType() == Integer.class)
+    if (eventType.outputDataType().value() == Integer.class)
       return (T) Integer.valueOf(data);
     try {
-      return objectMapper.readerFor(eventType.outputDataType()).readValue(data);
+      return objectMapper.readerFor(eventType.outputDataType().value()).readValue(data);
     } catch (JsonProcessingException e) {
       throw new RuntimeException(e);
     }

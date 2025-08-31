@@ -30,7 +30,7 @@ public class IncomingRequestJsonValidator<INPUT_TYPE, OUTPUT_TYPE>
   public IncomingRequestJsonValidator(Class<INPUT_TYPE> inputType) {this.inputType = inputType;}
 
   @Override
-  public final Mono<InputEvent<OUTPUT_TYPE>> execute(
+  public final Mono<Result> execute(
       EntityId entityId,
       Context<OUTPUT_TYPE> context,
       Input.IncomingRequest request
@@ -47,7 +47,7 @@ public class IncomingRequestJsonValidator<INPUT_TYPE, OUTPUT_TYPE>
     return execute(entityId, context, request, jsonBody);
   }
 
-  public Mono<InputEvent<OUTPUT_TYPE>> execute(
+  public Mono<Result> execute(
       EntityId entityId,
       Context<OUTPUT_TYPE> context,
       Input.IncomingRequest request,
@@ -59,7 +59,7 @@ public class IncomingRequestJsonValidator<INPUT_TYPE, OUTPUT_TYPE>
   public static <T> IncomingRequestJsonValidator<T, T> json(Class<T> type) {
     return new IncomingRequestJsonValidator<>(type) {
       @Override
-      public Mono<InputEvent<T>> execute(
+      public Mono<Result> execute(
           EntityId entityId,
           Context<T> context,
           Input.IncomingRequest request,

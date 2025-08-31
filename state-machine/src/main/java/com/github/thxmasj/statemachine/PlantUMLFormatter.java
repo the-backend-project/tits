@@ -94,7 +94,9 @@ public class PlantUMLFormatter {
           /*state.state().name().equals(STATE_BEGIN) ? "[*]" :*/ state.state().name(),
           targetState.state().name(),
           Stream.of(
-              transition.eventType().name() + (transition.eventType().dataType() != null ? " (" + transition.eventType().dataType().getSimpleName() + ")" : ""),
+              transition.eventType().name(),
+              "input: " + transition.eventType().inputDataType().value(),
+              "output: " + transition.eventType().outputDataType().value(),
               transition.outgoingRequests().stream().map(ns -> outgoingRequest(ns, false)).collect(joining("\\n")),
               transition.outgoingResponses().stream().map(ns -> outgoingResponse(ns, false)).collect(joining("\\n")),
               transition.reverse() != null ? transition.reverse().outgoingRequests().stream().map(ns -> outgoingRequest(ns, true)).collect(joining("\\n")) : ""

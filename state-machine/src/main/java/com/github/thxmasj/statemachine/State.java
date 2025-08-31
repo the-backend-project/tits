@@ -7,7 +7,7 @@ public interface State {
 
   String name();
 
-  record Timeout(Duration duration, EventType<?, ?> eventType) {}
+  record Timeout(Duration duration, EventType<Void, ?> eventType) {}
 
   default Optional<Timeout> timeout() {
     return Optional.empty();

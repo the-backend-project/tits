@@ -15,9 +15,9 @@ public class IncomingRequestModelBuilder<DATA_TYPE> {
   private boolean derivedMessageId;
   private String clientId;
   private String correlationId;
-  private EventTriggerBuilder eventTrigger;
-  private Class<? extends IncomingRequestValidator<?>> validatorClass;
-  private IncomingRequestValidator<?> validator;
+  private EventTriggerBuilder<DATA_TYPE, ?> eventTrigger;
+  private Class<? extends IncomingRequestValidator<DATA_TYPE>> validatorClass;
+  private IncomingRequestValidator<DATA_TYPE> validator;
   private byte[] digest;
 
   public IncomingRequestModelBuilder<DATA_TYPE> matches(boolean matches) {
@@ -25,7 +25,7 @@ public class IncomingRequestModelBuilder<DATA_TYPE> {
     return this;
   }
 
-  public IncomingRequestModelBuilder<DATA_TYPE> trigger(EventTriggerBuilder eventTrigger) {
+  public IncomingRequestModelBuilder<DATA_TYPE> trigger(EventTriggerBuilder<DATA_TYPE, ?> eventTrigger) {
     this.eventTrigger = eventTrigger;
     return this;
   }
@@ -68,12 +68,12 @@ public class IncomingRequestModelBuilder<DATA_TYPE> {
     return this;
   }
 
-  public IncomingRequestModelBuilder<DATA_TYPE> validator(Class<? extends IncomingRequestValidator<?>> validatorClass) {
+  public IncomingRequestModelBuilder<DATA_TYPE> validator(Class<? extends IncomingRequestValidator<DATA_TYPE>> validatorClass) {
     this.validatorClass = validatorClass;
     return this;
   }
 
-  public IncomingRequestModelBuilder<DATA_TYPE> validator(IncomingRequestValidator<?> validator) {
+  public IncomingRequestModelBuilder<DATA_TYPE> validator(IncomingRequestValidator<DATA_TYPE> validator) {
     this.validator = validator;
     return this;
   }
@@ -83,7 +83,7 @@ public class IncomingRequestModelBuilder<DATA_TYPE> {
     return this;
   }
 
-  public IncomingRequestModel build() {
+  public IncomingRequestModel<DATA_TYPE> build() {
     if (eventTrigger == null)
       throw new IllegalArgumentException("eventTrigger not set");
     if (clientId == null)
@@ -95,7 +95,7 @@ public class IncomingRequestModelBuilder<DATA_TYPE> {
     if (!(validatorClass != null ^ validator != null))
       throw new IllegalArgumentException("validatorClass xor validator must be set");
 
-    return new IncomingRequestModel(
+    return new IncomingRequestModel<>(
         matches,
         eventTrigger,
         messageId,

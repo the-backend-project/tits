@@ -13,7 +13,7 @@ public interface Listener {
     void clientRequestFailed(
             String correlationId,
             EntityId entityId,
-            Event requestEvent,
+            EventType<?, ?> requestEvent,
             Throwable t
     );
 
@@ -34,7 +34,7 @@ public interface Listener {
         String correlationId,
         EntityId entityId,
         String sourceState,
-        EventType resolveEvent,
+        EventType<?, ?> resolveEvent,
         String details
     );
 
@@ -57,7 +57,7 @@ public interface Listener {
       ) {}
       public record Event(
           int number,
-          EventType type,
+          EventType<?, ?> type,
           String data
       ) {}
     }

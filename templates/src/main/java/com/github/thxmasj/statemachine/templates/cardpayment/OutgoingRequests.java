@@ -2,14 +2,13 @@ package com.github.thxmasj.statemachine.templates.cardpayment;
 
 import com.github.thxmasj.statemachine.OutgoingRequestCreator;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;
+import com.github.thxmasj.statemachine.Tuples.Tuple3;
 import com.github.thxmasj.statemachine.templates.cardpayment.AcquirerResponse.ReconciliationValues;
 import com.github.thxmasj.statemachine.templates.cardpayment.ApprovedCaptureDataCreator.ApprovedCaptureData;
 import com.github.thxmasj.statemachine.templates.cardpayment.ApprovedRefundDataCreator.ApprovedRefundData;
 import com.github.thxmasj.statemachine.templates.cardpayment.AuthenticationDataCreator.AuthenticationData;
-import com.github.thxmasj.statemachine.templates.cardpayment.AuthorisationResponseDataCreator.AuthorisationResponseData;
 import com.github.thxmasj.statemachine.templates.cardpayment.AuthorisationReversalDataCreator.AuthorisationReversalData;
 import com.github.thxmasj.statemachine.templates.cardpayment.CaptureRequestDataCreator.CaptureRequestData;
-import com.github.thxmasj.statemachine.templates.cardpayment.CaptureRequestedTooLateDataCreator.CaptureRequestedTooLateData;
 import com.github.thxmasj.statemachine.templates.cardpayment.DeclinedRefundDataCreator.DeclinedRefundData;
 import com.github.thxmasj.statemachine.templates.cardpayment.FailedRefundDataCreator.FailedRefundData;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthenticationResult;
@@ -51,22 +50,22 @@ public class OutgoingRequests {
   public interface FailedAuthorisation extends OutgoingRequestCreator<Tuple2<PaymentEvent.Authorisation, AuthenticationResult>> {
     default UUID id() {return UUID.fromString("b650af23-8d77-4172-a5b9-5663557310fc");}
   }
-  public interface DeclinedAuthorisation extends OutgoingRequestCreator<AuthorisationResponseData> {
+  public interface DeclinedAuthorisation extends OutgoingRequestCreator<Tuple2<PaymentEvent.Authorisation, AcquirerResponse>> {
     default UUID id() {return UUID.fromString("88a79f93-3345-4f44-830a-19cd719d4209");}
   }
-  public interface ApprovedPreauthorisation extends OutgoingRequestCreator<AuthorisationResponseData> {
+  public interface ApprovedPreauthorisation extends OutgoingRequestCreator<Tuple2<PaymentEvent.Authorisation, AcquirerResponse>> {
     default UUID id() {return UUID.fromString("0d76d725-d55c-41f5-be8f-f8f3633de7c8");}
   }
   public interface ApprovedCapture extends OutgoingRequestCreator<ApprovedCaptureData> {
     default UUID id() {return UUID.fromString("3e78b6b7-057b-4d3c-a91e-33a61cebc429");}
   }
-  public interface ApprovedAuthorisation extends OutgoingRequestCreator<AuthorisationResponseData> {
+  public interface ApprovedAuthorisation extends OutgoingRequestCreator<Tuple2<PaymentEvent.Authorisation, AcquirerResponse>> {
     default UUID id() {return UUID.fromString("9bd938ed-bf98-4e37-9de5-10606719585a");}
   }
   public interface Capture extends OutgoingRequestCreator<CaptureRequestData> {
     default UUID id() {return UUID.fromString("4120c908-4160-48a0-88af-c500494aaefd");}
   }
-  public interface CaptureTooLate extends OutgoingRequestCreator<CaptureRequestedTooLateData> {
+  public interface CaptureTooLate extends OutgoingRequestCreator<Tuple3<PaymentEvent.Authorisation, AuthenticationResult, PaymentEvent.Capture>> {
     default UUID id() {return UUID.fromString("d7548893-fd35-4d60-b3db-68a63ee60227");}
   }
   public interface RefundAuthorisation extends OutgoingRequestCreator<RefundRequestData> {

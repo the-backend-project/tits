@@ -12,14 +12,10 @@ import reactor.core.publisher.Mono;
 public class ApprovedCaptureDataCreator implements DataCreator<AcquirerResponse, ApprovedCaptureData> {
 
   public record ApprovedCaptureData(
+      AcquirerResponse acquirerResponse,
       String merchantId,
       String merchantAggregatorId,
-      long amount,
       String merchantReference,
-      int acquirerBatchNumber,
-      String stan,
-      String authorisationCode,
-      String responseCode,
       String correlationId
   ) {}
 
@@ -29,14 +25,10 @@ public class ApprovedCaptureDataCreator implements DataCreator<AcquirerResponse,
     var acquirerResponse = inputEvent.data();
     var captureData = eventLog.last(CaptureRequest).getUnmarshalledData();
     return Mono.just(new ApprovedCaptureData(
+        acquirerResponse,
         paymentData.merchant().id(),
         paymentData.merchant().aggregatorId(),
-        acquirerResponse.amount(),
         paymentData.merchantReference(),
-        acquirerResponse.batchNumber(),
-        acquirerResponse.stan(),
-        acquirerResponse.authorisationCode(),
-        acquirerResponse.responseCode(),
         captureData.correlationId()
     ));
   }

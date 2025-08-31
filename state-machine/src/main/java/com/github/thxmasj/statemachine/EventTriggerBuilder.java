@@ -45,9 +45,9 @@ public class EventTriggerBuilder<I, O> {
     return identifiedBy(builder);
   }
 
-  public EventTrigger build() {
+  public EventTrigger<I> build() {
     if (entitySelectors.isEmpty() && !create) throw new IllegalArgumentException("An entity selector must be specified unless create flag is set");
-    return new EventTrigger(entitySelectors, eventType, data, entityModel, create);
+    return new EventTrigger<>(entitySelectors, eventType, data, entityModel, create);
   }
 
 }

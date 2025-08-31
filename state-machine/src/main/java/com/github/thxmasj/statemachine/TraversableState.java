@@ -1,7 +1,6 @@
 package com.github.thxmasj.statemachine;
 
 import static com.github.thxmasj.statemachine.TransitionModel.Builder.onEvent;
-import static java.util.Objects.requireNonNullElse;
 
 import com.github.thxmasj.statemachine.message.http.BadRequest;
 import com.github.thxmasj.statemachine.message.http.OK;
@@ -16,14 +15,14 @@ import reactor.core.publisher.Mono;
 
 public class TraversableState {
   private final State state;
-  private final Map<TransitionModel<?, ?>, TraversableState> backwardTransitions;
-  private final Map<TransitionModel<?, ?>, TraversableState> forwardTransitions;
+  private final Map<TransitionModel<?, ?, ?>, TraversableState> backwardTransitions;
+  private final Map<TransitionModel<?, ?, ?>, TraversableState> forwardTransitions;
   private static final Map<EntityModel, TraversableState> cache = new HashMap<>();
 
   public TraversableState(
       State state,
-      Map<TransitionModel<?, ?>, TraversableState> backwardTransitions,
-      Map<TransitionModel<?, ?>, TraversableState> forwardTransitions
+      Map<TransitionModel<?, ?, ?>, TraversableState> backwardTransitions,
+      Map<TransitionModel<?, ?, ?>, TraversableState> forwardTransitions
   ) {
     this.state = state;
     this.backwardTransitions = backwardTransitions;
@@ -34,7 +33,7 @@ public class TraversableState {
     return state;
   }
 
-  public Set<TransitionModel<?, ?>> forwardTransitions() {
+  public Set<TransitionModel<?, ?, ?>> forwardTransitions() {
     return forwardTransitions.keySet();
   }
 
@@ -44,8 +43,8 @@ public class TraversableState {
 
   private static TraversableState create(
       TraversableState fromState,
-      TransitionModel<?, ?> transitionIn,
-      List<TransitionModel<?, ?>> transitions,
+      TransitionModel<?, ?, ?> transitionIn,
+      List<TransitionModel<?, ?, ?>> transitions,
       State initialState,
       Map<State, TraversableState> visitedStates
   ) {
@@ -55,8 +54,8 @@ public class TraversableState {
       visitedStates.get(state).backwardTransitions.put(transitionIn, fromState);
       return visitedStates.get(state);
     }
-    Map<TransitionModel<?, ?>, TraversableState> forwardTransitions = new HashMap<>();
-    Map<TransitionModel<?, ?>, TraversableState> backwardTransitions = new HashMap<>();
+    Map<TransitionModel<?, ?, ?>, TraversableState> forwardTransitions = new HashMap<>();
+    Map<TransitionModel<?, ?, ?>, TraversableState> backwardTransitions = new HashMap<>();
     TraversableState node = new TraversableState(state, backwardTransitions, forwardTransitions);
     if (transitionIn != null)
       backwardTransitions.put(transitionIn, fromState);
@@ -88,15 +87,7 @@ public class TraversableState {
     return node;
   }
 
-  private static class StringFromInvalidOrRejectedRequestEvent implements DataCreator<String, String> {
-
-    @Override
-    public Mono<String> execute(InputEvent<String> inputEvent, EventLog eventLog) {
-      return Mono.just(requireNonNullElse(inputEvent.errorMessage(), "<error message missing>"));
-    }
-  }
-
-  private static TransitionModel<?, ?> statusTransition(State state) {
+  private static TransitionModel<?, ?, ?> statusTransition(State state) {
     return onEvent(BuiltinEventTypes.Status)
         .from(state)
         .to(state)
@@ -104,19 +95,19 @@ public class TraversableState {
         .response(new OK());
   }
 
-  private static TransitionModel<?, ?> invalidRequestTransition(State state) {
+  private static TransitionModel<?, ?, ?> invalidRequestTransition(State state) {
     return builtinTransition(state, BuiltinEventTypes.InvalidRequest, new BadRequest());
   }
 
-  private static TransitionModel<?, ?> rejectedRequestTransition(State state) {
+  private static TransitionModel<?, ?, ?> rejectedRequestTransition(State state) {
     return builtinTransition(state, BuiltinEventTypes.RejectedRequest, new UnprocessableEntity());
   }
 
-  private static TransitionModel<String, String> builtinTransition(State state, EventType<String, ?> eventType, OutgoingResponseCreator<String> response) {
+  private static TransitionModel<String, String, ?> builtinTransition(State state, EventType<String, ?> eventType, OutgoingResponseCreator<String> response) {
     return onEvent(eventType)
         .from(state)
         .to(state)
-        .withData(new StringFromInvalidOrRejectedRequestEvent())
+        .withData((input, _) -> Mono.just(input.data()))
         .response(response);
   }
 
@@ -124,10 +115,10 @@ public class TraversableState {
     return forwardTransitions.values();
   }
 
-  public TransitionModel<?, ?> transition(EventType<?, ?> eventType) {
+  public <I, O> TransitionModel<I, ?, O> transition(EventType<I, O> eventType) {
     for (var transition : forwardTransitions.keySet()) {
       if (transition.eventType() == eventType)
-        return transition;
+        return (TransitionModel<I, ?, O>)transition;
     }
     return null;
   }

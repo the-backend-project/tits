@@ -16,7 +16,7 @@ public class Logger implements Listener {
   }
 
   @Override
-  public void clientRequestFailed(String correlationId, EntityId entityId, Event event, Throwable t) {
+  public void clientRequestFailed(String correlationId, EntityId entityId, EventType<?, ?> eventType, Throwable t) {
     log(header(entityId, correlationId) + " Request failed: " + t.toString());
     //noinspection CallToPrintStackTrace
     t.printStackTrace();
@@ -50,7 +50,7 @@ public class Logger implements Listener {
       String correlationId,
       EntityId entityId,
       String sourceState,
-      EventType resolveEvent,
+      EventType<?, ?> resolveEvent,
       String details
   ) {
     log(header(entityId, correlationId) + " Resolving state " + sourceState + " with " + resolveEvent.name() + " failed: " + details);
