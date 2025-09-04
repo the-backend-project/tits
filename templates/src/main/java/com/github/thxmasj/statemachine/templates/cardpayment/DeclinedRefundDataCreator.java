@@ -14,9 +14,9 @@ public class DeclinedRefundDataCreator implements DataCreator<AcquirerResponse, 
   @Override
   public Mono<DeclinedRefundData> execute(InputEvent<AcquirerResponse> inputEvent, EventLog eventLog) {
     return Mono.just(new DeclinedRefundData(
-            eventLog.one(PaymentRequest).getUnmarshalledData(),
+            eventLog.one(PaymentRequest),
             inputEvent.data(),
-            eventLog.last(RefundRequest).getUnmarshalledData().correlationId()
+            eventLog.last(RefundRequest).correlationId()
         ));
   }
 

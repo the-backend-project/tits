@@ -94,7 +94,7 @@ public class PlantUMLFormatter {
           /*state.state().name().equals(STATE_BEGIN) ? "[*]" :*/ state.state().name(),
           targetState.state().name(),
           Stream.of(
-              String.format("<u>%s</u>", transition.eventType().name()),
+              String.format("%s", transition.eventType().name()),
               "I:" + transition.eventType().inputDataType().name() + "/" + "O:" + transition.eventType().outputDataType().name(),
               transition.outgoingRequests().stream().map(ns -> outgoingRequest(ns, false)).collect(joining("\\n")),
               transition.outgoingResponses().stream().map(ns -> outgoingResponse(ns, false)).collect(joining("\\n")),

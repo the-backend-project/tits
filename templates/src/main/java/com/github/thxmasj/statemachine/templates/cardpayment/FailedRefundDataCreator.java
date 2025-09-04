@@ -15,8 +15,8 @@ public class FailedRefundDataCreator implements DataCreator<String, FailedRefund
   @Override
   public Mono<FailedRefundData> execute(InputEvent<String> inputEvent, EventLog eventLog) {
     return Mono.just(new FailedRefundData(
-        eventLog.one(PaymentRequest).getUnmarshalledData(),
-        eventLog.last(RefundRequest).getUnmarshalledData().correlationId()
+        eventLog.one(PaymentRequest),
+        eventLog.last(RefundRequest).correlationId()
     ));
   }
 

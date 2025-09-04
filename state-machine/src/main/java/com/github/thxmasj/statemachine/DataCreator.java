@@ -11,7 +11,7 @@ public interface DataCreator<I, O> extends DataRequirer {
   }
 
   static <I, O> DataCreator<I, O> fromEvent(EventType<?, O> eventType) {
-    return (_, eventLog) -> Mono.just(eventLog.one(eventType).getUnmarshalledData());
+    return (_, eventLog) -> Mono.just(eventLog.one(eventType));
   }
 
 }

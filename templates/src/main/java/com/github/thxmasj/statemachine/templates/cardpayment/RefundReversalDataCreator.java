@@ -9,7 +9,6 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent
 import static com.github.thxmasj.statemachine.templates.cardpayment.Queues.Acquirer;
 
 import com.github.thxmasj.statemachine.DataCreator;
-import com.github.thxmasj.statemachine.Event;
 import com.github.thxmasj.statemachine.EventLog;
 import com.github.thxmasj.statemachine.InputEvent;
 import com.github.thxmasj.statemachine.Requirements;
@@ -40,11 +39,9 @@ public class RefundReversalDataCreator implements DataCreator<Void, RefundRevers
 
   @Override
   public Mono<RefundReversalData> execute(InputEvent<Void> inputEvent, EventLog eventLog) {
-    Authorisation paymentData = eventLog.one(PaymentRequest).getUnmarshalledData();
-    Refund refundData = eventLog.last(RefundRequest).getUnmarshalledData();
-    AcquirerResponse acquirerResponse = eventLog.lastIfExists(RefundApproved)
-        .map(Event::getUnmarshalledData)
-        .orElse(null);
+    Authorisation paymentData = eventLog.one(PaymentRequest);
+    Refund refundData = eventLog.last(RefundRequest);
+    AcquirerResponse acquirerResponse = eventLog.lastIfExists(RefundApproved).orElse(null);
     return Mono.just(new RefundReversalData(
             inputEvent.eventType() == Cancel || inputEvent.eventType() == RollbackRequest,
             inputEvent.eventType() != Cancel,

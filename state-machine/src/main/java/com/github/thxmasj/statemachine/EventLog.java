@@ -13,42 +13,42 @@ public record EventLog(EntityModel entityModel, EntityId entityId, List<Secondar
     return events.isEmpty() ? 0 : events.getLast().eventNumber();
   }
 
-  public <T> Event<T> one(EventType<?, T> eventType) {
+  public <T> T one(EventType<?, T> eventType) {
     return effectiveEvents().stream()
         .filter(e -> e.type().id().equals(eventType.id()))
-        .map(e -> (Event<T>)e)
+        .map(e -> ((Event<T>)e).getUnmarshalledData())
         .findFirst()
         .orElseThrow();
   }
 
   @SafeVarargs
-  public final <T> Event<T> one(EventType<?, T>... eventTypes) {
+  public final <T> T one(EventType<?, T>... eventTypes) {
     return effectiveEvents().stream()
         .filter(e -> Stream.of(eventTypes).map(EventType::id).toList().contains(e.type().id()))
-        .map(e -> (Event<T>)e)
+        .map(e -> ((Event<T>)e).getUnmarshalledData())
         .findFirst()
         .orElseThrow();
   }
 
-  public <T> Event<T> last(EventType<?, T> eventType) {
+  public <T> T last(EventType<?, T> eventType) {
     return effectiveEvents().reversed().stream()
         .filter(e -> e.type().id().equals(eventType.id()))
-        .map(e -> (Event<T>)e)
+        .map(e -> ((Event<T>)e).getUnmarshalledData())
         .findFirst()
         .orElseThrow();
   }
 
-  public <T> Optional<Event<T>> lastIfExists(EventType<?, T> eventType) {
+  public <T> Optional<T> lastIfExists(EventType<?, T> eventType) {
     return effectiveEvents().reversed().stream()
         .filter(e -> e.type().id().equals(eventType.id()))
-        .map(e -> (Event<T>)e)
+        .map(e -> ((Event<T>)e).getUnmarshalledData())
         .findFirst();
   }
 
-  public <T> List<Event<T>> all(EventType<?, T> eventType) {
+  public <T> List<T> all(EventType<?, T> eventType) {
     return effectiveEvents().stream()
         .filter(e -> e.type().id().equals(eventType.id()))
-        .map(e -> (Event<T>)e)
+        .map(e -> ((Event<T>)e).getUnmarshalledData())
         .toList();
   }
 

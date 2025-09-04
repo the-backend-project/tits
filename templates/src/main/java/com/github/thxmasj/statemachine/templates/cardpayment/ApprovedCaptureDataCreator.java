@@ -21,9 +21,9 @@ public class ApprovedCaptureDataCreator implements DataCreator<AcquirerResponse,
 
   @Override
   public Mono<ApprovedCaptureData> execute(InputEvent<AcquirerResponse> inputEvent, EventLog eventLog) {
-    var paymentData = eventLog.one(PaymentRequest).getUnmarshalledData();
+    var paymentData = eventLog.one(PaymentRequest);
     var acquirerResponse = inputEvent.data();
-    var captureData = eventLog.last(CaptureRequest).getUnmarshalledData();
+    var captureData = eventLog.last(CaptureRequest);
     return Mono.just(new ApprovedCaptureData(
         acquirerResponse,
         paymentData.merchant().id(),

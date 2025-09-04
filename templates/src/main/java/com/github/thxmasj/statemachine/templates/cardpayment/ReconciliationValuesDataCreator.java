@@ -8,7 +8,6 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEv
 import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.MerchantDebitReversed;
 
 import com.github.thxmasj.statemachine.DataCreator;
-import com.github.thxmasj.statemachine.Event;
 import com.github.thxmasj.statemachine.EventLog;
 import com.github.thxmasj.statemachine.InputEvent;
 import com.github.thxmasj.statemachine.Tuples.Tuple4;
@@ -25,21 +24,19 @@ public class ReconciliationValuesDataCreator
       EventLog eventLog
   ) {
     return Mono.just(tuple(
-        eventLog.one(CutOffRequest).getUnmarshalledData(),
+        eventLog.one(CutOffRequest),
         new ReconciliationValues(
-            eventLog.all(MerchantDebit).stream().map(Event::getUnmarshalledData).mapToLong(Long::longValue).sum(),
+            eventLog.all(MerchantDebit).stream().mapToLong(Long::longValue).sum(),
             (long) eventLog.all(MerchantDebit).size(),
-            eventLog.all(MerchantCredit).stream().map(Event::getUnmarshalledData).mapToLong(Long::longValue).sum(),
+            eventLog.all(MerchantCredit).stream().mapToLong(Long::longValue).sum(),
             (long) eventLog.all(MerchantCredit).size(),
             eventLog.all(MerchantCreditReversed)
                 .stream()
-                .map(Event::getUnmarshalledData)
                 .mapToLong(Long::longValue)
                 .sum(),
             (long) eventLog.all(MerchantCreditReversed).size(),
             eventLog.all(MerchantDebitReversed)
                 .stream()
-                .map(Event::getUnmarshalledData)
                 .mapToLong(Long::longValue)
                 .sum(),
             (long) eventLog.all(MerchantDebitReversed).size()

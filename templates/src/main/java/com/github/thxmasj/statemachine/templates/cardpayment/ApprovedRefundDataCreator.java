@@ -24,9 +24,9 @@ public class ApprovedRefundDataCreator implements DataCreator<AcquirerResponse, 
 
   @Override
   public Mono<ApprovedRefundData> execute(InputEvent<AcquirerResponse> inputEvent, EventLog eventLog) {
-    Authorisation authorisationData = eventLog.one(PaymentRequest).getUnmarshalledData();
+    Authorisation authorisationData = eventLog.one(PaymentRequest);
     AcquirerResponse acquirerResponse = inputEvent.data();
-    Refund refundData = eventLog.last(RefundRequest).getUnmarshalledData();
+    Refund refundData = eventLog.last(RefundRequest);
     return Mono.just(new ApprovedRefundData(
         acquirerResponse,
         authorisationData.merchant().id(),

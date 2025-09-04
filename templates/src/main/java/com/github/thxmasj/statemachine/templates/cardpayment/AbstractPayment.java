@@ -184,18 +184,18 @@ public abstract class AbstractPayment implements EntityModel {
             onEvent(InvalidPaymentTokenStatus).from(ProcessingAuthentication).to(Begin)
                 .response("Payment token is inactive", new BadRequest()),
             onEvent(AuthenticationFailed).from(ProcessingAuthentication).to(Begin)
-                .withData((input, log) -> Mono.just(tuple(log.one(PaymentRequest).getUnmarshalledData(), input.data())))
+                .withData((input, log) -> Mono.just(tuple(log.one(PaymentRequest), input.data())))
                 .notify(request(failedAuthentication()).to(Acquirer).guaranteed())
                 .response("Authentication failed", new BadRequest()),
             onEvent(InvalidPaymentTokenOwnership).from(ProcessingAuthentication).to(Begin)
-                .withData((input, log) -> Mono.just(tuple(log.one(PaymentRequest).getUnmarshalledData(), input.data())))
+                .withData((input, log) -> Mono.just(tuple(log.one(PaymentRequest), input.data())))
                 .notify(request(failedTokenValidation()).to(Acquirer)
                     .guaranteed()
                     .responseValidator(validateAuthorisationAdviceResponse()))
                 .response("Payment token is not accessible", new BadRequest()),
             onEvent(RollbackRequest).from(ProcessingAuthentication).toSelf().response(new Created()),
             onEvent(PreauthorisationRequest).from(ProcessingAuthentication).to(ProcessingAuthorisation)
-                .withData(((input, log) -> Mono.just(tuple(log.one(PaymentRequest).getUnmarshalledData(), input.data()))))
+                .withData(((input, log) -> Mono.just(tuple(log.one(PaymentRequest), input.data()))))
                 .output(Tuple2::t2)
                 .notify(request(preauthorisation()).to(Acquirer).responseValidator(validatePreauthorisationResponse()))
                 .response("", new Created())
@@ -205,7 +205,7 @@ public abstract class AbstractPayment implements EntityModel {
                         .responseValidator(validatePreauthorisationReversalResponse()))
                     .notify(request(rolledBackPreauthorisationRequest()).to(Merchant).guaranteed())),
             onEvent(AuthorisationRequest).from(ProcessingAuthentication).to(ProcessingAuthorisation)
-                .withData(((input, log) -> Mono.just(tuple(log.one(PaymentRequest).getUnmarshalledData(), input.data()))))
+                .withData(((input, log) -> Mono.just(tuple(log.one(PaymentRequest), input.data()))))
                 .filter(d -> d.t1().capture()).orElse(PreauthorisationRequest, Tuple2::t2)
                 .output(Tuple2::t2)
                 .trigger(data -> event(BuiltinEventTypes.Status).onEntity(settlement)
@@ -220,7 +220,7 @@ public abstract class AbstractPayment implements EntityModel {
                         .responseValidator(validateAuthorisationReversalResponse()))
                     .notify(request(rolledBackAuthorisationRequest()).to(Merchant).guaranteed())),
             onEvent(PreauthorisationApproved).from(ProcessingAuthorisation).to(Preauthorised)
-                .withData(((input, log) -> Mono.just(tuple(log.one(PaymentRequest).getUnmarshalledData(), input.data()))))
+                .withData(((input, log) -> Mono.just(tuple(log.one(PaymentRequest), input.data()))))
                 .output(Tuple2::t2)
                 .notify(request(approvedPreauthorisation()).to(Merchant).guaranteed())
                 .scheduledEvents(List.of(new ScheduledEvent(AuthorisationExpired, Duration.ofDays(7)))),
@@ -228,12 +228,12 @@ public abstract class AbstractPayment implements EntityModel {
             onEvent(RollbackRequest).from(ProcessingAuthorisation).toSelf().response(new Created()),
             onEvent(RequestUndelivered).from(ProcessingAuthorisation).to(AuthorisationFailed)
                 .withData((_, log) -> Mono.just(tuple(
-                    log.one(PaymentRequest).getUnmarshalledData(),
-                    log.one(AuthorisationRequest, PreauthorisationRequest).getUnmarshalledData()
+                    log.one(PaymentRequest),
+                    log.one(AuthorisationRequest, PreauthorisationRequest)
                 )))
                 .notify(request(failedAuthorisation()).to(Merchant).guaranteed()),
             onEvent(AuthorisationApproved).from(ProcessingAuthorisation).to(Authorised)
-                .withData(((input, log) -> Mono.just(tuple(log.one(PaymentRequest).getUnmarshalledData(), input.data()))))
+                .withData(((input, log) -> Mono.just(tuple(log.one(PaymentRequest), input.data()))))
                 .output(Tuple2::t2)
                 .notify(request(approvedAuthorisation()).to(Merchant).guaranteed())
                 .trigger(data -> event(MerchantCredit, data.t1().amount().requested()).onEntity(settlement)
@@ -250,7 +250,7 @@ public abstract class AbstractPayment implements EntityModel {
                     .trigger(data -> event(SettlementEvent.MerchantCreditReversed, data.amount().requested()).onEntity(settlement)
                         .identifiedBy(model(BatchNumber).group(data.merchant().id()).last()))),
             onEvent(AcquirerDeclined).from(ProcessingAuthorisation).to(AuthorisationFailed)
-                .withData(((input, log) -> Mono.just(tuple(log.one(PaymentRequest).getUnmarshalledData(), input.data()))))
+                .withData(((input, log) -> Mono.just(tuple(log.one(PaymentRequest), input.data()))))
                 .notify(request(declinedAuthorisation()).to(Merchant).guaranteed()),
             onEvent(CaptureApproved).from(ProcessingCapture).to(Authorised)
                 .withData(new ApprovedCaptureDataCreator())
@@ -292,8 +292,8 @@ public abstract class AbstractPayment implements EntityModel {
   private TransitionModel<?, ?, ?> captureRequestedTooLateTransition(State anchor) {
     return onEvent(CaptureRequest).from(anchor).toSelf()
         .withData((input, log) -> Mono.just(tuple(
-            log.one(PaymentRequest).getUnmarshalledData(),
-            log.one(AuthorisationRequest, PreauthorisationRequest).getUnmarshalledData(),
+            log.one(PaymentRequest),
+            log.one(AuthorisationRequest, PreauthorisationRequest),
             input.data()
         )))
         .output(Tuple3::t3)
