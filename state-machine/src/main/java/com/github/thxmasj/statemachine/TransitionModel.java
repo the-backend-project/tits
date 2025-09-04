@@ -92,14 +92,6 @@ public class TransitionModel<I, P, O> {
     return this;
   }
 
-  public TransitionModel<I, P, O> guaranteedNotification(
-      Class<? extends OutgoingRequestCreator<P>> notificationCreator,
-      OutboxQueue queue
-  ) {
-    this.outgoingRequests.add(new OutgoingRequestModel<>(Function.identity(), notificationCreator, null, queue, true, 0, null, null));
-    return this;
-  }
-
   public <U> TransitionModel<I, P, O> response(Function<P, U> dataAdapter, OutgoingResponseCreator<U> responseCreator) {
     this.outgoingResponses.add(new OutgoingResponseModel<>(
         dataAdapter,
