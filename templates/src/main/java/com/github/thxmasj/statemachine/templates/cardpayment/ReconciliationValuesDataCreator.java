@@ -13,17 +13,17 @@ import com.github.thxmasj.statemachine.InputEvent;
 import com.github.thxmasj.statemachine.Tuples.Tuple4;
 import com.github.thxmasj.statemachine.templates.cardpayment.AcquirerResponse.ReconciliationValues;
 import com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.CutOff;
-import reactor.core.publisher.Mono;
 
 public class ReconciliationValuesDataCreator
-    implements DataCreator<AcquirerResponse, Tuple4<CutOff, ReconciliationValues, ReconciliationValues, AcquirerResponse>> {
+    implements
+    DataCreator<AcquirerResponse, Tuple4<CutOff, ReconciliationValues, ReconciliationValues, AcquirerResponse>> {
 
   @Override
-  public Mono<Tuple4<CutOff, ReconciliationValues, ReconciliationValues, AcquirerResponse>> execute(
+  public Tuple4<CutOff, ReconciliationValues, ReconciliationValues, AcquirerResponse> execute(
       InputEvent<AcquirerResponse> inputEvent,
       EventLog eventLog
   ) {
-    return Mono.just(tuple(
+    return tuple(
         eventLog.one(CutOffRequest),
         new ReconciliationValues(
             eventLog.all(MerchantDebit).stream().mapToLong(Long::longValue).sum(),
@@ -43,6 +43,6 @@ public class ReconciliationValuesDataCreator
         ),
         inputEvent.data().reconciliationValues(),
         inputEvent.data()
-    ));
+    );
   }
 }

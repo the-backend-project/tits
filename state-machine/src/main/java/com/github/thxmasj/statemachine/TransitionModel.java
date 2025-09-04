@@ -16,8 +16,8 @@ public class TransitionModel<I, P, O> {
   private final State toState;
   private final EventType<I, O> eventType;
   private Function<P, O> outputTransformation = _ -> null;
-  private final Class<? extends DataCreator<I, P>> dataCreatorType;
-  private final DataCreator<I, P> dataCreator;
+  private final Class<? extends ReactiveDataCreator<I, P>> dataCreatorType;
+  private final ReactiveDataCreator<I, P> dataCreator;
   private final List<Filter<P, ?>> filters = new ArrayList<>();
   private final List<Function<P, EventTriggerBuilder<?, ?>>> eventTriggers = new ArrayList<>();
   private final List<OutgoingRequestModel<P, ?>> outgoingRequests = new ArrayList<>();
@@ -26,7 +26,7 @@ public class TransitionModel<I, P, O> {
   private final List<Function<P, SecondaryId>> newIdentifiers = new ArrayList<>();
   private List<ScheduledEvent> scheduledEvents = List.of();
 
-  private TransitionModel(State fromState, State toState, EventType<I, O> eventType, DataCreator<I, P> dataCreator, Class<? extends DataCreator<I, P>> dataCreatorType) {
+  private TransitionModel(State fromState, State toState, EventType<I, O> eventType, ReactiveDataCreator<I, P> dataCreator, Class<? extends ReactiveDataCreator<I, P>> dataCreatorType) {
     this.fromState = requireNonNull(fromState);
     this.toState = requireNonNull(toState);
     this.eventType = requireNonNull(eventType);
@@ -34,11 +34,11 @@ public class TransitionModel<I, P, O> {
     this.dataCreatorType = dataCreatorType;
   }
 
-  private TransitionModel(State fromState, State toState, EventType<I, O> eventType, DataCreator<I, P> dataCreator) {
+  private TransitionModel(State fromState, State toState, EventType<I, O> eventType, ReactiveDataCreator<I, P> dataCreator) {
     this(fromState, toState, eventType, dataCreator, null);
   }
 
-  private TransitionModel(State fromState, State toState, EventType<I, O> eventType, Class<? extends DataCreator<I, P>> dataCreatorType) {
+  private TransitionModel(State fromState, State toState, EventType<I, O> eventType, Class<? extends ReactiveDataCreator<I, P>> dataCreatorType) {
     this(fromState, toState, eventType, null, dataCreatorType);
   }
 
@@ -189,11 +189,11 @@ public class TransitionModel<I, P, O> {
     return reverse;
   }
 
-  public DataCreator<I, P> dataCreator() {
+  public ReactiveDataCreator<I, P> dataCreator() {
     return dataCreator;
   }
 
-  public Class<? extends DataCreator<I, P>> dataCreatorType() {
+  public Class<? extends ReactiveDataCreator<I, P>> dataCreatorType() {
     return dataCreatorType;
   }
 
@@ -253,16 +253,23 @@ public class TransitionModel<I, P, O> {
       return b;
     }
 
-    public <P> TransitionModel<I, P, O> withData(DataCreator<I, P> dataCreator) {
+    public <P> TransitionModel<I, P, O> withData(ReactiveDataCreator<I, P> dataCreator) {
       return new TransitionModel<>(fromState, toState, eventType, dataCreator);
     }
 
-    public <P> TransitionModel<I, P, O> withData(Class<? extends DataCreator<I, P>> dataCreatorType) {
+    public <P> TransitionModel<I, P, O> assemble(DataCreator<I, P> dataCreator) {
+      return new TransitionModel<>(
+          fromState, toState, eventType,
+          (inputEvent, eventLog) -> Mono.just(dataCreator.execute(inputEvent, eventLog))
+      );
+    }
+
+    public <P> TransitionModel<I, P, O> withData(Class<? extends ReactiveDataCreator<I, P>> dataCreatorType) {
       return new TransitionModel<>(fromState, toState, eventType, dataCreatorType);
     }
 
     public <P> TransitionModel<I, P, O> response(OutgoingResponseCreator<P> creator) {
-      return new TransitionModel<>(fromState, toState, eventType, (DataCreator<I, P>)null, null)
+      return new TransitionModel<>(fromState, toState, eventType, (ReactiveDataCreator<I, P>)null, null)
           .response(creator);
     }
 

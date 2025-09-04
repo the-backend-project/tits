@@ -13,12 +13,11 @@ import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Authen
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Authorisation;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Refund;
 import com.github.thxmasj.statemachine.templates.cardpayment.RefundRequestDataCreator.RefundRequestData;
-import reactor.core.publisher.Mono;
 
 public class RefundRequestDataCreator implements DataCreator<Refund, RefundRequestData> {
 
   @Override
-  public Mono<RefundRequestData> execute(InputEvent<Refund> inputEvent, EventLog eventLog) {
+  public RefundRequestData execute(InputEvent<Refund> inputEvent, EventLog eventLog) {
     Authorisation authorisationData = eventLog.one(PaymentRequest);
     long alreadyCapturedAmount;
     if (authorisationData.capture()) {
@@ -33,14 +32,14 @@ public class RefundRequestDataCreator implements DataCreator<Refund, RefundReque
         .map(AcquirerResponse::amount)
         .mapToLong(Long::longValue)
         .sum();
-    return Mono.just(new RefundRequestData(
+    return new RefundRequestData(
         authorisationData,
         eventLog.one(AuthorisationRequest, PreauthorisationRequest),
         inputEvent.data(),
         alreadyCapturedAmount,
         alreadyRefundedAmount,
         inputEvent.data().simulation()
-    ));
+    );
   }
 
   public record RefundRequestData(

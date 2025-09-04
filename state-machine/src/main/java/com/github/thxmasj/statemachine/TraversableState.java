@@ -68,8 +68,7 @@ public class TraversableState {
       var transition = onEvent(BuiltinEventTypes.UnknownEntity)
           .from(state)
           .to(state)
-          .withData((_, _) -> Mono.just(""))
-          .response(_ -> "Unknown entity", new BadRequest());
+          .response("Unknown entity", new BadRequest());
       forwardTransitions.put(transition, create(node, transition, transitions, initialState, visitedStates));
     }
     if (forwardTransitions.keySet().stream().noneMatch(t -> t.eventType() == BuiltinEventTypes.InvalidRequest)) {
@@ -91,7 +90,7 @@ public class TraversableState {
     return onEvent(BuiltinEventTypes.Status)
         .from(state)
         .to(state)
-        .withData((_, _) -> Mono.just(state.name()))
+        .assemble((_, _) -> state.name())
         .response(new OK());
   }
 

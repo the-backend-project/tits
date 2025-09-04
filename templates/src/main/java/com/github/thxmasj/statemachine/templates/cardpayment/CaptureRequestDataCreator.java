@@ -12,13 +12,12 @@ import com.github.thxmasj.statemachine.templates.cardpayment.CaptureRequestDataC
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthenticationResult;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Authorisation;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Capture;
-import reactor.core.publisher.Mono;
 
 public class CaptureRequestDataCreator implements DataCreator<Capture, CaptureRequestData> {
 
   @Override
-  public Mono<CaptureRequestData> execute(InputEvent<Capture> inputEvent, EventLog eventLog) {
-    return Mono.just(new CaptureRequestData(
+  public CaptureRequestData execute(InputEvent<Capture> inputEvent, EventLog eventLog) {
+    return new CaptureRequestData(
         eventLog.one(PaymentRequest),
         eventLog.one(PreauthorisationRequest),
         eventLog.one(PreauthorisationApproved),
@@ -27,7 +26,7 @@ public class CaptureRequestDataCreator implements DataCreator<Capture, CaptureRe
             .map(AcquirerResponse::amount)
             .mapToLong(Long::longValue)
             .sum()
-    ));
+    );
   }
 
   public record CaptureRequestData(

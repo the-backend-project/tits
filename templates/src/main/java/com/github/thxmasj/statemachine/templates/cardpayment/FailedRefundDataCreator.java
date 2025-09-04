@@ -8,16 +8,15 @@ import com.github.thxmasj.statemachine.EventLog;
 import com.github.thxmasj.statemachine.InputEvent;
 import com.github.thxmasj.statemachine.templates.cardpayment.FailedRefundDataCreator.FailedRefundData;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Authorisation;
-import reactor.core.publisher.Mono;
 
 public class FailedRefundDataCreator implements DataCreator<String, FailedRefundData> {
 
   @Override
-  public Mono<FailedRefundData> execute(InputEvent<String> inputEvent, EventLog eventLog) {
-    return Mono.just(new FailedRefundData(
+  public FailedRefundData execute(InputEvent<String> inputEvent, EventLog eventLog) {
+    return new FailedRefundData(
         eventLog.one(PaymentRequest),
         eventLog.last(RefundRequest).correlationId()
-    ));
+    );
   }
 
   public record FailedRefundData(

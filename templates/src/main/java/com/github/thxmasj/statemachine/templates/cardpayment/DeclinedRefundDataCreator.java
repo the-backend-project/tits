@@ -6,18 +6,18 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent
 import com.github.thxmasj.statemachine.DataCreator;
 import com.github.thxmasj.statemachine.EventLog;
 import com.github.thxmasj.statemachine.InputEvent;
+import com.github.thxmasj.statemachine.templates.cardpayment.DeclinedRefundDataCreator.DeclinedRefundData;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Authorisation;
-import reactor.core.publisher.Mono;
 
-public class DeclinedRefundDataCreator implements DataCreator<AcquirerResponse, DeclinedRefundDataCreator.DeclinedRefundData> {
+public class DeclinedRefundDataCreator implements DataCreator<AcquirerResponse, DeclinedRefundData> {
 
   @Override
-  public Mono<DeclinedRefundData> execute(InputEvent<AcquirerResponse> inputEvent, EventLog eventLog) {
-    return Mono.just(new DeclinedRefundData(
+  public DeclinedRefundData execute(InputEvent<AcquirerResponse> inputEvent, EventLog eventLog) {
+    return new DeclinedRefundData(
             eventLog.one(PaymentRequest),
             inputEvent.data(),
             eventLog.last(RefundRequest).correlationId()
-        ));
+        );
   }
 
   public record DeclinedRefundData(

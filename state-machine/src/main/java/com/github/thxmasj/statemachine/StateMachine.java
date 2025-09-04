@@ -2093,7 +2093,7 @@ public class StateMachine {
       EventLog eventLog,
       InputEvent<I> inputEvent
   ) {
-    DataCreator<I, P> dataCreator = dataCreator(transitionModel);
+    ReactiveDataCreator<I, P> dataCreator = dataCreator(transitionModel);
     if (dataCreator != null) {
       return dataCreator.execute(
           inputEvent,
@@ -2137,8 +2137,8 @@ public class StateMachine {
         .collect(toList());
   }
 
-  private <I, P, O> DataCreator<I, P> dataCreator(TransitionModel<I, P, O> transitionModel) {
-    DataCreator<I, P> dataCreator = transitionModel.dataCreator();
+  private <I, P, O> ReactiveDataCreator<I, P> dataCreator(TransitionModel<I, P, O> transitionModel) {
+    ReactiveDataCreator<I, P> dataCreator = transitionModel.dataCreator();
     if (dataCreator == null && transitionModel.dataCreatorType() != null)
       dataCreator = beanRegistry.getBean(transitionModel.dataCreatorType());
     return dataCreator;

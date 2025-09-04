@@ -7,7 +7,6 @@ import com.github.thxmasj.statemachine.DataCreator;
 import com.github.thxmasj.statemachine.EventLog;
 import com.github.thxmasj.statemachine.InputEvent;
 import com.github.thxmasj.statemachine.templates.cardpayment.ApprovedCaptureDataCreator.ApprovedCaptureData;
-import reactor.core.publisher.Mono;
 
 public class ApprovedCaptureDataCreator implements DataCreator<AcquirerResponse, ApprovedCaptureData> {
 
@@ -20,17 +19,17 @@ public class ApprovedCaptureDataCreator implements DataCreator<AcquirerResponse,
   ) {}
 
   @Override
-  public Mono<ApprovedCaptureData> execute(InputEvent<AcquirerResponse> inputEvent, EventLog eventLog) {
+  public ApprovedCaptureData execute(InputEvent<AcquirerResponse> inputEvent, EventLog eventLog) {
     var paymentData = eventLog.one(PaymentRequest);
     var acquirerResponse = inputEvent.data();
     var captureData = eventLog.last(CaptureRequest);
-    return Mono.just(new ApprovedCaptureData(
+    return new ApprovedCaptureData(
         acquirerResponse,
         paymentData.merchant().id(),
         paymentData.merchant().aggregatorId(),
         paymentData.merchantReference(),
         captureData.correlationId()
-    ));
+    );
   }
 
 }

@@ -15,7 +15,6 @@ import com.github.thxmasj.statemachine.Requirements;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Authorisation;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Refund;
 import com.github.thxmasj.statemachine.templates.cardpayment.RefundReversalDataCreator.RefundReversalData;
-import reactor.core.publisher.Mono;
 
 public class RefundReversalDataCreator implements DataCreator<Void, RefundReversalData> {
 
@@ -38,11 +37,11 @@ public class RefundReversalDataCreator implements DataCreator<Void, RefundRevers
   }
 
   @Override
-  public Mono<RefundReversalData> execute(InputEvent<Void> inputEvent, EventLog eventLog) {
+  public RefundReversalData execute(InputEvent<Void> inputEvent, EventLog eventLog) {
     Authorisation paymentData = eventLog.one(PaymentRequest);
     Refund refundData = eventLog.last(RefundRequest);
     AcquirerResponse acquirerResponse = eventLog.lastIfExists(RefundApproved).orElse(null);
-    return Mono.just(new RefundReversalData(
+    return new RefundReversalData(
             inputEvent.eventType() == Cancel || inputEvent.eventType() == RollbackRequest,
             inputEvent.eventType() != Cancel,
             paymentData.merchant().id(),
@@ -51,7 +50,7 @@ public class RefundReversalDataCreator implements DataCreator<Void, RefundRevers
             paymentData.merchantReference(),
             acquirerResponse != null ? acquirerResponse.authorisationCode() : null,
             paymentData.simulation()
-        ));
+        );
   }
 
 }
