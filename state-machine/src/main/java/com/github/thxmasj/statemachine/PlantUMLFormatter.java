@@ -94,9 +94,8 @@ public class PlantUMLFormatter {
           /*state.state().name().equals(STATE_BEGIN) ? "[*]" :*/ state.state().name(),
           targetState.state().name(),
           Stream.of(
-              transition.eventType().name(),
-              "input: " + transition.eventType().inputDataType().value(),
-              "output: " + transition.eventType().outputDataType().value(),
+              String.format("<u>%s</u>", transition.eventType().name()),
+              "I:" + transition.eventType().inputDataType().name() + "/" + "O:" + transition.eventType().outputDataType().name(),
               transition.outgoingRequests().stream().map(ns -> outgoingRequest(ns, false)).collect(joining("\\n")),
               transition.outgoingResponses().stream().map(ns -> outgoingResponse(ns, false)).collect(joining("\\n")),
               transition.reverse() != null ? transition.reverse().outgoingRequests().stream().map(ns -> outgoingRequest(ns, true)).collect(joining("\\n")) : ""
@@ -111,15 +110,15 @@ public class PlantUMLFormatter {
     return String.format(
         "<color:" + (reverse ? "red" : "blue") + ">%s %s %s</color>",
         spec.creatorType() != null ? spec.creatorType().getSimpleName() :
-            spec.creator().toString(),
-        spec.guaranteed() ? ">>" : ">",
+            spec.creator().name(),
+        spec.guaranteed() ? "&#8658;" : "&#8594;",
         spec.queue()
     );
   }
 
   private String outgoingResponse(OutgoingResponseModel<?, ?> spec, boolean reverse) {
     return String.format(
-        "<color:" + (reverse ? "red" : "blue") + ">< %s</color>",
+        "<color:" + (reverse ? "red" : "blue") + ">&#8592; %s</color>",
         Objects.requireNonNullElseGet(spec.creatorType(), () -> spec.creator().getClass()).getSimpleName()
     );
   }

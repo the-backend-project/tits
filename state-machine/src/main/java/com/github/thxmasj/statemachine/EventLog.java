@@ -56,34 +56,19 @@ public record EventLog(EntityModel entityModel, EntityId entityId, List<Secondar
    * Effective events, ignoring events that were rolled back.
    */
   public List<Event<?>> effectiveEvents() {
-    if (!events.isEmpty() && events.getLast().type().isCancel()) {
-      return List.of();
-    }
-    // Traverse the event log backwards and skip events between a rollback and client request
-    // non-greedily and inclusively
-    List<Event<?>> effectiveEvents = new ArrayList<>(events);
-    boolean skip = false;
-    for (int i = effectiveEvents.size() - 1; i >= 0; i--) {
-      if (effectiveEvents.get(i).type().isRollback()) {
-        try {
-          if (effectiveEvents.get(i).data() == null || Integer.parseInt(effectiveEvents.get(i).data()) > 0) {
-            // Rollback arrived after incoming request => skip events backwards until incoming request
-            skip = true;
-          }
-        } catch (NumberFormatException e) {
-          throw new IllegalStateException("Rollback event without integer value: " + effectiveEvents.get(i).type() +
-              "=" + (effectiveEvents.get(i).data() != null ? "<" + effectiveEvents.get(i).data() + ">" : "N/A"));
+    // Traverse the event log backwards and skip events between a rollback and its target exclusively
+    List<Event<?>> effectiveEventsReversed = new ArrayList<>(events.size());
+    int skipTo = Integer.MAX_VALUE;
+    for (Event<?> event : events.reversed()) {
+      if (skipTo >= event.eventNumber()) {
+        if (event.type() instanceof BasicEventType.Rollback rollbackType) {
+          skipTo = Event.unmarshal(rollbackType, event.data()).toNumber();
+        } else {
+          effectiveEventsReversed.add(event);
         }
-        // Always remove rollback event itself
-        effectiveEvents.remove(i);
-      } else if (effectiveEvents.get(i).isIncomingRequest() && skip) {
-        // Last event to skip
-        effectiveEvents.remove(i);
-        skip = false;
-      } else if (skip) {
-        effectiveEvents.remove(i);
       }
     }
-    return unmodifiableList(effectiveEvents);
+    return unmodifiableList(effectiveEventsReversed.reversed());
   }
+
 }

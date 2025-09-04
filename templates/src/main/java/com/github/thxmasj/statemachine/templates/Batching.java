@@ -7,6 +7,7 @@ import static com.github.thxmasj.statemachine.TransitionModel.Builder.onEvent;
 import static com.github.thxmasj.statemachine.templates.Batching.EntityTypes.Item;
 import static com.github.thxmasj.statemachine.templates.Batching.States.Begin;
 
+import com.github.thxmasj.statemachine.BasicEventType;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.EventType;
 import com.github.thxmasj.statemachine.IncomingRequestModelBuilder;
@@ -53,10 +54,10 @@ public class Batching {
   }
 
   static EventType<Void, Void>
-    CreateItem = EventType.of("CreateItem", UUID.fromString("b6c4ed96-4cfc-4258-a222-3a51064b35f7")),
-    DeleteItem = EventType.of("DeleteItem", UUID.fromString("485935f8-2f80-4228-8278-42e84e2d262d")),
-    AddToBatch = EventType.of("AddToBatch", UUID.fromString("ef054730-344c-4d1b-98a9-5aa7204a2eab")),
-    DeleteFromBatch = EventType.of("DeleteFromBatch", UUID.fromString("8dc15503-2a4d-491b-b258-82f209d32825"))
+    CreateItem = BasicEventType.of("CreateItem", UUID.fromString("b6c4ed96-4cfc-4258-a222-3a51064b35f7")),
+    DeleteItem = BasicEventType.of("DeleteItem", UUID.fromString("485935f8-2f80-4228-8278-42e84e2d262d")),
+    AddToBatch = BasicEventType.of("AddToBatch", UUID.fromString("ef054730-344c-4d1b-98a9-5aa7204a2eab")),
+    DeleteFromBatch = BasicEventType.of("DeleteFromBatch", UUID.fromString("8dc15503-2a4d-491b-b258-82f209d32825"))
     ;
 
   public enum States implements State {

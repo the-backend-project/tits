@@ -234,7 +234,7 @@ public class StateMachine {
       EventTrigger<?> eventTrigger = requestModel.eventTrigger().build(); // TODO: Errors end up in the big try/catch. Related: https://github.com/orgs/the-backend-project/projects/1/views/1?pane=issue&itemId=79673689
       String correlationId = requireNonNullElse(requestModel.correlationId(), requireNonNullElse(message.headerValue("X-Correlation-Id"), "processRequest"));
       One<HttpResponseMessage> responseSink = Sinks.one();
-      return (eventTrigger.eventType().isRollback() ?
+      return (eventTrigger.eventType() instanceof BasicEventType.Rollback ?
           doProcessRollback(1, incomingRequest, requestModel) :
           doProcessIncomingRequest(1, incomingRequest, requestModel)
       )
@@ -339,7 +339,7 @@ public class StateMachine {
   }
 
   private Mono<ProcessResult> processEventForInvalidOrRejectedRequest(
-      EventType<String, String> eventType,
+      EventType<String, Void> eventType,
       Message.IncomingRequest incomingRequest,
       EventLog eventLog,
       String reason
@@ -565,27 +565,27 @@ public class StateMachine {
     }
 
     @Override
-    public IncomingRequestValidator.Result.Invalid invalidRequest(String errorMessage) {
+    public Invalid invalidRequest(String errorMessage) {
       return new Invalid(new InputEvent<>(BuiltinEventTypes.InvalidRequest, errorMessage));
     }
 
     @Override
-    public IncomingRequestValidator.Result.Valid<DATA_TYPE> invalidRequest(EventType<DATA_TYPE, ?> eventType, DATA_TYPE data, String errorMessage) {
+    public Valid<DATA_TYPE> invalidRequest(EventType<DATA_TYPE, ?> eventType, DATA_TYPE data, String errorMessage) {
       return new Valid<>(new InputEvent<>(eventType, data));
     }
 
     @Override
-    public IncomingRequestValidator.Result.Valid<DATA_TYPE> invalidRequest(EventType<DATA_TYPE, ?> eventType, DATA_TYPE data) {
+    public Valid<DATA_TYPE> invalidRequest(EventType<DATA_TYPE, ?> eventType, DATA_TYPE data) {
       return new Valid<>(new InputEvent<>(eventType, data));
     }
 
     @Override
-    public IncomingRequestValidator.Result.Valid<DATA_TYPE> validRequest(DATA_TYPE data) {
+    public Valid<DATA_TYPE> validRequest(DATA_TYPE data) {
       return new Valid<>(new InputEvent<>(validRequestEventType, data));
     }
 
     @Override
-    public IncomingRequestValidator.Result.Valid<DATA_TYPE> validRequest() {
+    public Valid<DATA_TYPE> validRequest() {
       return new Valid<>(new InputEvent<>(validRequestEventType, null));
     }
 
@@ -687,8 +687,8 @@ public class StateMachine {
               eventLog,
               List.of(),
               new InputEvent<>(
-                  (EventType<Long, Long>)eventTrigger.eventType(),
-                  (long) (rollbackToEventNumber + 1)
+                  (EventType<Void, ?>)eventTrigger.eventType(),
+                  null
               ),
               incomingRequestMessage, List.of()
           )
@@ -709,6 +709,15 @@ public class StateMachine {
               ));
         })
         .onErrorResume(t -> withCorrelationId(correlationId -> listener.rollbackFailed(correlationId, null, t)).then(Mono.error(t)));
+  }
+
+  private int rollbackToEventNumber(EventLog eventLog) {
+    return eventLog.effectiveEvents().reversed()
+            .stream()
+            .filter(e -> e.messageId() != null)
+            .map(event -> event.eventNumber() - 1)
+            .findFirst()
+            .orElse(eventLog.lastEventNumber());
   }
 
   private boolean isUnrepeatable(int attempt, Status processStatus, boolean stateIsPendingChange) {
@@ -934,7 +943,7 @@ public class StateMachine {
   }
 
   private List<EventType<Void, ?>> scheduledEvents(EntityModel entityType, EventLog eventLog) {
-    var eventTypes = begin(entityType).forward(eventLog.effectiveEvents().stream().map(Event::type).toList()).state().timeout()
+    return begin(entityType).forward(eventLog.effectiveEvents().stream().map(Event::type).toList()).state().timeout()
         .filter(timeout -> ZonedDateTime.now(clock)
             .isAfter(eventLog.effectiveEvents().getLast().timestamp().plus(timeout.duration())))
         .map(timeout -> List.<EventType<Void, ?>>of(timeout.eventType()))
@@ -960,7 +969,6 @@ public class StateMachine {
           }
           return result;
         });
-    return eventTypes;
   }
 
   private record ChangeResult(ProcessResult result, List<Change> changes) {}
@@ -982,6 +990,18 @@ public class StateMachine {
         eventLog.entityModel()
     );
     var currentState = begin(eventLog.entityModel()).forward(effectiveEventLog.stream().map(Event::type).toList());
+    if (currentState == null) {
+      return Mono.error(new IllegalStateException(String.format(
+          """
+          Can't find current state from effective event log
+          %s
+          Raw log
+          %s
+          """,
+          eventLog.effectiveEvents().stream().map(Event::typeName).collect(joining(", ")),
+          eventLog.events().stream().map(Event::typeName).collect(joining(", "))
+      )));
+    }
     TransitionModel<I, P, O> transitionModelForInput = (TransitionModel<I, P, O>)
         currentState.forward(scheduledEvents.stream().toList()).transition(inputEvent.eventType());
     if (transitionModelForInput == null) {
@@ -997,29 +1017,31 @@ public class StateMachine {
           ), null
       ));
     }
-    return createData(
-        transitionModelForInput,
-        entity,
-        eventLog,
-        scheduledEvents,
-        null,
-        inputEvent
-    ).map(processingData -> transitionWithData(
+    int eventNumber = eventLog.lastEventNumber() + scheduledEvents.size() + 1;
+    return (inputEvent.eventType() instanceof BasicEventType.Rollback ret ?
+        Mono.just((TransitionWithData<I, P, O>)rollbackTransitionWithData(
+            (TransitionModel<Void, ?, BasicEventType.Rollback.Data>) transitionModelForInput,
+            eventLog,
+            eventNumber,
+            ret
+        )) :
+        createData(transitionModelForInput, entity, eventLog, inputEvent)
+            .map(processingData -> transitionWithData(
+                transitionModelForInput,
+                eventNumber,
+                eventType,
+                inflightMessage instanceof Message.IncomingRequest ir ? ir.messageId() : null,
+                inflightMessage instanceof Message.IncomingRequest ir ? ir.clientId() : null,
+                processingData
+            ))
+        .switchIfEmpty(Mono.defer(() -> Mono.just(transitionWithData(
             transitionModelForInput,
-            eventLog.lastEventNumber() + scheduledEvents.size() + 1,
-            eventType,
-            inflightMessage instanceof Message.IncomingRequest ir ? ir.messageId() : null,
-            inflightMessage instanceof Message.IncomingRequest ir ? ir.clientId() : null,
-            processingData
-        ))
-        .defaultIfEmpty(transitionWithData(
-            transitionModelForInput,
-            eventLog.lastEventNumber() + scheduledEvents.size() + 1,
+            eventNumber,
             eventType,
             inflightMessage instanceof Message.IncomingRequest ir ? ir.messageId() : null,
             inflightMessage instanceof Message.IncomingRequest ir ? ir.clientId() : null,
             null
-        ))
+        )))))
         .flatMap(newTransitionWithData -> {
           for (var f : newTransitionWithData.transition().model().filters()) {
             if (!f.filter().test(newTransitionWithData.data())) {
@@ -1035,7 +1057,7 @@ public class StateMachine {
             }
           }
           List<Event<?>> newEvents = join(
-              scheduledEvents(scheduledEvents, eventLog.lastEventNumber()),
+              createScheduledEvents(scheduledEvents, eventLog),
               newTransitionWithData.transition().event()
           );
           List<? extends EventType<?, ?>> newEventTypes = newEvents.stream().map(Event::type).toList();
@@ -1057,22 +1079,12 @@ public class StateMachine {
           TraversableState targetState;
           int startEventNumber;
           boolean reverseTransitions;
-          if (inputEvent.eventType().isRollback()) {
-            int numberOfEventToRollback;
-            if (inputEvent.data() == null) {
-              // No reference to an event to roll back to so roll back to previous state
-              numberOfEventToRollback = eventLog.lastEventNumber();
-              for (Event<?> event : effectiveEventLog.reversed()) {
-                numberOfEventToRollback = event.eventNumber();
-                break;
-              }
-            } else {
-              numberOfEventToRollback = Integer.parseInt(inputEvent.data().toString());
-            }
-            if (numberOfEventToRollback > 0) {
-              startEventNumber = numberOfEventToRollback - 1;
-              targetState = traverseTo(eventLog.entityModel(), eventLog.events(), numberOfEventToRollback - 1);
-              transitionEvents = eventLog.events().subList(numberOfEventToRollback - 1, eventLog.events().size());
+          if (inputEvent.eventType() instanceof BasicEventType.Rollback) {
+            int rollbackToEventNumber = rollbackToEventNumber(eventLog);
+            if (rollbackToEventNumber < eventLog.lastEventNumber()) {
+              startEventNumber = rollbackToEventNumber;
+              targetState = traverseTo(eventLog.entityModel(), eventLog.events(), rollbackToEventNumber);
+              transitionEvents = eventLog.events().subList(rollbackToEventNumber, eventLog.events().size());
               reverseTransitions = true;
               eventsToStore = newEvents;
             } else {
@@ -1083,19 +1095,13 @@ public class StateMachine {
               reverseTransitions = false;
               eventsToStore = newEvents;
             }
-          } else if (inputEvent.eventType().isCancel()) {
-            startEventNumber = 0;
-            targetState = begin(eventLog.entityModel());
-            transitionEvents = effectiveEventLog;
-            reverseTransitions = true;
-            eventsToStore = newEvents;
           } else {
             startEventNumber = eventLog.lastEventNumber();
             targetState = currentState.forward(newEventTypes);
             if (targetState == null) {
               return Mono.just(new ChangeResult(new ProcessResult(Status.Rejected, entity, null, null), null));
             }
-            transitionEvents = scheduledEvents(scheduledEvents, eventLog.lastEventNumber());
+            transitionEvents = createScheduledEvents(scheduledEvents, eventLog);
             reverseTransitions = false;
             eventsToStore = newEvents;
           }
@@ -1204,6 +1210,26 @@ public class StateMachine {
         });
   }
 
+  private TransitionWithData<Void, ?, BasicEventType.Rollback.Data> rollbackTransitionWithData(
+      TransitionModel<Void, ?, BasicEventType.Rollback.Data> transitionModelForInput,
+      EventLog eventLog,
+      int eventNumber,
+      EventType<Void, BasicEventType.Rollback.Data> eventType
+  ) {
+    return new TransitionWithData<>(
+        new ActualTransition<>(
+            transitionModelForInput,
+            new Event<>(
+                eventNumber,
+                eventType,
+                clock,
+                new BasicEventType.Rollback.Data(rollbackToEventNumber(eventLog), "")
+            )
+        ),
+        null
+    );
+  }
+
   private <I, P, O> TransitionWithData<I, P, O> transitionWithData(
       TransitionModel<I, P, O> transitionModelForInput,
       int eventNumber,
@@ -1212,8 +1238,7 @@ public class StateMachine {
       String clientId,
       P processingData
   ) {
-    return new TransitionWithData<>(
-        new ActualTransition<>(
+    return new TransitionWithData<>(new ActualTransition<>(
             transitionModelForInput,
             new Event<>(
                 eventNumber,
@@ -1232,15 +1257,12 @@ public class StateMachine {
       InputEvent<I> inputEvent,
       ActualTransition<I, P, O> transition,
       Entity entity,
-      EventLog eventLog,
-      List<EventType<Void, ?>> scheduledEvents
+      EventLog eventLog
   ) {
     return createData(
         transition.model(),
         entity,
         eventLog,
-        scheduledEvents,
-        transition.event(),
         new InputEvent<>(inputEvent.eventType(), null)
     )
         .map(data -> new TransitionWithData<>(transition, data))
@@ -1259,7 +1281,7 @@ public class StateMachine {
     requireNonNull(eventLog);
     requireNonNull(scheduledEvents);
     return Flux.fromIterable(transitions)
-        .flatMap(transition -> transitionWithData(new InputEvent<>(inputEvent.eventType(), null), transition, entity, eventLog, scheduledEvents));
+        .flatMap(transition -> transitionWithData(new InputEvent<>(inputEvent.eventType(), null), transition, entity, eventLog));
   }
 
   private <I> Mono<ProcessResult> processEvents(
@@ -1339,7 +1361,7 @@ public class StateMachine {
       EventLog eventLog
   ) {
     List<Change> changes = unfilteredChanges.stream()
-        .filter(change -> !change.newEvents().stream().allMatch(e -> e.type().isReadOnly()))
+        .filter(change -> !change.newEvents().stream().allMatch(e -> e.type() instanceof BasicEventType.ReadOnly))
         .toList();
     return correlationId() // TODO: Already have correlationId in _change_
         // TODO: Not really handling multiple changes at once
@@ -1349,8 +1371,11 @@ public class StateMachine {
         )
         .flatMap(correlationId -> (changes.isEmpty() ? Flux.<ChangeState.OutboxElement>empty() :
             changeState.execute(changes))
-            .doOnNext(_ -> listener.changeAccepted(changes.getFirst().correlationId(), toListenerFormat(changes)))
             .collectList()
+            .doOnNext(_ -> {
+              if (!changes.isEmpty())
+                listener.changeAccepted(changes.getFirst().correlationId(), toListenerFormat(changes));
+            })
             // Forward outgoing requests (for guaranteed delivery this will be the first attempt)
             .transformDeferredContextual((publisher, ctx) -> publisher
                 .doOnNext(outboxElementsToForward -> outboxElementsToForward.forEach(q ->
@@ -1725,7 +1750,7 @@ public class StateMachine {
         .filter(r -> r.entity() != null).map(ProcessResult::entity)
         .filter(nestedEntity -> nestedEntity.model().equals(entity.model.parentEntity()))
         .findFirst().orElse(null);
-    return (inputEvent.eventType().isRollback() ?
+    return (inputEvent.eventType() instanceof BasicEventType.Rollback ?
         outgoingRequestByEvent.execute(entity.id(), currentEvent.eventNumber())
             .flatMap(originalMessage -> creator.reversed(
             model.dataAdapter().apply(transition.data()),
@@ -2066,30 +2091,49 @@ public class StateMachine {
       TransitionModel<I, P, O> transitionModel,
       Entity entity,
       EventLog eventLog,
-      List<EventType<Void, ?>> scheduledEventTypes,
-      Event<?> transitionEvent,
       InputEvent<I> inputEvent
   ) {
-    requireNonNull(transitionModel, "transitionModel is null for transitionEvent " + transitionEvent);
     DataCreator<I, P> dataCreator = dataCreator(transitionModel);
     if (dataCreator != null) {
-      List<Event<?>> scheduledEvents = scheduledEvents(scheduledEventTypes, eventLog.lastEventNumber());
       return dataCreator.execute(
           inputEvent,
           new EventLog(
               eventLog.entityModel(),
               eventLog.entityId(),
               entity.secondaryIds,
-              join(eventLog.events(), scheduledEvents)
+              eventLog.events()
           )
       );
     }
     return Mono.empty();
   }
 
-  private List<Event<?>> scheduledEvents(List<EventType<Void, ?>> scheduledEventTypes, int lastEventNumber) {
+  private List<Event<?>> createScheduledEvents(List<EventType<Void, ?>> scheduledEventTypes, EventLog eventLog) {
     return IntStream.range(0, scheduledEventTypes.size())
-        .mapToObj(n -> new Event<>(n + lastEventNumber + 1, scheduledEventTypes.get(n), clock))
+        .mapToObj(n -> {
+          var eventType = scheduledEventTypes.get(n);
+          int eventNumber = eventLog.lastEventNumber() + n + 1;
+          return switch (eventType) {
+            case BasicEventType.Cancel t ->
+                new Event<>(eventNumber, t, clock, new BasicEventType.Rollback.Data(0, "Cancel"));
+            case BasicEventType.Rollback t -> new Event<>(
+                eventNumber,
+                t,
+                clock,
+                new BasicEventType.Rollback.Data(
+                    eventLog.events()
+                        .reversed()
+                        .stream()
+                        .filter(Event::isIncomingRequest)
+                        .findFirst()
+                        .map(e -> e.eventNumber() - 1)
+                        .orElseThrow(),
+                    "Scheduled rollback"
+                )
+            );
+            default -> new Event<>(eventNumber, eventType, clock);
+          };
+        })
         .collect(toList());
   }
 

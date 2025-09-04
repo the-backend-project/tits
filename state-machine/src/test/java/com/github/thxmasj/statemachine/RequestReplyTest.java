@@ -56,9 +56,9 @@ public class RequestReplyTest {
   enum States implements State {On, Off}
 
   static EventType<Void, Void>
-    Toggle = EventType.of("Toggle", UUID.fromString("46b0211e-f583-49b3-a6e7-8d13742e0260")),
-    SwitchOn = EventType.of("SwitchOn", UUID.fromString("5e9a8a9d-6a21-41cf-82dc-857fe1e4c4e0")),
-    SwitchOff = EventType.of("SwitchOff", UUID.fromString("8e1483c8-b649-43b8-b352-5094a94c0dad"))
+    Toggle = BasicEventType.of("Toggle", UUID.fromString("46b0211e-f583-49b3-a6e7-8d13742e0260")),
+    SwitchOn = BasicEventType.of("SwitchOn", UUID.fromString("5e9a8a9d-6a21-41cf-82dc-857fe1e4c4e0")),
+    SwitchOff = BasicEventType.of("SwitchOff", UUID.fromString("8e1483c8-b649-43b8-b352-5094a94c0dad"))
     ;
 
   enum Queues implements OutboxQueue {

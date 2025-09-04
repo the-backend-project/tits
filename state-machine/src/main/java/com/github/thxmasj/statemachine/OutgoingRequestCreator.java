@@ -25,6 +25,10 @@ public interface OutgoingRequestCreator<T> {
 
   UUID id();
 
+  default String name() {
+    return getClass().getSimpleName();
+  };
+
   interface Context {
     EntityId entityId();
     String correlationId();

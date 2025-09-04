@@ -46,9 +46,8 @@ public final class Event<T> {
   }
 
   public Event(Integer eventNumber, EventType<?, T> type, LocalDateTime timestamp, Clock clock, String messageId, String clientId, String data) {
-    // TODO: Not ready for this yet...
-    //    if (type.outputDataType().value() != Void.class)
-    //      requireNonNull(data);
+    if (type.outputDataType().value() != Void.class)
+      requireNonNull(data, type.name() + " requires data");
     requireNonNull(eventNumber);
     requireNonNull(type);
     this.eventNumber = eventNumber;
@@ -149,7 +148,7 @@ public final class Event<T> {
     };
   }
 
-  private static <T> T unmarshal(EventType<?, T> eventType, String data) {
+  public static <T> T unmarshal(EventType<?, T> eventType, String data) {
     if (eventType.outputDataType().value() == String.class)
       return (T) data;
     if (eventType.outputDataType().value() == Integer.class)
