@@ -1901,80 +1901,87 @@ public class StateMachine {
     OutgoingResponseCreator<U> creator = model.creatorType() != null ?
         beanRegistry.getBean(model.creatorType()) :
         model.creator();
-    return Mono.deferContextual(ctx -> !hasRequestId(ctx) ?
-        Mono.just(correlationId(ctx) + ": No incoming request in context, so skipping outgoing response " + creator.getClass())
+    return Mono.deferContextual(ctx -> {
+      if (!hasRequestId(ctx)) {
+        return Mono.just(correlationId(ctx) + ": No incoming request in context, so skipping outgoing response "
+                + creator.getClass())
             .doOnNext(System.out::println)
-            .then(Mono.empty()) :
-        creator.create(
-                model.dataAdapter().apply(transition.data()),
-                new ResponseContext() {
-                  @Override
-                  public Message.IncomingRequest incomingRequest() {
-                    return inflightMessage instanceof Message.IncomingRequest rq ? rq : null;
-                  }
+            .then(Mono.empty());
+      } else {
+        HttpResponseMessage responseMessage = creator.create(
+            model.dataAdapter().apply(transition.data()),
+            new ResponseContext() {
+              @Override
+              public Message.IncomingRequest incomingRequest() {
+                return inflightMessage instanceof Message.IncomingRequest rq ? rq : null;
+              }
 
-                  @Override
-                  public EntityId entityId() {
-                    return entityId;
-                  }
+              @Override
+              public EntityId entityId() {
+                return entityId;
+              }
 
-                  @Override
-                  public String correlationId() {
-                    return Correlation.correlationId(ctx);
-                  }
+              @Override
+              public String correlationId() {
+                return Correlation.correlationId(ctx);
+              }
 
-                  @Override
-                  public ZonedDateTime timestamp() {
-                    return newEvents.getLast().timestamp();
-                  }
+              @Override
+              public ZonedDateTime timestamp() {
+                return newEvents.getLast().timestamp();
+              }
 
-                  @Override
-                  public List<Entity> nestedEntities() {
-                    //noinspection SimplifyStreamApiCallChains
-                    return processResults.stream().filter(r -> r.entity() != null).map(ProcessResult::entity).toList();
-                  }
+              @Override
+              public List<Entity> nestedEntities() {
+                //noinspection SimplifyStreamApiCallChains
+                return processResults.stream().filter(r -> r.entity() != null).map(ProcessResult::entity).toList();
+              }
 
-                  @Override
-                  public Entity nestedEntity(String entityName) {
-                    return nestedEntities().stream()
-                        .filter(entity -> entity.model().name().equals(entityName))
-                        .findFirst()
-                        .orElse(null);
-                  }
+              @Override
+              public Entity nestedEntity(String entityName) {
+                return nestedEntities().stream()
+                    .filter(entity -> entity.model().name().equals(entityName))
+                    .findFirst()
+                    .orElse(null);
+              }
 
-                  @Override
-                  public SecondaryId secondaryId(String entityName, SecondaryIdModel idModel) {
-                    var entity = nestedEntity(entityName);
-                    if (entity == null)
-                      throw new RequirementsNotFulfilled("No nested entity " + entityName);
-                    return entity.secondaryIds().stream()
-                        .filter(sid -> sid.model() == idModel)
-                        .findFirst()
-                        .orElseThrow(() -> new RequirementsNotFulfilled("No secondary id " + entityName + "/" + idModel.name()));
-                  }
+              @Override
+              public SecondaryId secondaryId(String entityName, SecondaryIdModel idModel) {
+                var entity = nestedEntity(entityName);
+                if (entity == null)
+                  throw new RequirementsNotFulfilled("No nested entity " + entityName);
+                return entity.secondaryIds().stream()
+                    .filter(sid -> sid.model() == idModel)
+                    .findFirst()
+                    .orElseThrow(() -> new RequirementsNotFulfilled(
+                        "No secondary id " + entityName + "/" + idModel.name()));
+              }
 
-                  @Override
-                  public ProcessResult processResult(EntityModel entityType, EntityId entityId) {
-                    return processResults.stream().filter(r -> r.entity().model() == entityType && r.entity().id().equals(entityId)).findFirst().orElseThrow();
-                  }
+              @Override
+              public ProcessResult processResult(EntityModel entityType, EntityId entityId) {
+                return processResults.stream()
+                    .filter(r -> r.entity().model() == entityType && r.entity().id().equals(entityId))
+                    .findFirst()
+                    .orElseThrow();
+              }
 
-                  @Override
-                  public <T> Event<T> processedEvent(EventType<?, T> eventType) {
-                    return processedEvents.stream()
-                        .map(e -> (Event<T>) e)
-                        .filter(e -> e.type() == eventType)
-                        .findFirst()
-                        .orElseThrow();
-                  }
-                }
-            )
-        .map(message -> new OutgoingResponse(
-                currentEvent.eventNumber(),
-                message,
-                requestId(ctx)
-            )
-        )
-    );
+              @Override
+              public <T> Event<T> processedEvent(EventType<?, T> eventType) {
+                return processedEvents.stream()
+                    .map(e -> (Event<T>) e)
+                    .filter(e -> e.type() == eventType)
+                    .findFirst()
+                    .orElseThrow();
+              }
+            }
+        );
+        return Mono.just(new OutgoingResponse(
+            currentEvent.eventNumber(),
+            responseMessage,
+            requestId(ctx)
+        ));
+      }
+    });
   }
 
   private ZonedDateTime getDeadline(State targetState) {

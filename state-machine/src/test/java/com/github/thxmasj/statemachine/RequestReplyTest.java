@@ -105,7 +105,7 @@ public class RequestReplyTest {
             onEvent(Toggle).from(Off).to(On)
                 .withData((_, _) -> Mono.<Void>empty())
                 .notify(request(new LampRequest()).to(DeviceListener).guaranteed())
-                .response((_, _) -> Mono.just(new HttpResponseMessage(200, "OK", "Light is on!"))),
+                .response((_, _) -> new HttpResponseMessage(200, "OK", "Light is on!")),
             onEvent(SwitchOn).from(Off).to(On).build()
         );
       }

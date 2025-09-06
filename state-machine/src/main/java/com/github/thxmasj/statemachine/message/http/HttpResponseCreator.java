@@ -12,7 +12,6 @@ import com.github.thxmasj.statemachine.OutgoingResponseCreator;
 import java.time.ZonedDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import reactor.core.publisher.Mono;
 
 public class HttpResponseCreator implements OutgoingResponseCreator<String> {
 
@@ -31,17 +30,15 @@ public class HttpResponseCreator implements OutgoingResponseCreator<String> {
   }
 
   @Override
-  public Mono<HttpResponseMessage> create(
+  public HttpResponseMessage create(
       String data,
       ResponseContext context
   ) {
-    return Mono.just(
-        new HttpResponseMessage(
-            statusCode,
-            reasonPhrase,
-            headers(context.correlationId(), data),
-            json(body(context.entityId(), data, context.timestamp()))
-        )
+    return new HttpResponseMessage(
+        statusCode,
+        reasonPhrase,
+        headers(context.correlationId(), data),
+        json(body(context.entityId(), data, context.timestamp()))
     );
   }
 
