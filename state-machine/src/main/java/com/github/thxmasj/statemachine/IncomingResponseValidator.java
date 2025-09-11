@@ -5,7 +5,7 @@ import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import reactor.core.publisher.Mono;
 
-public interface IncomingResponseValidator<OUTPUT_TYPE> extends DataRequirer {
+public interface IncomingResponseValidator<OUTPUT_TYPE> {
 
   Mono<Result> execute(
       EntityId entityId,

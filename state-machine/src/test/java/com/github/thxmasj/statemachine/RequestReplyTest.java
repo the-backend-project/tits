@@ -73,10 +73,10 @@ public class RequestReplyTest {
   static class LampRequest implements OutgoingRequestCreator<Void> {
 
     @Override
-    public Mono<HttpRequestMessage> create(Void data, Context context) {
-      return Mono.just(new HttpRequestMessage(POST, URI.create(
+    public HttpRequestMessage create(Void data, Context context) {
+      return new HttpRequestMessage(POST, URI.create(
           "http://localhost:" + server.getAddress().getPort() + "/lamps/" + context.entityId().value()
-      )));
+      ));
     }
 
     @Override

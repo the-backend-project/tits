@@ -4,23 +4,35 @@ import com.github.thxmasj.statemachine.StateMachine.ProcessResult;
 import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Entity;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
+import reactor.core.publisher.Mono;
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.UUID;
-import reactor.core.publisher.Mono;
 
 public interface OutgoingRequestCreator<T> {
 
-  default Mono<HttpRequestMessage> create(T data, Context context) {
+  default HttpRequestMessage create(T data, Context context) {
     throw new UnsupportedOperationException("create not supported by " + getClass().getName());
   }
 
-  default Mono<HttpRequestMessage> reversed(T data, ReversalContext context) {
+  default Mono<HttpRequestMessage> createReactive(T data, Context context) {
+    return Mono.just(create(data, context));
+  }
+
+  default HttpRequestMessage reversed(T data, ReversalContext context) {
     return create(data, context);
+  }
+
+  default Mono<HttpRequestMessage> reversedReactive(T data, ReversalContext context) {
+    return Mono.just(reversed(data, context));
   }
 
   default HttpRequestMessage repeated(HttpRequestMessage message) {
     return message;
+  }
+
+  default Mono<HttpRequestMessage> repeatedReactive(HttpRequestMessage message) {
+    return Mono.just(repeated(message));
   }
 
   UUID id();

@@ -2,7 +2,7 @@ package com.github.thxmasj.statemachine;
 
 import reactor.core.publisher.Mono;
 
-public interface ReactiveDataCreator<I, O> extends DataRequirer {
+public interface ReactiveDataCreator<I, O> {
 
   Mono<O> execute(InputEvent<I> inputEvent, EventLog eventLog);
 

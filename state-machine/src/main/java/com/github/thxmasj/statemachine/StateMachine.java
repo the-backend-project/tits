@@ -1432,38 +1432,28 @@ public class StateMachine {
   private record ResponseValidationResult(Result validationResult, Message.IncomingResponse response) {}
 
   private Mono<ForwardStatus> doForward(OutboxElement queueElement, int maxRetryAttempts, Duration retryInterval) {
-    HttpRequestMessage requestMessage;
-    try {
-      requestMessage = ofNullable(outgoingRequestCreators.get(queueElement.creatorId()))
-          .filter(_ -> queueElement.attempt() > 1)
-          .map(c -> c.repeated(queueElement.data()))
-          .orElse(queueElement.data());
-    } catch (Exception e) {
-      String reason = "Parsing/transforming message failed: " + e.getMessage();
-      return moveToDLQ.execute(queueElement, reason)
-          .doOnSuccess(_ -> logDead(queueElement, reason))
-          .thenReturn(ForwardStatus.Dead);
-    }
-    EntityModel entityModel = queueElement.entityModel();
-    EntityId entityId = queueElement.entityId();
-    return eventsByEntityId
-        .execute(entityModel, entityId)
-        .onErrorMap(e -> new RuntimeException("Failed to get events for entity model " + entityModel.name(), e))
-        .flatMap(eventLog -> {
+    OutgoingRequestCreator<?> c = outgoingRequestCreators.get(queueElement.creatorId());
+    Mono<HttpRequestMessage> requestMessage = c != null && queueElement.attempt() > 1 ?
+        c.repeatedReactive(queueElement.data()) :
+        Mono.just(queueElement.data());
+    return requestMessage.zipWith(eventsByEntityId.execute(queueElement.entityModel(), queueElement.entityId()))
+        .flatMap(requestAndEventLog -> {
+          HttpRequestMessage request = requestAndEventLog.getT1();
+          EventLog eventLog = requestAndEventLog.getT2();
           var responseValidator = findOutgoingRequestModel(
               eventLog,
               queueElement.eventNumber(),
               queueElement.queue(),
               queueElement.creatorId()
           ).responseValidator();
-          return clients.apply(queueElement.queue()).exchange(requestMessage)
+          return clients.apply(queueElement.queue()).exchange(request)
               .flatMap(responseMessage -> {
                 var responseMessageOnQueue = responseMessageOnQueue(queueElement, responseMessage);
                 return validateResponse(
-                    requestMessage,
+                    request,
                     responseMessage,
                     responseValidator,
-                    entityId,
+                    queueElement.entityId(),
                     eventLog.lastEventNumber() + 1
                 ).map(output -> new ResponseValidationResult(output, responseMessageOnQueue));
               })
@@ -1752,7 +1742,7 @@ public class StateMachine {
         .findFirst().orElse(null);
     return (inputEvent.eventType() instanceof BasicEventType.Rollback ?
         outgoingRequestByEvent.execute(entity.id(), currentEvent.eventNumber())
-            .flatMap(originalMessage -> creator.reversed(
+            .flatMap(originalMessage -> creator.reversedReactive(
             model.dataAdapter().apply(transition.data()),
             new ReversalContext() {
 
@@ -1817,7 +1807,7 @@ public class StateMachine {
             }
 
         )) :
-        creator.create(
+        creator.createReactive(
             model.dataAdapter().apply(transition.data()),
             new OutgoingRequestCreator.Context() {
               @Override

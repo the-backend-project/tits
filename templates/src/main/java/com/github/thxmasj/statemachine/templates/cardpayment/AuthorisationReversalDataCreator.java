@@ -1,17 +1,13 @@
 package com.github.thxmasj.statemachine.templates.cardpayment;
 
-import static com.github.thxmasj.statemachine.Requirements.outgoingRequest;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthorisationApproved;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthorisationRequest;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Cancel;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.PaymentRequest;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.RollbackRequest;
-import static com.github.thxmasj.statemachine.templates.cardpayment.Queues.Acquirer;
 
 import com.github.thxmasj.statemachine.DataCreator;
 import com.github.thxmasj.statemachine.EventLog;
 import com.github.thxmasj.statemachine.InputEvent;
-import com.github.thxmasj.statemachine.Requirements;
 import com.github.thxmasj.statemachine.templates.cardpayment.AuthorisationReversalDataCreator.AuthorisationReversalData;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Authorisation;
 
@@ -28,13 +24,6 @@ public class AuthorisationReversalDataCreator implements DataCreator<Void, Autho
       Integer acquirerBatchNumber,
       String simulation
   ) {}
-
-  @Override
-  public Requirements requirements() {
-    return Requirements.of(
-        outgoingRequest(Acquirer, AuthorisationRequest, String.class)
-    );
-  }
 
   @Override
   public AuthorisationReversalData execute(InputEvent<Void> inputEvent, EventLog eventLog) {
