@@ -24,6 +24,10 @@ public class Correlation {
     return Context.of(CORRELATION_ID, correlationId, RESPONSE_SINK, responseSink, REQUEST_ID, requestId);
   }
 
+  public static ContextView contextOf(Sinks.One<HttpResponseMessage> responseSink, UUID requestId) {
+    return Context.of(RESPONSE_SINK, responseSink, REQUEST_ID, requestId);
+  }
+
   public static ContextView contextOf(@NonNull String correlationId) {
     return Context.of(CORRELATION_ID, correlationId);
   }
@@ -42,6 +46,10 @@ public class Correlation {
 
   public static Sinks.One<HttpResponseMessage> responseSink(ContextView context) {
     return context.get(RESPONSE_SINK);
+  }
+
+  public static Sinks.One<Event<?>> responseSink(ContextView context, EntityId entityId) {
+    return context.getOrEmpty(REQUEST_ID).filter(requestId -> requestId.equals(entityId)).isPresent() ? context.get(RESPONSE_SINK) : null;
   }
 
   public static boolean hasResponseSink(ContextView context) {

@@ -16,28 +16,31 @@ public class AuthorisationReversalDataCreator implements DataCreator<Void, Autho
   public record AuthorisationReversalData(
       boolean clientOriginated,
       boolean technicalReversal,
-      String merchantId,
-      String merchantAggregatorId,
+      PaymentEvent.Merchant merchant,
       long amount,
       String merchantReference,
       String authorisationCode,
-      Integer acquirerBatchNumber,
+      //Integer acquirerBatchNumber,
       String simulation
   ) {}
 
   @Override
-  public AuthorisationReversalData execute(InputEvent<Void> inputEvent, EventLog eventLog) {
-    Authorisation paymentData = eventLog.one(PaymentRequest);
-    AcquirerResponse acquirerResponse = eventLog.lastIfExists(AuthorisationApproved).orElse(null);
+  public AuthorisationReversalData execute(
+      InputEvent<Void> inputEvent,
+      EventLog log
+  ) {
+    var rollbackType = inputEvent.eventType();
+    Authorisation paymentData = log.one(PaymentRequest).t1();
+    PaymentEvent.Merchant merchant = log.one(PaymentRequest).t2();
+    AcquirerResponse acquirerResponse = log.lastIfExists(AuthorisationApproved).orElse(null);
     return new AuthorisationReversalData(
-            inputEvent.eventType() == Cancel || inputEvent.eventType() == RollbackRequest,
-            inputEvent.eventType() != Cancel,
-            paymentData.merchant().id(),
-            paymentData.merchant().aggregatorId(),
+            false, //rollbackType == Cancel || rollbackType == RollbackRequest,
+            false, //rollbackType != Cancel,
+            merchant,
             paymentData.amount().requested(),
             paymentData.merchantReference(),
             acquirerResponse != null ? acquirerResponse.authorisationCode() : null,
-            acquirerResponse != null ? acquirerResponse.batchNumber() : 1,
+            //acquirerBatchNumber.number(), //acquirerResponse != null ? acquirerResponse.batchNumber() : 1,
             paymentData.simulation()
         );
   }

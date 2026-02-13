@@ -1,29 +1,35 @@
 package com.github.thxmasj.statemachine;
 
-import com.github.thxmasj.statemachine.EventTrigger.EntitySelector;
+import com.github.thxmasj.statemachine.EventTrigger.EventSpec;
+import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Function;
 
 public class EventTriggerBuilder<I, O> {
 
-  private final List<EntitySelector> entitySelectors = new ArrayList<>();
+  private final List<EntitySelector<HttpRequestMessage>> entitySelectors = new ArrayList<>();
   private boolean create;
   private final EventType<I, O> eventType;
-  private I data;
+  private final Function<HttpRequestMessage, I> eventData;
   private EntityModel entityModel;
 
-  private EventTriggerBuilder(EventType<I, O> et) {
+  private EventTriggerBuilder(EventType<I, O> et, Function<HttpRequestMessage, I> eventData) {
     this.eventType = et;
+    this.eventData = eventData;
   }
 
-  public static <I, O> EventTriggerBuilder<I, O> event(EventType<I, O> eventType, I data) {
-    var builder = new EventTriggerBuilder<>(eventType);
-    builder.data = data;
-    return builder;
+  public static <I, O> EventTriggerBuilder<I, O> event(
+      EventType<I, O> eventType,
+      Function<HttpRequestMessage, I> eventData
+  ) {
+    return new EventTriggerBuilder<>(eventType, eventData);
   }
 
-  public static <I, O> EventTriggerBuilder<I, O> event(EventType<I, O> eventType) {
-    return new EventTriggerBuilder<>(eventType);
+  public static <O> EventTriggerBuilder<Void, O> event(
+      EventType<Void, O> eventType
+  ) {
+    return new EventTriggerBuilder<>(eventType, _ -> null);
   }
 
   public EventTriggerBuilder<I, O> onEntity(EntityModel entityModel) {
@@ -36,18 +42,18 @@ public class EventTriggerBuilder<I, O> {
     return this;
   }
 
-  public EventTriggerBuilder<I, O> identifiedBy(EntitySelectorBuilder builder) {
-    this.entitySelectors.add(builder.build());
+  public EventTriggerBuilder<I, O> identifiedBy(EntitySelector<HttpRequestMessage> selector) {
+    this.entitySelectors.add(selector);
     return this;
   }
 
-  public EventTriggerBuilder<I, O> and(EntitySelectorBuilder builder) {
-    return identifiedBy(builder);
+  public EventTriggerBuilder<I, O> and(EntitySelector<HttpRequestMessage> selector) {
+    return identifiedBy(selector);
   }
 
-  public EventTrigger<I> build() {
+  public EventTrigger<HttpRequestMessage, I, O> build() {
     if (entitySelectors.isEmpty() && !create) throw new IllegalArgumentException("An entity selector must be specified unless create flag is set");
-    return new EventTrigger<>(entitySelectors, eventType, data, entityModel, create);
+    return new EventTrigger<>(new EventSpec<>(eventType, eventData), entitySelectors, entityModel, create);
   }
 
 }

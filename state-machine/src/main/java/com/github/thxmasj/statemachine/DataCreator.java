@@ -1,7 +1,7 @@
 package com.github.thxmasj.statemachine;
 
-public interface DataCreator<I, O> {
+public interface DataCreator<I, P> {
 
-  O execute(InputEvent<I> inputEvent, EventLog eventLog);
+  P execute(InputEvent<I> inputEvent, EventLog eventLog);
 
 }

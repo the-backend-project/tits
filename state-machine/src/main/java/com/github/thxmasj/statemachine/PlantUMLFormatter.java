@@ -3,12 +3,15 @@ package com.github.thxmasj.statemachine;
 import static java.util.function.Predicate.not;
 import static java.util.stream.Collectors.joining;
 
+import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Stream;
@@ -23,14 +26,14 @@ public class PlantUMLFormatter {
   private final EntityModel model;
   private final boolean hideBuiltin;
 
-  public PlantUMLFormatter(EntityModel model) {
-    this(model, true);
+  public PlantUMLFormatter(EntityModel model, Map<State, List<TransitionModel<?, ?>>> transitions) {
+    this(model, transitions, true);
   }
 
-  public PlantUMLFormatter(EntityModel model, boolean hideBuiltin) {
+  public PlantUMLFormatter(EntityModel model, Map<State, List<TransitionModel<?, ?>>> transitions, boolean hideBuiltin) {
     this.model = model;
     this.hideBuiltin = hideBuiltin;
-    this.beginState = TraversableState.create(model);
+    this.beginState = TraversableState.create(model, transitions);
   }
 
   public File formatToFile(String directory) throws IOException {
@@ -71,11 +74,24 @@ public class PlantUMLFormatter {
     );
   }
 
+  private String choiceName(TraversableState state, TransitionModel<?, ?> transition) {
+    return state.state().name() + "_" + transition.eventType().name();
+  }
+
   private String states(TraversableState state, Set<State> visited) {
     if (visited.contains(state.state())) return "";
     visited.add(state.state());
 //    StringBuilder s = new StringBuilder(state.state().isChoice() ? conditionalState(state.state()) : state(state.state()));
     StringBuilder s = new StringBuilder(state(state.state()));
+    for (var t : state.forwardTransitions()) {
+      if (!t.filters().isEmpty())
+        s.append(String.format(
+            """
+            state %s <<choice>>
+            """,
+            choiceName(state, t)
+        ));
+    }
     for (TraversableState targetState : state.targetStates()) {
       s.append(states(targetState, visited));
     }
@@ -86,24 +102,39 @@ public class PlantUMLFormatter {
     if (visited.contains(state.state())) return "";
     visited.add(state.state());
     StringBuilder s = new StringBuilder();
-    for (var transition : state.forwardTransitions()) {
+    for (TransitionModel<?, ?> transition : state.forwardTransitions()) {
       if (hideBuiltin && BuiltinEventTypes.ALL.contains(transition.eventType())) continue;
       var targetState = state.forward(transition.eventType());
-      s.append(String.format(
-          "%s --> %s: %s\n",
-          /*state.state().name().equals(STATE_BEGIN) ? "[*]" :*/ state.state().name(),
-          targetState.state().name(),
-          Stream.of(
-              String.format("%s", transition.eventType().name()),
-              "I:" + transition.eventType().inputDataType().name() + "/" + "O:" + transition.eventType().outputDataType().name(),
-              transition.outgoingRequests().stream().map(ns -> outgoingRequest(ns, false)).collect(joining("\\n")),
-              transition.outgoingResponses().stream().map(ns -> outgoingResponse(ns, false)).collect(joining("\\n")),
-              transition.reverse() != null ? transition.reverse().outgoingRequests().stream().map(ns -> outgoingRequest(ns, true)).collect(joining("\\n")) : ""
-          ).filter(not(String::isEmpty)).collect(joining("\\n"))
-      ));
+      if (!transition.filters().isEmpty()) {
+        String choiceName = choiceName(state, transition);
+        s.append(String.format("%s --> %s: %s\n", state.state().name(), choiceName, transition.eventType().name()));
+        for (var filter : transition.filters()) {
+          s.append(transition(choiceName, targetState, filter.alternative().model().eventType(), transition));
+        }
+      } else {
+        s.append(transition(state.state().name(), targetState, transition.eventType(), transition));
+      }
       s.append(transitions(targetState, visited));
     }
     return s.toString();
+  }
+
+  private String transition(String source, TraversableState targetState, EventType<?, ?> eventType, TransitionModel<?, ?> transition) {
+    return String.format(
+        "%s --> %s: %s\n",
+        /*state.state().name().equals(STATE_BEGIN) ? "[*]" :*/ source,
+        targetState.state().name(),
+        Stream.of(
+            String.format("%s", eventType.name()),
+            "I:" + eventType.inputDataType().name() + "/" + "O:" + eventType.outputDataType().name(),
+            transition.outgoingRequests().stream().map(ns -> outgoingRequest(ns, false)).collect(joining("\\n")),
+            transition.reverseModel() != null ? transition.reverseModel()
+                .outgoingRequests()
+                .stream()
+                .map(ns -> outgoingRequest(ns, true))
+                .collect(joining("\\n")) : ""
+        ).filter(not(String::isEmpty)).collect(joining("\\n"))
+    );
   }
 
   private String outgoingRequest(OutgoingRequestModel<?, ?> spec, boolean reverse) {
@@ -131,7 +162,7 @@ public class PlantUMLFormatter {
         """,
         state.name(),
         Stream.of(
-            state.timeout().map(timeout -> "timeout: " + timeout.eventType().name() + " after " + timeout.duration().toString()).orElse("")
+            state.timeout().map(timeout -> "timeout: " + timeout.event().eventType().name() + " after " + timeout.duration().toString()).orElse("")
         ).filter(not(String::isEmpty)).collect(joining("\\n"))
     );
   }

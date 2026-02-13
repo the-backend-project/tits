@@ -1,33 +1,46 @@
 package com.github.thxmasj.statemachine.database.mssql;
 
-import com.github.thxmasj.statemachine.database.UnknownEntity;
-import com.github.thxmasj.statemachine.*;
-import com.github.thxmasj.statemachine.database.jdbc.JDBCRow;
-import com.github.thxmasj.statemachine.database.mssql.SchemaNames.Column;
-import com.microsoft.sqlserver.jdbc.SQLServerException;
-import reactor.core.publisher.Mono;
-
-import javax.sql.DataSource;
-import java.sql.ResultSet;
-import java.time.Clock;
-import java.util.*;
-
 import static com.github.thxmasj.statemachine.database.jdbc.PreparedStatementSupport.prepare;
-import static com.github.thxmasj.statemachine.database.mssql.Mappers.eventMapper;
 import static java.util.Objects.requireNonNull;
 import static java.util.Optional.ofNullable;
 import static java.util.stream.Collectors.joining;
+
+import com.github.thxmasj.statemachine.EntityId;
+import com.github.thxmasj.statemachine.EntityModel;
+import com.github.thxmasj.statemachine.Event;
+import com.github.thxmasj.statemachine.EventLog;
+import com.github.thxmasj.statemachine.SecondaryId;
+import com.github.thxmasj.statemachine.database.Row;
+import com.github.thxmasj.statemachine.database.UnknownEntity;
+import com.github.thxmasj.statemachine.database.jdbc.JDBCRow;
+import com.github.thxmasj.statemachine.database.mssql.SchemaNames.Column;
+import com.microsoft.sqlserver.jdbc.SQLServerException;
+import java.sql.ResultSet;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.function.Function;
+import javax.sql.DataSource;
+import reactor.core.publisher.Mono;
 
 @SuppressWarnings("StringConcatenationInLoop")
 public class EventsByMessageId {
 
   private final DataSource dataSource;
-  private final Clock clock;
   private final Map<EntityModel, String> sqls;
+  private final Function<Row, Event<?>> eventMapper;
 
-  public EventsByMessageId(DataSource dataSource, List<EntityModel> entityModels, String schemaName, Clock clock) {
+  public EventsByMessageId(
+      DataSource dataSource,
+      List<EntityModel> entityModels,
+      String schemaName,
+      Function<Row, Event<?>> eventMapper
+  ) {
     this.dataSource = dataSource;
-    this.clock = clock;
+    this.eventMapper = eventMapper;
     this.sqls = new HashMap<>();
     for (var entityModel : entityModels) {
       var names = new SchemaNames(schemaName, entityModel);
@@ -83,7 +96,7 @@ public class EventsByMessageId {
         rs = statement.getResultSet();
         List<Event<?>> events = new ArrayList<>();
         while (rs.next()) {
-          events.add(eventMapper(entityModel, clock).apply(new JDBCRow(rs)));
+          events.add(eventMapper.apply(new JDBCRow(rs)));
         }
         List<SecondaryId> secondaryIds = new ArrayList<>();
         for (var idModel : entityModel.secondaryIds()) {

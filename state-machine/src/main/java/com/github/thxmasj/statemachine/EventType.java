@@ -27,6 +27,11 @@ public interface EventType<I, O> {
       this.name = "(" + t1Type.getSimpleName() + ", " + t2Type.getSimpleName() + ")";
     }
 
+    public <T1, T2, T3> DataType(Class<T1> t1Type, Class<T2> t2Type, Class<T3> t3Type) {
+      this.clazz = null;
+      this.name = "(" + t1Type.getSimpleName() + ", " + t2Type.getSimpleName() + ", " + t3Type.getSimpleName() + ")";
+    }
+
     public Class<T> value() {
       return clazz;
     }

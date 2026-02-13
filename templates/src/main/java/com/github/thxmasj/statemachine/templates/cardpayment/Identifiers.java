@@ -7,6 +7,26 @@ import java.sql.SQLException;
 import java.util.List;
 
 public enum Identifiers implements SchemaNames.SecondaryIdModel {
+  MerchantId {
+    @Override
+    public List<SchemaNames.Column> columns() {
+      return List.of(
+          new SchemaNames.Column("MerchantId", "VARCHAR(36)", e -> e)
+      );
+    }
+
+    @Override
+    public SecondaryId map(ResultSet resultSet) {
+      try {
+        return new SecondaryId(
+            this,
+            resultSet.getString("MerchantId")
+        );
+      } catch (SQLException e) {
+        throw new RuntimeException(e);
+      }
+    }
+  },
   BatchNumber {
     @Override
     public List<SchemaNames.Column> columns() {

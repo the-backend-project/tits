@@ -6,10 +6,6 @@ import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 
 public interface OutgoingResponseCreator<T> {
 
-  HttpResponseMessage create(T data, ResponseContext context);
-
-  interface ResponseContext extends Context {
-    Message.IncomingRequest incomingRequest();
-  }
+  HttpResponseMessage create(T data, Context context);
 
 }

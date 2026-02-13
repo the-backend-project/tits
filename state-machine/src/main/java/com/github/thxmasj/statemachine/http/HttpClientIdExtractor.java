@@ -26,16 +26,16 @@ public abstract class HttpClientIdExtractor {
   public static String fromBearerToken(HttpRequestMessage message) {
     String v = message.headerValue("Authorization");
     if (v == null)
-      return null;
+      throw new IllegalArgumentException("Authorization header is missing");
     if (!v.startsWith("Bearer "))
-      return null;
+      throw new IllegalArgumentException("Authorization token is not of type Bearer");
     String token = v.substring("Bearer ".length());
     SignedJWT jws;
     try {
       jws = SignedJWT.parse(token);
       return jws.getJWTClaimsSet().getSubject();
     } catch (ParseException e) {
-      return null;
+      throw new IllegalArgumentException("Bearer token is invalid");
     }
   }
 

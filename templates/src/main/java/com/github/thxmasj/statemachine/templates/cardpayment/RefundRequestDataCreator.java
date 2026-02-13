@@ -1,9 +1,8 @@
 package com.github.thxmasj.statemachine.templates.cardpayment;
 
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthorisationRequest;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.CaptureApproved;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.PaymentRequest;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.PreauthorisationRequest;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Preauthorisation;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.RefundApproved;
 
 import com.github.thxmasj.statemachine.DataCreator;
@@ -18,7 +17,7 @@ public class RefundRequestDataCreator implements DataCreator<Refund, RefundReque
 
   @Override
   public RefundRequestData execute(InputEvent<Refund> inputEvent, EventLog eventLog) {
-    Authorisation authorisationData = eventLog.one(PaymentRequest);
+    Authorisation authorisationData = eventLog.one(PaymentRequest).t1();
     long alreadyCapturedAmount;
     if (authorisationData.capture()) {
       alreadyCapturedAmount = authorisationData.amount().requested();
@@ -34,7 +33,8 @@ public class RefundRequestDataCreator implements DataCreator<Refund, RefundReque
         .sum();
     return new RefundRequestData(
         authorisationData,
-        eventLog.one(AuthorisationRequest, PreauthorisationRequest),
+        eventLog.one(PaymentRequest).t2(),
+        eventLog.one(PaymentEvent.Authorisation, Preauthorisation),
         inputEvent.data(),
         alreadyCapturedAmount,
         alreadyRefundedAmount,
@@ -44,6 +44,7 @@ public class RefundRequestDataCreator implements DataCreator<Refund, RefundReque
 
   public record RefundRequestData(
       Authorisation authorisationData,
+      PaymentEvent.Merchant merchant,
       AuthenticationResult authenticationResult,
       Refund refundData,
       long alreadyCapturedAmount,

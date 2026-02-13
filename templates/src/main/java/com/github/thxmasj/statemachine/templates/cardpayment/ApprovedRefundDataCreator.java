@@ -7,15 +7,13 @@ import com.github.thxmasj.statemachine.DataCreator;
 import com.github.thxmasj.statemachine.EventLog;
 import com.github.thxmasj.statemachine.InputEvent;
 import com.github.thxmasj.statemachine.templates.cardpayment.ApprovedRefundDataCreator.ApprovedRefundData;
-import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Authorisation;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Refund;
 
 public class ApprovedRefundDataCreator implements DataCreator<AcquirerResponse, ApprovedRefundData> {
 
     public record ApprovedRefundData(
       AcquirerResponse acquirerResponse,
-      String merchantId,
-      String merchantAggregatorId,
+      PaymentEvent.Merchant merchant,
       long amount,
       String merchantReference,
       String correlationId
@@ -23,15 +21,14 @@ public class ApprovedRefundDataCreator implements DataCreator<AcquirerResponse, 
 
   @Override
   public ApprovedRefundData execute(InputEvent<AcquirerResponse> inputEvent, EventLog eventLog) {
-    Authorisation authorisationData = eventLog.one(PaymentRequest);
+    var paymentData = eventLog.one(PaymentRequest);
     AcquirerResponse acquirerResponse = inputEvent.data();
     Refund refundData = eventLog.last(RefundRequest);
     return new ApprovedRefundData(
         acquirerResponse,
-        authorisationData.merchant().id(),
-        authorisationData.merchant().aggregatorId(),
+        paymentData.t2(),
         refundData.amount(),
-        authorisationData.merchantReference(),
+        paymentData.t1().merchantReference(),
         refundData.correlationId()
     );
   }

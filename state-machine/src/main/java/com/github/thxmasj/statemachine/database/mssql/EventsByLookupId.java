@@ -1,6 +1,5 @@
 package com.github.thxmasj.statemachine.database.mssql;
 
-import static com.github.thxmasj.statemachine.database.mssql.Mappers.eventMapper;
 import static java.util.Optional.ofNullable;
 import static java.util.stream.Collectors.joining;
 
@@ -9,19 +8,20 @@ import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.Event;
 import com.github.thxmasj.statemachine.EventLog;
 import com.github.thxmasj.statemachine.SecondaryId;
+import com.github.thxmasj.statemachine.database.Row;
 import com.github.thxmasj.statemachine.database.UnknownEntity;
 import com.github.thxmasj.statemachine.database.jdbc.JDBCRow;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.Column;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
 import com.microsoft.sqlserver.jdbc.SQLServerException;
 import java.sql.ResultSet;
-import java.time.Clock;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Function;
 import javax.sql.DataSource;
 import reactor.core.publisher.Mono;
 
@@ -29,18 +29,18 @@ import reactor.core.publisher.Mono;
 public class EventsByLookupId {
 
   private final DataSource dataSource;
-  private final Clock clock;
   private final Map<SecondaryIdModel, String> sql;
+  private final Function<Row, Event<?>> eventMapper;
 
   public EventsByLookupId(
       DataSource dataSource,
       List<EntityModel> entityModels,
       String schemaName,
-      Clock clock
+      Function<Row, Event<?>> eventMapper
   ) {
     this.dataSource = dataSource;
-    this.clock = clock;
     this.sql = new HashMap<>();
+    this.eventMapper = eventMapper;
     for (var entityModel : entityModels) {
       var names = new SchemaNames(schemaName, entityModel);
       for (var idModel : entityModel.secondaryIds()) {
@@ -108,7 +108,7 @@ public class EventsByLookupId {
             rs = statement.getResultSet();
             List<Event<?>> events = new ArrayList<>();
             while (rs.next()) {
-              events.add(eventMapper(entityModel, clock).apply(new JDBCRow(rs)));
+              events.add(eventMapper.apply(new JDBCRow(rs)));
             }
             List<SecondaryId> secondaryIds = new ArrayList<>();
             for (var idModel2 : entityModel.secondaryIds()) {
@@ -123,7 +123,7 @@ public class EventsByLookupId {
         })
         .onErrorMap(
             e -> e instanceof SQLServerException f && f.getErrorCode() == 50000,
-            _ -> new UnknownEntity(secondaryId)
+            _ -> new UnknownEntity(entityModel, secondaryId)
         )
         ;
   }

@@ -11,17 +11,24 @@ import com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Cut
 public class CutOffRequestDataCreator implements DataCreator<CutOff, Tuple3<CutOff, BatchNumber, AcquirerBatchNumber>> {
 
   @Override
-  public Tuple3<CutOff, BatchNumber, AcquirerBatchNumber> execute(InputEvent<CutOff> inputEvent, EventLog eventLog) {
-    BatchNumber currentId = eventLog.secondaryIds().stream()
+  public Tuple3<CutOff, BatchNumber, AcquirerBatchNumber> execute(InputEvent<CutOff> input, EventLog log) {
+    return tuple(input.data(), batchNumber(log), acquirerBatchNumber(log));
+  }
+
+  public static BatchNumber batchNumber(EventLog log) {
+    return log.secondaryIds().stream()
         .filter(id -> id.model() == Identifiers.BatchNumber)
         .map(id -> (BatchNumber)id.data())
         .findFirst()
         .orElseThrow();
-    AcquirerBatchNumber currentNetsSession = eventLog.secondaryIds().stream()
+  }
+
+  public static AcquirerBatchNumber acquirerBatchNumber(EventLog log) {
+    return log.secondaryIds().stream()
         .filter(id -> id.model() == Identifiers.AcquirerBatchNumber)
         .map(id -> (AcquirerBatchNumber)id.data())
         .findFirst()
         .orElseThrow();
-    return tuple(inputEvent.data(), currentId, currentNetsSession);
   }
+
 }

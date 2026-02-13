@@ -2,16 +2,16 @@ package com.github.thxmasj.statemachine;
 
 import reactor.core.publisher.Mono;
 
-public interface ReactiveDataCreator<I, O> {
+public interface ReactiveDataCreator<I, T, P> {
 
-  Mono<O> execute(InputEvent<I> inputEvent, EventLog eventLog);
+  Mono<P> execute(InputEvent<I> inputEvent, T triggerData, EventLog eventLog);
 
-  static <T> ReactiveDataCreator<T, T> fromInput(Class<T> unused) {
-    return (inputEvent, _) -> Mono.just(inputEvent.data());
+  static <I, T> ReactiveDataCreator<I, T, I> fromInput(Class<I> unused) {
+    return (inputEvent, _, _) -> Mono.just(inputEvent.data());
   }
 
-  static <I, O> ReactiveDataCreator<I, O> fromEvent(EventType<?, O> eventType) {
-    return (_, eventLog) -> Mono.just(eventLog.one(eventType));
+  static <I, T, P> ReactiveDataCreator<I, T, P> fromEvent(EventType<?, P> eventType) {
+    return (_, _, eventLog) -> Mono.just(eventLog.one(eventType));
   }
 
 }

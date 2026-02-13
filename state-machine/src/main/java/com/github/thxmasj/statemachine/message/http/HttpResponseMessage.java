@@ -29,19 +29,16 @@ public class HttpResponseMessage {
     this.reasonPhrase = reasonPhrase;
     this.headers = headers;
     this.body = body;
-    this.message = String.format(
-        """
-        HTTP/1.1 %d %s
-        %s
-        %s
-        """,
-        statusCode,
-        reasonPhrase,
-        headers.entrySet().stream()
-            .map(entry -> entry.getKey() + ":" + entry.getValue())
-            .collect(joining("\n")),
-        (body == null ? "" : "\n" + body)
-    );
+    String m = String.format("HTTP/1.1 %d %s", statusCode, reasonPhrase);
+    if (!headers.isEmpty()) {
+      m = m + "\n" + headers.entrySet().stream()
+          .map(entry -> entry.getKey() + ":" + entry.getValue())
+          .collect(joining("\n"));
+    }
+    if (body != null) {
+      m = m + "\n\n" + body;
+    }
+    this.message = m;
   }
 
   public String message() {

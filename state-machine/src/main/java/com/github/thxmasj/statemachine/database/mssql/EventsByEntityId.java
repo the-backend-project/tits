@@ -1,25 +1,25 @@
 package com.github.thxmasj.statemachine.database.mssql;
 
 import static com.github.thxmasj.statemachine.database.jdbc.PreparedStatementSupport.prepare;
-import static com.github.thxmasj.statemachine.database.mssql.Mappers.eventMapper;
 import static java.util.Objects.requireNonNull;
 import static java.util.stream.Collectors.joining;
 
-import com.github.thxmasj.statemachine.database.UnknownEntity;
 import com.github.thxmasj.statemachine.EntityId;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.Event;
 import com.github.thxmasj.statemachine.EventLog;
 import com.github.thxmasj.statemachine.SecondaryId;
+import com.github.thxmasj.statemachine.database.Row;
+import com.github.thxmasj.statemachine.database.UnknownEntity;
 import com.github.thxmasj.statemachine.database.jdbc.JDBCRow;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.Column;
 import java.sql.ResultSet;
-import java.time.Clock;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import javax.sql.DataSource;
 import reactor.core.publisher.Mono;
 
@@ -27,13 +27,13 @@ import reactor.core.publisher.Mono;
 public class EventsByEntityId {
 
   private final DataSource dataSource;
-  private final Clock clock;
   private final Map<EntityModel, String> sqls;
+  private final Function<Row, Event<?>> eventMapper;
 
-  public EventsByEntityId(DataSource dataSource, List<EntityModel> entityModels, String schemaName, Clock clock) {
+  public EventsByEntityId(DataSource dataSource, List<EntityModel> entityModels, String schemaName, Function<Row, Event<?>> eventMapper) {
     this.dataSource = dataSource;
-    this.clock = clock;
     this.sqls = new HashMap<>();
+    this.eventMapper = eventMapper;
     for (var entityModel : entityModels) {
       var names = new SchemaNames(schemaName, entityModel);
       String sql =
@@ -69,7 +69,7 @@ public class EventsByEntityId {
         ResultSet rs = statement.getResultSet();
         List<Event<?>> events = new ArrayList<>();
         while (rs.next()) {
-          events.add(eventMapper(entityModel, clock).apply(new JDBCRow(rs)));
+          events.add(eventMapper.apply(new JDBCRow(rs)));
         }
         List<SecondaryId> secondaryIds = new ArrayList<>();
         for (var idModel : entityModel.secondaryIds()) {

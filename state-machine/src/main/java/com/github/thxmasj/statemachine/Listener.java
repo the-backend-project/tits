@@ -1,18 +1,17 @@
 package com.github.thxmasj.statemachine;
 
 import com.github.thxmasj.statemachine.database.ChangeRaced;
-import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.UUID;
+import org.checkerframework.checker.nullness.qual.NonNull;
 
 public interface Listener {
 
     void clientRequestFailed(
             String correlationId,
-            EntityId entityId,
             EventType<?, ?> requestEvent,
             Throwable t
     );
@@ -26,7 +25,6 @@ public interface Listener {
     void inconsistentState(
             String correlationId,
             EntityId entityId,
-            String sourceState,
             String details
     );
 
@@ -40,24 +38,27 @@ public interface Listener {
 
     record Change(
         Entity entity,
-        State sourceState,
-        State targetState,
         ZonedDateTime timeout,
-        List<Event> events,
+        Event event,
+        String targetState,
         List<String> secondaryIds,
-        List<HttpRequestMessage> incomingRequests,
-        List<HttpResponseMessage> outgoingResponses,
-        List<HttpRequestMessage> outgoingRequests,
-        List<HttpResponseMessage> incomingResponses
+        List<String> incomingRequests,
+        //List<String> outgoingResponses,
+        List<String> outgoingRequests,
+        List<String> incomingResponses
     ) {
       public record Entity(
-          EntityModel type,
-          EntityId id,
+          String model,
+          UUID id,
           List<String> secondaryIds
-      ) {}
+      ) {
+        @Override public @NonNull String toString() {
+          return model + "[id=" + id + "]";
+        }
+      }
       public record Event(
           int number,
-          EventType<?, ?> type,
+          String type,
           String data
       ) {}
     }

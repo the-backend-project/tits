@@ -1,27 +1,32 @@
 package com.github.thxmasj.statemachine.message;
 
 import com.github.thxmasj.statemachine.*;
+import com.github.thxmasj.statemachine.message.Message.IncomingMessage;
+import com.github.thxmasj.statemachine.message.Message.OutgoingRequest;
+import com.github.thxmasj.statemachine.message.Message.OutgoingResponse;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import java.time.Duration;
 import java.util.UUID;
 
-public abstract sealed class Message permits
-    Message.IncomingRequest,
-    Message.OutgoingRequest,
-    Message.IncomingResponse,
-    Message.OutgoingResponse
-{
+public abstract sealed class Message permits IncomingMessage, OutgoingRequest, OutgoingResponse {
 
   private final int eventNumber;
 
-  public Message(
+  protected Message(
       int eventNumber
   ) {
     this.eventNumber = eventNumber;
   }
 
-  public static final class IncomingResponse extends Message {
+  public abstract sealed static class IncomingMessage extends Message permits IncomingRequest, IncomingResponse {
+
+    protected IncomingMessage(int eventNumber) {
+      super(eventNumber);
+    }
+  }
+
+  public static final class IncomingResponse extends IncomingMessage {
 
     private final HttpResponseMessage message;
     private final OutboxQueue queue;
@@ -152,7 +157,7 @@ public abstract sealed class Message permits
 
   }
 
-  public static final class IncomingRequest extends Message {
+  public static final class IncomingRequest extends IncomingMessage {
 
     private final UUID id;
     private final HttpRequestMessage message;

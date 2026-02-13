@@ -20,29 +20,29 @@ public class ReconciliationValuesDataCreator
 
   @Override
   public Tuple4<CutOff, ReconciliationValues, ReconciliationValues, AcquirerResponse> execute(
-      InputEvent<AcquirerResponse> inputEvent,
-      EventLog eventLog
+      InputEvent<AcquirerResponse> input,
+      EventLog log
   ) {
-    return tuple(
-        eventLog.one(CutOffRequest),
-        new ReconciliationValues(
-            eventLog.all(MerchantDebit).stream().mapToLong(Long::longValue).sum(),
-            (long) eventLog.all(MerchantDebit).size(),
-            eventLog.all(MerchantCredit).stream().mapToLong(Long::longValue).sum(),
-            (long) eventLog.all(MerchantCredit).size(),
-            eventLog.all(MerchantCreditReversed)
-                .stream()
-                .mapToLong(Long::longValue)
-                .sum(),
-            (long) eventLog.all(MerchantCreditReversed).size(),
-            eventLog.all(MerchantDebitReversed)
-                .stream()
-                .mapToLong(Long::longValue)
-                .sum(),
-            (long) eventLog.all(MerchantDebitReversed).size()
-        ),
-        inputEvent.data().reconciliationValues(),
-        inputEvent.data()
+    return tuple(log.one(CutOffRequest), reconciliationValues(log), input.data().reconciliationValues(), input.data());
+  }
+
+  public static ReconciliationValues reconciliationValues(EventLog log) {
+    return new ReconciliationValues(
+        log.all(MerchantDebit).stream().mapToLong(Long::longValue).sum(),
+        (long) log.all(MerchantDebit).size(),
+        log.all(MerchantCredit).stream().mapToLong(Long::longValue).sum(),
+        (long) log.all(MerchantCredit).size(),
+        log.all(MerchantCreditReversed)
+            .stream()
+            .mapToLong(Long::longValue)
+            .sum(),
+        (long) log.all(MerchantCreditReversed).size(),
+        log.all(MerchantDebitReversed)
+            .stream()
+            .mapToLong(Long::longValue)
+            .sum(),
+        (long) log.all(MerchantDebitReversed).size()
     );
   }
+
 }

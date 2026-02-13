@@ -64,19 +64,16 @@ public class HttpRequestMessage {
     this.uri = uri;
     this.headers = headers;
     this.body = body;
-    this.message = String.format(
-        """
-        %s %s
-        %s
-        %s
-        """,
-        method,
-        uri.toString(),
-        headers.entrySet().stream()
-            .map(entry -> entry.getKey() + ":" + entry.getValue())
-            .collect(joining("\n")),
-        (body == null ? "" : "\n" + body)
-    );
+    var m = String.format("%s %s", method, uri.toString());
+    if (!headers.isEmpty()) {
+      m = m + "\n" + headers.entrySet().stream()
+          .map(entry -> entry.getKey() + ":" + entry.getValue())
+          .collect(joining("\n"));
+    }
+    if (body != null) {
+      m = m + "\n\n" + body;
+    }
+    this.message = m;
   }
 
   public String requestLine() {

@@ -11,16 +11,16 @@ public class UnknownEntity extends RuntimeException {
   private final EntityId id;
   private final String messageId;
 
-  public UnknownEntity(SecondaryId id) {
-    super("Unknown entity: " + id);
+  public UnknownEntity(EntityModel entityModel, SecondaryId id) {
+    super(String.format("Unknown entity: %s/%s=%s", entityModel.name(), id.model().name(), id));
     this.secondaryId = id;
-    this.entityModel = null;
+    this.entityModel = entityModel;
     this.id = null;
     this.messageId = null;
   }
 
   public UnknownEntity(EntityModel entityModel, EntityId id, String sql) {
-    super("Unknown entity: " + entityModel.name() + "[id=" + id + "]", new RuntimeException(sql));
+    super(String.format("Unknown entity: %s/id=%s", entityModel.name(), id.value()), new RuntimeException(sql));
     this.entityModel = entityModel;
     this.secondaryId = null;
     this.id = id;

@@ -29,7 +29,9 @@ public class PreparedStatementSupport {
     PreparedStatement statement = connection.prepareStatement(preparedSql);
     for (Map.Entry<String, List<Integer>> entry : positions.entrySet()) {
       for (Integer position : entry.getValue()) {
-        statement.setObject(position + 1, parameters.get(entry.getKey()));
+        Object value = parameters.get(entry.getKey());
+        //if (value == null) throw new IllegalStateException("Parameter " + entry.getKey() + " is not set");
+        statement.setObject(position + 1, value);
       }
     }
     return statement;

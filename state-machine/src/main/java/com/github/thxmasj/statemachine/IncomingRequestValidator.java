@@ -1,5 +1,6 @@
 package com.github.thxmasj.statemachine;
 
+import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import reactor.core.publisher.Mono;
 
 public interface IncomingRequestValidator<OUTPUT_TYPE> {
@@ -10,9 +11,9 @@ public interface IncomingRequestValidator<OUTPUT_TYPE> {
   }
 
   default Mono<Result> execute(
-      EntityId entityId,
       Context<OUTPUT_TYPE> context,
-      Input.IncomingRequest request
+      String clientId,
+      HttpRequestMessage request
   ) {
     return Mono.just(context.validRequest());
   }

@@ -5,11 +5,11 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.PreauthorisationApproved;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.RollbackRequest;
 
+import com.github.thxmasj.statemachine.BuiltinEventTypes;
 import com.github.thxmasj.statemachine.DataCreator;
 import com.github.thxmasj.statemachine.EventLog;
 import com.github.thxmasj.statemachine.InputEvent;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Amount;
-import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Authorisation;
 import com.github.thxmasj.statemachine.templates.cardpayment.PreauthorisationReversalDataCreator.PreauthorisationReversalData;
 
 public class PreauthorisationReversalDataCreator implements DataCreator<Void, PreauthorisationReversalData> {
@@ -17,8 +17,7 @@ public class PreauthorisationReversalDataCreator implements DataCreator<Void, Pr
   public record PreauthorisationReversalData(
       boolean clientOriginated,
       boolean technicalReversal,
-      String merchantId,
-      String merchantAggregatorId,
+      PaymentEvent.Merchant merchant,
       Amount amount,
       String merchantReference,
       String authorisationCode,
@@ -26,18 +25,18 @@ public class PreauthorisationReversalDataCreator implements DataCreator<Void, Pr
   ) {}
 
   @Override
-  public PreauthorisationReversalData execute(InputEvent<Void> inputEvent, EventLog eventLog) {
-    Authorisation paymentData = eventLog.one(PaymentRequest);
-    AcquirerResponse acquirerResponse = eventLog.lastIfExists(PreauthorisationApproved).orElse(null);
+  public PreauthorisationReversalData execute(InputEvent<Void> inputEvent, EventLog log) {
+    var rollbackType = inputEvent.eventType();
+    var paymentData = log.one(PaymentRequest);
+    AcquirerResponse acquirerResponse = log.lastIfExists(PreauthorisationApproved).orElse(null);
     return new PreauthorisationReversalData(
-            inputEvent.eventType() == Cancel || inputEvent.eventType() == RollbackRequest,
-            inputEvent.eventType() != Cancel,
-            paymentData.merchant().id(),
-            paymentData.merchant().aggregatorId(),
-            paymentData.amount(),
-            paymentData.merchantReference(),
+            false, //rollbackType == Cancel || rollbackType == RollbackRequest,
+            false, //rollbackType != Cancel,
+            paymentData.t2(),
+            paymentData.t1().amount(),
+            paymentData.t1().merchantReference(),
             acquirerResponse != null ? acquirerResponse.authorisationCode() : null,
-            paymentData.simulation()
+            paymentData.t1().simulation()
         );
   }
 

@@ -2,8 +2,8 @@ package com.github.thxmasj.statemachine.templates.cardpayment;
 
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.CaptureApproved;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.PaymentRequest;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Preauthorisation;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.PreauthorisationApproved;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.PreauthorisationRequest;
 
 import com.github.thxmasj.statemachine.DataCreator;
 import com.github.thxmasj.statemachine.EventLog;
@@ -18,8 +18,9 @@ public class CaptureRequestDataCreator implements DataCreator<Capture, CaptureRe
   @Override
   public CaptureRequestData execute(InputEvent<Capture> inputEvent, EventLog eventLog) {
     return new CaptureRequestData(
-        eventLog.one(PaymentRequest),
-        eventLog.one(PreauthorisationRequest),
+        eventLog.one(PaymentRequest).t1(),
+        eventLog.one(PaymentRequest).t2(),
+        eventLog.one(Preauthorisation),
         eventLog.one(PreauthorisationApproved),
         inputEvent.data(),
         eventLog.all(CaptureApproved).stream()
@@ -31,6 +32,7 @@ public class CaptureRequestDataCreator implements DataCreator<Capture, CaptureRe
 
   public record CaptureRequestData(
       Authorisation authorisationData,
+      PaymentEvent.Merchant merchant,
       AuthenticationResult authenticationResult,
       AcquirerResponse bankResponse,
       Capture captureData,

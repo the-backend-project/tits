@@ -25,6 +25,10 @@ public class BasicEventType<I, O> implements EventType<I, O> {
     return new BasicEventType<>(name, id, inputDataType, new DataType<>(outputDataType));
   }
 
+  public static <I, O> EventType<I, O> of(String name, UUID id, DataType<I> inputDataType, DataType<O> outputDataType) {
+    return new BasicEventType<>(name, id, inputDataType, outputDataType);
+  }
+
   public static <T> EventType<T, T> of(String name, UUID id, Class<T> dataType) {
     return new BasicEventType<>(name, id, new DataType<>(dataType), new DataType<>(dataType));
   }
@@ -35,6 +39,11 @@ public class BasicEventType<I, O> implements EventType<I, O> {
 
   @Override
   public String name() {
+    return name;
+  }
+
+  @Override
+  public String toString() {
     return name;
   }
 
@@ -53,9 +62,9 @@ public class BasicEventType<I, O> implements EventType<I, O> {
     return outputDataType;
   }
 
-  public static class Rollback extends BasicEventType<Void, Data> {
+  public static class Rollback extends BasicEventType<Data, Data> {
     public Rollback(String name, UUID id) {
-      super(name, id, new DataType<>(Void.class), new DataType<>(Data.class));
+      super(name, id, new DataType<>(Data.class), new DataType<>(Data.class));
     }
 
     public record Data(

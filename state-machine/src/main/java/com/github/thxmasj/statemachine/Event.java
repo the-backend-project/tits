@@ -7,6 +7,9 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.github.thxmasj.statemachine.message.http.HttpMessageParser;
+import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
+import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZonedDateTime;
@@ -46,8 +49,8 @@ public final class Event<T> {
   }
 
   public Event(Integer eventNumber, EventType<?, T> type, LocalDateTime timestamp, Clock clock, String messageId, String clientId, String data) {
-    if (type.outputDataType().value() != Void.class)
-      requireNonNull(data, type.name() + " requires data");
+//    if (type.outputDataType().value() != Void.class)
+//      requireNonNull(data, "Event type <" + type.name() + "> requires data of type <" + type.outputDataType().value().getName() + ">");
     requireNonNull(eventNumber);
     requireNonNull(type);
     this.eventNumber = eventNumber;
@@ -137,6 +140,8 @@ public final class Event<T> {
     return switch (data) {
       case String s -> s;
       case Number n -> n.toString();
+      case HttpRequestMessage m -> m.message();
+      case HttpResponseMessage m -> m.message();
       case null -> null;
       default -> {
         try {
@@ -153,6 +158,10 @@ public final class Event<T> {
       return (T) data;
     if (eventType.outputDataType().value() == Integer.class)
       return (T) Integer.valueOf(data);
+    if (eventType.outputDataType().value() == HttpRequestMessage.class)
+      return (T) HttpMessageParser.parseRequest(data);
+    if (eventType.outputDataType().value() == HttpResponseMessage.class)
+      return (T) HttpMessageParser.parseResponse(data);
     try {
       return objectMapper.readerFor(eventType.outputDataType().value()).readValue(data);
     } catch (JsonProcessingException e) {

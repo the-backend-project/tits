@@ -1,28 +1,30 @@
 package com.github.thxmasj.statemachine.database.mssql;
 
+import static com.github.thxmasj.statemachine.Tuples.tuple;
 import static java.util.stream.Collectors.joining;
 import static java.util.stream.IntStream.range;
 
 import com.github.thxmasj.statemachine.EntityId;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.Event;
+import com.github.thxmasj.statemachine.SecondaryId;
+import com.github.thxmasj.statemachine.State;
+import com.github.thxmasj.statemachine.database.ChangeRaced;
+import com.github.thxmasj.statemachine.database.Client;
+import com.github.thxmasj.statemachine.database.Client.PrimaryKeyConstraintViolation;
+import com.github.thxmasj.statemachine.database.Client.Query.Builder;
+import com.github.thxmasj.statemachine.database.Client.UniqueIndexConstraintViolation;
+import com.github.thxmasj.statemachine.database.EventAlreadyExists;
+import com.github.thxmasj.statemachine.database.SecondaryIdAlreadyExists;
 import com.github.thxmasj.statemachine.message.Message.IncomingRequest;
 import com.github.thxmasj.statemachine.message.Message.IncomingResponse;
 import com.github.thxmasj.statemachine.message.Message.OutgoingRequest;
 import com.github.thxmasj.statemachine.message.Message.OutgoingResponse;
-import com.github.thxmasj.statemachine.SecondaryId;
-import com.github.thxmasj.statemachine.TraversableState;
-import com.github.thxmasj.statemachine.database.ChangeRaced;
-import com.github.thxmasj.statemachine.database.Client;
-import com.github.thxmasj.statemachine.database.Client.DataIntegrityViolation;
-import com.github.thxmasj.statemachine.database.Client.PrimaryKeyConstraintViolation;
-import com.github.thxmasj.statemachine.database.Client.Query.Builder;
-import com.github.thxmasj.statemachine.database.Client.UniqueIndexConstraintViolation;
-import com.github.thxmasj.statemachine.database.DuplicateMessage;
 import java.time.Clock;
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.stream.IntStream;
 import reactor.core.publisher.Flux;
 
@@ -40,21 +42,20 @@ public class ChangeState {
     this.schema = schema;
   }
 
-  private void bind(Builder spec, Change change) {
-    List<Event<?>> events = change.newEvents();
+  private void bind(Builder spec, ZonedDateTime timestamp, Change change) {
+    Event<?> event = change.newEvent();
     ZonedDateTime deadline = change.deadline();
     String correlationId = change.correlationId();
     if (change.entityId() != null)
       spec.bind("entityId", change.entityId().value());
     spec.bind("entityModelId", change.entityModel().id());
-    for (int i = 0; i < events.size(); i++) {
-      var event = events.get(i);
-      spec.bind("eventNumber"+i, event.eventNumber())
-          .bind("type"+i, event.type().id())
-          .bind("timestamp"+i, event.timestamp().withZoneSameInstant(clock.getZone()).toLocalDateTime())
-          .bind("messageId"+i, event.messageId())
-          .bind("clientId"+i, event.clientId())
-          .bind("data"+i, event.getMarshalledData());
+    spec.bind("timestamp", timestamp.withZoneSameInstant(clock.getZone()).toLocalDateTime());
+    if (event != null) {
+      spec.bind("eventNumber", event.eventNumber())
+          .bind("type", event.type().id())
+          .bind("messageId", event.messageId())
+          .bind("clientId", event.clientId())
+          .bind("data", event.getMarshalledData());
     }
     for (var secondaryId : change.newSecondaryIds()) {
       for (int i = 0; i < secondaryId.model().columns().size(); i++) {
@@ -63,14 +64,14 @@ public class ChangeState {
       if (secondaryId.model().isSerial())
         spec.bind("secondaryId" + secondaryId.model().name() + "SerialNumber", secondaryId.serialNumber());
     }
-    for (int i = 0; i < change.incomingRequests().size(); i++) {
-      IncomingRequest irq = change.incomingRequests().get(i);
-      spec.bind("incomingRequestId"+i, irq.id())
-          .bind("incomingRequestEventNumber"+i, irq.eventNumber())
-          .bind("incomingRequestMessageId"+i, irq.messageId())
-          .bind("incomingRequestClientId"+i, irq.clientId())
-          .bind("incomingRequestDigest"+i, irq.digest())
-          .bind("incomingRequestData"+i, irq.message().message());
+    if (change.incomingRequest() != null) {
+      IncomingRequest irq = change.incomingRequest();
+      spec.bind("incomingRequestId", irq.id())
+          .bind("incomingRequestEventNumber", irq.eventNumber())
+          .bind("incomingRequestMessageId", irq.messageId())
+          .bind("incomingRequestClientId", irq.clientId())
+          .bind("incomingRequestDigest", irq.digest())
+          .bind("incomingRequestData", irq.message().message());
     }
     for (int i = 0; i < change.outgoingRequests().size(); i++) {
       OutgoingRequest orq = change.outgoingRequests().get(i);
@@ -85,44 +86,42 @@ public class ChangeState {
           .bind("outgoingRequestGuaranteedDelivery" + i, orq.guaranteed())
           .bind("outgoingRequestData"+i, orq.message().message());
     }
-    for (int i = 0; i < change.outgoingResponses().size(); i++) {
-      OutgoingResponse ors = change.outgoingResponses().get(i);
-      spec.bind("outgoingResponseEventNumber"+i, ors.eventNumber())
-          .bind("outgoingResponseRequestId"+i, ors.requestId())
-          .bind("outgoingResponseData"+i, ors.message().message());
-    }
-    for (int i = 0; i < change.incomingResponses().size(); i++) {
-      IncomingResponse irs = change.incomingResponses().get(i);
-      spec.bind("incomingResponseEventNumber"+i, irs.eventNumber())
-          .bind("incomingResponseRequestId"+i, irs.requestId())
-          .bind("incomingResponseData"+i, irs.message().message());
+//    if (change.outgoingResponse() != null) {
+//      OutgoingResponse ors = change.outgoingResponse();
+//      spec.bind("outgoingResponseEventNumber", ors.eventNumber())
+//          .bind("outgoingResponseRequestId", ors.requestId())
+//          .bind("outgoingResponseData", ors.message().message());
+//    }
+    if (change.incomingResponse() != null) {
+      IncomingResponse irs = change.incomingResponse();
+      spec.bind("incomingResponseEventNumber", irs.eventNumber())
+          .bind("incomingResponseRequestId", irs.requestId())
+          .bind("incomingResponseData", irs.message().message());
     }
     if (deadline != null) {
-      spec.bind("eventNumber", events.getLast().eventNumber()) // new current event number
+      spec//.bind("eventNumber", events.getLast().eventNumber()) // new current event number
           .bind("deadline", deadline.withZoneSameInstant(clock.getZone()).toLocalDateTime())
           .bind("correlationId", correlationId);
     }
   }
 
-  public record Change(
-      EntityModel entityModel,
-      EntityId entityId,
-      List<SecondaryId> secondaryIds,
-      TraversableState sourceState,
-      TraversableState targetState,
-      List<Event<?>> newEvents,
-      List<SecondaryId> newSecondaryIds,
-      List<IncomingRequest> incomingRequests,
-      List<OutgoingResponse> outgoingResponses,
-      List<OutgoingRequest> outgoingRequests,
-      List<IncomingResponse> incomingResponses,
-      ZonedDateTime deadline,
-      String correlationId
-  ) {}
+  public interface Change {
+    EntityModel entityModel();
+    EntityId entityId();
+    Event<?> newEvent();
+    State toState();
+    List<SecondaryId> newSecondaryIds();
+    IncomingRequest incomingRequest();
+    //OutgoingResponse outgoingResponse();
+    List<OutgoingRequest> outgoingRequests();
+    IncomingResponse incomingResponse();
+    ZonedDateTime deadline();
+    String correlationId();
+  }
 
   public record OutboxElement(int changeIndex, int messageIndex, UUID requestId, byte[] elementId) {}
 
-  public Flux<OutboxElement> execute(List<Change> changes) {
+  public Flux<OutboxElement> execute(ZonedDateTime timestamp, List<Change> changes) {
     String sql =
         """
         SET XACT_ABORT ON;
@@ -134,13 +133,13 @@ public class ChangeState {
             i,
             "p" + i + "_",
             changes.get(i).entityModel(),
-            changes.get(i).newEvents.size(),
+            changes.get(i).newEvent() != null,
             changes.get(i).newSecondaryIds(),
-            changes.get(i).incomingRequests(),
-            changes.get(i).outgoingResponses(),
+            changes.get(i).incomingRequest(),
+            //changes.get(i).outgoingResponse(),
             changes.get(i).outgoingRequests(),
-            changes.get(i).incomingResponses(),
-            changes.get(i).deadline != null
+            changes.get(i).incomingResponse(),
+            changes.get(i).deadline() != null
         )).collect(joining("\n")) +
         """
         SELECT ChangeIndex, MessageIndex, RequestId, ElementId FROM @QueueElementToProcess ORDER BY ChangeIndex ASC, MessageIndex ASC
@@ -148,7 +147,7 @@ public class ChangeState {
         """;
     Builder spec = databaseClient.sql(sql).name("ChangeState");
     for (int i = 0; i < changes.size(); i++)
-      bind(spec.parameterPrefix("p" + i + "_"), changes.get(i));
+      bind(spec.parameterPrefix("p" + i + "_"), timestamp, changes.get(i));
     return spec.map(row -> new OutboxElement(
             row.get("ChangeIndex", Integer.class),
             row.get("MessageIndex", Integer.class),
@@ -156,26 +155,29 @@ public class ChangeState {
             row.get("ElementId", byte[].class)
         ))
         .all()
-        .onErrorMap(this::isDuplicateMessage, DuplicateMessage::new)
-        .onErrorMap(DataIntegrityViolation.class, t -> {
-          Change change = isRace(t, changes);
-          if (change != null)
-            return new ChangeRaced(change, t.tableName());
-          else
-            return t;
-        });
+        .onErrorMap(PrimaryKeyConstraintViolation.class, primaryKeyConstraintViolationMapper(changes))
+        .onErrorMap(UniqueIndexConstraintViolation.class, uniqueIndexConstraintViolationMapper(changes))
+        //.onErrorMap(this::isDuplicateMessage, t -> new DuplicateMessage(t))
+//        .onErrorMap(DataIntegrityViolation.class, t -> {
+//          Change change = isRace(t, changes);
+//          if (change != null)
+//            return new ChangeRaced(change, t.tableName());
+//          else
+//            return t;
+//        });
+    ;
   }
 
   private String insertSql(
       int changeIndex,
       String parameterPrefix,
       EntityModel entityModel,
-      int numberOfEvents,
+      boolean withEvent,
       List<SecondaryId> secondaryIds,
-      List<IncomingRequest> incomingRequests,
-      List<OutgoingResponse> outgoingResponses,
+      IncomingRequest incomingRequest,
+      //OutgoingResponse outgoingResponse,
       List<OutgoingRequest> outgoingRequests,
-      List<IncomingResponse> incomingResponses,
+      IncomingResponse incomingResponse,
       boolean withDeadline
   ) {
     var names = new SchemaNames(schema, entityModel);
@@ -203,32 +205,32 @@ public class ChangeState {
               );
     }
 
-    sql +=
-        """
-        DELETE [{schema}].[Timeout] FROM [{schema}].[Timeout] WITH (INDEX([ixEntityId]))
-        WHERE EntityId=@entityId{changeIndex} AND EventNumber=:eventNumber0 - 1;
-        """.replace("{changeIndex}", String.valueOf(changeIndex))
-            .replace("{schema}", schema);
+    if (withEvent) {
+      sql +=
+          """
+          DELETE [{schema}].[Timeout] FROM [{schema}].[Timeout] WITH (INDEX([ixEntityId]))
+          WHERE EntityId=@entityId{changeIndex} AND EventNumber=:eventNumber - 1;
+          """.replace("{changeIndex}", String.valueOf(changeIndex))
+              .replace("{schema}", schema);
+      sql +=
+          """
+          INSERT INTO [{schema}].[Event] (
+            EntityId,
+            EventNumber,
+            Type,
+            Timestamp,
+            MessageId,
+            ClientId,
+            Data
+          ) VALUES (
+            @entityId{changeIndex},
+            :eventNumber,:type,:timestamp,:messageId,:clientId,:data
+          )
+          """.replace("{schema}", schema)
+              .replace("{changeIndex}", String.valueOf(changeIndex));
+    }
 
-    sql +=
-        """
-        INSERT INTO [{schema}].[Event] (
-          EntityId,
-          EventNumber,
-          Type,
-          Timestamp,
-          MessageId,
-          ClientId,
-          Data
-        ) VALUES
-        """.replace("{schema}", schema);
-    sql += range(0, numberOfEvents).mapToObj(i ->
-        """
-        (@entityId{changeIndex},:eventNumber{i},:type{i},:timestamp{i},:messageId{i},:clientId{i},:data{i})
-        """.replace("{changeIndex}", String.valueOf(changeIndex)).replace("{i}", String.valueOf(i))
-    ).collect(joining(","));
-
-    sql += range(0, incomingRequests.size()).mapToObj(i ->
+    sql += incomingRequest == null ? "" :
         """
         INSERT INTO [{schema}].[InboxRequest] (
           Id,
@@ -240,33 +242,29 @@ public class ChangeState {
           Digest,
           Data
         ) VALUES (
-          :incomingRequestId{i},
+          :incomingRequestId,
           @entityId{changeIndex},
-          :incomingRequestEventNumber{i},
-          :timestamp0,
-          :incomingRequestMessageId{i},
-          :incomingRequestClientId{i},
-          :incomingRequestDigest{i},
-          :incomingRequestData{i}
+          :incomingRequestEventNumber,
+          :timestamp,
+          :incomingRequestMessageId,
+          :incomingRequestClientId,
+          :incomingRequestDigest,
+          :incomingRequestData
         );
         """.replace("{changeIndex}", String.valueOf(changeIndex))
-            .replace("{i}", String.valueOf(i))
-            .replace("{schema}", schema)
-    ).collect(joining());
+            .replace("{schema}", schema);
 
-    sql += range(0, incomingResponses.size()).mapToObj(i ->
+    sql += incomingResponse == null ? "" :
         /* Deletes corresponding outgoing request from queue when incoming response has arrived. Note that this must
            be done prior to insertion of new outgoing requests (see below), otherwise, in case of rollback, the new
            outgoing request will be deleted as well */
         """
         DELETE [{schema}].[OutboxQueue] FROM [{schema}].[OutboxQueue] WITH (INDEX([ixEntityId]))
-        WHERE EntityId=@entityId{changeIndex} AND RequestId=:incomingResponseRequestId{i}
+        WHERE EntityId=@entityId{changeIndex} AND RequestId=:incomingResponseRequestId
         IF @@ROWCOUNT != 1
           THROW 50003, 'Failed to delete outgoing request from queue', 1;
         """.replace("{changeIndex}", String.valueOf(changeIndex))
-            .replace("{i}", String.valueOf(i))
-            .replace("{schema}", schema)
-    ).collect(joining());
+            .replace("{schema}", schema);
 
     sql += range(0, outgoingRequests.size()).mapToObj(i ->
         """
@@ -284,7 +282,7 @@ public class ChangeState {
           :outgoingRequestQueueId{i},
           @entityId{changeIndex},
           :outgoingRequestEventNumber{i},
-          :timestamp0,
+          :timestamp,
           :outgoingRequestData{i}
         );
         """.replace("{changeIndex}", String.valueOf(changeIndex))
@@ -316,7 +314,7 @@ public class ChangeState {
           :outgoingRequestCreatorId{i},
           :outgoingRequestGuaranteedDelivery{i},
           :correlationId,
-          :timestamp0,
+          :timestamp,
           (SELECT RequestId FROM @OutboxElement WHERE ChangeIndex={changeIndex} AND MessageIndex={i})
         );
         """.replace("{changeIndex}", String.valueOf(changeIndex))
@@ -363,9 +361,9 @@ public class ChangeState {
           :outgoingRequestGuaranteedDelivery{i},
           :outgoingRequestData{i},
           :correlationId,
-          :timestamp0,
+          :timestamp,
           1,
-          (DATEADD(millisecond, 10*1000, :timestamp0)), -- TODO: (DATEADD(millisecond, :minimumBackoff*1000, :now))
+          (DATEADD(millisecond, 10*1000, :timestamp)), -- TODO: (DATEADD(millisecond, :minimumBackoff*1000, :now))
           (SELECT RequestId FROM @OutboxElement WHERE ChangeIndex={changeIndex} AND MessageIndex={i})
         WHERE @entityId{changeIndex} NOT IN (
           SELECT EntityId
@@ -403,7 +401,7 @@ public class ChangeState {
         """
     ).collect(joining());
 
-    sql += range(0, incomingResponses.size()).mapToObj(i ->
+    sql += incomingResponse == null ? "" :
         """
         INSERT INTO [{schema}].[OutboxResponse] (
           EntityId,
@@ -413,46 +411,40 @@ public class ChangeState {
           RequestId
         ) VALUES (
           @entityId{changeIndex},
-          :incomingResponseEventNumber{i},
-          :timestamp0,
-          :incomingResponseData{i},
-          :incomingResponseRequestId{i}
+          :incomingResponseEventNumber,
+          :timestamp,
+          :incomingResponseData,
+          :incomingResponseRequestId
         );
         """.replace("{changeIndex}", String.valueOf(changeIndex))
-            .replace("{i}", String.valueOf(i))
-            .replace("{schema}", schema)
-    ).collect(joining());
+            .replace("{schema}", schema);
 
-    sql += range(0, outgoingResponses.size()).mapToObj(i ->
-        """
-        INSERT INTO [{schema}].[InboxResponse] (
-          EntityId,
-          EventNumber,
-          Timestamp,
-          Data,
-          RequestId
-        ) VALUES (
-          @entityId{changeIndex},
-          :outgoingResponseEventNumber{i},
-          :timestamp0,
-          :outgoingResponseData{i},
-          :outgoingResponseRequestId{i}
-        );
-        """.replace("{changeIndex}", String.valueOf(changeIndex))
-            .replace("{i}", String.valueOf(i))
-            .replace("{schema}", schema)
-    ).collect(joining());
+//    sql += outgoingResponse == null ? "" :
+//        """
+//        INSERT INTO [{schema}].[InboxResponse] (
+//          EntityId,
+//          EventNumber,
+//          Timestamp,
+//          Data,
+//          RequestId
+//        ) VALUES (
+//          @entityId{changeIndex},
+//          :outgoingResponseEventNumber,
+//          :timestamp,
+//          :outgoingResponseData,
+//          :outgoingResponseRequestId
+//        );
+//        """.replace("{changeIndex}", String.valueOf(changeIndex))
+//            .replace("{schema}", schema);
 
-    sql += range(0, incomingResponses.size()).filter(i -> incomingResponses.get(i).guaranteed()).mapToObj(i ->
+    sql += incomingResponse != null && incomingResponse.guaranteed() ?
         """
         DELETE [{schema}].[OutboxQueueProcessing] FROM [{schema}].[OutboxQueueProcessing] WITH (INDEX(pkOutboxQueueProcessing))
-        WHERE EntityId=@entityId{changeIndex} AND RequestId=:incomingResponseRequestId{i}
+        WHERE EntityId=@entityId{changeIndex} AND RequestId=:incomingResponseRequestId
         IF @@ROWCOUNT != 1
-          THROW 50004, 'Failed to delete queue processing element (change index {changeIndex}, incomingResponseRequestId{i})', 1;
+          THROW 50004, 'Failed to delete queue processing element (change index {changeIndex}, incomingResponseRequestId)', 1;
         """.replace("{changeIndex}", String.valueOf(changeIndex))
-            .replace("{i}", String.valueOf(i))
-            .replace("{schema}", schema)
-    ).collect(joining());
+            .replace("{schema}", schema) : "";
 
     if (withDeadline) sql +=
         """
@@ -492,12 +484,41 @@ public class ChangeState {
         .orElse(null);
   }
 
+  private Function<PrimaryKeyConstraintViolation, Throwable> primaryKeyConstraintViolationMapper(List<Change> changes) {
+    return pkViolation -> {
+      if (pkViolation.tableName().equals("Event"))
+        return new EventAlreadyExists(pkViolation.duplicateKey());
+      return changes.stream()
+          .map(change ->
+                  change.entityModel().secondaryIds().stream()
+                      .map(id -> new SchemaNames(schema, change.entityModel()).idTableName(id))
+                      .filter(idTableName -> pkViolation.tableName().equals(idTableName))
+                      .map(idTableName -> new ChangeRaced(change, idTableName))
+                      .findFirst().orElseThrow()
+          )
+          .findFirst().orElseThrow();
+    };
+  }
+
+  private Function<UniqueIndexConstraintViolation, Throwable> uniqueIndexConstraintViolationMapper(List<Change> changes) {
+    return indexViolation -> changes.stream()
+        .flatMap(change -> change.newSecondaryIds().stream().map(secondaryId -> tuple(change, secondaryId)))
+        .filter(tuple -> indexViolation.tableName().equals(new SchemaNames(schema, tuple.t1().entityModel()).idTableName(tuple.t2().model())))
+        .map(tuple -> new SecondaryIdAlreadyExists(
+            tuple.t1(),
+            tuple.t2(),
+            indexViolation.duplicateKey(),
+            new SchemaNames(schema, tuple.t1().entityModel()).idTableName(tuple.t2().model())
+        ))
+        .findFirst().orElseThrow();
+  }
+
   private Change isRace(Throwable e, List<Change> changes) {
     if (e instanceof PrimaryKeyConstraintViolation pkViolation) {
       return changes.stream()
           .filter(change ->
               pkViolation.tableName().equals("Event") ||
-                  change.entityModel.secondaryIds().stream().map(id -> new SchemaNames(schema, change.entityModel).idTableName(id))
+                  change.entityModel().secondaryIds().stream().map(id -> new SchemaNames(schema, change.entityModel()).idTableName(id))
                       .anyMatch(idTableName -> pkViolation.tableName().equals(idTableName))
           )
           .findFirst().orElseThrow();

@@ -1,9 +1,9 @@
 package com.github.thxmasj.statemachine.database.mssql;
 
-import static com.github.thxmasj.statemachine.database.mssql.Mappers.eventType;
 import static java.util.Optional.ofNullable;
 import static java.util.stream.Collectors.joining;
 
+import com.github.thxmasj.statemachine.EventType;
 import com.github.thxmasj.statemachine.database.EntityGroupNotInitialised;
 import com.github.thxmasj.statemachine.EventLog;
 import com.github.thxmasj.statemachine.EntityId;
@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.function.Function;
 import javax.sql.DataSource;
 import reactor.core.publisher.Mono;
 
@@ -31,6 +32,7 @@ import reactor.core.publisher.Mono;
 public class EventsByLastEntity {
 
   private final DataSource dataSource;
+  private final Function<UUID, EventType<?, ?>> eventTypeMapper;
   private final Clock clock;
   private final Map<SecondaryIdModel, String> sql;
 
@@ -38,9 +40,11 @@ public class EventsByLastEntity {
       DataSource dataSource,
       List<EntityModel> entityModels,
       String schemaName,
+      Function<UUID, EventType<?, ?>> eventTypeMapper,
       Clock clock
   ) {
     this.dataSource = dataSource;
+    this.eventTypeMapper = eventTypeMapper;
     this.clock = clock;
     this.sql = new HashMap<>();
     for (var entityModel : entityModels) {
@@ -146,7 +150,7 @@ public class EventsByLastEntity {
         while (rs.next()) {
           events.add(new Event<>(
               rs.getInt(1), // EventNumber
-              eventType(entityModel, UUID.fromString(rs.getString(2))), // Type
+              eventTypeMapper.apply(UUID.fromString(rs.getString(2))), // Type
               rs.getObject(3, LocalDateTime.class), // Timestamp
               clock,
               rs.getString(4), // MessageId

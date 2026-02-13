@@ -16,8 +16,6 @@ public interface EntityModel {
 
   State initialState();
 
-  List<TransitionModel<?, ?, ?>> transitions();
-
   default List<OutboxQueue> queues() {
     return List.of();
   }

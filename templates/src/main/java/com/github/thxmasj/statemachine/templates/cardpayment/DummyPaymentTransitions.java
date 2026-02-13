@@ -1,14 +1,27 @@
 package com.github.thxmasj.statemachine.templates.cardpayment;
 
+import com.github.thxmasj.statemachine.BuiltinEntities.InboxExchange;
 import com.github.thxmasj.statemachine.IncomingResponseValidator;
+import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.statemachine.templates.cardpayment.OutgoingRequests.Authentication;
 import com.github.thxmasj.statemachine.templates.cardpayment.OutgoingRequests.Authorisation;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthenticationResult;
+import java.util.List;
 
-public class DummyPayment extends AbstractPayment{
+public class DummyPaymentTransitions extends PaymentTransitions{
 
-  public DummyPayment(AbstractSettlement settlement) {
-    super(settlement);
+  public DummyPaymentTransitions() {
+    super(new InboxExchange() {
+      @Override
+      public List<TransitionModel<?, ?>> requestTransitions() {
+        return List.of();
+      }
+
+      @Override
+      protected List<TransitionModel<?, ?>> responseTransitions() {
+        return List.of();
+      }
+    });
   }
 
   @Override

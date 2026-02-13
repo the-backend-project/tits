@@ -9,7 +9,6 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent
 import com.github.thxmasj.statemachine.DataCreator;
 import com.github.thxmasj.statemachine.EventLog;
 import com.github.thxmasj.statemachine.InputEvent;
-import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Authorisation;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Refund;
 import com.github.thxmasj.statemachine.templates.cardpayment.RefundReversalDataCreator.RefundReversalData;
 
@@ -18,8 +17,7 @@ public class RefundReversalDataCreator implements DataCreator<Void, RefundRevers
   public record RefundReversalData(
       boolean clientOriginated,
       boolean technicalReversal,
-      String merchantId,
-      String merchantAggregatorId,
+      PaymentEvent.Merchant merchant,
       long amount,
       String merchantReference,
       String authorisationCode,
@@ -27,19 +25,19 @@ public class RefundReversalDataCreator implements DataCreator<Void, RefundRevers
   ) {}
 
   @Override
-  public RefundReversalData execute(InputEvent<Void> inputEvent, EventLog eventLog) {
-    Authorisation paymentData = eventLog.one(PaymentRequest);
-    Refund refundData = eventLog.last(RefundRequest);
-    AcquirerResponse acquirerResponse = eventLog.lastIfExists(RefundApproved).orElse(null);
+  public RefundReversalData execute(InputEvent<Void> inputEvent, EventLog log) {
+    var rollbackType = inputEvent.eventType();
+    var paymentData = log.one(PaymentRequest);
+    Refund refundData = log.last(RefundRequest);
+    AcquirerResponse acquirerResponse = log.lastIfExists(RefundApproved).orElse(null);
     return new RefundReversalData(
-            inputEvent.eventType() == Cancel || inputEvent.eventType() == RollbackRequest,
-            inputEvent.eventType() != Cancel,
-            paymentData.merchant().id(),
-            paymentData.merchant().aggregatorId(),
+            false, //rollbackType == Cancel || rollbackType == RollbackRequest,
+            false, //rollbackType != Cancel,
+            paymentData.t2(),
             refundData.amount(),
-            paymentData.merchantReference(),
+            paymentData.t1().merchantReference(),
             acquirerResponse != null ? acquirerResponse.authorisationCode() : null,
-            paymentData.simulation()
+            paymentData.t1().simulation()
         );
   }
 

@@ -1,5 +1,6 @@
 package com.github.thxmasj.statemachine;
 
+import com.github.thxmasj.statemachine.BasicEventType.Rollback;
 import com.github.thxmasj.statemachine.IncomingResponseValidator.Result.Status;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
@@ -43,7 +44,7 @@ public interface IncomingResponseValidator<OUTPUT_TYPE> {
 
     InputEvent<String> invalidResponse(String cause);
 
-    InputEvent<Void> rollback(String cause);
+    InputEvent<Rollback.Data> rollback(String cause);
 
   }
 

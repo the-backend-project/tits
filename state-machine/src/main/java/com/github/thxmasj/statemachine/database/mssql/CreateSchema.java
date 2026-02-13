@@ -5,6 +5,7 @@ import static java.util.stream.Collectors.joining;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.database.Client;
 import java.nio.charset.StandardCharsets;
+import java.util.Comparator;
 import java.util.List;
 import java.util.zip.CRC32;
 import reactor.core.publisher.Mono;
@@ -17,7 +18,7 @@ public class CreateSchema {
   private final String role;
 
   public CreateSchema(List<EntityModel> entityModels, String schemaName, String role) {
-    this.entityModels = entityModels;
+    this.entityModels = entityModels.stream().sorted(Comparator.comparing(EntityModel::id)).toList();
     this.schema = schemaName;
     this.role = role;
   }
@@ -38,8 +39,8 @@ public class CreateSchema {
 
   private String coreSql() {
     StringBuilder sql = new StringBuilder();
-    for (var entityType : entityModels) {
-      sql.append(sqlForEntity(entityType));
+    for (var entityModel : entityModels) {
+      sql.append(sqlForEntity(entityModel));
     }
     return sql.toString();
   }
@@ -228,7 +229,7 @@ public class CreateSchema {
         )
         .flatMap(checksum -> checksum == checksum() ?
             Mono.just(0) :
-            Mono.error(new RuntimeException("Checksum mismatch on schema " + schema))
+            Mono.error(new RuntimeException("Checksum mismatch on schema " + schema + ". Used following clear text: " + coreSql()))
         )
         .switchIfEmpty(
             databaseClient.sql("CREATE SCHEMA [" + schema + "]").name("CreateSchema0").update()

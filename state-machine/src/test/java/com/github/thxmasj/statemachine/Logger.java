@@ -1,5 +1,9 @@
 package com.github.thxmasj.statemachine;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.github.thxmasj.statemachine.database.*;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import java.time.*;
@@ -16,8 +20,8 @@ public class Logger implements Listener {
   }
 
   @Override
-  public void clientRequestFailed(String correlationId, EntityId entityId, EventType<?, ?> eventType, Throwable t) {
-    log(header(entityId, correlationId) + " Request failed: " + t.toString());
+  public void clientRequestFailed(String correlationId, EventType<?, ?> eventType, Throwable t) {
+    log(header("N/A", correlationId) + " Request failed: " + t.toString());
     //noinspection CallToPrintStackTrace
     t.printStackTrace();
   }
@@ -39,7 +43,6 @@ public class Logger implements Listener {
   public void inconsistentState(
           String correlationId,
           EntityId entityId,
-          String sourceState,
           String details
   ) {
     log(header(entityId, correlationId) + " Inconsistent state");
@@ -58,12 +61,23 @@ public class Logger implements Listener {
 
   @Override
   public void changeAccepted(String correlationId, List<Change> changes) {
-    log("[" + correlationId + "] Change accepted: \n  " + changes.stream().map(Change::toString).collect(joining("\n  ")));
+    log("[" + correlationId + "] Change set accepted: \n" + toString(changes));
+  }
+
+  private String toString(List<Change> changes) {
+    try {
+      return new ObjectMapper()
+          .enable(SerializationFeature.INDENT_OUTPUT)
+          .setSerializationInclusion(JsonInclude.Include.NON_EMPTY)
+          .writeValueAsString(changes);
+    } catch (JsonProcessingException e) {
+      throw new RuntimeException(e);
+    }
   }
 
   @Override
   public void changeFailed(String correlationId, List<Change> changes, Throwable t) {
-    log("[" + correlationId + "] Change failed: \n  " + changes.stream().map(Change::toString).collect(joining("\n  ")) + "\nReason: " + t);
+    log("[" + correlationId + "] Change set failed with [" + t.toString() + "]\n" + toString(changes));
   }
 
   @Override
