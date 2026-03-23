@@ -10,7 +10,7 @@ public interface EntityModel {
 
   UUID id();
 
-  default List<SecondaryIdModel> secondaryIds() {
+  default List<SecondaryIdModel<?>> secondaryIds() {
     return List.of();
   }
 

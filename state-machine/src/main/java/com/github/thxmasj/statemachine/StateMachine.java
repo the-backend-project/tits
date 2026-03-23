@@ -2,36 +2,36 @@ package com.github.thxmasj.statemachine;
 
 import static com.github.thxmasj.statemachine.BuiltinEventTypes.Rollback;
 import static com.github.thxmasj.statemachine.Correlation.correlationId;
-import static com.github.thxmasj.statemachine.Correlation.hasResponseSink;
-import static com.github.thxmasj.statemachine.Correlation.responseSink;
-import static com.github.thxmasj.statemachine.EntitySelector.CreationMode.CreateIfNotExists;
-import static com.github.thxmasj.statemachine.EntitySelector.entityId;
-import static com.github.thxmasj.statemachine.StateMachine.ProcessResult.Status.Accepted;
-import static com.github.thxmasj.statemachine.StateMachine.ProcessResult.Status.Failed;
-import static com.github.thxmasj.statemachine.StateMachine.ProcessResult.Status.Rejected;
-import static com.github.thxmasj.statemachine.StateMachine.ProcessResult.Status.Repeated;
+import static com.github.thxmasj.statemachine.OutgoingRequestCreator.context;
+import static com.github.thxmasj.statemachine.OutgoingRequestCreator.reversalContext;
 import static com.github.thxmasj.statemachine.Tuples.tuple;
 import static java.time.Duration.ofHours;
 import static java.time.Duration.ofMinutes;
 import static java.time.Duration.ofSeconds;
 import static java.util.Collections.unmodifiableList;
-import static java.util.Objects.requireNonNull;
+import static java.util.Comparator.comparing;
 import static java.util.Objects.requireNonNullElse;
 import static java.util.Optional.ofNullable;
 import static java.util.stream.Collectors.joining;
 import static java.util.stream.Collectors.toMap;
 
 import com.github.thxmasj.statemachine.BasicEventType.Rollback.Data;
-import com.github.thxmasj.statemachine.EventTrigger.EventSpec;
+import com.github.thxmasj.statemachine.IncomingResponseValidator.Context;
 import com.github.thxmasj.statemachine.IncomingResponseValidator.Result;
 import com.github.thxmasj.statemachine.Input.IncomingResponse;
 import com.github.thxmasj.statemachine.OutboxWorker.ForwardStatus;
-import com.github.thxmasj.statemachine.OutgoingRequestCreator.ReversalContext;
+import com.github.thxmasj.statemachine.State.Timeout;
+import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Accepted;
+import com.github.thxmasj.statemachine.StateMachine.ProcessResult.DuplicateId;
 import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Entity;
-import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Status;
-import com.github.thxmasj.statemachine.TransitionModelBuilder.EventReference;
+import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Failed;
+import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Raced;
+import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Rejected;
+import com.github.thxmasj.statemachine.StateMachine.ProcessResult.UnknownId;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
+import com.github.thxmasj.statemachine.Tuples.Tuple3;
 import com.github.thxmasj.statemachine.database.ChangeRaced;
+import com.github.thxmasj.statemachine.database.EntityGroupNotInitialised;
 import com.github.thxmasj.statemachine.database.MappingFailure;
 import com.github.thxmasj.statemachine.database.SecondaryIdAlreadyExists;
 import com.github.thxmasj.statemachine.database.UnknownEntity;
@@ -51,6 +51,7 @@ import com.github.thxmasj.statemachine.database.mssql.NextDeadline;
 import com.github.thxmasj.statemachine.database.mssql.OutgoingRequestByEvent;
 import com.github.thxmasj.statemachine.database.mssql.OutgoingResponseAndRequestDigestByRequest;
 import com.github.thxmasj.statemachine.database.mssql.ProcessBackedOff;
+import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
 import com.github.thxmasj.statemachine.database.mssql.SecondaryIdByEntityId;
 import com.github.thxmasj.statemachine.http.HttpClient;
 import com.github.thxmasj.statemachine.http.RequestMapper;
@@ -66,11 +67,9 @@ import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.Random;
 import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -81,20 +80,16 @@ import javax.sql.DataSource;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
-import reactor.core.publisher.Sinks.One;
+import reactor.core.publisher.Sinks.Many;
 import reactor.util.context.ContextView;
-import reactor.util.function.Tuple2;
 import reactor.util.retry.RetrySpec;
 
 public class StateMachine {
 
-  private final RequestMapper requestMapper;
   private final Function<List<String>, Mono<Void>> delayer;
   private final BeanRegistry beanRegistry;
   private final Clock clock;
   private final Listener listener;
-  private static final Random random = new Random();
-  private static final Mono<Long> reattemptDelay = Mono.defer(() -> Mono.delay(Duration.ofMillis(100 + random.nextInt(1000))));
   @SuppressWarnings("ALL")
   private final List<Looper<?>> workers = new ArrayList<>();
   private final ChangeState changeState;
@@ -111,7 +106,8 @@ public class StateMachine {
   private final OutgoingRequestByEvent outgoingRequestByEvent;
   private final Map<UUID, OutgoingRequestCreator<?>> outgoingRequestCreators;
   private final Function<OutboxQueue, HttpClient> clients;
-  private final Map<EntityModel, TraversableState> begin;
+  //private final Map<EntityModel, TraversableState> begin;
+  private final Map<EntityModel, Traverser> traversers;
 
   public StateMachine(
       RequestMapper requestMapper,
@@ -126,8 +122,8 @@ public class StateMachine {
       Listener listener,
       Function<OutboxQueue, HttpClient> clients
   ) {
-    this.begin = transitions.entrySet().stream().collect(Collectors.toMap(Entry::getKey, e -> TraversableState.create(e.getKey(), e.getValue())));
-    System.out.println(getClass().getName() + ": Entity models:\n" + begin.keySet().stream().map(m -> m.name() + " (" + m.id() + ", " + m.getClass().getName() + ")").collect(Collectors.joining("\n")));
+    //this.begin = transitions.entrySet().stream().collect(toMap(Entry::getKey, e -> TraversableState.create(e.getKey(), e.getValue())));
+    this.traversers = transitions.entrySet().stream().collect(toMap(Entry::getKey, e -> new Traverser(e.getValue())));
     List<EntityModel> entityModels = transitions.keySet().stream().toList();
     List<TransitionModel<?, ?>> allTransitions = transitions.values().stream().flatMap(m -> m.values().stream()).flatMap(Collection::stream).toList();
     List<EventType<?, ?>> allEventTypes = Stream.concat(
@@ -151,7 +147,6 @@ public class StateMachine {
             .map(OutgoingRequestModel::creator)
             .distinct()
             .collect(toMap(OutgoingRequestCreator::id, nc -> nc));
-    this.requestMapper = requestMapper;
     this.delayer = delayer != null ? delayer : _ -> Mono.empty();
     this.beanRegistry = beanRegistry;
     if (schemaDataSource != null) {
@@ -277,35 +272,44 @@ public class StateMachine {
           Deadline deadline = deadlineAndEventLog.getT1();
           EventLog eventLog = deadlineAndEventLog.getT2();
           if (eventLog.events().getLast().eventNumber() != deadline.eventNumber()) {
-            // The state has already been resolved by another resolver or incoming request
+            // Race! The state has already been resolved by another resolver or incoming request. Which is OK!
             return Mono.just(ResolverStatus.Ok);
           }
-          var currentState = begin(deadline.entityModel())
-              .forward(eventLog.events().stream().map(Event::type).toList());
+          System.out.println("Deadline eventNumber: " + deadline.eventNumber() + ", log's last event number: " + eventLog.lastEventNumber());
+          //var currentState = begin(deadline.entityModel()).forward(eventLog.events().stream().map(Event::type).toList());
+          var currentState = traversers.get(deadline.entityModel()).currentState(eventLog);
           if (currentState == null)
             return Mono.error(new RuntimeException("Invalid event log: " + eventLog.events().stream().map(Event::typeName).collect(joining(","))));
-          InputEvent<?> event = currentState.state().timeout().get().event();
-          return processEvents(
-              eventLog,
-              List.of(),
+          InputEvent<?> event = currentState.timeout()
+              .map(Timeout::event)
+              .orElseThrow(() -> new RuntimeException(
+                  "Huh? Resolving a state without timeout?? State is " + currentState.name() + " with transitions "
+                      + eventLog.events().stream().map(Event::typeName).collect(joining(","))));
+          return onEvent(
+              deadline.correlationId(),
               event,
-              null,
-              List.of()
-          ).flatMap(processResult -> switch (processResult.status()) {
-                // State is resolved and deadline already deleted by the change triggered by this event or the racing one.
-                case Accepted, Raced -> Mono.just(ResolverStatus.Ok);
-                // This is a bug.
-                // - Rejection should not happen unless model is wrong. TODO: sanitize
-                // - Repeats and conflicts should only happen with incoming requests (which this is not).
-                case Rejected, Repeated, Conflicted -> Mono.error(new IllegalStateException("Unexpected result for state resolving: " + processResult.status()));
+              eventLog,
+              null
+          )
+//          return processEvents(
+//              eventLog,
+//              event,
+//              null,
+//              deadline.correlationId()
+//          )
+              .flatMap(processResult -> switch (processResult) {
+                // State is resolved and deadline already deleted by the change triggered by this event.
+                case Accepted _ -> Mono.just(ResolverStatus.Ok);
+                // State is resolved and deadline already deleted by the change triggered by the racing event.
+                case Raced _ -> Mono.just(ResolverStatus.Ok);
                 // Need to retry. Deadline was already modified when reading.
-                case Failed -> {
+                case Failed r -> {
                   listener.resolveStateFailed(
                       deadline.correlationId(),
                       eventLog.entityId(),
-                      currentState.state().name(),
+                      currentState.name(),
                       event.eventType(),
-                      processResult.error()
+                      r.reason()
                   );
                   yield backoff.isExhausted(eventLog.events().getLast().timestamp(), deadline.nextAttemptAt(), clock) ?
                       Mono.error(new RuntimeException("Period for state resolving exhausted: " + Duration.between(
@@ -315,6 +319,11 @@ public class StateMachine {
                       ))) :
                       Mono.just(ResolverStatus.Ok);
                 }
+                // This is a bug.
+                // - Rejection should not happen unless model is wrong. TODO: sanitize
+                // - Repeated and DuplicateId should only happen with incoming requests (which this is not).
+                case ProcessResult r -> Mono.error(new IllegalStateException(
+                    "Unexpected result for state resolving: " + r.getClass().getSimpleName()));
               }
           ).contextWrite(Correlation.contextOf(deadline.correlationId()));
         })
@@ -632,7 +641,7 @@ public class StateMachine {
   }
 */
 
-  private static class IncomingResponseContext<DATA_TYPE> implements IncomingResponseValidator.Context<DATA_TYPE> {
+  private static class IncomingResponseContext<DATA_TYPE> implements Context<DATA_TYPE> {
 
     private final int currentEventNumber;
 
@@ -654,14 +663,17 @@ public class StateMachine {
     }
 
     @Override
-    public InputEvent<BasicEventType.Rollback.Data> rollback(String cause) {
-      return new InputEvent<>(Rollback, new Data(currentEventNumber - 1, cause));
+    public InputEvent<Data> rollback(String cause) {
+      return new InputEvent<>(Rollback, new Data(
+          currentEventNumber - 2, // To the event before the request (current is response)
+          cause
+      ));
     }
   }
 
   private record IncomingResponseStatus(
       Message.IncomingResponse response,
-      ProcessResult processResult,
+      ProcessResult<?> processResult,
       Result validationResult
   ) {}
 
@@ -783,45 +795,73 @@ public class StateMachine {
     return correlationId().doOnNext(consumer).then();
   }
 
-  public record ProcessResult(
-      Status status,
-      HttpResponseMessage responseMessage,
-      String error
-  ) {
+  public sealed interface ProcessResult<T> permits Accepted, DuplicateId, Failed, Raced, Rejected, UnknownId {
 
-    public record Entity(
+    record Accepted<T>(EntityId entityId, Event<T> event) implements ProcessResult<T> {}
+    record Rejected<T>(EventType<?, T> eventType, EntityModel entityModel, String reason) implements ProcessResult<T> {}
+    record DuplicateId<T>(SecondaryId<?> id) implements ProcessResult<T> {}
+    record UnknownId<T>(EventType<?, T> eventType, EntityModel entityModel, SecondaryId<?> id) implements ProcessResult<T> {}
+    record Failed<T>(String reason) implements ProcessResult<T> {}
+    record Raced<T>() implements ProcessResult<T> {}
+
+    record Entity(
        EntityId id,
-       List<SecondaryId> secondaryIds,
+       List<SecondaryId<?>> secondaryIds,
        EntityModel model
     ) {}
 
-    public enum Status {
-      Accepted, // Event is accepted successfully (and stored)
-      Repeated, // Event is a repeat of a previously accepted event.
-      Rejected, // Event is rejected (not allowed for the current state)
-      Conflicted, // Event conflicts with a previous event (message id was reused)
-      Failed, // Event processing failed (temporarily, can try again)
-      Raced // Storing was raced by another event (can try again)
+//    public enum Status {
+//      Accepted, // Event is accepted successfully (and stored)
+//      Repeated, // Event is a repeat of a previously accepted event.
+//      Rejected, // Event is rejected (not allowed for the current state)
+//      DuplicateId, // Event conflicts with a previous event (message id was reused)
+//      UnknownId,
+//      //Conflicted, // Event conflicts with a previous event (message id was reused)
+//      Failed, // Event processing failed (temporarily, can try again)
+//      Raced // Storing was raced by another event (can try again)
+//    }
+
+    static <T> Accepted<T> accepted(EntityId entityId, Event<T> event) {
+      return new Accepted<>(entityId, event);
     }
 
-    public static ProcessResult rejected(String reason) {
-      return new ProcessResult(Rejected, null, reason);
+    default boolean isAccepted() {
+      return this instanceof Accepted;
     }
 
-    public static ProcessResult accepted() {
-      return new ProcessResult(Accepted, null, null);
+    default Accepted<T> accepted() {
+      return switch (this) {
+        case ProcessResult.Accepted<T> v -> v;
+        case ProcessResult.DuplicateId<T> v -> throw new IllegalStateException("Duplicate id");
+        case ProcessResult.Failed<T> v -> throw new IllegalStateException("Failed");
+        case ProcessResult.Raced<T> v -> throw new IllegalStateException("Raced");
+        case ProcessResult.Rejected<T> v -> throw new RejectedEvent(v.eventType, v.entityModel, v.reason);
+        case ProcessResult.UnknownId<T> v -> throw new IllegalStateException("Unknown id");
+      };
     }
 
-    boolean isRejected() {
-      return status == Rejected;
+    static <T> Rejected<T> rejected(EventType<?, T> eventType, EntityModel entityModel, String reason) {
+      return new Rejected<>(eventType, entityModel, reason);
     }
 
-    boolean isAccepted() {
-      return status == Accepted;
+    default boolean isRejected() {
+      return this instanceof Rejected;
     }
 
-    boolean notAcceptedNorRepeated() {
-      return status != Accepted && status != Repeated;
+    default Rejected<T> rejected() {
+      return (Rejected<T>) this;
+    }
+
+    static <T> UnknownId<T> unknownId(EventType<?, T> eventType, EntityModel entityModel, SecondaryId<?> id) {
+      return new UnknownId<>(eventType, entityModel, id);
+    }
+
+    default boolean isUnknownId() {
+      return this instanceof UnknownId;
+    }
+
+    default UnknownId<T> unknownId() {
+      return (UnknownId<T>) this;
     }
 
   }
@@ -884,10 +924,16 @@ public class StateMachine {
 //            eventsByEntityId.execute(entityModel, entityId));
   }
 
-  private EventLog eventLogFromSession(EntityModel entityModel, ContextView ctx) {
-    EventLog log = ctx.get(entityModel);
-    System.out.println(getClass().getName() + ": Got event log from session for model " + entityModel.name() + "/" + log.entityId().value() + ": " + log.events().stream().map(e -> e.eventNumber() + ":" + e.type().name()).collect(joining(",")));
-    return log;
+  private Mono<EventLog> eventLogFromSession(EntityModel entityModel, ContextView ctx) {
+    var log = ctx.<EventLog>getOrEmpty(entityModel).orElseThrow(
+        () -> new IllegalStateException("No event log found in session for " + entityModel.name() + ". Found: " +
+            ctx.stream().filter(e -> e.getKey() instanceof EntityModel).map(e -> ((EntityModel)e.getKey()).name()).collect(
+                joining(", "))
+            )
+    );
+    return eventLogByEntityId(entityModel, log.entityId());
+//    System.out.println("Got event log for entity " + entityModel.name() + "/" + log.entityId().value() + " from session: " + log.events().stream().map(Event::typeName).collect(joining(", ")));
+//    return log;
   }
 
 //  private <T> Mono<EventLog> fetchEventLogForNestedChange(
@@ -915,6 +961,11 @@ public class StateMachine {
 //      case EntitySelector<?> s -> throw new IllegalStateException("Unexpected value: " + s);
 //    };
 //  }
+
+  public <T> Mono<SecondaryId<T>> next(SecondaryIdModel<T> idModel, Object idGroup) {
+    return lastSecondaryId.execute(idModel, idGroup)
+        .switchIfEmpty(Mono.just(idModel.group().initial(idGroup)));
+  }
 
 //  public <T, I1, O1> Mono<ChangeSet<O1>> calculateNestedChange(
 //      ZonedDateTime timestamp,
@@ -1098,116 +1149,70 @@ public class StateMachine {
 //        });
 //  }
 
-  public record ChangeSet<O>(ProcessResult result, List<Change> changes, EventReference<O> output) {
+  public record ChangeSet<O>(ProcessResult<O> result, List<Change> changes) {
 
-    public static <O> ChangeSet<O> empty(ProcessResult result) {
-      return new ChangeSet<>(result, List.of(), null);
+    public static <O> ChangeSet<O> empty(ProcessResult<O> result) {
+      return new ChangeSet<>(result, List.of());
     }
 
   }
 
-  private ChangeSet<Void> merge(List<ChangeSet<?>> sets) {
-    return sets.stream()
-        .map(ChangeSet::result)
-        .filter(result -> result.notAcceptedNorRepeated())
-        .findFirst()
-        .map(processResult -> new ChangeSet<Void>(processResult, null, null))
-        .orElseGet(() -> new ChangeSet<>(
-            new ProcessResult(Status.Accepted, null, null),
-            sets.stream().flatMap(s -> s.changes().stream()).toList(),
-            null
-        ));
-  }
+//  private ChangeSet<Void> merge(List<ChangeSet<?>> sets) {
+//    return sets.stream()
+//        .map(ChangeSet::result)
+//        .filter(result -> !result.isAccepted())
+//        .findFirst()
+//        .map(processResult -> new ChangeSet<Void>(processResult, null, null))
+//        .orElseGet(() -> new ChangeSet<>(
+//            new ProcessResult.Accepted(),
+//            sets.stream().flatMap(s -> s.changes().stream()).toList(),
+//            null
+//        ));
+//  }
 
-  private <I, O> Mono<ChangeSet<O>> calculateChange(
-      ZonedDateTime timestamp,
-      EventLog eventLog,
-      List<EventType<Void, ?>> scheduledEvents,
-      EventType<I, O> eventType,
-      I inputData,
-      IncomingMessage incomingMessage,
-      List<SecondaryId> idsForNewEntity
-  ) {
-    List<Event<?>> effectiveEventLog = eventLog.effectiveEvents();
-    EntityId entityId = eventLog.entityId();
-    List<SecondaryId> secondaryIds = eventLog.secondaryIds();
-    Entity entity = new Entity(entityId, join(secondaryIds, idsForNewEntity), eventLog.entityModel());
-    TraversableState currentState = begin(eventLog.entityModel()).forward(effectiveEventLog.stream().map(Event::type).toList());
-    if (currentState == null) {
-      return Mono.error(new IllegalStateException(String.format(
-          """
-          Can't find current state from effective event log
-          %s
-          Raw log
-          %s
-          """,
-          eventLog.effectiveEvents().stream().map(Event::typeName).collect(joining(", ")),
-          eventLog.events().stream().map(Event::typeName).collect(joining(", "))
-      )));
-    }
-    Mono<ChangeSet<?>> otherChangeSet = null;
-    if (eventType instanceof BasicEventType.Rollback rollbackType) {
-      otherChangeSet = calculateRollbackChanges(timestamp, eventLog, new InputEvent<>(rollbackType, (BasicEventType.Rollback.Data)inputData));
-    } else if (!scheduledEvents.isEmpty()) {
-      Flux<ChangeSet<?>> changeSets = Flux.empty();
-      for (var scheduledEventType : scheduledEvents) {
-        var transitionModel = currentState.transition(scheduledEventType);
-        if (transitionModel == null) {
-          return Mono.error(new IllegalStateException(
-              "State " + eventLog.entityModel() + "[id=" + eventLog.entityId().value() + "]:"
-                  + currentState.state()
-                  + " does not accept scheduled event " + scheduledEventType.name() + " (" + scheduledEventType.id()
-                  + ")")
-          );
-        }
-        changeSets = changeSets.mergeWith(transitionModel.calculate(
-            currentState.state(),
-            null,
-            this,
-            clock,
-            null,
-            eventLog,
-            timestamp,
-            "N/A" // TODO: correlationId
-        ));
-        currentState = currentState.forward(scheduledEventType);
-        eventLog = new EventLog(
-            eventLog.entityModel(),
-            eventLog.entityId(),
-            eventLog.secondaryIds(),
-            Event.join(eventLog.events(), new Event<>(eventLog.lastEventNumber() + 1, scheduledEventType, clock, null))
-        );
-      }
-      otherChangeSet = changeSets.collectList().map(this::merge);
-    }
-    var transitionModel = currentState.transition(eventType);
-    if (transitionModel == null) {
-      return Mono.just(new ChangeSet<>(
-          new ProcessResult(
-              Rejected,
-              null,
-              "State " + eventLog.entityModel() + "[id=" + eventLog.entityId().value() + "]:" + currentState.state()
-                  + " does not accept " + eventType.name() + " (" + eventType.id() + ")"
-          ),
-          List.of(),
-          null
-      ));
-    }
-    Mono<ChangeSet<O>> changeSet = transitionModel.calculate(
-        currentState.state(),
-        incomingMessage,
-        this,
-        clock,
-        new InputEvent<>(eventType, inputData),
-        eventLog,
-        timestamp,
-        "N/A" // TODO: correlationId
-    );
-    if (otherChangeSet == null) return changeSet;
-    return otherChangeSet.flatMap(o -> o.result().notAcceptedNorRepeated() ?
-        Mono.just(new ChangeSet<>(o.result(), List.of(), null)) :
-        changeSet.map(c -> new ChangeSet<>(c.result(), join(c.changes(), o.changes()), c.output()))
-    );
+//  private <I, O> Mono<ChangeSet<O>> calculateChange(
+//      ZonedDateTime timestamp,
+//      String correlationId,
+//      EventLog eventLog,
+//      EventType<I, O> eventType,
+//      I inputData,
+//      IncomingMessage incomingMessage
+//  ) {
+//    var traverser = traversers.get(eventLog.entityModel());
+//    var currentState = traverser.currentState(eventLog);
+//    Mono<ChangeSet<?>> otherChangeSet = null;
+//    if (eventType instanceof BasicEventType.Rollback rollbackType) {
+//      otherChangeSet = calculateRollbackChanges(timestamp, correlationId, eventLog, new InputEvent<>(rollbackType, (Data) inputData));
+//    }
+//    TransitionModel<I, O> transitionModel = (TransitionModel<I, O>) traverser.accept(currentState, eventType); // TODO
+//    if (transitionModel == null) {
+//      return Mono.just(new ChangeSet<>(
+//          new ProcessResult.Rejected(
+//              "State " + eventLog.entityModel() + "[id=" + eventLog.entityId().value() + "]:" + currentState
+//                  + " does not accept " + eventType.name() + " (" + eventType.id() + ")"
+//          ),
+//          List.of(),
+//          null
+//      ));
+//    }
+//    Mono<ChangeSet<O>> changeSet = transitionModel.calculate(
+//        eventLog.lastEventNumber() + 1,
+//        currentState,
+//        incomingMessage,
+//        this,
+//        clock,
+//        new InputEvent<>(eventType, inputData),
+//        eventLog,
+//        timestamp,
+//        correlationId
+//    );
+//    if (otherChangeSet == null)
+//      return changeSet;
+//    return otherChangeSet.flatMap(o -> !o.result().isAccepted() ?
+//        Mono.just(new ChangeSet<>(o.result(), List.of(), null)) :
+//        changeSet.map(c -> new ChangeSet<>(c.result(), join(c.changes(), o.changes()), c.output()))
+//    );
+//  }
 
 
 //    inputTransition.eventNumber = eventLog.lastEventNumber() + scheduledEvents.size() + 1;
@@ -1461,49 +1466,58 @@ public class StateMachine {
         }));
 
      */
-  }
 
-  public Mono<ChangeSet<?>> calculateRollbackChanges(
-      ZonedDateTime timestamp,
-      EventLog eventLog,
-      InputEvent<BasicEventType.Rollback.Data> inputEvent
-  ) {
-    System.out.println(getClass().getName() + ": Calculating rollback changes...");
-    List<Event<?>> effectiveEventLog = eventLog.effectiveEvents();
-//    int rollbackToEventNumber = rollbackToEventNumber(eventLog);
-//    if (rollbackToEventNumber >= eventLog.lastEventNumber()) {
-//      System.out.println("Rollback arrived before request");
-//      // Rollback arrived before request
-//      return Mono.empty();
+//  public Mono<ChangeSet<?>> calculateRollbackChanges(
+//      ZonedDateTime timestamp,
+//      String correlationId,
+//      EventLog eventLog,
+//      InputEvent<Data> rollbackEvent
+//  ) {
+//    System.out.println("calculateRollbackChanges to event number " + rollbackEvent.data().toNumber() + " on " + eventLog.entityModel().name() + " with log " + eventLog.events().stream().map(Event::typeName).collect(joining(",")));
+//    int rollbackTo = rollbackEvent.data().toNumber();
+//    if (rollbackTo < 0) {
+//      rollbackTo = eventLog.lastEventNumber() + rollbackTo; // add negative
 //    }
-    //targetState = traverseTo(eventLog.entityModel(), eventLog.events(), rollbackToEventNumber);
-    TraversableState state = traverseTo(inputEvent.data().toNumber(), eventLog.entityModel(), effectiveEventLog);
-    Flux<ChangeSet<?>> changeSets = Flux.empty();
-    for (var event : eventLog.events().subList(inputEvent.data().toNumber(), eventLog.events().size())) {
-      var tm = state.transition(event.type());
-      if (tm == null) {
-        throw new IllegalStateException(String.format(
-            "No transition found for event type %s from state %s",
-            event.type(),
-            state.state().name()
-        ));
-      }
-      if (tm.reverseModel() != null) {
-        changeSets.mergeWith(tm.reverseModel().calculate(
-            null,
-            null, // No incomingMessage for reversals
-            this,
-            clock,
-            inputEvent,
-            eventLog,
-            timestamp,
-            "N/A" // TODO: correlationId
-        ));
-      }
-      state = state.forward(event.type());
-    }
-    return changeSets.collectList().map(this::merge);
-  }
+//    if (rollbackTo >= eventLog.lastEventNumber() || rollbackTo < 0) {
+//      return Mono.just(ChangeSet.empty(ProcessResult.rejected(String.format(
+//          "Can't rollback to event number %d (input=%d, last=%d)",
+//          rollbackTo,
+//          rollbackEvent.data().toNumber(),
+//          eventLog.lastEventNumber()
+//      ))));
+//    }
+//    var effectiveEvents = eventLog.effectiveEvents();
+//    List<Event<?>> eventsToRollback = effectiveEvents.subList(rollbackTo, effectiveEvents.size());
+//    System.out.println("Rolling back events on entity " + eventLog.entityModel().name() + "/" + eventLog.entityId().value() + ": " + eventsToRollback.stream().map(Event::typeName).collect(joining(", ")));
+//
+//    Traverser traverser = traversers.get(eventLog.entityModel());
+//    Flux<ChangeSet<?>> changeSets = Flux.empty();
+//    for (var event : eventsToRollback.reversed()) {
+//      System.out.println("Rolling back " + event.typeName());
+//      var tm = traverser.transitionForEventNumber(eventLog, event.eventNumber());
+//      if (tm == null) {
+//        throw new IllegalStateException(String.format("No transition found for event number %d", event.eventNumber()));
+//      }
+//      if (tm.reverseModel() != null) {
+//        var reverseChangeSet = tm.reverseModel().calculateReverse(
+//                event.eventNumber(),
+//                this,
+//                clock,
+//                rollbackEvent,
+//                eventLog,
+//                timestamp,
+//                correlationId
+//            ).doOnNext(changeSet -> System.out.println(
+//                "Calculated reversal for " + event.typeName() + "(#" + event.eventNumber() + "): "
+//                    + changeSet.result() + "\n"
+//                    + changeSet.changes.stream().map(c -> "  " + c).collect(joining("\n")))
+//
+//        );
+//        changeSets = changeSets.mergeWith(reverseChangeSet);
+//      }
+//    }
+//    return changeSets.collectList().map(this::merge);
+//  }
 
   /*
   private <I, TO, P, O> Mono<Transition<?, ?, ?, ?>> calculateChangeForTransition(
@@ -1742,146 +1756,308 @@ public class StateMachine {
 //        .defaultIfEmpty(new TransitionWithData<>(transition, null));
 //  }
 
-  public <T, I, O> Mono<Event<?>> onEvent(String correlationId, EventTrigger<T, I, O> eventTrigger, T inputData) {
-    One<Event<?>> responseSink = Sinks.one();
-    System.out.println(getClass().getName() + ": onEvent " + eventTrigger.eventSpec().eventType().name());
-    return eventLog(eventTrigger, inputData)
-        .flatMap(eventLog -> calculateOnEvent(
-                correlationId,
-                ZonedDateTime.now(clock),
-                eventLog,
-                eventTrigger.eventSpec().eventType(),
-                eventTrigger.eventSpec().inputAdapter().apply(inputData)
-            )
-            .flatMap(changeSet -> storeChanges(
-                ZonedDateTime.now(clock),
-                changeSet.changes(),
-                // TODO: Eventually don't use eventLog for storing (only used for invalid requests triggered by
-                //       DuplicateMessage when messageId has a match but messages are different)
-                eventLog
-            ))
-            .contextWrite(ctx -> ctx.put("RS" + eventLog.entityId().value(), responseSink))
-            .doOnNext(e -> System.out.println("onEvent changes stored"))
-            .then(responseSink.asMono())
-            .doOnNext(e -> System.out.println("onEvent response: " + e.type().name()))
-            .switchIfEmpty(Mono.error(new RuntimeException("onEvent: No response")))
+  public <O> Flux<Event<?>> onEvent(EventTrigger<Void, Void, O> eventTrigger) {
+    return onEvent(UUID.randomUUID().toString(), eventTrigger);
+  }
+
+  public <O> Flux<Event<?>> onEvent(String correlationId, EventTrigger<Void, Void, O> eventTrigger) {
+    return onEvent(correlationId, eventTrigger, null);
+  }
+
+  public <I, O> Flux<Event<?>> onEvent(EventTrigger<I, I, O> eventTrigger, I input) {
+    return onEvent(UUID.randomUUID().toString(), eventTrigger, input);
+  }
+
+  private String trace(EventTrigger<?, ?, ?> eventTrigger, String text) {
+    return trace(eventTrigger.eventSpec().eventType(), eventTrigger.entityModel(), text);
+  }
+
+  private String trace(EventType<?, ?> eventType, EntityModel entityModel, String text) {
+    try {
+      return String.format(
+          "%s on %s %s",
+          eventType.name(),
+          entityModel.name(),
+          text
+      );
+    } catch (Exception e) {
+      e.printStackTrace();
+      return "trace logging failed: " + e.getMessage();
+    }
+  }
+
+  public <T, I, O> Flux<Event<?>> onEvent(String correlationId, EventTrigger<T, I, O> eventTrigger, T input) {
+    I adaptedInput = eventTrigger.eventSpec().inputAdapter().apply(input);
+    Many<Event<?>> responseSink = Sinks.many().unicast().onBackpressureBuffer();
+    return eventLog(eventTrigger, input, List.of())
+        .flatMapMany(log ->
+            onEvent(correlationId, eventTrigger.eventSpec().eventType(), adaptedInput, log, null)
+                .contextWrite(ctx -> ctx
+                    //.put("RS/" + (tuple.t1().lastEventNumber() + 2) + "/" + tuple.t1().entityId().value(), responseSink)
+                    .put("RS/" + log.entityId().value(), responseSink)
+                    .put(log.entityModel(), log.entityId())
+                )
+                .thenMany(responseSink.asFlux())
+                .doOnNext(e -> System.out.println("onEvent output: " + e.type().name() + " (#" + e.eventNumber() + ")"))
+                .switchIfEmpty(Flux.error(new RuntimeException("onEvent: No response")))
         );
   }
 
-  public Mono<State> onStatus(String correlationId, EntitySelector<Void> entitySelector, EntityModel entityModel) {
-    return eventLog(entitySelector, null, entityModel)
-        .flatMap(eventLog ->
-            calculateOnEvent(
-                correlationId,
-                ZonedDateTime.now(clock),
-                eventLog,
-                BuiltinEventTypes.Status,
-                null
-            ).map(changeSet -> changeSet.output().event().getUnmarshalledData())
-        );
+  private <I> Mono<ProcessResult<?>> onEvent(
+      String correlationId,
+      InputEvent<I> inputEvent,
+      EventLog eventLog,
+      IncomingMessage inflightMessage
+  ) {
+    return onEvent(correlationId, inputEvent.eventType(), inputEvent.data(), eventLog, inflightMessage);
   }
 
-  private <T, I, O> Mono<EventLog> eventLog(EventTrigger<T, I, O> eventTrigger, T inputData) {
+  private <I, O> Mono<ProcessResult<?>> onEvent(
+      String correlationId,
+      EventType<I, O> eventType,
+      I input,
+      EventLog eventLog,
+      IncomingMessage inflightMessage
+  ) {
+    var now = ZonedDateTime.now(clock);
+    var tuple = transitionModel(eventLog, eventType);
+    if (tuple.t2() == null)
+      return Mono.just(ProcessResult.rejected(eventType, eventLog.entityModel(), "Rejected"));
+    System.out.println(trace(
+        eventType, eventLog.entityModel(),
+        String.format(
+            "calculating with log [%s] and transition [%s] from state [%s]",
+            tuple.t1() != null ? tuple.t1().events().stream().map(Event::typeName).collect(joining(", ")) : "<N/A>",
+            tuple.t2(),
+            tuple.t3() != null ? tuple.t3().name() : "<N/A>"
+        )
+    ));
+    return tuple.t2().calculate(
+            tuple.t1().lastEventNumber() + 1,
+            tuple.t3(),
+            inflightMessage,
+            this,
+            clock,
+            new InputEvent<>(eventType, input),
+            tuple.t1(),
+            now,
+            correlationId
+        )
+        .flatMap(changeSet -> switch (changeSet.result()) {
+          case Accepted<O> _ -> storeChanges(now, changeSet.changes()).thenReturn(changeSet.result())
+              .onErrorResume(
+                  SecondaryIdAlreadyExists.class,
+                  e -> eventsByLookupId.execute(e.change().eventLog().entityModel(), e.secondaryId())
+                      .flatMap(originalLog -> tuple.t2()
+                          .duplicateModel(e.secondaryId().model(), input, originalLog)
+                          .map(duplicateModel -> duplicateModel.calculate(
+                                  tuple.t1().lastEventNumber() + 1,
+                                  tuple.t3(),
+                                  null,
+                                  this,
+                                  clock,
+                                  new InputEvent<>(duplicateModel.eventType(), tuple(input, originalLog)),
+                                  tuple.t1(),
+                                  now,
+                                  correlationId
+                              ).flatMap(duplicateChanges -> duplicateChanges.result().isAccepted() ?
+                                  storeChanges(now, duplicateChanges.changes()).thenReturn(changeSet.result()) :
+                                  Mono.error(new RuntimeException(
+                                      "Failed to handle event with duplicate id: " + duplicateChanges.result()))
+                              )
+                          )
+                          .orElse(Mono.error(e))
+                      )
+              );
+          case Rejected<O> r -> tuple.t2().rejectModel() == null ?
+              Mono.error(new RuntimeException(trace(
+                  eventType, eventLog.entityModel(), String.format(
+                      "rejected: " + r.reason())
+              ))) :
+              tuple.t2().rejectModel().calculate(
+                  tuple.t1().lastEventNumber() + 1,
+                  tuple.t3(),
+                  null,
+                  this,
+                  clock,
+                  new InputEvent<>(
+                      tuple.t2().rejectModel().eventType(),
+                      tuple(
+                          input,
+                          eventLog.entityModel(),
+                          eventType,
+                          r.reason()
+                      )
+                  ),
+                  tuple.t1(),
+                  now,
+                  correlationId
+              ).flatMap(rejectChanges -> rejectChanges.result().isAccepted() ?
+                  storeChanges(now, rejectChanges.changes()).thenReturn(rejectChanges.result()) :
+                  Mono.error(new RuntimeException(
+                      "Failed to handle rejected event: " + rejectChanges.result() + " (original: "
+                          + changeSet.result() + ")"))
+              );
+          case ProcessResult<O> r -> Mono.error(new RuntimeException("Failed to handle event: " + r));
+        });
+
+  }
+
+  public Mono<State> onStatus(EntitySelector<Void> entitySelector, EntityModel entityModel) {
+    return eventLog(entitySelector, null, entityModel, List.of())
+        .map(log -> traversers.get(entityModel).currentState(log));
+  }
+
+  private <T, I, O> Mono<EventLog> eventLog(EventTrigger<T, I, O> eventTrigger, T inputData, List<ChangeSet<?>> nestedChanges) {
     return eventTrigger.createEntity() ?
         Mono.just(emptyEventLog(eventTrigger.entityModel())) :
-        eventLog(eventTrigger.entitySelectors().getFirst(), inputData, eventTrigger.entityModel());
+        eventLog(eventTrigger.entitySelectors().getFirst(), inputData, eventTrigger.entityModel(), nestedChanges);
   }
 
-  private <T> Mono<EventLog> eventLog(EntitySelector<T> entitySelector, T inputData, EntityModel entityModel) {
+  private EventLog logFromNestedChanges(EntityId entityId, List<ChangeSet<?>> nestedChanges) {
+    List<Change> changes = nestedChanges.stream()
+        .flatMap(changeSet -> changeSet.changes().stream())
+        .filter(change -> change.eventLog().entityId().equals(entityId))
+        .sorted(comparing(change -> change.newEvent().eventNumber()))
+        .toList();
+    System.out.println("Found log from nested changes: " + (changes.isEmpty() ? "No" : (changes.getLast().eventLog().entityModel().name() + ": " + changes.getLast().eventLog().events().stream().map(Event::typeName).collect(joining(",")))));
+    return changes.isEmpty() ? null : changes.getLast().eventLog().withNewEvent(changes.getLast().newEvent());
+  }
+
+  private <I, T> Mono<EventLog> eventLog(EntitySelector<I> entitySelector, I inputData, EntityModel entityModel, List<ChangeSet<?>> nestedChanges) {
+    System.out.println("Finding event log for " + entityModel.name() + " with selector type " + entitySelector.getClass().getSimpleName() + " (" + entitySelector.creationMode().name() + ")");
     return switch (entitySelector) {
-          case EntitySelector.ByIdFromSession<T> _ -> Mono.deferContextual(ctx -> Mono.just(eventLogFromSession(entityModel, ctx)));
-          case EntitySelector.ById<T> s -> switch (s.creationMode()) {
-            case NeverCreate -> eventLogByEntityId(entityModel, s.id().apply(inputData));
-            case CreateIfNotExists -> eventLogByEntityId(entityModel, s.id().apply(inputData))
-                .onErrorResume(UnknownEntity.class, _ -> Mono.just(emptyEventLog(entityModel, s.id().apply(inputData))));
-            case AlwaysCreate -> Mono.just(emptyEventLog(entityModel, s.id().apply(inputData)));
-          };
-          case EntitySelector.BySecondaryId<T> s -> switch (s.creationMode()) {
-            case NeverCreate -> eventsByLookupId.execute(entityModel, new SecondaryId(s.model(), s.id().apply(inputData)));
-            case CreateIfNotExists -> eventsByLookupId.execute(entityModel, new SecondaryId(s.model(), s.id().apply(inputData)))
-                .onErrorResume(UnknownEntity.class, _ -> Mono.just(emptyEventLog(entityModel)));
-            case AlwaysCreate -> Mono.just(emptyEventLog(entityModel));
-          };
-          case EntitySelector<?> s -> throw new IllegalStateException("Unexpected value: " + s);
+      case EntitySelector.ByIdFromSession<I> _ ->
+          Mono.deferContextual(ctx ->
+              Mono.justOrEmpty(ctx.<EntityId>getOrEmpty(entityModel))
+                  .switchIfEmpty(Mono.error(new RuntimeException("No id found in session")))
+//                  .doOnNext(entityId -> System.out.println("Found entity id for entity type " + entityModel.name() + " in session: " + entityId.value()))
+                  .flatMap(entityId -> Mono.justOrEmpty(ctx.<EventLog>getOrEmpty(entityId))
+//                      .doOnNext(eventLog -> System.out.println("Found event log for entity " + entityModel.name() + "/" + entityId.value() + " in session: " + eventLog.events().stream().map(Event::typeName).collect(joining(","))))
+                      .switchIfEmpty(eventLogByEntityId(entityModel, entityId))
+                  )
+          );
+      case EntitySelector.ById<I> s -> {
+        EntityId entityId = s.id().apply(inputData);
+        yield switch (s.creationMode()) {
+          case NeverCreate -> Mono.justOrEmpty(logFromNestedChanges(entityId, nestedChanges))
+              .switchIfEmpty(eventsByEntityId.execute(entityModel, entityId));
+          case CreateIfNotExists -> Mono.justOrEmpty(logFromNestedChanges(entityId, nestedChanges))
+              .switchIfEmpty(eventsByEntityId.execute(entityModel, entityId))
+              .onErrorResume(UnknownEntity.class, _ -> Mono.just(emptyEventLog(entityModel, entityId)));
+          case AlwaysCreate -> Mono.just(emptyEventLog(entityModel, s.id().apply(inputData)));
         };
+      }
+      case EntitySelector.BySecondaryId<I, ?> selector -> switch (selector.creationMode()) {
+        case NeverCreate -> eventsByLookupId.execute(entityModel, secondaryId(selector, inputData))
+            .onErrorResume(UnknownEntity.class, e -> selector.fallback() != null ? eventLog(selector.fallback(), inputData, entityModel, nestedChanges) : Mono.error(e));
+        case CreateIfNotExists -> eventsByLookupId.execute(entityModel, secondaryId(selector, inputData))
+            .onErrorResume(UnknownEntity.class, _ -> Mono.just(emptyEventLog(entityModel)));
+        case AlwaysCreate -> Mono.just(emptyEventLog(entityModel));
+      };
+      case EntitySelector.ByLastInIdGroup<I, ?> s -> switch (s.creationMode()) {
+        case AlwaysCreate -> throw new IllegalStateException("Unexpected value: " + s.creationMode());
+        case CreateIfNotExists ->
+            eventsByLastEntity.execute(entityModel, s.model(), s.group().apply(inputData), s.lastPosition())
+                .onErrorResume(EntityGroupNotInitialised.class, _ -> Mono.just(emptyEventLog(entityModel)));
+        case NeverCreate ->
+            eventsByLastEntity.execute(entityModel, s.model(), s.group().apply(inputData), s.lastPosition());
+      };
+//      case EntitySelector.ByNextInIdGroup<I, ?> s -> switch (s.creationMode()) {
+//        case AlwaysCreate -> null;
+//        case CreateIfNotExists -> null;
+//        case NeverCreate -> null;
+//      };
+      case EntitySelector<I> s -> throw new IllegalStateException("Unexpected value: " + s);
+    };
   }
 
-  public <T, I, O> Mono<Tuple2<ChangeSet<O>, EventLog>> calculateOnEvent(EventTrigger<T, I, O> eventTrigger, T inputData) {
-    return eventLog(eventTrigger, inputData).flatMap(eventLog -> calculateOnEvent(
-            "N/A", // TODO: correlationId
-            ZonedDateTime.now(clock),
-            eventLog,
-            eventTrigger.eventSpec().eventType(),
-            eventTrigger.eventSpec().inputAdapter().apply(inputData)
-        ).zipWith(Mono.just(eventLog))
-    );
+  private <I, T> SecondaryId<T> secondaryId(EntitySelector.BySecondaryId<I, T> selector, I inputData) {
+    return new SecondaryId<>(selector.model(), selector.id().apply(inputData));
   }
 
-  public <I, O> Mono<ChangeSet<O>> calculateForFilter(
+  public <T, I, O> Mono<ChangeSet<O>> calculateTriggeredEvent(
+      EventTrigger<T, I, O> eventTrigger,
+      T inputData,
       String correlationId,
       ZonedDateTime timestamp,
-      EventLog eventLog,
-      EventType<I, O> eventType,
-      I inputData
+      List<ChangeSet<?>> nestedChanges
   ) {
-    System.out.println(getClass().getName() + ": calculateForFilter " + eventType.name());
-    return calculateOnEvent(correlationId, timestamp, eventLog, eventType, inputData);
+    I adaptedData = eventTrigger.eventSpec().inputAdapter().apply(inputData);
+    return eventLog(eventTrigger, inputData, nestedChanges)
+        .doOnNext(log -> System.out.println(
+            "calculateTriggeredEvent " + eventTrigger.eventSpec().eventType().name() +
+                " on " + eventTrigger.entityModel().name() +
+                " with " + (adaptedData != null ? adaptedData : "nothing") +
+                " (log[" + log.entityModel().name() + "/" + log.entityId().value() + "]: " + log.events()
+                .stream()
+                .map(Event::typeName)
+                .collect(joining(", ")) + ") (other: " +
+                nestedChanges.stream()
+                    .flatMap(cs -> cs.changes().stream())
+                    .filter(c ->
+                        c.eventLog().entityModel().equals(eventTrigger.entityModel()) &&
+                            c.eventLog().entityId().equals(log.entityId()) &&
+                            c.newEvent() != null
+                    )
+                    .map(Change::newEvent)
+                    .map(e -> e.typeName() + "(" + e.eventNumber() + ")")
+                    .collect(joining(","))
+        ))
+        .map(eventLog -> transitionModel(eventLog, eventTrigger.eventSpec().eventType()))
+        .filter(tuple -> tuple.t2() != null) // Make sure there's a valid transition
+        .switchIfEmpty(Mono.error(new RejectedEvent(eventTrigger.eventSpec().eventType(), eventTrigger.entityModel(), "Nested change rejected")))
+        .retryWhen(RetrySpec.fixedDelay(3, Duration.ofMillis(500))
+            .filter(e -> e instanceof RejectedEvent)
+            // Avoid the "Thundering Herd" problem
+            .jitter(1.0)
+            .doAfterRetry(signal -> System.out.println(System.currentTimeMillis() + ": Retried (" + signal.totalRetries() + ") due to " + signal.failure().getMessage()))
+            // Rethrow the exception on exhaustion so it can be handled downstream
+            .onRetryExhaustedThrow((_, signal) -> signal.failure())
+        )
+        .flatMap(tuple -> tuple.t2().calculate(
+            tuple.t1().lastEventNumber() + 1,
+            tuple.t3(),
+            null,
+            this,
+            clock,
+            new InputEvent<>(tuple.t2().eventType(), adaptedData),
+            tuple.t1(),
+            timestamp,
+            correlationId
+        ))
+        .onErrorResume(UnknownEntity.class, e -> Mono.just(new ChangeSet<>(ProcessResult.unknownId(eventTrigger.eventSpec().eventType(), eventTrigger.entityModel(), e.secondaryId()), List.of())))
+        .onErrorResume(EntityGroupNotInitialised.class, e -> Mono.just(new ChangeSet<>(ProcessResult.rejected(eventTrigger.eventSpec().eventType(), eventTrigger.entityModel(), e.getMessage()), List.of())))
+        .onErrorResume(RejectedEvent.class, e -> Mono.just(ChangeSet.empty(ProcessResult.rejected(eventTrigger.eventSpec().eventType(), eventTrigger.entityModel(), e.getMessage()))));
   }
 
-  public <I, O> Mono<ChangeSet<O>> calculateOnEvent(
-      String correlationId,
-      ZonedDateTime timestamp,
-      EventLog eventLog,
-      EventType<I, O> eventType,
-      I inputData
-  ) {
-    System.out.println(getClass().getName() + ": calculateOnEvent(" + eventType.name() + ") with data " + inputData + " on entity " + eventLog.entityId().value() + " and log " + eventLog.events().stream().map(Event::typeName).collect(joining(", ")));
-    TraversableState currentState = begin(eventLog.entityModel()).forward(eventLog.effectiveEvents()
-        .stream()
-        .map(Event::type)
-        .toList());
-    var transitionModel = currentState.transition(eventType);
-    if (transitionModel == null) {
-      System.out.println(getClass().getName() + ": State " + eventLog.entityModel() + "[id=" + eventLog.entityId().value() + "]:" + currentState.state()
-          + " does not accept " + eventType.name() + " (" + eventType.id() + ")");
-      return Mono.just(ChangeSet.empty(ProcessResult.rejected(
-          "State " + eventLog.entityModel() + "[id=" + eventLog.entityId().value() + "]:" + currentState.state()
-              + " does not accept " + eventType.name() + " (" + eventType.id() + ")"
-      )));
-    } else {
-      System.out.println(getClass().getName() + ": State " + eventLog.entityModel() + "[id=" + eventLog.entityId().value() + "]:" + currentState.state()
-          + " accepts " + eventType.name() + " (" + eventType.id() + ")");
+  public static class RejectedEvent extends RuntimeException {
+    private final String reason;
+    public RejectedEvent(EventType<?, ?> eventType, EntityModel entityModel, String reason) {
+      super(eventType.name() + " on " + entityModel.name() + " was rejected");
+      this.reason = reason;
     }
-    return transitionModel.calculate(
-        currentState.state(),
-        null, // TODO: Handle incoming response
-        this,
-        clock,
-        new InputEvent<>(eventType, inputData),
-        eventLog,
-        timestamp,
-        correlationId
-//        )
-//        .flatMap(changeSet -> changeSet.changes()
-//            .reversed()
-//            .stream()
-//            .findFirst()
-//            .filter(lastChange -> lastChange.newEvent() != null)
-//            .map(change -> Mono.just(change)
-//                //.doOnNext(c -> System.out.println("Putting " + change.entityId() + " on context"))
-//                .contextWrite(ctx -> ctx.put(change.entityId(), eventLog.withNewEvent(change.newEvent())))
-//                .map(_ -> changeSet))
-//            .orElse(Mono.just(changeSet))
-        );
 
+    public String reason() {
+      return reason;
+    }
+  }
+
+  private <I, O> Tuple3<EventLog, TransitionModel<I, O>, State> transitionModel(EventLog eventLog, EventType<I, O> eventType) {
+    var traverser = traversers.get(eventLog.entityModel());
+    var currentState = traverser.currentState(eventLog);
+    // TODO
+    var modelForCurrentTransition = (TransitionModel<I, O>)traverser.accept(currentState, eventType);
+    return tuple(eventLog, modelForCurrentTransition, currentState);
   }
 
   public <I, T> Mono<ChangeSet<T>> calculateChange(EventType<I, T> eventType, EventLog eventLog, ZonedDateTime timestamp, String correlationId) {
-    System.out.println(getClass().getName() + ": Calculate change for scheduled event " + eventType.name());
-    TraversableState currentState = begin(eventLog.entityModel()).forward(eventLog.effectiveEvents().stream().map(Event::type).toList());
-    var transitionModel = currentState.transition(eventType);
+    Traverser traverser = traversers.get(eventLog.entityModel());
+    State currentState = traverser.currentState(eventLog);
+    TransitionModel<I, T> transitionModel = (TransitionModel<I, T>)traverser.accept(currentState, eventType); // TODO
     return transitionModel.calculate(
-        currentState.state(),
+        eventLog.lastEventNumber() + 1,
+        currentState,
         null,
         this,
         clock,
@@ -1892,57 +2068,37 @@ public class StateMachine {
     );
   }
 
-  private <I> Mono<ProcessResult> processEvents(
-      EventLog eventLog,
-      List<EventType<Void, ?>> scheduledEvents,
-      InputEvent<I> inputEvent,
-      IncomingMessage inflightMessage,
-      List<SecondaryId> idsForNewEntity
-  ) {
-    ZonedDateTime timestamp = ZonedDateTime.now(clock);
-    return calculateChange(
-        timestamp,
-        eventLog,
-        scheduledEvents,
-        inputEvent.eventType(),
-        inputEvent.data(),
-        inflightMessage,
-        idsForNewEntity
-    )
-        .switchIfEmpty(Mono.error(new IllegalStateException("Empty change result for event " + inputEvent)))
-        .flatMap(result -> switch (result.result().status()) {
-              case Accepted -> storeChanges(timestamp, result.changes(), eventLog);
-              case Rejected, Repeated, Conflicted, Failed, Raced -> Mono.just(result.result());
-            }
-        )
-        .onErrorResume(t -> Mono.just(
-            new ProcessResult(
-                Failed,
-                null,
-                toString(t)
-            )));
-  }
-
-//  private List<Change> toChanges(List<Transition<?, ?, ?, ?>> transitions) {
-//    return transitions.stream()
-//        .flatMap(transition -> toChanges(transition).stream())
-//        .toList();
-//  }
-//
-//  private List<Change> toChanges(Transition<?, ?, ?, ?> transition) {
-//    ArrayList<Change> changes = new ArrayList<>();
-//    changes.add(transition);
-//    if (transition.nestedTransition != null) {
-//      changes.addAll(toChanges(transition.nestedTransition.transitions()));
-//    }
-//    return changes;
+//  private <I> Mono<ProcessResult> processEvents(
+//      EventLog eventLog,
+//      InputEvent<I> inputEvent,
+//      IncomingMessage inflightMessage,
+//      String correlationId
+//  ) {
+//    ZonedDateTime timestamp = ZonedDateTime.now(clock);
+//    return calculateChange(
+//        timestamp,
+//        correlationId,
+//        eventLog,
+//        inputEvent.eventType(),
+//        inputEvent.data(),
+//        inflightMessage
+//    )
+//        .switchIfEmpty(Mono.error(new IllegalStateException("Empty change result for event " + inputEvent)))
+//        .flatMap(result -> switch (result.result()) {
+//              case Accepted r -> storeChanges(timestamp, result.changes());
+//              case ProcessResult r -> Mono.just(r);
+//            }
+//        )
+//        .onErrorResume(t -> Mono.just(new ProcessResult.Failed(toString(t))));
 //  }
 
   private List<Listener.Change> toListenerFormat(List<Change> changes) {
-    return changes.stream().map(change -> new Listener.Change(
+    return changes.stream()
+        .filter(Change::storeEvent)
+        .map(change -> new Listener.Change(
                 new Listener.Change.Entity(
-                    change.entityModel().name(),
-                    change.entityId().value(),
+                    change.eventLog().entityModel().name(),
+                    change.eventLog().entityId().value(),
                     change.newSecondaryIds().stream().map(id -> id.model().name() + ":" + id.data()).toList()
                 ),
                 change.deadline(),
@@ -1953,10 +2109,15 @@ public class StateMachine {
                 ) : null,
                 change.toState() != null ? change.toState().name() : "self",
                 change.newSecondaryIds().stream().map(id -> id.model().name() + ":" + id.data()).toList(),
-                change.incomingRequest() != null ? List.of(change.incomingRequest().message().requestLine()) : List.of(),
+                //change.incomingRequest() != null ? List.of(change.incomingRequest().message().requestLine()) : List.of(),
                 //change.outgoingResponse() != null ? List.of(change.outgoingResponse().message().statusLine()) : List.of(),
-                change.outgoingRequests().stream().map(r -> r.message().requestLine()).toList(),
-                change.incomingResponse() != null ? List.of(change.incomingResponse().message().statusLine()) : List.of()
+                change.outgoingRequests().stream()
+                    .map(r -> r.message().message().substring(0, Math.min(1000, r.message().message().length())))
+                    .toList(),
+                change.incomingResponse() != null ?
+                    List.of(change.incomingResponse().message().message()
+                        .substring(0, Math.min(1000, change.incomingResponse().message().message().length()))) :
+                    List.of()
             )
         )
         .toList();
@@ -1983,85 +2144,70 @@ public class StateMachine {
     return unmodifiableList(l);
   }
 
-  private Mono<ProcessResult> storeChanges(
+  private Mono<Void> storeChanges(
       ZonedDateTime timestamp,
-      List<Change> unfilteredChanges,
-      EventLog eventLog
+      List<Change> changes
   ) {
-    List<Change> changes = unfilteredChanges.stream()
+//    System.out.println("storeChanges " + unfilteredChanges.stream().map(c -> c.newEvent() != null ? c.eventLog().entityModel().name() + "/" + c.newEvent().typeName() : "N/A").collect(Collectors.joining(", ")));
+    List<Change> storableChanges = changes.stream()
         .filter(change -> change.newEvent() == null || !(change.newEvent().type() instanceof BasicEventType.ReadOnly))
         .toList();
-    if (changes.isEmpty()) return Mono.just(ProcessResult.accepted());
-    System.out.println(getClass().getName() + ": Storing changes...");
-    return correlationId() // TODO: Already have correlationId in _change_
+//    if (changes.isEmpty()) return Mono.just(ProcessResult.accepted());
+    return Mono.just(changes.getFirst()
+              .correlationId()) //correlationId() // TODO: Already have correlationId in _change_
         // TODO: Not really handling multiple changes at once
         .delayUntil(c -> changes.getLast().newEvent() == null ?
             Mono.empty() :
             delayer.apply(List.of(c + "-" + changes.getLast().newEvent().typeName()))
         )
-        .flatMap(correlationId -> changeState.execute(timestamp, changes)
-            .collectList()
-            .flatMap(x -> Mono.just("")
-                .contextWrite((ctx) -> {
-                      changes.stream()
-                          .filter(change -> change.newEvent() != null)
-                          .collect(Collectors.groupingBy(
-                              Change::entityId,
-                              Collectors.mapping(Change::newEvent, Collectors.toList())
-                          ))
-                          .forEach((entityId, eventList) -> ctx.<One<Event<?>>>getOrEmpty("RS" + entityId.value())
-                              .map(responseSink -> {
-                                eventList.sort(Comparator.comparing(Event::eventNumber));
-                                System.out.println(getClass().getName() +
-                                    ": RS: Writing event to RS for " + entityId.value() + ": " + eventList.getLast()
-                                        .type()
-                                        .name());
-                                responseSink.tryEmitValue(eventList.getLast());
-                                return responseSink;
-                              }));
-                      return ctx;
-                    }
-                ).thenReturn(x)
-            )
-            .doOnNext(_ -> listener.changeAccepted(changes.getFirst().correlationId(), toListenerFormat(changes)))
-            // Forward outgoing requests (for guaranteed delivery this will be the first attempt)
-            .transformDeferredContextual((publisher, ctx) -> publisher
-                .doOnNext(outboxElementsToForward -> outboxElementsToForward.forEach(q ->
-                        forwardInitial(
-                            changes.get(q.changeIndex()),
-                            q.elementId(),
-                            q.requestId(),
-                            changes.get(q.changeIndex()).outgoingRequests().get(q.messageIndex()),
-                            correlationId
-                        ).contextWrite(ctx).subscribe()
+        .flatMap(correlationId -> changeState.execute(
+                    timestamp,
+                    storableChanges.stream()
+                        .filter(c -> c.newEvent() == null || !(c.newEvent().type() instanceof BasicEventType.ReadOnly))
+                        .toList()
+                )
+                .collectList()
+//            .doOnNext(outboxElements -> System.out.println("To forward:\n" + outboxElements.stream().map(e -> e.toString()).collect(joining("\n"))))
+                .flatMap(x -> Mono.just("")
+                    .contextWrite(ctx -> {
+                          changes.stream()
+                              .filter(change -> change.newEvent() != null && change.storeEvent())
+                              .collect(Collectors.groupingBy(
+                                  change -> change.eventLog().entityId(),
+                                  Collectors.toList()
+                              ))
+                              .forEach((entityId, changeList) -> {
+                                changeList.sort(comparing(change -> change.newEvent().eventNumber()));
+                                ctx.<Many<Event<?>>>getOrEmpty("RS/" + entityId.value())
+                                    .map(responseSink -> {
+                                      System.out.println("Sending events to response sink for changes:\n" + changeList.stream().map(c -> c.toString()).collect(joining("\n")));
+                                      changeList.forEach(change -> responseSink.tryEmitNext(change.newEvent()).orThrow());
+                                      return responseSink;
+                                    });
+                              });
+                          return ctx;
+                        }
+                    ).thenReturn(x)
+                )
+                .doOnNext(_ -> {
+                  if (!storableChanges.isEmpty())
+                    listener.changeAccepted(storableChanges.getFirst().correlationId(), toListenerFormat(storableChanges));
+                })
+                // Forward outgoing requests (for guaranteed delivery this will be the first attempt)
+                .transformDeferredContextual((publisher, ctx) -> publisher
+                    .doOnNext(outboxElementsToForward -> outboxElementsToForward.forEach(q ->
+                            forwardInitial(
+                                storableChanges.get(q.changeIndex()),
+                                q.elementId(),
+                                q.requestId(),
+                                storableChanges.get(q.changeIndex()).outgoingRequests().get(q.messageIndex()),
+                                correlationId,
+                                timestamp
+                            ).contextWrite(ctx).subscribe()
+                        )
                     )
                 )
-            )
-            .thenReturn(new ProcessResult(
-                Accepted,
-                null, //unfilteredChanges.isEmpty() ? null : ofNullable(unfilteredChanges.getLast().outgoingResponse()).map(OutgoingResponse::message).orElse(null),
-                null
-            ))
-            .onErrorResume(
-                SecondaryIdAlreadyExists.class,
-                e -> eventsByLookupId.execute(e.change().entityModel(), e.secondaryId()).flatMap(el ->
-                    calculateOnEvent(
-                        new EventTrigger<>(
-                            new EventSpec<>(BuiltinEventTypes.SecondaryIdAlreadyExists, Function.identity()),
-                            List.of(entityId(e.change().entityId(), CreateIfNotExists)),
-                            e.change().entityModel(),
-                            false
-                        ),
-                        tuple(e.change(), e.secondaryId(), el)
-                    )
-                        .flatMap(changeSetAndEventLog -> storeChanges(
-                            ZonedDateTime.now(clock),
-                            changeSetAndEventLog.getT1().changes(),
-                            changeSetAndEventLog.getT2()
-                        ))
-                )
-            )
-            .onErrorResume(error -> handleTransitionError(changes, error, eventLog))
+                .then()
         );
   }
 
@@ -2070,18 +2216,23 @@ public class StateMachine {
       byte[] queueElementId,
       UUID requestId,
       OutgoingRequest outgoingRequest,
-      String correlationId
+      String correlationId,
+      ZonedDateTime timestamp
   ) {
+//    System.out.println(
+//        "forwardInitial: " + change.eventLog().entityModel().name() + "/" + change.eventLog().entityId().value() + "/"
+//            + (change.newEvent() == null ? "<no event>" : change.newEvent().type().name()) + "/"
+//            + (change.newEvent() == null ? "<no event number>" : change.newEvent().eventNumber()));
     var queueElement = new OutboxElement(
         queueElementId,
         requestId,
-        change.entityId(),
-        change.entityModel(),
+        change.eventLog().entityId(),
+        change.eventLog().entityModel(),
         outgoingRequest.eventNumber(),
         outgoingRequest.creatorId(),
         outgoingRequest.queue(),
         outgoingRequest.guaranteed(),
-        change.newEvent().timestamp(),
+        timestamp,
         outgoingRequest.message(),
         correlationId,
         1,
@@ -2092,16 +2243,18 @@ public class StateMachine {
   }
 
   Mono<ForwardStatus> forward(OutboxElement queueElement) {
+//    System.out.println("forward: " + queueElement.entityModel().name() + "/" + queueElement.entityId().value() + "/" + queueElement.eventNumber());
     return doForward(queueElement, 0, null).contextWrite(Correlation.contextOf(queueElement.correlationId()));
   }
 
   private record ResponseValidationResult(Result validationResult, Message.IncomingResponse response) {}
 
-  public Mono<EventLog> log(SecondaryId secondaryId, EntityModel entityModel) {
+  public Mono<EventLog> trace(SecondaryId<?> secondaryId, EntityModel entityModel) {
     return eventsByLookupId.execute(entityModel, secondaryId);
   }
 
   private Mono<ForwardStatus> doForward(OutboxElement queueElement, int maxRetryAttempts, Duration retryInterval) {
+//    System.out.println("doForward: " + queueElement.entityModel().name() + "/" + queueElement.entityId().value() + "/" + queueElement.eventNumber());
     OutgoingRequestCreator<?> c = outgoingRequestCreators.get(queueElement.creatorId());
     Mono<HttpRequestMessage> requestMessage = c != null && queueElement.attempt() > 1 ?
         c.repeatedReactive(queueElement.data()) :
@@ -2136,26 +2289,31 @@ public class StateMachine {
               .onErrorResume(TransientError.class, e -> Mono.just(e.transientResult))
               .flatMap(validationOutput ->
                   (validationOutput.validationResult().inputEvent() != null ?
-                      processEvents(
-                          eventLog,
-                          List.of(),
+                      onEvent(
+                          queueElement.correlationId(),
                           validationOutput.validationResult().inputEvent(),
-                          validationOutput.response(),
-                          List.of()
+                          eventLog,
+                          validationOutput.response
                       )
-                          .flatMap(processResult -> processResult.status() != Status.Raced ?
-                              Mono.just(processResult) :
-                              Mono.error(new ProcessEventsRaced())
+//                      processEvents(
+//                          eventLog,
+//                          validationOutput.validationResult().inputEvent(),
+//                          validationOutput.response(),
+//                          queueElement.correlationId()
+//                      )
+                          .flatMap(processResult -> processResult instanceof Raced ?
+                              Mono.error(new ProcessEventsRaced()) :
+                              Mono.just(processResult)
                           )
                           .retryWhen(RetrySpec.fixedDelay(3, Duration.ofMillis(100))
                               .filter(e -> e instanceof ProcessEventsRaced))
-                          .flatMap(processResult -> Mono.deferContextual(ctx -> {
-                            if (processResult.responseMessage() != null && hasResponseSink(ctx)) {
-                              One<HttpResponseMessage> sink = responseSink(ctx);
-                              sink.tryEmitValue(processResult.responseMessage());
-                            }
-                            return Mono.just(processResult);
-                          }))
+//                          .flatMap(processResult -> Mono.deferContextual(ctx -> {
+//                            if (processResult.responseMessage() != null && hasResponseSink(ctx)) {
+//                              One<HttpResponseMessage> sink = responseSink(ctx);
+//                              sink.tryEmitValue(processResult.responseMessage());
+//                            }
+//                            return Mono.just(processResult);
+//                          }))
                           .map(processResult -> new IncomingResponseStatus(
                               validationOutput.response(),
                               processResult,
@@ -2163,14 +2321,14 @@ public class StateMachine {
                           )) :
                       Mono.just(new IncomingResponseStatus(
                           validationOutput.response(),
-                          new ProcessResult(Rejected, null, "No event from response validator " + responseValidator.getClass()),
+                          ProcessResult.rejected(null, queueElement.entityModel(), "No event from response validator " + responseValidator.getClass()),
                           validationOutput.validationResult()
                       )
                   )
               ))
-              .flatMap(result -> switch (result.processResult.status()) {
-                    case Accepted, Status.Repeated -> Mono.just(ForwardStatus.Ok);
-                    case Rejected -> switch (result.validationResult().status()) {
+              .flatMap(result -> switch (result.processResult()) {
+                    case Accepted _ -> Mono.just(ForwardStatus.Ok);
+                    case Rejected r -> switch (result.validationResult().status()) {
                       case Ok -> dequeueAndStoreReceipt.execute(
                               queueElement,
                               result.response().message(),
@@ -2184,17 +2342,17 @@ public class StateMachine {
                                   (result.validationResult().inputEvent() != null ?
                                       result.validationResult().inputEvent().eventType().name() :
                                       "N/A"
-                                  ) + " was rejected: " + result.processResult().error()
+                                  ) + " was rejected: " + r.reason()
                           ));
                       case PermanentError -> moveToDLQ.execute(queueElement, result.validationResult().message())
                           .doOnSuccess(_ -> logDead(queueElement, result.validationResult().message()))
                           .thenReturn(ForwardStatus.Ok);
                       case TransientError -> backOffOrDie(queueElement, requireNonNullElse(result.validationResult().message(), "TransientError")).thenReturn(ForwardStatus.Ok);
                     };
-                    case Status.Raced -> Mono.error(new IllegalStateException("Raced response not handled"));
-                    case Failed ->
-                        backOffOrDie(queueElement, result.processResult().error()).thenReturn(ForwardStatus.Ok);
-                    default -> Mono.error(new IllegalStateException("Unexpected value: " + result.processResult().status()));
+                    case Raced r -> Mono.error(new IllegalStateException("Raced response not handled"));
+                    case Failed r ->
+                        backOffOrDie(queueElement, r.reason()).thenReturn(ForwardStatus.Ok);
+                    case ProcessResult r -> Mono.error(new IllegalStateException("Unexpected value: " + r));
                   }
               );
         })
@@ -2204,7 +2362,8 @@ public class StateMachine {
   private static class ProcessEventsRaced extends RuntimeException {}
 
   private OutgoingRequestModel<?, ?> findOutgoingRequestModel(EventLog eventLog, int eventNumber, OutboxQueue queue, UUID requestModelId) {
-    TransitionModel<?, ?> transitionForEvent = requireNonNull(transitionForEventNumber(eventLog, eventNumber));
+    TransitionModel<?, ?> transitionForEvent = traversers.get(eventLog.entityModel())
+        .transitionForEventNumber(eventLog, eventNumber);
     return Stream.concat(
             transitionForEvent.outgoingRequests().stream(),
             ofNullable(transitionForEvent.reverseModel()).stream()
@@ -2382,11 +2541,11 @@ public class StateMachine {
 //    return secondaryIdFlux;
 //  }
 
-  public <I, P, O, U> Mono<OutgoingRequest> createOutgoingRequest(
+  public <P, U> Mono<OutgoingRequest> createOutgoingRequest(
+      boolean reverse,
       ZonedDateTime timestamp,
       Entity entity,
       P assembledData,
-      EventType<I, O> eventType,
       int eventNumber,
       List<Change> nestedChanges,
       OutgoingRequestModel<P, U> model,
@@ -2395,148 +2554,30 @@ public class StateMachine {
     OutgoingRequestCreator<U> creator = model.creatorType() != null ?
         beanRegistry.getBean(model.creatorType()) :
         model.creator();
-    EntityId parentEntity = nestedChanges.stream().filter(nc -> nc.entityModel().equals(entity.model().parentEntity())).map(Change::entityId).findFirst().orElse(null);
-    return (eventType instanceof BasicEventType.Rollback ?
-        outgoingRequestByEvent.execute(entity.id(), eventNumber)
+    System.out.println("createOutgoingRequest (" + (reverse ? "<reverse>" : "")  + " for event number " + eventNumber + " on " + entity.model.name() + " with " + creator.getClass().getSimpleName());
+    EntityId parentEntity = nestedChanges.stream().filter(nc -> nc.eventLog().entityModel().equals(entity.model().parentEntity())).map(c -> c.eventLog().entityId()).findFirst().orElse(null);
+    return (reverse ?
+        outgoingRequestByEvent.execute(entity.id(), eventNumber, model.queue())
+            .switchIfEmpty(creator.reversedReactive(
+                model.dataAdapter().apply(assembledData),
+                reversalContext(null, entity.id(), correlationId, timestamp)
+            ))
             .flatMap(originalMessage -> creator.reversedReactive(
-            model.dataAdapter().apply(assembledData),
-            new ReversalContext() {
-
-              @Override
-              public HttpRequestMessage originalRequest() {
-                return originalMessage;
-              }
-
-              @Override
-              public EntityId entityId() {
-                return entity.id();
-              }
-
-              @Override
-              public String correlationId() {
-                return correlationId;
-              }
-
-              @Override
-              public ZonedDateTime timestamp() {
-                return timestamp;
-              }
-
-//              @Override
-//              public List<Entity> nestedEntities() {
-//                //noinspection SimplifyStreamApiCallChains
-//                return processResults.stream().filter(r -> r.entity() != null).map(ProcessResult::entity).toList();
-//              }
-//
-//              @Override
-//              public Entity nestedEntity(String entityName) {
-//                return nestedEntities().stream()
-//                    .filter(entity -> entity.model().name().equals(entityName))
-//                    .findFirst()
-//                    .orElse(null);
-//              }
-//
-//              @Override
-//              public SecondaryId secondaryId(String entityName, SecondaryIdModel idModel) {
-//                var entity = nestedEntity(entityName);
-//                if (entity == null)
-//                  throw new RequirementsNotFulfilled("No nested entity " + entityName);
-//                return entity.secondaryIds().stream()
-//                    .filter(sid -> sid.model() == idModel)
-//                    .findFirst()
-//                    .orElseThrow(() -> new RequirementsNotFulfilled("No secondary id " + entityName + "/" + idModel.name()));
-//              }
-//
-//              @Override
-//              public ProcessResult processResult(EntityModel entityType, EntityId entityId) {
-//                return processResults.stream().filter(r -> r.entity().model() == entityType && r.entity().id().equals(entityId)).findFirst().orElseThrow();
-//              }
-//
-//              @Override
-//              public <T> Event<T> processedEvent(EventType<?, T> eventType) {
-//                return processedEvents.stream()
-//                    .map(e -> (Event<T>) e)
-//                    .filter(e -> e.type() == eventType)
-//                    .findFirst()
-//                    .orElseThrow();
-//              }
-            }
-
-        )) :
-        creator.createReactive(
-            model.dataAdapter().apply(assembledData),
-            new OutgoingRequestCreator.Context() {
-              @Override
-              public EntityId entityId() {
-                return entity.id();
-              }
-
-              @Override
-              public String correlationId() {
-                return correlationId;
-              }
-
-              @Override
-              public ZonedDateTime timestamp() {
-                return timestamp;
-              }
-
-//              @Override
-//              public List<Entity> nestedEntities() {
-//                //noinspection SimplifyStreamApiCallChains
-//                return processResults.stream().filter(r -> r.entity() != null).map(ProcessResult::entity).toList();
-//              }
-//
-//              @Override
-//              public Entity nestedEntity(String entityName) {
-//                return nestedEntities().stream()
-//                    .filter(entity -> entity.model().name().equals(entityName))
-//                    .findFirst()
-//                    .orElse(null);
-//              }
-//
-//              @Override
-//              public SecondaryId secondaryId(String entityName, SecondaryIdModel idModel) {
-//                var entity = nestedEntity(entityName);
-//                if (entity == null)
-//                  throw new RequirementsNotFulfilled("No nested entity " + entityName);
-//                return entity.secondaryIds().stream()
-//                    .filter(sid -> sid.model() == idModel)
-//                    .findFirst()
-//                    .orElseThrow(() -> new RequirementsNotFulfilled("No secondary id " + entityName + "/" + idModel.name()));
-//              }
-//
-//              @Override
-//              public ProcessResult processResult(EntityModel entityType, EntityId entityId) {
-//                if (transition.nestedTransition != null &&
-//                    transition.nestedTransition.entity.model() == entityType &&
-//                    transition.nestedTransition.entity.id().equals(entityId))
-//                    return transition.nestedTransition.result;
-//                throw new NoSuchElementException();
-//                //processResults.stream().filter(r -> r.entity().model() == entityType && r.entity().id().equals(entityId)).findFirst().orElseThrow();
-//              }
-//
-//              @Override
-//              public <T> Event<T> processedEvent(EventType<?, T> eventType) {
-//                return processedEvents.stream()
-//                    .map(e -> (Event<T>) e)
-//                    .filter(e -> e.type() == eventType)
-//                    .findFirst()
-//                    .orElseThrow();
-//              }
-            }
-        ))
-        .map(message -> new OutgoingRequest(
-            UUID.randomUUID(),
-            eventNumber,
-            message,
-            model.queue(),
-            creator.id(),
-            model.guaranteed(),
-            model.maxRetryAttempts(),
-            model.retryInterval(),
-            parentEntity
-        ));
+                model.dataAdapter().apply(assembledData),
+                reversalContext(originalMessage, entity.id(), correlationId, timestamp)
+            )) :
+        creator.createReactive(model.dataAdapter().apply(assembledData), context(entity.id(), correlationId, timestamp))
+    ).map(message -> new OutgoingRequest(
+        UUID.randomUUID(),
+        eventNumber,
+        message,
+        model.queue(),
+        creator.id(),
+        model.guaranteed(),
+        model.maxRetryAttempts(),
+        model.retryInterval(),
+        parentEntity
+    ));
   }
 
 //  public <P, U> Mono<OutgoingResponse> createOutgoingResponse(
@@ -2591,19 +2632,19 @@ public class StateMachine {
 
   private Mono<ProcessResult> handleTransitionError(
       List<Change> changes,
-      Throwable e,
-      EventLog eventLog
+      Throwable e//,
+      //EventLog eventLog
   ) {
-    EntityId entityId = changes.getLast().entityId();
-    EntityModel entityModel = changes.getLast().entityModel();
-    Message.IncomingRequest incomingRequest = changes.getLast().incomingRequest();
+//    EntityId entityId = changes.getLast().entityId();
+//    EntityModel entityModel = changes.getLast().entityModel();
+    //Message.IncomingRequest incomingRequest = changes.getLast().incomingRequest();
     Supplier<Mono<ProcessResult>> handleRaceOrError = () -> {
       if (e instanceof ChangeRaced cr) {
         return withCorrelationId(correlationId -> listener.changeRaced(correlationId, toListenerFormat(changes), cr))
-            .thenReturn(new ProcessResult(Status.Raced, null, null));
+            .thenReturn(new ProcessResult.Raced());
       } else {
         return withCorrelationId(correlationId -> listener.changeFailed(correlationId, toListenerFormat(changes), e))
-            .thenReturn(new ProcessResult(Failed, null, toString(e)));
+            .thenReturn(new ProcessResult.Failed(toString(e)));
       }
     };
 //    if (e instanceof DuplicateMessage) {
@@ -2637,16 +2678,16 @@ public class StateMachine {
     }
   }
 
-  private TraversableState traverseTo(int eventNumber, EntityModel entityModel, List<Event<?>> eventLog) {
-    TraversableState state = begin(entityModel);
-    // Skip till eventNumber
-    for (var event : eventLog) {
-      if (event.eventNumber() <= eventNumber) {
-        state = state.forward(event.type());
-      }
-    }
-    return state;
-  }
+//  private TraversableState traverseTo(int eventNumber, EntityModel entityModel, List<Event<?>> eventLog) {
+//    TraversableState state = begin(entityModel);
+//    // Skip till eventNumber
+//    for (var event : eventLog) {
+//      if (event.eventNumber() <= eventNumber) {
+//        state = state.forward(event.type());
+//      }
+//    }
+//    return state;
+//  }
 
 //  private List<Event<?>> createScheduledEvents(List<EventType<Void, ?>> scheduledEventTypes, EventLog eventLog) {
 //    return IntStream.range(0, scheduledEventTypes.size())
@@ -2692,13 +2733,24 @@ public class StateMachine {
 //  }
 
   private TransitionModel<?, ?> transitionForEventNumber(EventLog eventLog, int eventNumber) {
+    Traverser traverser = traversers.get(eventLog.entityModel());
+//    var currentState = traverser.currentState(eventLog);
     var events = eventLog.events();
-    if (events.isEmpty()) return null;
-    TraversableState state = begin(eventLog.entityModel());
+    if (events.isEmpty()) {
+      throw new IllegalStateException("Event log is empty");
+    }
+//    TraversableState state = begin(eventLog.entityModel());
+    State state = eventLog.entityModel().initialState();
     for (var event : events) {
-      if (event.eventNumber() == eventNumber)
-        return state.transition(event.type());
-      state = state.forward(event.type());
+      if (event.eventNumber() == eventNumber) {
+        State workingState = state;
+        return ofNullable(traverser.accept(state, event.type()))
+            .orElseThrow(() -> new IllegalStateException(
+                "No transition for event " + event.typeName() + " on " + eventLog.entityModel().name() + " from "
+                    + workingState.name()));
+        //return state.transition(event.type(), true);
+      }
+      state = traverser.targetState(state, event.type());//state.forward(event.type());
     }
     throw new IllegalStateException("Event number " + eventNumber + " not found in event log");
   }
@@ -2719,11 +2771,14 @@ public class StateMachine {
     return new EntityId.UUID(UUID.randomUUID());
   }
 
-  private TraversableState begin(EntityModel model) {
-    System.out.println(getClass().getName() + ": Getting traverser for model " + model.name() + " (" + model.id() + ", " + model.getClass().getName() + ")");
-    var r = begin.get(model);
-    if (r == null) throw new IllegalStateException("Traverser for " + model.name() + " (" + model.id() + ") not found");
-    return r;
+  public Traverser traverser(EntityModel entityModel) {
+    return traversers.get(entityModel);
   }
+
+//  private TraversableState begin(EntityModel model) {
+//    var r = begin.get(model);
+//    if (r == null) throw new IllegalStateException("Traverser for " + model.name() + " (" + model.id() + ") not found");
+//    return r;
+//  }
 
 }

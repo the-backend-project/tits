@@ -80,10 +80,10 @@ public class BasicEventType<I, O> implements EventType<I, O> {
     }
   }
 
-  public static class ReadOnly<O> extends BasicEventType<Void, O> {
+  public static class ReadOnly<I, O> extends BasicEventType<I, O> {
 
-    public ReadOnly(String name, UUID id, Class<O> outputDataType) {
-      super(name, id, new DataType<>(Void.class), new DataType<>(outputDataType));
+    public ReadOnly(String name, UUID id, Class<I> inputDataType, Class<O> outputDataType) {
+      super(name, id, new DataType<>(inputDataType), new DataType<>(outputDataType));
     }
   }
 

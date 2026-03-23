@@ -14,63 +14,49 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZonedDateTime;
 import java.util.List;
+import java.util.UUID;
 import java.util.stream.Stream;
 
 public final class Event<T> {
 
+  private final UUID entityId;
   private final Integer eventNumber;
   private final EventType<?, T> type;
   private final ZonedDateTime timestamp;
-  private final String messageId;
-  private final String clientId;
   private String data;
   private T unmarshalledData;
 
-  public Event(Integer eventNumber, EventType<?, T> type, Clock clock, String messageId, String clientId) {
-    this(eventNumber, type, LocalDateTime.ofInstant(clock.instant(), clock.getZone()), clock, messageId, clientId, null);
+  public Event(UUID entityId, Integer eventNumber, EventType<?, T> type, Clock clock) {
+    this(entityId, eventNumber, type, LocalDateTime.ofInstant(clock.instant(), clock.getZone()), clock, null);
   }
 
-  public <I> Event(Integer eventNumber, EventType<I, T> type, Clock clock, String messageId, String clientId, T data) {
-    this(eventNumber, type, LocalDateTime.ofInstant(clock.instant(), clock.getZone()), clock, messageId, clientId, marshal(data));
+  public Event(UUID entityId, Integer eventNumber, EventType<?, T> type, Clock clock, T data) {
+    this(entityId, eventNumber, type, LocalDateTime.ofInstant(clock.instant(), clock.getZone()), clock, marshal(data));
     this.unmarshalledData = data;
   }
 
-  public Event(Integer eventNumber, EventType<?, T> type, Clock clock, T data) {
-    this(eventNumber, type, LocalDateTime.ofInstant(clock.instant(), clock.getZone()), clock, null, null, marshal(data));
-    this.unmarshalledData = data;
+  public Event(UUID entityId, Integer eventNumber, EventType<?, T> type, Clock clock, String data) {
+    this(entityId, eventNumber, type, LocalDateTime.ofInstant(clock.instant(), clock.getZone()), clock, data);
   }
 
-  public Event(Integer eventNumber, EventType<?, T> type, Clock clock, String messageId, String clientId, String data) {
-    this(eventNumber, type, LocalDateTime.ofInstant(clock.instant(), clock.getZone()), clock, messageId, clientId, data);
-  }
-
-  public Event(Integer eventNumber, EventType<?, T> type, Clock clock) {
-    this(eventNumber, type, LocalDateTime.ofInstant(clock.instant(), clock.getZone()), clock, null, null, null);
-  }
-
-  public Event(Integer eventNumber, EventType<?, T> type, LocalDateTime timestamp, Clock clock, String messageId, String clientId, String data) {
+  public Event(UUID entityId, Integer eventNumber, EventType<?, T> type, LocalDateTime timestamp, Clock clock, String data) {
+    this.entityId = entityId;
 //    if (type.outputDataType().value() != Void.class)
 //      requireNonNull(data, "Event type <" + type.name() + "> requires data of type <" + type.outputDataType().value().getName() + ">");
-    requireNonNull(eventNumber);
-    requireNonNull(type);
+    requireNonNull(eventNumber, "eventNumber is null");
+    requireNonNull(type, "type is null");
     this.eventNumber = eventNumber;
     this.type = type;
     this.timestamp = ZonedDateTime.of(timestamp, clock.getZone());
-    this.messageId = messageId;
-    this.clientId = clientId;
     this.data = data;
+  }
+
+  public UUID entityId() {
+    return entityId;
   }
 
   public Integer eventNumber() {
     return eventNumber;
-  }
-
-  public String messageId() {
-    return messageId;
-  }
-
-  public String clientId() {
-    return clientId;
   }
 
   public ZonedDateTime timestamp() {
@@ -92,12 +78,11 @@ public final class Event<T> {
   @Override
   public String toString() {
     return "Event{" +
-        "eventNumber=" + eventNumber +
+        "entityId=" + entityId +
+        ", eventNumber=" + eventNumber +
         ", type=" + type +
         ", timestamp=" + timestamp +
         ", data=" + data +
-        ", clientId=" + clientId +
-        ", messageId=" + messageId +
         '}';
   }
 
@@ -113,10 +98,6 @@ public final class Event<T> {
       data = marshal(unmarshalledData);
     }
     return data;
-  }
-
-  public boolean isIncomingRequest() {
-    return clientId() != null;
   }
 
   static <EVENT> List<EVENT> join(List<EVENT> events, EVENT tail) {
@@ -163,9 +144,11 @@ public final class Event<T> {
     if (eventType.outputDataType().value() == HttpResponseMessage.class)
       return (T) HttpMessageParser.parseResponse(data);
     try {
-      return objectMapper.readerFor(eventType.outputDataType().value()).readValue(data);
-    } catch (JsonProcessingException e) {
-      throw new RuntimeException(e);
+//      return objectMapper.readerFor(eventType.outputDataType().value()).readValue(data);
+      var dataType = eventType.outputDataType();
+      return (dataType.value() != null ? objectMapper.readerFor(dataType.value()) : objectMapper.readerFor(dataType.typeReference())).readValue(data);
+    } catch (Exception e) {
+      throw new RuntimeException("Failed to unmarshal JSON event data for " + eventType.name() + ": " + e.getMessage(), e);
     }
   }
 

@@ -22,19 +22,18 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 
 public class Mappers {
 
   public static List<EventType<?, ?>> eventTypesFor(TransitionModel<?, ?> transition) {
-    if (transition.filters().isEmpty())
-      return List.of(transition.eventType());
-    else {
-      ArrayList<EventType<?, ?>> eventTypes = new ArrayList<>(transition.filters().size() + 1);
-      eventTypes.add(transition.eventType());
-      transition.filters().forEach(f -> eventTypes.add(f.alternative().model().eventType()));
-      return Collections.unmodifiableList(eventTypes);
-    }
+    ArrayList<EventType<?, ?>> eventTypes = new ArrayList<>();
+    eventTypes.add(transition.eventType());
+    if (transition.rejectModel() != null) eventTypes.addAll(eventTypesFor(transition.rejectModel()));
+    transition.duplicateModels().stream().map(Mappers::eventTypesFor).forEach(eventTypes::addAll);
+    transition.filters().stream().map(f -> f.alternative().model()).map(Mappers::eventTypesFor).forEach(eventTypes::addAll);
+    return Collections.unmodifiableList(eventTypes);
   }
 
   public static Function<UUID, EventType<?, ?>> eventTypeMapper(List<EventType<?, ?>> eventTypes) {
@@ -42,27 +41,29 @@ public class Mappers {
     return idToEventType::get;
   }
 
-  public static Function<Row, Event<?>> eventMapper(
+  public static BiFunction<EntityId, Row, Event<?>> eventMapper(
         List<EventType<?, ?>> eventTypes,
         Clock clock
-    ) {
-        var eventTypeMapper = Mappers.eventTypeMapper(eventTypes);
-        return (row) -> {
-            try {
-                return new Event<>(
-                        value(row, "EventNumber", Integer.class),
-                        eventTypeMapper.apply(row.get("Type", UUID.class)),
-                        value(row, "Timestamp", LocalDateTime.class),
-                        clock,
-                        nullableString(row, "MessageId"),
-                        nullableString(row, "ClientId"),
-                        nullableString(row, "Data")
-                );
-            } catch (Exception e) {
-                throw new MappingFailure(e);
-            }
-        };
-    }
+  ) {
+    var eventTypeMapper = Mappers.eventTypeMapper(eventTypes);
+    return (entityId, row) -> {
+      UUID eventTypeId = row.get("Type", UUID.class);
+      EventType<?, ?> eventType = eventTypeMapper.apply(eventTypeId);
+      if (eventType == null) throw new MappingFailure(format("No event type for type id %s", eventTypeId));
+      try {
+        return new Event<>(
+            entityId.value(),
+            value(row, "EventNumber", Integer.class),
+            eventType,
+            value(row, "Timestamp", LocalDateTime.class),
+            clock,
+            nullableString(row, "Data")
+        );
+      } catch (Exception e) {
+        throw new MappingFailure(e);
+      }
+    };
+  }
 
   static  Function<Row, OutboxElement> queueElementMapper(
       List<EntityModel> entityModels,

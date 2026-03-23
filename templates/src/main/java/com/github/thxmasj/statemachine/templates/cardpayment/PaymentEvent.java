@@ -1,9 +1,15 @@
 package com.github.thxmasj.statemachine.templates.cardpayment;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.github.thxmasj.statemachine.BasicEventType;
 import com.github.thxmasj.statemachine.EventType;
 import com.github.thxmasj.statemachine.EventType.DataType;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;
+import com.github.thxmasj.statemachine.Tuples.Tuple3;
+import com.github.thxmasj.statemachine.templates.cardpayment.AuthenticationDataCreator.AuthenticationData;
+import com.github.thxmasj.statemachine.templates.cardpayment.CaptureRequestDataCreator.CaptureRequestData;
+import com.github.thxmasj.statemachine.templates.cardpayment.validators.ValidatedAmount;
+import com.github.thxmasj.statemachine.templates.cardpayment.validators.ValidatedTransactionTime;
 import java.time.ZonedDateTime;
 import java.util.UUID;
 
@@ -11,12 +17,13 @@ public interface PaymentEvent {
 
   record Authorisation(
       String merchantId,
+      String clientId,
       Amount amount,
       String merchantReference,
       Boolean capture,
       Boolean inStore,
       ZonedDateTime transactionTime,
-      PaymentToken paymentToken,
+      String authenticationData,
       String simulation
   ) {}
 
@@ -29,8 +36,10 @@ public interface PaymentEvent {
   record Amount(
       String currency,
       long requested,
-      long cashback
-  ) {}
+      Breakdown breakdown
+  ) {
+    public record Breakdown(long purchase, long cashback) {}
+  }
 
   record Merchant(
       String aggregatorId,
@@ -57,20 +66,23 @@ public interface PaymentEvent {
   ) {}
 
   record Capture(
-      String correlationId,
       long amount,
       String simulation
   ) {}
 
   record Refund(
-      String correlationId,
       long amount,
       boolean inStore,
       ZonedDateTime transactionTime,
       String simulation
   ) {}
 
-  EventType<Tuple2<Authorisation, String>, Tuple2<Authorisation, Merchant>> PaymentRequest = BasicEventType.of("PaymentRequest", UUID.fromString("bf2eaeb5-cd26-4e5a-873e-f6d308387ec3"), new DataType<>(Authorisation.class, String.class), new DataType<>(Authorisation.class, Merchant.class));
+  EventType<Tuple2<Authorisation, String>, Void> PaymentRequest = BasicEventType.of("PaymentRequest", UUID.fromString("bf2eaeb5-cd26-4e5a-873e-f6d308387ec3"), new DataType<>(new TypeReference<>() {}, Authorisation.class, String.class), Void.class);
+  EventType<Tuple3<Authorisation, Merchant, AuthenticationData>, Tuple2<Authorisation, Merchant>> ValidPaymentRequest = BasicEventType.of("ValidPaymentRequest", UUID.fromString("a67a80c1-9b16-4445-9a14-76f114f49827"), new DataType<>(new TypeReference<>() {}, Authorisation.class, Merchant.class, AuthenticationData.class), new DataType<>(new TypeReference<>() {}, Authorisation.class, Merchant.class));
+  EventType<MerchantId, MerchantId> UnknownMerchant = BasicEventType.of("UnknownMerchant", UUID.fromString("85638b45-2bc6-4363-901f-7c35d8a642b6"), MerchantId.class);
+  EventType<MerchantId, MerchantId> IllegalMerchant = BasicEventType.of("IllegalMerchant", UUID.fromString("04ae10a7-fa0f-4f2e-bdbc-22371ef29c39"), MerchantId.class);
+  EventType<ValidatedAmount.Invalid, ValidatedAmount.Invalid> InvalidAmount = BasicEventType.of("InvalidAmount", UUID.fromString("c19e6784-4059-4216-b67b-087ca5f2e764"), ValidatedAmount.Invalid.class);
+  EventType<ValidatedTransactionTime.Invalid, ValidatedTransactionTime.Invalid> InvalidTransactionTime = BasicEventType.of("InvalidTransactionTime", UUID.fromString("9db62961-6fc5-48e1-95fe-0157d62f309c"), ValidatedTransactionTime.Invalid.class);
   EventType<AuthenticationResult, Void> AuthenticationFailed = BasicEventType.of("AuthenticationFailed", UUID.fromString("ad1dc496-ecdd-4871-9a87-715df7b30aac"), AuthenticationResult.class, Void.class);
   EventType<AuthenticationResult, AuthenticationResult> Preauthorisation = BasicEventType.of("Preauthorisation", UUID.fromString("8327e33f-65bd-42f8-90da-8ba977c979a1"), AuthenticationResult.class);
   EventType<AcquirerResponse, AcquirerResponse> PreauthorisationApproved = BasicEventType.of("PreauthorisationApproved", UUID.fromString("ef315a8e-b9e7-4434-8710-4d238e6ac9c0"), AcquirerResponse.class);
@@ -82,7 +94,7 @@ public interface PaymentEvent {
   EventType<AcquirerResponse, AcquirerResponse> AuthorisationApproved = BasicEventType.of("AuthorisationApproved", UUID.fromString("4a3821a0-dbba-448b-8175-c40e4a771df4"), AcquirerResponse.class);
   EventType<AcquirerResponse, AcquirerResponse> AuthorisationAdviceApproved = BasicEventType.of("AuthorisationAdviceApproved", UUID.fromString("c1fd88f3-2821-4c4d-bee1-52750f10f554"), AcquirerResponse.class);
   EventType<Capture, Capture> CaptureRequest = BasicEventType.of("CaptureRequest", UUID.fromString("b4cef9f9-c9dd-40e4-a627-25ba529aec2e"), Capture.class);
-  EventType<Capture, Capture> AcceptedCapture = BasicEventType.of("AcceptedCapture", UUID.fromString("0cce8545-ce69-4c4c-8e42-056df84297e7"), Capture.class);
+  EventType<CaptureRequestData, Capture> AcceptedCapture = BasicEventType.of("AcceptedCapture", UUID.fromString("0cce8545-ce69-4c4c-8e42-056df84297e7"), CaptureRequestData.class, Capture.class);
   EventType<Capture, Capture> DeclinedCapture = BasicEventType.of("DeclinedCapture", UUID.fromString("d39b2369-f88a-482e-8715-49de39fbdf93"), Capture.class);
   EventType<AcquirerResponse, AcquirerResponse> CaptureApproved = BasicEventType.of("CaptureApproved", UUID.fromString("6186a241-f9e0-40ae-b444-6ce5e2509dcc"), AcquirerResponse.class);
   EventType<Refund, Refund> RefundRequest = BasicEventType.of("RefundRequest", UUID.fromString("4f6d6f15-f8a4-477e-b750-dc52a1f245eb"), Refund.class);

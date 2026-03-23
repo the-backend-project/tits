@@ -1,0 +1,134 @@
+package com.github.thxmasj.statemachine;
+
+import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
+import static java.util.Collections.unmodifiableList;
+import static java.util.stream.Collectors.joining;
+
+import com.github.thxmasj.statemachine.BasicEventType.Rollback;
+import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+public class Traverser {
+
+  private final Map<State, List<TransitionModel<?, ?>>> transitions;
+
+  public Traverser(Map<State, List<TransitionModel<?, ?>>> transitions) {this.transitions = transitions;}
+
+  public State currentState(EventLog eventLog) {
+    var effectiveEvents = eventLog.effectiveEvents();
+//    System.out.printf(
+//        """
+//        Traverser.currentState:
+//        Effective events: %s
+//        Actual events:    %s
+//        """,
+//        effectiveEvents.stream().map(Event::typeName).collect(joining(", ")),
+//        eventLog.events().stream().map(Event::typeName).collect(joining(", "))
+//    );
+    State currentState = eventLog.entityModel().initialState();
+    if (effectiveEvents.isEmpty()) {
+      return currentState;
+    }
+    var availableTransitions = transitions.get(currentState);
+    TransitionModel<?, ?> lastTransition;
+    for (var loggedEvent : effectiveEvents.stream().map(Event::type).toList()) {
+      lastTransition = findTransitionForLoggedEvent(loggedEvent, availableTransitions);
+      currentState = targetState(currentState, lastTransition);
+      availableTransitions = transitions.get(currentState);
+    }
+    return currentState;
+  }
+
+  public State targetState(State currentState, TransitionModel<?, ?> transition) {
+    return transition.toState() != null ? transition.toState() : currentState; // toSelf
+  }
+
+  public State targetState(State currentState, EventType<?, ?> eventType) {
+    var model = accept(currentState, eventType);
+    if (model == null) throw new IllegalStateException("No transition found for event " + eventType);
+    return targetState(currentState, model);
+  }
+
+  public TransitionModel<?, ?> accept(EventLog eventLog, EventType<?, ?> eventType) {
+    var currentState = currentState(eventLog);
+    return accept(currentState, eventType);
+  }
+
+  public TransitionModel<?, ?> accept(State currentState, EventType<?, ?> eventType) {
+    var availableTransitions = transitions.get(currentState);
+    var t = findTransition(eventType, availableTransitions);
+    if (t == null && eventType == BuiltinEventTypes.Rollback && eventType instanceof BasicEventType.Rollback rollback)
+      t = onEvent(rollback).toSelf().assembleInput().output(d -> d);
+    return t;
+  }
+
+  public TransitionModel<?, ?> transitionForEventNumber(EventLog eventLog, int eventNumber) {
+    var events = eventLog.events();
+    if (events.isEmpty()) {
+      throw new IllegalStateException("Event log is empty");
+    }
+    State state = eventLog.entityModel().initialState();
+    for (var event : events) {
+      if (event.eventNumber() == eventNumber) {
+        return findTransitionForLoggedEvent(event.type(), transitions.get(state));
+      }
+      state = targetStateForLoggedEvent(state, event.type());
+    }
+    throw new IllegalStateException("Event number " + eventNumber + " not found in event log");
+  }
+
+  private TransitionModel<?, ?> modelForLoggedEvent(State currentState, EventType<?, ?> eventType) {
+    var availableTransitions = transitions.get(currentState);
+    return findTransitionForLoggedEvent(eventType, availableTransitions);
+  }
+
+  private State targetStateForLoggedEvent(State currentState, EventType<?, ?> eventType) {
+    return targetState(currentState, modelForLoggedEvent(currentState, eventType));
+  }
+
+
+  private TransitionModel<?, ?> findTransition(EventType<?, ?> eventType, List<TransitionModel<?, ?>> transitions) {
+    for (var transition : transitions) {
+      if (transition.eventType().equals(eventType)) {
+        return transition;
+      }
+    }
+    return null;
+  }
+
+  private TransitionModel<?, ?> findTransitionForLoggedEvent(
+      EventType<?, ?> eventType,
+      List<TransitionModel<?, ?>> transitions
+  ) {
+    for (var transition : transitions) {
+      for (var leafTransition : leaves(transition)) {
+        if (leafTransition.eventType().equals(eventType)) {
+          return leafTransition;
+        }
+      }
+    }
+    throw new IllegalStateException(
+        "No transition found for logged event " + eventType.name() + " (available: " + transitions.stream()
+            .flatMap(t -> leaves(t).stream())
+            .map(t -> t.eventType().name())
+            .collect(joining(", ")) + ")");
+  }
+
+  private List<TransitionModel<?, ?>> leaves(TransitionModel<?, ?> transition) {
+    ArrayList<TransitionModel<?, ?>> leaves = new ArrayList<>();
+    if (transition.filters().isEmpty() && transition.duplicateModels().isEmpty() && transition.rejectModel() == null) {
+      // transition is a leaf
+      leaves.add(transition);
+    } else {
+      transition.filters().stream().map(f -> f.alternative().model()).forEach(alternativeModel -> leaves.addAll(leaves(alternativeModel)));
+      transition.duplicateModels().forEach(duplicateModel -> leaves.addAll(leaves(duplicateModel)));
+      if (transition.rejectModel() != null) leaves.add(transition.rejectModel());
+    }
+    return unmodifiableList(leaves);
+  }
+
+
+
+}

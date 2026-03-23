@@ -42,7 +42,7 @@ public interface Listener {
         Event event,
         String targetState,
         List<String> secondaryIds,
-        List<String> incomingRequests,
+        //List<String> incomingRequests,
         //List<String> outgoingResponses,
         List<String> outgoingRequests,
         List<String> incomingResponses

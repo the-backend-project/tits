@@ -13,7 +13,7 @@ import java.util.Optional;
 public enum PaymentState implements State {
   Begin,
   ProcessingAuthentication,
-  ProcessingAuthorisation(new Timeout(ofMillis(6600), new InputEvent<>(Rollback, new Data(-1, "ProcessingAuthorisation tímeout")))),
+  ProcessingAuthorisation(new Timeout(ofMillis(6600), new InputEvent<>(Rollback, new Data(-2, "ProcessingAuthorisation tímeout")))),
   AuthorisationFailed,
   ProcessingCapture,
   Preauthorised,
@@ -21,6 +21,7 @@ public enum PaymentState implements State {
   Expired,
   ExpiredAfterCapture,
   ProcessingRefund(new Timeout(ofMillis(6600), new InputEvent<>(Rollback, new Data(-1, "ProcessingRefund tímeout")))),
+  Open,
   ProcessingSettlement(new Timeout(Duration.ofHours(5), new InputEvent<>(SettlementEvent.Timeout, null))),
   Reconciled,
   Error

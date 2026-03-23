@@ -67,13 +67,13 @@ public class Logger implements Listener {
 
   @Override
   public void changeAccepted(String correlationId, List<Change> changes) {
-    log("[" + correlationId + "] Change set accepted: \n" + toString(changes));
+    log("[" + correlationId + "] Changes accepted: \n" + toString(changes));
   }
 
   private String toString(List<Change> changes) {
     try {
       return new ObjectMapper()
-          .enable(SerializationFeature.INDENT_OUTPUT)
+          //.enable(SerializationFeature.INDENT_OUTPUT)
           .setSerializationInclusion(JsonInclude.Include.NON_EMPTY)
           .writeValueAsString(changes);
     } catch (JsonProcessingException e) {

@@ -4,12 +4,15 @@ import com.github.thxmasj.statemachine.OutgoingRequestCreator;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;
 import com.github.thxmasj.statemachine.Tuples.Tuple3;
 import com.github.thxmasj.statemachine.Tuples.Tuple4;
+import com.github.thxmasj.statemachine.Tuples.Tuple5;
 import com.github.thxmasj.statemachine.templates.cardpayment.AcquirerResponse.ReconciliationValues;
 import com.github.thxmasj.statemachine.templates.cardpayment.ApprovedRefundDataCreator.ApprovedRefundData;
 import com.github.thxmasj.statemachine.templates.cardpayment.AuthenticationDataCreator.AuthenticationData;
 import com.github.thxmasj.statemachine.templates.cardpayment.AuthorisationReversalDataCreator.AuthorisationReversalData;
 import com.github.thxmasj.statemachine.templates.cardpayment.CaptureRequestDataCreator.CaptureRequestData;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthenticationResult;
+import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Merchant;
+import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.PaymentToken;
 import com.github.thxmasj.statemachine.templates.cardpayment.PreauthorisationReversalDataCreator.PreauthorisationReversalData;
 import com.github.thxmasj.statemachine.templates.cardpayment.RefundRequestDataCreator.RefundRequestData;
 import com.github.thxmasj.statemachine.templates.cardpayment.RefundReversalDataCreator.RefundReversalData;
@@ -22,7 +25,7 @@ public class OutgoingRequests {
     default UUID id() {return UUID.fromString("bb64d867-2d78-47bf-af75-d8b6ae646aaa");}
     default String name() {return "Authentication";}
   }
-  public interface Preauthorisation extends OutgoingRequestCreator<Tuple3<PaymentEvent.Authorisation, PaymentEvent.Merchant, AuthenticationResult>> {
+  public interface Preauthorisation extends OutgoingRequestCreator<Tuple4<PaymentEvent.Authorisation, PaymentEvent.Merchant, AuthenticationResult, PaymentToken>> {
     default UUID id() {return UUID.fromString("c0e84149-a4aa-4e37-900f-a520ea8c9327");}
     default String name() {return "Preauthorisation";}
   }
@@ -30,7 +33,7 @@ public class OutgoingRequests {
     default UUID id() {return UUID.fromString("6f311a5d-e8ab-413f-897e-b3fb813e17a2");}
     default String name() {return "PreauthorisationReversal";}
   }
-  public interface Authorisation extends OutgoingRequestCreator<Tuple4<PaymentEvent.Authorisation, PaymentEvent.Merchant, AcquirerBatchNumber, PaymentEvent.AuthenticationResult>> {
+  public interface Authorisation extends OutgoingRequestCreator<Tuple5<PaymentEvent.Authorisation, Merchant, AcquirerBatchNumber, AuthenticationResult, PaymentToken>> {
     default UUID id() {return UUID.fromString("564a47ea-f414-4690-9700-19554dd81bf3");}
     default String name() {return "Authorisation";}
   }
@@ -46,11 +49,11 @@ public class OutgoingRequests {
     default UUID id() {return UUID.fromString("86293a8d-03e8-4e89-9857-8d44bc31afac");}
     default String name() {return "RolledBackAuthorisationRequest";}
   }
-  public interface FailedAuthentication extends OutgoingRequestCreator<Tuple3<PaymentEvent.Authorisation, PaymentEvent.Merchant, AuthenticationResult>> {
+  public interface FailedAuthentication extends OutgoingRequestCreator<Tuple4<PaymentEvent.Authorisation, PaymentEvent.Merchant, AuthenticationResult, PaymentToken>> {
     default UUID id() {return UUID.fromString("146935ba-372e-44bc-b4ac-4f0474c71daf");}
     default String name() {return "FailedAuthentication";}
   }
-  public interface FailedTokenValidation extends OutgoingRequestCreator<Tuple3<PaymentEvent.Authorisation, PaymentEvent.Merchant, AuthenticationResult>> {
+  public interface FailedTokenValidation extends OutgoingRequestCreator<Tuple4<PaymentEvent.Authorisation, PaymentEvent.Merchant, AuthenticationResult, PaymentToken>> {
     default UUID id() {return UUID.fromString("f287fc81-0c89-4e35-98fe-1a5c5ecbfb2d");}
     default String name() {return "FailedTokenValidation";}
   }
@@ -74,15 +77,15 @@ public class OutgoingRequests {
     default UUID id() {return UUID.fromString("9bd938ed-bf98-4e37-9de5-10606719585a");}
     default String name() {return "ApprovedAuthorisation";}
   }
-  public interface Capture extends OutgoingRequestCreator<Tuple2<CaptureRequestData, AcquirerBatchNumber>> {
+  public interface Capture extends OutgoingRequestCreator<Tuple3<CaptureRequestData, AcquirerBatchNumber, PaymentToken>> {
     default UUID id() {return UUID.fromString("4120c908-4160-48a0-88af-c500494aaefd");}
     default String name() {return "Capture";}
   }
-  public interface CaptureTooLate extends OutgoingRequestCreator<Tuple4<PaymentEvent.Authorisation, PaymentEvent.Merchant, AuthenticationResult, PaymentEvent.Capture>> {
+  public interface CaptureTooLate extends OutgoingRequestCreator<Tuple5<PaymentEvent.Authorisation, PaymentEvent.Merchant, AuthenticationResult, PaymentEvent.Capture, PaymentToken>> {
     default UUID id() {return UUID.fromString("d7548893-fd35-4d60-b3db-68a63ee60227");}
     default String name() {return "CaptureTooLate";}
   }
-  public interface RefundAuthorisation extends OutgoingRequestCreator<Tuple2<RefundRequestData, AcquirerBatchNumber>> {
+  public interface RefundAuthorisation extends OutgoingRequestCreator<Tuple3<RefundRequestData, AcquirerBatchNumber, PaymentToken>> {
     default UUID id() {return UUID.fromString("ffae8e0e-42d9-49a8-840e-37df49bd77c6");}
     default String name() {return "RefundAuthorisation";}
   }

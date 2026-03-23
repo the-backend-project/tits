@@ -1,8 +1,13 @@
 package com.github.thxmasj.statemachine;
 
+import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
 import java.util.List;
+import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Stream;
+
+import static com.github.thxmasj.statemachine.EntitySelector.entityId;
+import static com.github.thxmasj.statemachine.EntitySelector.secondaryId;
 
 public class EventTrigger<T, I, O> {
 
@@ -26,6 +31,18 @@ public class EventTrigger<T, I, O> {
     this.entitySelectors = entitySelectors;
     this.entityModel = entityModel;
     this.createEntity = createEntity;
+  }
+
+  public static <I, O> EventTrigger<I, I, O> trigger(EventType<I, O> eventType, EntityModel entityModel) {
+    return new EventTrigger<>(new EventSpec<>(eventType, d -> d), List.of(EntitySelector.newEntityId()), entityModel, false);
+  }
+
+  public static <I, O> EventTrigger<I, I, O> trigger(EventType<I, O> eventType, EntityModel entityModel, UUID entityId) {
+    return new EventTrigger<>(new EventSpec<>(eventType, d -> d), List.of(entityId(entityId)), entityModel, false);
+  }
+
+  public static <I, O, ID> EventTrigger<I, I, O> trigger(EventType<I, O> eventType, EntityModel entityModel, SecondaryIdModel<ID> idModel, ID idValue) {
+    return new EventTrigger<>(new EventSpec<>(eventType, d -> d), List.of(secondaryId(idModel, _ -> idValue)), entityModel, false);
   }
 
   public EventSpec<T, I, O> eventSpec() {

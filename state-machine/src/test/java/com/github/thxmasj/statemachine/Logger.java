@@ -4,6 +4,9 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JSR310Module;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.fasterxml.jackson.datatype.jsr310.deser.InstantDeserializer;
 import com.github.thxmasj.statemachine.database.*;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import java.time.*;
@@ -61,13 +64,14 @@ public class Logger implements Listener {
 
   @Override
   public void changeAccepted(String correlationId, List<Change> changes) {
-    log("[" + correlationId + "] Change set accepted: \n" + toString(changes));
+    log("[" + correlationId + "] Changes accepted: \n" + toString(changes));
   }
 
   private String toString(List<Change> changes) {
     try {
       return new ObjectMapper()
-          .enable(SerializationFeature.INDENT_OUTPUT)
+//          .enable(SerializationFeature.INDENT_OUTPUT)
+          .registerModule(new JavaTimeModule())
           .setSerializationInclusion(JsonInclude.Include.NON_EMPTY)
           .writeValueAsString(changes);
     } catch (JsonProcessingException e) {
@@ -77,7 +81,7 @@ public class Logger implements Listener {
 
   @Override
   public void changeFailed(String correlationId, List<Change> changes, Throwable t) {
-    log("[" + correlationId + "] Change set failed with [" + t.toString() + "]\n" + toString(changes));
+    log("[" + correlationId + "] Changes failed with [" + t.toString() + "]\n" + toString(changes));
   }
 
   @Override

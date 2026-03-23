@@ -21,7 +21,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.function.Function;
+import java.util.function.BiFunction;
 import javax.sql.DataSource;
 import reactor.core.publisher.Mono;
 
@@ -29,14 +29,14 @@ import reactor.core.publisher.Mono;
 public class EventsByLookupId {
 
   private final DataSource dataSource;
-  private final Map<SecondaryIdModel, String> sql;
-  private final Function<Row, Event<?>> eventMapper;
+  private final Map<SecondaryIdModel<?>, String> sql;
+  private final BiFunction<EntityId, Row, Event<?>> eventMapper;
 
   public EventsByLookupId(
       DataSource dataSource,
       List<EntityModel> entityModels,
       String schemaName,
-      Function<Row, Event<?>> eventMapper
+      BiFunction<EntityId, Row, Event<?>> eventMapper
   ) {
     this.dataSource = dataSource;
     this.sql = new HashMap<>();
@@ -58,7 +58,7 @@ public class EventsByLookupId {
 
             SELECT @entityId;
             
-            SELECT EventNumber, Type, Timestamp, MessageId, ClientId, Data
+            SELECT EventNumber, Type, Timestamp, Data
             FROM [{schema}].Event WITH (INDEX(pkEvent))
             WHERE EntityId=@entityId
             ORDER BY EventNumber;
@@ -86,14 +86,14 @@ public class EventsByLookupId {
     }
   }
 
-  public Mono<EventLog> execute(EntityModel entityModel, SecondaryId secondaryId) {
+  public Mono<EventLog> execute(EntityModel entityModel, SecondaryId<?> secondaryId) {
     String sqlToPrepare = sql.get(secondaryId.model());
     if (sqlToPrepare == null) throw new IllegalArgumentException(String.format("Model %s for secondary id unknown", secondaryId.model().name()));
     return Mono.fromCallable(() -> {
           //noinspection SqlSourceToSinkFlow
           try (var connection = dataSource.getConnection(); var statement = connection.prepareStatement(sqlToPrepare)) {
             int index = 1;
-            for (var column : secondaryId.model().columns()) {
+            for (Column column : secondaryId.model().columns()) {
               statement.setObject(index++, column.value().apply(secondaryId.data()));
             }
             statement.execute();
@@ -108,9 +108,9 @@ public class EventsByLookupId {
             rs = statement.getResultSet();
             List<Event<?>> events = new ArrayList<>();
             while (rs.next()) {
-              events.add(eventMapper.apply(new JDBCRow(rs)));
+              events.add(eventMapper.apply(entityId, new JDBCRow(rs)));
             }
-            List<SecondaryId> secondaryIds = new ArrayList<>();
+            List<SecondaryId<?>> secondaryIds = new ArrayList<>();
             for (var idModel2 : entityModel.secondaryIds()) {
               if (!statement.getMoreResults()) throw new IllegalStateException("Expected result for secondary id " + idModel2.name());
               rs = statement.getResultSet();

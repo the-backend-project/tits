@@ -10,11 +10,12 @@ import java.util.stream.Stream;
 
 import static com.github.thxmasj.statemachine.Event.join;
 import static java.util.Collections.unmodifiableList;
+import static java.util.stream.Collectors.joining;
 
 public record EventLog(
     EntityModel entityModel,
     EntityId entityId,
-    List<SecondaryId> secondaryIds,
+    List<SecondaryId<?>> secondaryIds,
     List<Event<?>> events
 ) {
 
@@ -26,16 +27,29 @@ public record EventLog(
     return effectiveEvents().stream()
         .filter(e -> e.type().outputDataType().value().equals(dataType))
         .map(e -> (T)e.getUnmarshalledData())
+        .filter(e -> e != null)
         .findFirst()
-        .orElseThrow(() -> new NoSuchElementException("one(" + dataType.getSimpleName() + ")"));
+        .orElseThrow(() -> new NoSuchElementException("one(" + dataType.getSimpleName() + "). Have:\n" + effectiveEvents().stream().map(e -> e.toString()).collect(joining("\n"))));
+  }
+
+  private <T> T cast(Class<T> dataType, Object o) {
+    try {
+      return dataType.cast(o);
+    } catch (ClassCastException e) {
+      System.out.println("cannot cast to type " + dataType.getSimpleName());
+      throw e;
+    }
   }
 
   public <T> T last(Class<T> dataType) {
-    return effectiveEvents().reversed().stream()
+    System.out.println("Trying to find data from last event having data of type " + dataType.getSimpleName());
+    T result = effectiveEvents().reversed().stream()
         .filter(e -> e.type().outputDataType().value().equals(dataType))
-        .map(e -> (T)e.getUnmarshalledData())
+        .map(e -> cast(dataType, e.getUnmarshalledData()))
         .findFirst()
         .orElseThrow(() -> new NoSuchElementException("last(" + dataType.getSimpleName() + ")"));
+    System.out.println("And we found it: " + result);
+    return result;
   }
 
   public <T> T one(EventType<?, T> eventType) {
@@ -43,7 +57,11 @@ public record EventLog(
         .filter(e -> e.type().id().equals(eventType.id()))
         .map(e -> ((Event<T>)e).getUnmarshalledData())
         .findFirst()
-        .orElseThrow(() -> new NoSuchElementException("one(" + eventType.name() + ")"));
+        .orElseThrow(() -> new NoSuchElementException(String.format("one(%s) [log: %s] [effective log: %s]",
+            eventType.name(),
+            events.stream().map(Event::typeName).collect(joining(",")),
+            effectiveEvents().stream().map(Event::typeName).collect(joining(","))
+        )));
   }
 
   @SafeVarargs
@@ -102,7 +120,8 @@ public record EventLog(
     for (Event<?> event : events.reversed()) {
       if (skipTo >= event.eventNumber()) {
         if (event.type() instanceof BasicEventType.Rollback rollbackType) {
-          skipTo = Event.unmarshal(rollbackType, event.data()).toNumber();
+          int toNumber = Event.unmarshal(rollbackType, event.data()).toNumber();
+          skipTo = toNumber >= 0 ? toNumber : event.eventNumber() - 1 + toNumber ;
         } else {
           effectiveEventsReversed.add(event);
         }
@@ -111,8 +130,12 @@ public record EventLog(
     return unmodifiableList(effectiveEventsReversed.reversed());
   }
 
-  public SecondaryId id(SecondaryIdModel model) {
-    return secondaryIds().stream().filter(id -> id.model() == model).findFirst().orElseThrow();
+  public <T> T id(SecondaryIdModel<T> model) {
+    return secondaryIds().stream()
+        .filter(id -> id.model() == model)
+        .map(id -> (T)id.data())
+        .findFirst()
+        .orElseThrow();
   }
 
   public EventLog withNewEvent(Event<?> newEvent) {

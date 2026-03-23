@@ -1,16 +1,15 @@
 package com.github.thxmasj.statemachine.database.mssql;
 
-import static java.util.Optional.ofNullable;
 import static java.util.stream.Collectors.joining;
 
-import com.github.thxmasj.statemachine.EventType;
-import com.github.thxmasj.statemachine.database.EntityGroupNotInitialised;
-import com.github.thxmasj.statemachine.EventLog;
 import com.github.thxmasj.statemachine.EntityId;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.Event;
+import com.github.thxmasj.statemachine.EventLog;
+import com.github.thxmasj.statemachine.EventType;
 import com.github.thxmasj.statemachine.SecondaryId;
 import com.github.thxmasj.statemachine.database.Client.MssqlException;
+import com.github.thxmasj.statemachine.database.EntityGroupNotInitialised;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.Column;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
 import com.microsoft.sqlserver.jdbc.SQLServerException;
@@ -34,7 +33,7 @@ public class EventsByLastEntity {
   private final DataSource dataSource;
   private final Function<UUID, EventType<?, ?>> eventTypeMapper;
   private final Clock clock;
-  private final Map<SecondaryIdModel, String> sql;
+  private final Map<SecondaryIdModel<?>, String> sql;
 
   public EventsByLastEntity(
       DataSource dataSource,
@@ -70,7 +69,7 @@ public class EventsByLastEntity {
 
             SELECT @entityId
 
-            SELECT EventNumber, Type, Timestamp, MessageId, ClientId, Data
+            SELECT EventNumber, Type, Timestamp, Data
             FROM [{schema}].Event WITH (INDEX(pkEvent))
             WHERE EntityId=@entityId
             ORDER BY EventNumber;
@@ -119,7 +118,7 @@ public class EventsByLastEntity {
     }
   }
 
-  public Mono<EventLog> execute(EntityModel entityModel, SecondaryIdModel idModel, Object entityGroup, int lastPosition) {
+  public Mono<EventLog> execute(EntityModel entityModel, SecondaryIdModel<?> idModel, Object entityGroup, int lastPosition) {
     Objects.requireNonNull(entityModel);
     Objects.requireNonNull(entityGroup);
     String sqlToPrepare = sql.get(idModel);
@@ -143,22 +142,21 @@ public class EventsByLastEntity {
           rs = statement.getResultSet();
           if (!rs.next()) throw new RuntimeException("No result with entity id after trying more results as well");
         }
-        EntityId entityId = ofNullable(rs.getObject(1, UUID.class)).map(EntityId.UUID::new).orElse(null);
+        EntityId entityId = new EntityId.UUID(rs.getObject(1, UUID.class));
         statement.getMoreResults();
         rs = statement.getResultSet();
         List<Event<?>> events = new ArrayList<>();
         while (rs.next()) {
           events.add(new Event<>(
+              entityId.value(),
               rs.getInt(1), // EventNumber
               eventTypeMapper.apply(UUID.fromString(rs.getString(2))), // Type
               rs.getObject(3, LocalDateTime.class), // Timestamp
               clock,
-              rs.getString(4), // MessageId
-              rs.getString(5), // ClientId
-              rs.getString(6) // Data
+              rs.getString(4) // Data
           ));
         }
-        List<SecondaryId> secondaryIds = new ArrayList<>();
+        List<SecondaryId<?>> secondaryIds = new ArrayList<>();
         for (var idModel2 : entityModel.secondaryIds()) {
           if (!statement.getMoreResults()) throw new IllegalStateException("Expected result for secondary id " + idModel2.name());
           rs = statement.getResultSet();
@@ -172,7 +170,7 @@ public class EventsByLastEntity {
     .single()
     .onErrorMap(
         e -> e instanceof SQLServerException f && f.getErrorCode() == 50000,
-        _ -> new EntityGroupNotInitialised(entityModel, entityGroup)
+        _ -> new EntityGroupNotInitialised(entityModel, idModel, entityGroup)
     ).onErrorMap(
         SQLServerException.class,
         f -> new MssqlException(getClass().getSimpleName(), entityModel, f.getMessage())

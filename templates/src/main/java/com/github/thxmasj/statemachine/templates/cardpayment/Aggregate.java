@@ -45,7 +45,7 @@ public enum Aggregate implements EntityModel {
     }
 
     @Override
-    public List<SecondaryIdModel> secondaryIds() {
+    public List<SecondaryIdModel<?>> secondaryIds() {
       return List.of(Identifiers.BatchNumber, Identifiers.AcquirerBatchNumber);
     }
 
@@ -73,7 +73,7 @@ public enum Aggregate implements EntityModel {
     }
 
     @Override
-    public List<SecondaryIdModel> secondaryIds() {
+    public List<SecondaryIdModel<?>> secondaryIds() {
       return List.of(Identifiers.MerchantId);
     }
 

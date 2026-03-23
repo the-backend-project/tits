@@ -1,5 +1,33 @@
 package com.github.thxmasj.statemachine.templates.cardpayment;
 
+import static com.github.thxmasj.statemachine.BuiltinEntities.InboxExchange.AcceptedRequest;
+import static com.github.thxmasj.statemachine.EntitySelector.entityIdFromSession;
+import static com.github.thxmasj.statemachine.EntitySelector.newEntityId;
+import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
+import static com.github.thxmasj.statemachine.Tuples.tuple;
+import static com.github.thxmasj.statemachine.templates.cardpayment.Aggregate.Settlement;
+import static com.github.thxmasj.statemachine.templates.cardpayment.Identifiers.AcquirerBatchNumber;
+import static com.github.thxmasj.statemachine.templates.cardpayment.Identifiers.BatchNumber;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.Begin;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.Error;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.Open;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.ProcessingSettlement;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.Reconciled;
+import static com.github.thxmasj.statemachine.templates.cardpayment.Queues.Acquirer;
+import static com.github.thxmasj.statemachine.templates.cardpayment.Queues.Merchant;
+import static com.github.thxmasj.statemachine.templates.cardpayment.ReconciliationValuesDataCreator.reconciliationValues;
+import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.CutOffRequest;
+import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.GetAcquirerBatchNumber;
+import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.GetBatchNumber;
+import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.InBalance;
+import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.MerchantCredit;
+import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.MerchantCreditReversed;
+import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.MerchantDebit;
+import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.MerchantDebitReversed;
+import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.OutOfBalance;
+import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Reconcile;
+import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Timeout;
+
 import com.github.thxmasj.statemachine.BuiltinEntities.InboxExchange;
 import com.github.thxmasj.statemachine.IncomingResponseValidator;
 import com.github.thxmasj.statemachine.State;
@@ -9,35 +37,6 @@ import com.github.thxmasj.statemachine.Tuples.Tuple4;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
-
-import static com.github.thxmasj.statemachine.BuiltinEntities.InboxExchange.AcceptedRequest;
-import static com.github.thxmasj.statemachine.EntitySelector.CreationMode.AlwaysCreate;
-import static com.github.thxmasj.statemachine.EntitySelector.entityIdFromSession;
-import static com.github.thxmasj.statemachine.EntitySelector.nextInIdGroup;
-import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
-import static com.github.thxmasj.statemachine.Tuples.tuple;
-import static com.github.thxmasj.statemachine.templates.cardpayment.Aggregate.Settlement;
-import static com.github.thxmasj.statemachine.templates.cardpayment.CutOffRequestDataCreator.acquirerBatchNumber;
-import static com.github.thxmasj.statemachine.templates.cardpayment.CutOffRequestDataCreator.batchNumber;
-import static com.github.thxmasj.statemachine.templates.cardpayment.Identifiers.AcquirerBatchNumber;
-import static com.github.thxmasj.statemachine.templates.cardpayment.Identifiers.BatchNumber;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.Begin;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.Error;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.ProcessingSettlement;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.Reconciled;
-import static com.github.thxmasj.statemachine.templates.cardpayment.Queues.Acquirer;
-import static com.github.thxmasj.statemachine.templates.cardpayment.Queues.Merchant;
-import static com.github.thxmasj.statemachine.templates.cardpayment.ReconciliationValuesDataCreator.reconciliationValues;
-import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.CutOffRequest;
-import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.InBalance;
-import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.MerchantCredit;
-import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.MerchantCreditReversed;
-import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.MerchantDebit;
-import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.MerchantDebitReversed;
-import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Open;
-import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.OutOfBalance;
-import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Reconcile;
-import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Timeout;
 
 public abstract class SettlementTransitions {
 
@@ -54,7 +53,27 @@ public abstract class SettlementTransitions {
   public Map<State, List<TransitionModel<?, ?>>> transitions() {
     return Map.of(
         Begin, List.of(
-            onEvent(Open).toSelf().output(),
+            onEvent(GetBatchNumber).to(Open)
+                .assembleInput()
+                .newIdentifier(AcquirerBatchNumber, d -> d)
+                .newIdentifierInGroup(BatchNumber, d -> d.t1().merchantId())
+                .output(d -> d.t2().data()),
+            onEvent(GetAcquirerBatchNumber).toSelf()
+                .assemble(d -> new AcquirerBatchNumber(d.input().data().value(), 0))
+                .output(d -> d),
+            onEvent(SettlementEvent.Open).to(Open)
+                .assembleInput()
+                .newIdentifier(AcquirerBatchNumber, d -> d)
+                .newIdentifierInGroup(BatchNumber, d -> d.t1().merchantId())
+                .output()
+        ),
+        Open, List.of(
+            onEvent(GetBatchNumber).toSelf()
+                .assemble(c -> c.log().id(BatchNumber))
+                .output(d -> d),
+            onEvent(GetAcquirerBatchNumber).toSelf()
+                .assemble(d -> d.log().id(AcquirerBatchNumber))
+                .output(d -> d),
             onEvent(MerchantCredit).toSelf()
                 .assemble((input, _) -> input.data())
                 .output(Function.identity()),
@@ -68,13 +87,11 @@ public abstract class SettlementTransitions {
                 .assemble((input, _) -> input.data())
                 .output(Function.identity()),
             onEvent(CutOffRequest).to(ProcessingSettlement)
-                .assemble((input, log) -> tuple(input.data(), batchNumber(log), acquirerBatchNumber(log)))
-                .trigger(reconciliation()).with(d -> tuple(d.t2(), d.t3())).to(Acquirer).guaranteed().responseValidator(validateSettlementResponse())
-                .trigger(Open).on(Settlement)
-                .identifiedBy(nextInIdGroup(BatchNumber, AlwaysCreate))
-                .identifiedBy(nextInIdGroup(AcquirerBatchNumber, AlwaysCreate))
-                .trigger(AcceptedRequest).on(inboxExchange).identifiedBy(entityIdFromSession())
-                //.trigger(new Created()).with(_ -> "")
+                .assemble((input, log) -> tuple(input.data(), log.id(BatchNumber), log.id(AcquirerBatchNumber), log.entityId()))
+                .trigger(reconciliation()).with(d -> tuple(d.t2(), d.t3()))
+                .to(Acquirer).guaranteed().responseValidator(validateSettlementResponse())
+                .trigger(SettlementEvent.Open).with(Tuple4::t3).on(Settlement).identifiedBy(newEntityId())
+                .trigger(AcceptedRequest).with(d -> d.t1().t4()).on(inboxExchange).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t1().t1())
         ),
         ProcessingSettlement, List.of(

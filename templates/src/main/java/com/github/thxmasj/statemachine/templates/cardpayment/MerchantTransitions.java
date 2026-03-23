@@ -1,19 +1,8 @@
 package com.github.thxmasj.statemachine.templates.cardpayment;
 
-import com.github.thxmasj.statemachine.BuiltinEntities.InboxExchange;
-import com.github.thxmasj.statemachine.EntitySelector;
-import com.github.thxmasj.statemachine.PlantUMLFormatter;
-import com.github.thxmasj.statemachine.State;
-import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
-import com.github.thxmasj.statemachine.Tuples.Tuple2;
-import com.github.thxmasj.statemachine.templates.cardpayment.MerchantEvent.MerchantUpdate;
-import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Merchant;
-import java.io.IOException;
-import java.util.List;
-import java.util.Map;
-
 import static com.github.thxmasj.statemachine.EntitySelector.entityIdFromSession;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
+import static com.github.thxmasj.statemachine.Tuples.tuple;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Aggregate.Merchant;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Identifiers.MerchantId;
 import static com.github.thxmasj.statemachine.templates.cardpayment.MerchantEvent.Create;
@@ -28,6 +17,17 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.MerchantStat
 import static com.github.thxmasj.statemachine.templates.cardpayment.MerchantState.Suspended;
 import static java.util.Optional.ofNullable;
 
+import com.github.thxmasj.statemachine.BuiltinEntities.InboxExchange;
+import com.github.thxmasj.statemachine.BuiltinEventTypes;
+import com.github.thxmasj.statemachine.PlantUMLFormatter;
+import com.github.thxmasj.statemachine.State;
+import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
+import com.github.thxmasj.statemachine.templates.cardpayment.MerchantEvent.MerchantUpdate;
+import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Merchant;
+import java.io.IOException;
+import java.util.List;
+import java.util.Map;
+
 public class MerchantTransitions {
 
   private final InboxExchange inboxExchange;
@@ -38,10 +38,14 @@ public class MerchantTransitions {
     return Map.of(
         Begin, List.of(
             onEvent(Create).to(Active)
+                .assemble(c -> tuple(c.input().data(), c.log().entityId()))
+                .newIdentifier(MerchantId, d -> d.t1().id())
+                .trigger(InboxExchange.AcceptedRequest).with(d -> d.t1().t2()).on(inboxExchange).identifiedBy(entityIdFromSession())
+                .output(d -> d.t1().t1().t1()),
+            onEvent(BuiltinEventTypes.SecondaryIdAlreadyExists).toSelf()
                 .assembleInput()
-                .newIdentifier(MerchantId, PaymentEvent.Merchant::id)
-                .trigger(InboxExchange.AcceptedRequest).with(_ -> "").on(inboxExchange).identifiedBy(entityIdFromSession())
-                .output(Tuple2::t1)
+                .trigger(InboxExchange.InvalidRequest).with(d -> d.t2().data().toString()).on(inboxExchange).identifiedBy(entityIdFromSession())
+                .output()
         ),
         Active, List.of(
             onEvent(Suspend).to(Suspended).output(),

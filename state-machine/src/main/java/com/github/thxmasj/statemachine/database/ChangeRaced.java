@@ -8,6 +8,12 @@ public class ChangeRaced extends RuntimeException {
   private final String tableName; // TODO: Use name of secondary id or "events" or ...
 
   public ChangeRaced(ChangeState.Change change, String tableName) {
+    super(String.format("Change for event %s (%d) on %s raced on table %s",
+        change.newEvent() != null ? change.newEvent().typeName() : "N/A",
+        change.newEvent() != null ? change.newEvent().eventNumber() : -1,
+        change.eventLog().entityModel().name(),
+        tableName
+    ));
     this.change = change;
     this.tableName = tableName;
   }

@@ -1,5 +1,12 @@
 package com.github.thxmasj.statemachine.templates.cardpayment;
 
+import static com.github.thxmasj.statemachine.BuiltinEntities.InboxExchange.State.Requested;
+import static com.github.thxmasj.statemachine.EntitySelector.newEntityId;
+import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
+import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithFilter.Alternative.then;
+import static com.github.thxmasj.statemachine.Tuples.tuple;
+import static com.github.thxmasj.statemachine.templates.cardpayment.Aggregate.Merchant;
+
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.thxmasj.statemachine.BeanRegistry;
@@ -10,18 +17,13 @@ import com.github.thxmasj.statemachine.EventTrigger;
 import com.github.thxmasj.statemachine.EventTrigger.EventSpec;
 import com.github.thxmasj.statemachine.StateMachine;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
-import com.github.thxmasj.statemachine.Tuples.Tuple2;
-import com.github.thxmasj.statemachine.Tuples.Tuple3;
+import com.github.thxmasj.statemachine.TransitionModelBuilder.WithFilter.Alternative;
 import com.github.thxmasj.statemachine.database.Client.Config;
 import com.github.thxmasj.statemachine.database.jdbc.DataSourceBuilder;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Method;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Merchant;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Merchant.Location;
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Test;
-import reactor.core.publisher.Mono;
-import javax.sql.DataSource;
 import java.net.URI;
 import java.time.Clock;
 import java.time.Duration;
@@ -30,15 +32,13 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
-import static com.github.thxmasj.statemachine.BuiltinEntities.InboxExchange.State.Dispatched;
-import static com.github.thxmasj.statemachine.EntitySelector.newEntityId;
-import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
-import static com.github.thxmasj.statemachine.Tuples.tuple;
-import static com.github.thxmasj.statemachine.http.HttpClientIdExtractor.fromBearerToken;
-import static com.github.thxmasj.statemachine.templates.cardpayment.Aggregate.Merchant;
+import javax.sql.DataSource;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Mono;
 
 public class MerchantTest {
 
@@ -92,7 +92,7 @@ public class MerchantTest {
             false
         ),
         request
-    ).block(Duration.ofSeconds(3));
+    ).skip(1).next().block(Duration.ofSeconds(3));
 
   }
 
@@ -136,23 +136,19 @@ public class MerchantTest {
     );
 
     @Override
-    protected List<TransitionModel<?, ?>> requestTransitions() {
-      return List.of(
-          onEvent(Request).to(Dispatched)
-              .assembleInput()
-              .when(d -> RequestLines.POST_merchant.matches(d.requestLine()))
-              .then(
-                  onEvent(RegisterMerchant).to(Dispatched)
-                      .assemble((input, _) -> tuple(
-                          input.data(),
-                          input.data().body(PaymentEvent.Merchant.class)
-                      ))
-                      .newIdentifier(MessageId, d -> new MessageId("test", d.t2().id()))
-                      .trigger(MerchantEvent.Create).with(Tuple2::t2).on(Merchant).identifiedBy(newEntityId())
-                      .output(d -> d.t1().t1())
-              )
-              .when(_ -> true).then(invalidRequest(), _ -> "Request not mapped")
-              .output(d -> d)
+    protected Map<Predicate<HttpRequestMessage>, Alternative<HttpRequestMessage, ?, ?>> routes() {
+      return Map.of(
+          d -> RequestLines.POST_merchant.matches(d.requestLine()),
+          then(
+              onEvent(RegisterMerchant).to(Requested)
+                  .assemble((input, _) -> tuple(
+                      input.data(),
+                      input.data().body(PaymentEvent.Merchant.class)
+                  ))
+                  .newIdentifier(MessageId, d -> new MessageId("test", d.t2().id()))
+                  .trigger(MerchantEvent.Create).with(d -> d.t1().t2()).on(Merchant).identifiedBy(newEntityId())
+                  .output(d -> d.t1().t1().t1())
+          )
       );
     }
 

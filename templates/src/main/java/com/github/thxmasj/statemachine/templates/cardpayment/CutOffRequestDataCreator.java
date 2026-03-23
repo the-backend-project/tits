@@ -16,19 +16,11 @@ public class CutOffRequestDataCreator implements DataCreator<CutOff, Tuple3<CutO
   }
 
   public static BatchNumber batchNumber(EventLog log) {
-    return log.secondaryIds().stream()
-        .filter(id -> id.model() == Identifiers.BatchNumber)
-        .map(id -> (BatchNumber)id.data())
-        .findFirst()
-        .orElseThrow();
+    return log.id(Identifiers.BatchNumber);
   }
 
   public static AcquirerBatchNumber acquirerBatchNumber(EventLog log) {
-    return log.secondaryIds().stream()
-        .filter(id -> id.model() == Identifiers.AcquirerBatchNumber)
-        .map(id -> (AcquirerBatchNumber)id.data())
-        .findFirst()
-        .orElseThrow();
+    return log.id(Identifiers.AcquirerBatchNumber);
   }
 
 }

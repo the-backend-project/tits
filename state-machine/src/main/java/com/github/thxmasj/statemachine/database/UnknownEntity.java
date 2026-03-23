@@ -19,8 +19,8 @@ public class UnknownEntity extends RuntimeException {
     this.messageId = null;
   }
 
-  public UnknownEntity(EntityModel entityModel, EntityId id, String sql) {
-    super(String.format("Unknown entity: %s/id=%s", entityModel.name(), id.value()), new RuntimeException(sql));
+  public UnknownEntity(EntityModel entityModel, EntityId id) {
+    super(String.format("Unknown entity: %s/id=%s", entityModel.name(), id.value()));
     this.entityModel = entityModel;
     this.secondaryId = null;
     this.id = id;

@@ -3,18 +3,23 @@ package com.github.thxmasj.statemachine.templates.cardpayment;
 import com.github.thxmasj.statemachine.BuiltinEntities.InboxExchange;
 import com.github.thxmasj.statemachine.IncomingResponseValidator;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
+import com.github.thxmasj.statemachine.TransitionModelBuilder.WithFilter.Alternative;
+import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.templates.cardpayment.OutgoingRequests.Authentication;
 import com.github.thxmasj.statemachine.templates.cardpayment.OutgoingRequests.Authorisation;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthenticationResult;
+import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.PaymentToken;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Predicate;
 
 public class DummyPaymentTransitions extends PaymentTransitions{
 
   public DummyPaymentTransitions() {
     super(new InboxExchange() {
       @Override
-      public List<TransitionModel<?, ?>> requestTransitions() {
-        return List.of();
+      public Map<Predicate<HttpRequestMessage>, Alternative<HttpRequestMessage, ?, ?>> routes() {
+        return Map.of();
       }
 
       @Override
@@ -171,6 +176,11 @@ public class DummyPaymentTransitions extends PaymentTransitions{
 
   @Override
   protected IncomingResponseValidator<AcquirerResponse> validateRefundReversalResponse() {
+    return null;
+  }
+
+  @Override
+  protected PaymentToken paymentToken(String encryptedAuthenticationData) {
     return null;
   }
 

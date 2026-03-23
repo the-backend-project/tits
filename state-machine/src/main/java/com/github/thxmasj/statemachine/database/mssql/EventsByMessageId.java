@@ -22,7 +22,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.function.Function;
+import java.util.function.BiFunction;
 import javax.sql.DataSource;
 import reactor.core.publisher.Mono;
 
@@ -31,13 +31,13 @@ public class EventsByMessageId {
 
   private final DataSource dataSource;
   private final Map<EntityModel, String> sqls;
-  private final Function<Row, Event<?>> eventMapper;
+  private final BiFunction<EntityId, Row, Event<?>> eventMapper;
 
   public EventsByMessageId(
       DataSource dataSource,
       List<EntityModel> entityModels,
       String schemaName,
-      Function<Row, Event<?>> eventMapper
+      BiFunction<EntityId, Row, Event<?>> eventMapper
   ) {
     this.dataSource = dataSource;
     this.eventMapper = eventMapper;
@@ -96,9 +96,9 @@ public class EventsByMessageId {
         rs = statement.getResultSet();
         List<Event<?>> events = new ArrayList<>();
         while (rs.next()) {
-          events.add(eventMapper.apply(new JDBCRow(rs)));
+          events.add(eventMapper.apply(entityId, new JDBCRow(rs)));
         }
-        List<SecondaryId> secondaryIds = new ArrayList<>();
+        List<SecondaryId<?>> secondaryIds = new ArrayList<>();
         for (var idModel : entityModel.secondaryIds()) {
           statement.getMoreResults();
           rs = statement.getResultSet();
@@ -107,7 +107,7 @@ public class EventsByMessageId {
         }
         rs.close();
         if (events.isEmpty() && secondaryIds.isEmpty())
-          throw new UnknownEntity(entityModel, entityId, sqlToPrepare);
+          throw new UnknownEntity(entityModel, entityId);
         return new EventLog(entityModel, entityId, secondaryIds, Collections.unmodifiableList(events));
       }
     })

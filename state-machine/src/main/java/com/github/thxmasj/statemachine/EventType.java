@@ -1,5 +1,6 @@
 package com.github.thxmasj.statemachine;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import java.util.UUID;
 
 public interface EventType<I, O> {
@@ -15,21 +16,31 @@ public interface EventType<I, O> {
   class DataType<T> {
 
     private final Class<T> clazz;
+    private final TypeReference<T> typeReference;
     private final String name;
 
     public DataType(Class<T> clazz) {
       this.clazz = clazz;
+      this.typeReference = new TypeReference<>() {};
       this.name = clazz.getSimpleName();
     }
 
-    public <T1, T2> DataType(Class<T1> t1Type, Class<T2> t2Type) {
+    public <T1, T2> DataType(TypeReference<T> typeReference, Class<T1> t1Type, Class<T2> t2Type) {
       this.clazz = null;
+      this.typeReference = typeReference;
       this.name = "(" + t1Type.getSimpleName() + ", " + t2Type.getSimpleName() + ")";
     }
 
-    public <T1, T2, T3> DataType(Class<T1> t1Type, Class<T2> t2Type, Class<T3> t3Type) {
+    public <T1, T2, T3> DataType(TypeReference<T> typeReference, Class<T1> t1Type, Class<T2> t2Type, Class<T3> t3Type) {
       this.clazz = null;
+      this.typeReference = typeReference;
       this.name = "(" + t1Type.getSimpleName() + ", " + t2Type.getSimpleName() + ", " + t3Type.getSimpleName() + ")";
+    }
+
+    public <T1, T2, T3, T4> DataType(TypeReference<T> typeReference, Class<T1> t1Type, Class<T2> t2Type, Class<T3> t3Type, Class<T4> t4Type) {
+      this.clazz = null;
+      this.typeReference = typeReference;
+      this.name = "(" + t1Type.getSimpleName() + ", " + t2Type.getSimpleName() + ", " + t3Type.getSimpleName() + ", " + t4Type.getSimpleName() + ")";
     }
 
     public Class<T> value() {
@@ -39,5 +50,11 @@ public interface EventType<I, O> {
     public String name() {
       return clazz != null ? (clazz == Void.class ? "-" : clazz.getSimpleName()) : name;
     }
+
+    public TypeReference<T> typeReference() {
+      return typeReference;
+    }
   }
+
+
 }

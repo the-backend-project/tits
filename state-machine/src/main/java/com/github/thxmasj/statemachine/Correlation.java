@@ -17,7 +17,7 @@ public class Correlation {
   public static Mono<String> correlationId() {
     return Mono.deferContextual(Mono::just)
         .map(ctx -> ctx.<String>get(CORRELATION_ID))
-        .contextWrite(ctx -> ctx.hasKey(CORRELATION_ID) ? ctx : ctx.put(CORRELATION_ID, UUID.randomUUID().toString()));
+        .contextWrite(ctx -> ctx.hasKey(CORRELATION_ID) ? ctx : ctx.put(CORRELATION_ID, "N/A-xxx"));// + UUID.randomUUID().toString()));
   }
 
   public static ContextView contextOf(@NonNull String correlationId, Sinks.One<HttpResponseMessage> responseSink, UUID requestId) {

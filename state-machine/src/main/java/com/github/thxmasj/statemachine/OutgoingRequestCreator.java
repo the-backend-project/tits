@@ -47,4 +47,51 @@ public interface OutgoingRequestCreator<T> {
     HttpRequestMessage originalRequest();
   }
 
+  static Context context(
+      EntityId entityId,
+      String correlationId,
+      ZonedDateTime timestamp
+  ) {
+    return new Context() {
+      @Override
+      public EntityId entityId() {
+        return entityId;
+      }
+      @Override
+      public String correlationId() {
+        return correlationId;
+      }
+      @Override
+      public ZonedDateTime timestamp() {
+        return timestamp;
+      }
+    };
+  }
+
+  static ReversalContext reversalContext(
+      HttpRequestMessage originalRequest,
+      EntityId entityId,
+      String correlationId,
+      ZonedDateTime timestamp
+  ) {
+    return new ReversalContext() {
+      @Override
+      public HttpRequestMessage originalRequest() {
+        return originalRequest;
+      }
+      @Override
+      public EntityId entityId() {
+        return entityId;
+      }
+      @Override
+      public String correlationId() {
+        return correlationId;
+      }
+      @Override
+      public ZonedDateTime timestamp() {
+        return timestamp;
+      }
+    };
+  }
+
 }

@@ -7,12 +7,12 @@ public class SecondaryIdAlreadyExists extends RuntimeException {
 
   private final String duplicateKey;
   private final String idTableName;
-  private final SecondaryId secondaryId;
+  private final SecondaryId<?> secondaryId;
   private final Change change;
 
-  public SecondaryIdAlreadyExists(Change change, SecondaryId secondaryId, String duplicateKey, String idTableName) {
+  public SecondaryIdAlreadyExists(Change change, SecondaryId<?> secondaryId, String duplicateKey, String idTableName) {
     super("Secondary id " + secondaryId + " already exists (" + duplicateKey + ", " + idTableName + ")");
-    System.out.println("Secondary id " + secondaryId + " already exists (" + duplicateKey + ", " + idTableName + ")");
+    System.out.println("Secondary id " + secondaryId.model().name() + "/" + secondaryId.data() + " already exists (" + duplicateKey + ", " + idTableName + ")");
     this.duplicateKey = duplicateKey;
     this.idTableName = idTableName;
     this.change = change;
@@ -27,7 +27,7 @@ public class SecondaryIdAlreadyExists extends RuntimeException {
     return idTableName;
   }
 
-  public SecondaryId secondaryId() {
+  public SecondaryId<?> secondaryId() {
     return secondaryId;
   }
 

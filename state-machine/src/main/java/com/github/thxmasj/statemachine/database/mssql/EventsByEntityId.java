@@ -19,7 +19,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Function;
+import java.util.function.BiFunction;
 import javax.sql.DataSource;
 import reactor.core.publisher.Mono;
 
@@ -28,9 +28,14 @@ public class EventsByEntityId {
 
   private final DataSource dataSource;
   private final Map<EntityModel, String> sqls;
-  private final Function<Row, Event<?>> eventMapper;
+  private final BiFunction<EntityId, Row, Event<?>> eventMapper;
 
-  public EventsByEntityId(DataSource dataSource, List<EntityModel> entityModels, String schemaName, Function<Row, Event<?>> eventMapper) {
+  public EventsByEntityId(
+      DataSource dataSource,
+      List<EntityModel> entityModels,
+      String schemaName,
+      BiFunction<EntityId, Row, Event<?>> eventMapper
+  ) {
     this.dataSource = dataSource;
     this.sqls = new HashMap<>();
     this.eventMapper = eventMapper;
@@ -38,7 +43,7 @@ public class EventsByEntityId {
       var names = new SchemaNames(schemaName, entityModel);
       String sql =
           """
-          SELECT EventNumber, Type, Timestamp, MessageId, ClientId, Data
+          SELECT EventNumber, Type, Timestamp, Data
           FROM [{schema}].[Event] WITH (INDEX(pkEvent))
           WHERE EntityId=:entityId
           ORDER BY EventNumber;
@@ -59,6 +64,7 @@ public class EventsByEntityId {
   }
 
   public Mono<EventLog> execute(EntityModel entityModel, EntityId entityId) {
+    System.out.println("Finding event log for " + entityModel.name() + "/" + entityId.value());
     String sqlToPrepare = requireNonNull(sqls.get(entityModel), "Unknown model " + entityModel.name());
     return Mono.fromCallable(() -> {
       try (
@@ -69,9 +75,9 @@ public class EventsByEntityId {
         ResultSet rs = statement.getResultSet();
         List<Event<?>> events = new ArrayList<>();
         while (rs.next()) {
-          events.add(eventMapper.apply(new JDBCRow(rs)));
+          events.add(eventMapper.apply(entityId, new JDBCRow(rs)));
         }
-        List<SecondaryId> secondaryIds = new ArrayList<>();
+        List<SecondaryId<?>> secondaryIds = new ArrayList<>();
         for (var idModel : entityModel.secondaryIds()) {
           statement.getMoreResults();
           rs = statement.getResultSet();
@@ -80,7 +86,7 @@ public class EventsByEntityId {
         }
         rs.close();
         if (events.isEmpty() && secondaryIds.isEmpty())
-          throw new UnknownEntity(entityModel, entityId, sqlToPrepare);
+          throw new UnknownEntity(entityModel, entityId);
         return new EventLog(entityModel, entityId, secondaryIds, Collections.unmodifiableList(events));
       }
     });

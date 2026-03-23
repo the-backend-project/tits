@@ -45,31 +45,35 @@ public sealed class EntitySelector<I> permits ById, ByIdFromSession, ByLastInIdG
     return new ByIdFromSession<>();
   }
 
-  public static <I> BySecondaryId<I> secondaryId(SecondaryIdModel model, Function<I, Object> dataAdapter) {
+  public static <I, T> BySecondaryId<I, T> secondaryId(SecondaryIdModel<T> model, Function<I, T> dataAdapter) {
     return secondaryId(model, dataAdapter, NeverCreate);
   }
 
-  public static <I> BySecondaryId<I> secondaryId(SecondaryIdModel model, Function<I, Object> dataAdapter, CreationMode creationMode) {
+  public static <I, T> BySecondaryId<I, T> secondaryId(SecondaryIdModel<T> model, Function<I, T> dataAdapter, CreationMode creationMode) {
     return new BySecondaryId<>(model, dataAdapter, creationMode);
   }
 
-  public static <I> BySecondaryId<I> secondaryId(SecondaryIdModel model, Function<I, Object> dataAdapter, EntitySelector<I> fallback) {
+  public static <I, T> BySecondaryId<I, T> secondaryId(SecondaryIdModel<T> model, Function<I, T> dataAdapter, EntitySelector<I> fallback) {
     return new BySecondaryId<>(model, dataAdapter, fallback);
   }
 
-  public static <I> ByLastInIdGroup<I> lastInIdGroup(SecondaryIdModel model, Function<I, Object> dataAdapter) {
+  public static <I, T> ByLastInIdGroup<I, T> lastInIdGroup(SecondaryIdModel<T> model, Function<I, ?> dataAdapter) {
     return lastInIdGroup(model, dataAdapter, NeverCreate);
   }
 
-  public static <I> ByLastInIdGroup<I> lastInIdGroup(SecondaryIdModel model, Function<I, Object> dataAdapter, CreationMode creationMode) {
+  public static <I, T> ByLastInIdGroup<I, T> lastInIdGroup(SecondaryIdModel<T> model, Function<I, ?> dataAdapter, CreationMode creationMode) {
     return new ByLastInIdGroup<>(model, dataAdapter, creationMode, 1);
   }
 
-  public static <I> ByLastInIdGroup<I> secondToLastInIdGroup(SecondaryIdModel model, Function<I, Object> dataAdapter) {
+  public static <I, T> ByLastInIdGroup<I, T> secondToLastInIdGroup(SecondaryIdModel<T> model, Function<I, ?> dataAdapter) {
     return new ByLastInIdGroup<>(model, dataAdapter, NeverCreate, 2);
   }
 
-  public static <I> ByNextInIdGroup<I> nextInIdGroup(SecondaryIdModel model, CreationMode creationMode) {
+  public static <I, T> ByLastInIdGroup<I, T> secondToLastInIdGroup(SecondaryIdModel<T> model, Function<I, ?> dataAdapter,  CreationMode creationMode) {
+    return new ByLastInIdGroup<>(model, dataAdapter, creationMode, 2);
+  }
+
+  public static <I, T> ByNextInIdGroup<I, T> nextInIdGroup(SecondaryIdModel<T> model, CreationMode creationMode) {
     return new ByNextInIdGroup<>(model, creationMode);
   }
 
@@ -81,7 +85,7 @@ public sealed class EntitySelector<I> permits ById, ByIdFromSession, ByLastInIdG
     return new ByMessageId<>(dataAdapter, creationMode);
   }
 
-  public enum CreationMode{AlwaysCreate, CreateIfNotExists, NeverCreate};
+  public enum CreationMode{AlwaysCreate, CreateIfNotExists, NeverCreate}
 
   private final CreationMode creationMode;
   private final EntitySelector<I> fallback;
@@ -122,14 +126,14 @@ public sealed class EntitySelector<I> permits ById, ByIdFromSession, ByLastInIdG
 
   }
 
-  public static final class BySecondaryId<I> extends EntitySelector<I> {
+  public static final class BySecondaryId<I, T> extends EntitySelector<I> {
 
-    private final SchemaNames.SecondaryIdModel model;
-    private final Function<I, Object> id;
+    private final SchemaNames.SecondaryIdModel<T> model;
+    private final Function<I, T> id;
 
     public BySecondaryId(
-        SchemaNames.SecondaryIdModel model,
-        Function<I, Object> id,
+        SchemaNames.SecondaryIdModel<T> model,
+        Function<I, T> id,
         CreationMode creationMode
     ) {
       super(creationMode, null);
@@ -138,8 +142,8 @@ public sealed class EntitySelector<I> permits ById, ByIdFromSession, ByLastInIdG
     }
 
     public BySecondaryId(
-        SchemaNames.SecondaryIdModel model,
-        Function<I, Object> id,
+        SchemaNames.SecondaryIdModel<T> model,
+        Function<I, T> id,
         EntitySelector<I> fallback
     ) {
       super(NeverCreate, fallback);
@@ -147,25 +151,25 @@ public sealed class EntitySelector<I> permits ById, ByIdFromSession, ByLastInIdG
       this.id = id;
     }
 
-    public SchemaNames.SecondaryIdModel model() {
+    public SchemaNames.SecondaryIdModel<T> model() {
       return model;
     }
 
-    public Function<I, Object> id() {
+    public Function<I, T> id() {
       return id;
     }
 
   }
 
-  public static final class ByLastInIdGroup<I> extends EntitySelector<I> {
+  public static final class ByLastInIdGroup<I, T> extends EntitySelector<I> {
 
-    private final SchemaNames.SecondaryIdModel model;
-    private final Function<I, Object> group;
+    private final SchemaNames.SecondaryIdModel<T> model;
+    private final Function<I, ?> group;
     private final int lastPostition;
 
     public ByLastInIdGroup(
-        SchemaNames.SecondaryIdModel model,
-        Function<I, Object> group,
+        SchemaNames.SecondaryIdModel<T> model,
+        Function<I, ?> group,
         CreationMode creationMode,
         int lastPostition
     ) {
@@ -175,11 +179,11 @@ public sealed class EntitySelector<I> permits ById, ByIdFromSession, ByLastInIdG
       this.lastPostition = lastPostition;
     }
 
-    public SecondaryIdModel model() {
+    public SecondaryIdModel<T> model() {
       return model;
     }
 
-    public Function<I, Object> group() {
+    public Function<I, ?> group() {
       return group;
     }
 
@@ -188,16 +192,16 @@ public sealed class EntitySelector<I> permits ById, ByIdFromSession, ByLastInIdG
     }
   }
 
-  public static final class ByNextInIdGroup<I> extends EntitySelector<I> {
+  public static final class ByNextInIdGroup<I, T> extends EntitySelector<I> {
 
-    private final SchemaNames.SecondaryIdModel model;
+    private final SchemaNames.SecondaryIdModel<T> model;
 
-    public ByNextInIdGroup(SchemaNames.SecondaryIdModel model, CreationMode creationMode) {
+    public ByNextInIdGroup(SchemaNames.SecondaryIdModel<T> model, CreationMode creationMode) {
       super(creationMode, null);
       this.model = model;
     }
 
-    public SecondaryIdModel model() {
+    public SecondaryIdModel<T> model() {
       return model;
     }
   }

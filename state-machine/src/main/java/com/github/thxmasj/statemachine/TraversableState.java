@@ -1,9 +1,11 @@
 package com.github.thxmasj.statemachine;
 
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
+import static java.util.stream.Collectors.joining;
 
 import com.github.thxmasj.statemachine.TransitionModelBuilder.Filter;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
@@ -69,6 +71,18 @@ public class TraversableState {
             create(node, filter.alternative().model(), transitions, initialState, visitedStates)
         );
       }
+      if (transition.rejectModel() != null) {
+        forwardTransitions.put(
+            transition.rejectModel(),
+            create(node, transition.rejectModel(), transitions, initialState, visitedStates)
+        );
+      }
+      for (var duplicateModel : transition.duplicateModels()) {
+        forwardTransitions.put(
+            duplicateModel,
+            create(node, duplicateModel, transitions, initialState, visitedStates)
+        );
+      }
     }
 //    if (initial && forwardTransitions.keySet().stream().noneMatch(t -> t.eventType() == BuiltinEventTypes.UnknownEntity)) {
 //      TransitionModel<?, ?> transition = onEvent(BuiltinEventTypes.UnknownEntity)
@@ -123,22 +137,37 @@ public class TraversableState {
     return forwardTransitions.values();
   }
 
-  public <I, O> TransitionModel<I, O> transition(EventType<I, O> eventType) {
+  public <I, O> TransitionModel<I, O> transition(EventType<I, O> eventType, boolean leavesOnly) {
     if (eventType instanceof BasicEventType.Rollback) {
       return onEvent(eventType)/*.from(state)*/.toSelf().assembleInput().output();
     }
     for (var transition : forwardTransitions.keySet()) {
-      if (transition.eventType() == eventType)
-        return (TransitionModel<I, O>)transition; // TODO
-      else {
-        var t = transition.filters().stream()
-            .map(f -> f.alternative().model())
-            .filter(model -> model.eventType() == eventType)
-            .findFirst();
-        if (t.isPresent()) return (TransitionModel<I, O>)t.get();
+      if (leavesOnly) {
+        var leaves = leaves(transition);
+        for (var leave : leaves) {
+          if (leave.eventType() == eventType) {
+            return (TransitionModel<I, O>) leave; // TODO
+          }
+        }
+      } else {
+        if (transition.eventType() == eventType) {
+          return (TransitionModel<I, O>) transition;
+        }
       }
     }
     return null;
+  }
+
+  private List<TransitionModel<?, ?>> leaves(TransitionModel<?, ?> transition) {
+    ArrayList<TransitionModel<?, ?>> leaves = new ArrayList<>();
+    if (transition.filters().isEmpty()) {
+      leaves.add(transition);
+    } else {
+      for (var alternativeTransition : transition.filters().stream().map(f -> f.alternative().model()).toList()) {
+        leaves.addAll(leaves(alternativeTransition));
+      }
+    }
+    return leaves;
   }
 
 //  public TraversableState backward(EventType<?, ?> eventType) {
@@ -156,19 +185,20 @@ public class TraversableState {
 
   public TraversableState forward(List<? extends EventType<?, ?>> eventTypes) {
     var traverser = this;
+    System.out.println("Forward for " + eventTypes.stream().map(EventType::name).collect(joining(", ")));
     for (var eventType : eventTypes) {
 //      if (eventType.isRollback()) {
 //
 //      }
-      TransitionModel<?, ?> transition = traverser.transition(eventType);
+      TransitionModel<?, ?> transition = traverser.transition(eventType, true);
       if (transition == null) return null;
       var nextTraverser = traverser.forwardTransitions.get(transition);
       if (nextTraverser == null) throw new IllegalStateException(String.format(
-          "Traversing from %s with %s: Missing traverser for valid transition (%s). Got:" + traverser.forwardTransitions.entrySet()
-              .stream().collect(Collectors.toMap(Entry::getKey, Entry::getValue)),
+          "Traversing from %s with %s: Missing traverser for valid transition %s. Got:\n%s",
           state,
-          eventTypes.stream().map(EventType::name).collect(Collectors.joining(",")),
-          transition
+          eventTypes.stream().map(EventType::name).collect(joining(",")),
+          transition,
+          traverser.forwardTransitions.keySet().stream().map(TransitionModel::toString).collect(joining("\n"))
       ));
       traverser = nextTraverser;
     }
