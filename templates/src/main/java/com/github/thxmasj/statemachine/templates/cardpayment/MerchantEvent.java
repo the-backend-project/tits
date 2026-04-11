@@ -10,7 +10,6 @@ import java.util.UUID;
 public interface MerchantEvent {
 
   record MerchantUpdate(
-      String merchantName,
       String merchantDisplayName,
       Location merchantLocation,
       String merchantCategoryCode

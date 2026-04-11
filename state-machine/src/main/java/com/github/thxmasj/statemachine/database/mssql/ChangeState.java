@@ -17,6 +17,7 @@ import com.github.thxmasj.statemachine.database.Client.Query.Builder;
 import com.github.thxmasj.statemachine.database.Client.UniqueIndexConstraintViolation;
 import com.github.thxmasj.statemachine.database.EventAlreadyExists;
 import com.github.thxmasj.statemachine.database.SecondaryIdAlreadyExists;
+import com.github.thxmasj.statemachine.database.mssql.SchemaNames.Column;
 import com.github.thxmasj.statemachine.message.Message.IncomingResponse;
 import com.github.thxmasj.statemachine.message.Message.OutgoingRequest;
 import java.time.Clock;
@@ -143,8 +144,6 @@ public class ChangeState {
             changes.get(i).eventLog().entityModel(),
             changes.get(i).newEvent() != null && changes.get(i).storeEvent(),
             changes.get(i).newSecondaryIds(),
-            //changes.get(i).incomingRequest(),
-            //changes.get(i).outgoingResponse(),
             changes.get(i).outgoingRequests(),
             changes.get(i).incomingResponse(),
             changes.get(i).deadline() != null
@@ -185,8 +184,6 @@ public class ChangeState {
       EntityModel entityModel,
       boolean withEvent,
       List<SecondaryId<?>> secondaryIds,
-      //IncomingRequest incomingRequest,
-      //OutgoingResponse outgoingResponse,
       List<OutgoingRequest> outgoingRequests,
       IncomingResponse incomingResponse,
       boolean withDeadline
@@ -530,6 +527,22 @@ public class ChangeState {
         .flatMap(change -> change.newSecondaryIds().stream().map(secondaryId -> tuple(change, secondaryId)))
         .filter(tuple -> indexViolation.tableName()
             .equals(new SchemaNames(schema, tuple.t1().eventLog().entityModel()).idTableName(tuple.t2().model())))
+        // TODO: Wrong SecondaryId can be picked here if several of the same type (hence table) are created in the same
+        //       transaction. We only check for first table match.
+        //       => The duplicateKey needs to be parsed and compared, too. Perhaps use the indexName as well.
+        //          Ex: indexName="ixBaxNumber_SessionNumber"
+        //              duplicateKey="111400, 2"
+        //              tableName="Session_SessionId"
+        //          Ergo: We can find SecondaryIdModel by tableName. The specific SecondaryId can be found by duplicateKey
+        //          See model.columns:
+        //
+        //    public List<Column> columns() {
+        //      return List.of(
+        //          new Column("BaxNumber", "VARCHAR(11)", e -> ((SessionId)e).baxNumber()),
+        //          new Column("SessionNumber", "SMALLINT", e -> ((SessionId)e).sessionNumber())
+        //      );
+        //    }
+
         .map(tuple -> new SecondaryIdAlreadyExists(
             tuple.t1(),
             tuple.t2(),

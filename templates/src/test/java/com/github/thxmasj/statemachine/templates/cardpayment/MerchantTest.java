@@ -76,7 +76,6 @@ public class MerchantTest {
         UUID.randomUUID().toString(),
         UUID.randomUUID().toString(),
         "Test merchant",
-        "Test merchant",
         new Location(null, null, "Oslo"),
         "5433",
         UUID.randomUUID().toString(),

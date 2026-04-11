@@ -1,10 +1,12 @@
 package com.github.thxmasj.statemachine;
 
+import static com.github.thxmasj.statemachine.BuiltinEntities.InboxExchange.InvalidRequest;
 import static com.github.thxmasj.statemachine.BuiltinEntities.InboxExchange.State.Begin;
 import static com.github.thxmasj.statemachine.BuiltinEntities.InboxExchange.State.Requested;
 import static com.github.thxmasj.statemachine.BuiltinEntities.InboxExchange.State.Responded;
 import static com.github.thxmasj.statemachine.BuiltinEntities.InboxExchange.State.RolledBack;
 import static com.github.thxmasj.statemachine.BuiltinEntities.InboxExchange.State.RollingBack;
+import static com.github.thxmasj.statemachine.BuiltinEntities.States.Dispatched;
 import static com.github.thxmasj.statemachine.BuiltinEventTypes.Rollback;
 import static com.github.thxmasj.statemachine.EntitySelector.entityId;
 import static com.github.thxmasj.statemachine.EntitySelector.entityIdFromSession;
@@ -13,13 +15,15 @@ import static com.github.thxmasj.statemachine.Tuples.tuple;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.github.thxmasj.statemachine.BasicEventType.Rollback.Data;
+import com.github.thxmasj.statemachine.BuiltinEntities.InboxExchange.MessageId;
 import com.github.thxmasj.statemachine.EventType.DataType;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.WithFilter.Alternative;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;
-import com.github.thxmasj.statemachine.Tuples.Tuple4;
+import com.github.thxmasj.statemachine.Tuples.Tuple3;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.Column;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
+import com.github.thxmasj.statemachine.http.ParsedAuthorizationClaims;
 import com.github.thxmasj.statemachine.message.http.BadRequest;
 import com.github.thxmasj.statemachine.message.http.Created;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
@@ -40,6 +44,46 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class BuiltinEntities {
+
+  record Request<T>(
+      MessageId messageId,
+      HttpRequestMessage request,
+      T body,
+      ParsedAuthorizationClaims.Valid authorizationClaims
+  ) {}
+
+  public enum States implements State {Begin, Processing, Completed, Rejected, RolledBack, Dispatched}
+  public enum Models implements EntityModel {
+    RequestDispatching {
+      private final static UUID id = UUID.fromString("9711bee2-b42b-45ba-8d5e-7f891995a9c9");
+      @Override public UUID id() {return id;}
+      @Override public State initialState() {return States.Begin;}
+    },
+    RequestHandling {
+      private final static UUID id = UUID.fromString("20755705-fc81-4228-a1a7-5e13d6e3c153");
+      @Override public UUID id() {return id;}
+      @Override public State initialState() {return States.Begin;}
+    }
+  }
+
+  public EventType<HttpRequestMessage, Void> RouteRequest = BasicEventType.of("Route request", UUID.fromString("e55c0077-eddd-4840-b880-2bf0ace4468a"), HttpRequestMessage.class, Void.class);
+  public EventType<HttpRequestMessage, HttpRequestMessage> RejectUnroutableRequest = BasicEventType.of("RejectUnroutableRequest", UUID.fromString("9b6a57f8-8d3b-46b4-aeef-d8864f19fe13"), HttpRequestMessage.class);
+  public Map<State, List<TransitionModel<?, ?>>> dispatcherTransitions(Map<Predicate<HttpRequestMessage>, Alternative<HttpRequestMessage, ?, ?>> routes) {
+    return Map.of(
+        Begin, List.of(
+            onEvent(RouteRequest).to(Dispatched)
+                .assembleInput()
+                .when(routes)
+                .when(_ -> true).then(
+                    onEvent(RejectUnroutableRequest).to(States.Rejected)
+                            .trigger()
+                    invalidRequest(),
+                    m -> "Request not mapped: " + m.requestLine()
+                )
+                .output(d -> d)
+        )
+    );
+  }
 
   public abstract static class InboxExchange implements EntityModel {
 
@@ -181,11 +225,11 @@ public class BuiltinEntities {
         String.class,
         Void.class
     );
-    public static EventType<Tuple4<HttpRequestMessage, EntityModel, EventType<?, ?>, String>, HttpRequestMessage> RejectedRequest =
+    public static EventType<Tuple3<HttpRequestMessage, MessageId, String>, HttpRequestMessage> RejectedRequest =
         BasicEventType.of(
             "RejectedRequest",
             UUID.fromString("63a1c14d-b0e8-459b-9eb5-fac9035c8450"),
-            new DataType<>(new TypeReference<Tuple4<HttpRequestMessage, EntityModel, EventType<?, ?>, String>>() {}, HttpRequestMessage.class, EntityModel.class, EventType.class, String.class),
+            new DataType<>(new TypeReference<Tuple3<HttpRequestMessage, MessageId, String>>() {}, HttpRequestMessage.class, MessageId.class, String.class),
             HttpRequestMessage.class
         );
     public static EventType<Tuple2<HttpRequestMessage, EventLog>, HttpRequestMessage> RejectedDuplicatedRequest =
@@ -270,19 +314,20 @@ public class BuiltinEntities {
       return result;
     }
 
-    public TransitionModel<Tuple4<HttpRequestMessage, EntityModel, EventType<?, ?>, String>, HttpRequestMessage> rejectedRequest() {
+    public TransitionModel<Tuple3<HttpRequestMessage, MessageId, String>, HttpRequestMessage> rejectedRequest() {
       return onEvent(RejectedRequest).to(Requested)
           .assemble(d -> d)
           .trigger(Response)
           .with(d -> unprocessableEntity(
-              d.input().data().t2().name() + " does not accept " + d.input().data().t3().name() + ": " + d.input().data().t4(),
+              d.input().data().t3(),
               d.log().entityId(),
               d.correlationId(),
               d.timestamp()
           ))
           .on(this)
           .identifiedBy(entityIdFromSession())
-          .output(d -> d.t1().input().data().t1());
+          .newIdentifier(MessageId, d -> d.t1().input().data().t2())
+          .output(d -> d.t1().t1().input().data().t1());
     }
 
     public TransitionModel<Tuple2<HttpRequestMessage, EventLog>, HttpRequestMessage> invalidDuplicatedRequest(String reason) {
@@ -325,10 +370,6 @@ public class BuiltinEntities {
           .output(d -> d.t1().t1().t1());
     }
 
-    protected TransitionModel<String, Void> invalidRequest() {
-      return onResponseEvent(InvalidRequest, new BadRequest());
-    }
-
     public static String from(String line, String pattern, int captureGroup) {
       Matcher matcher = Pattern.compile(pattern).matcher(line);
       return matcher.find() ? matcher.group(captureGroup) : null;
@@ -338,7 +379,7 @@ public class BuiltinEntities {
       return Map.of(
           Begin, List.of(
               onEvent(Request).to(Requested)
-                  .whenReject(rejectedRequest())
+                  //.whenReject(rejectedRequest())
                   .whenDuplicate(
                       MessageId,
                       (input, log) -> input.message().equals(log.one(HttpRequestMessage.class).message()),
@@ -349,7 +390,13 @@ public class BuiltinEntities {
                   .assembleInput()
                   .when(routes())
                   .when(_ -> true).then(invalidRequest(), m -> "Request not mapped: " + m.requestLine())
-                  .output(d -> d)
+                  .output(d -> d),
+              onEvent(RollbackRequest).to(RollingBack)
+                  .assemble((input, log) -> tuple(input.data(), log.entityId()))
+                  // Identifier should be created by trigger (CreateIfNotExists)
+                  //.newIdentifier(MessageId, d -> messageIdCreator.apply(d.t1()))
+                  .trigger(AcceptedRollbackRequest).with(d -> d.t2()).on(this).identifiedBy(entityIdFromSession())
+                  .output(d -> d.t1().t1())
           ),
           Requested, join(
               List.of(
@@ -366,11 +413,23 @@ public class BuiltinEntities {
               responseTransitions()
           ),
           Responded, List.of(
-              onEvent(Request).to(RollingBack)
-                  .assembleInput()
-                  .when(rollbackPredicate()).then(rollbackRequestOn(rollbackEntity()))
-                  .when(_ -> true).then(invalidRequest(), _ -> "Request not mapped")
-                  .output(d -> d)
+              onEvent(RollbackRequest).to(RollingBack)
+                  .assemble((input, log) -> tuple(input.data(), log.entityId(), log.id(EventReference)))
+                  .trigger(Rollback)
+                  .with(d -> new Data(d.t3().eventNumber() - 1, "Inbox"))
+                  .on(rollbackEntity())
+                  .identifiedBy(entityId(d -> d.t3().entityId().value()))
+                  .trigger(AcceptedRollbackRequest)
+                  .with(d -> d.t1().t2())
+                  .on(this)
+                  .identifiedBy(entityIdFromSession())
+                  .output(d -> d.t1().t1().t1())
+
+//              onEvent(Request).to(RollingBack)
+//                  .assembleInput()
+//                  .when(rollbackPredicate()).then(rollbackRequestOn(rollbackEntity()))
+//                  .when(_ -> true).then(invalidRequest(), _ -> "Request not mapped")
+//                  .output(d -> d)
           ),
           RollingBack, List.of(
               onEvent(RollbackResponse).to(RolledBack).assembleInput().output(d -> d),
@@ -391,63 +450,67 @@ public class BuiltinEntities {
       );
     }
 
-    protected static TransitionModel<String, Void> onResponseEvent(
-        EventType<String, Void> eventType,
-        HttpResponseCreator responseCreator
-    ) {
-      return onEvent(eventType).to(Responded)
-          .assemble(c -> tuple(c.input().data(), c.log().entityId(), c.timestamp(), c.correlationId()))
-          .when(_ -> true).then(
-              onEvent(Response).to(Responded).assembleInput().output(d -> d),
-              d -> createResponseMessage(responseCreator, d.t2(), d.t4(), d.t3(), d.t1())
-          ).output();
-    }
+  }
 
-    private static HttpResponseMessage badRequest(
-        String detail,
-        EntityId entityId,
-        String correlationId,
-        ZonedDateTime timestamp
-    ) {
-      return createResponseMessage(new BadRequest(), entityId, correlationId, timestamp, detail);
-    }
+  protected static TransitionModel<String, Void> invalidRequest() {
+    return onResponseEvent(InvalidRequest, new BadRequest());
+  }
 
-    private static HttpResponseMessage unprocessableEntity(
-        String detail,
-        EntityId entityId,
-        String correlationId,
-        ZonedDateTime timestamp
-    ) {
-      return createResponseMessage(new UnprocessableEntity(), entityId, correlationId, timestamp, detail);
-    }
+  protected static TransitionModel<String, Void> onResponseEvent(
+      EventType<String, Void> eventType,
+      HttpResponseCreator responseCreator
+  ) {
+    return onEvent(eventType).to(Responded)
+        .assemble(c -> tuple(c.input().data(), c.log().entityId(), c.timestamp(), c.correlationId()))
+        .when(_ -> true).then(
+            onEvent(InboxExchange.Response).to(Responded).assembleInput().output(d -> d),
+            d -> createResponseMessage(responseCreator, d.t2(), d.t4(), d.t3(), d.t1())
+        ).output();
+  }
 
-    public static HttpResponseMessage createResponseMessage(
-        HttpResponseCreator responseCreator,
-        EntityId entityId,
-        String correlationId,
-        ZonedDateTime timestamp,
-        String data
-    ) {
-      return responseCreator.create(
-          data, new OutgoingRequestCreator.Context() {
-            @Override
-            public EntityId entityId() {
-              return entityId;
-            }
+  private static HttpResponseMessage badRequest(
+      String detail,
+      EntityId entityId,
+      String correlationId,
+      ZonedDateTime timestamp
+  ) {
+    return createResponseMessage(new BadRequest(), entityId, correlationId, timestamp, detail);
+  }
 
-            @Override
-            public String correlationId() {
-              return correlationId;
-            }
+  private static HttpResponseMessage unprocessableEntity(
+      String detail,
+      EntityId entityId,
+      String correlationId,
+      ZonedDateTime timestamp
+  ) {
+    return createResponseMessage(new UnprocessableEntity(), entityId, correlationId, timestamp, detail);
+  }
 
-            @Override
-            public ZonedDateTime timestamp() {
-              return timestamp;
-            }
+  public static HttpResponseMessage createResponseMessage(
+      HttpResponseCreator responseCreator,
+      EntityId entityId,
+      String correlationId,
+      ZonedDateTime timestamp,
+      String data
+  ) {
+    return responseCreator.create(
+        data, new OutgoingRequestCreator.Context() {
+          @Override
+          public EntityId entityId() {
+            return entityId;
           }
-      );
-    }
 
+          @Override
+          public String correlationId() {
+            return correlationId;
+          }
+
+          @Override
+          public ZonedDateTime timestamp() {
+            return timestamp;
+          }
+        }
+    );
   }
 
 }

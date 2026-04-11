@@ -66,7 +66,6 @@ public class MerchantTransitions {
     return new Merchant(
         merchant.aggregatorId(),
         merchant.id(),
-        ofNullable(merchantUpdate.merchantName()).orElse(merchant.name()),
         ofNullable(merchantUpdate.merchantDisplayName()).orElse(merchant.displayName()),
         ofNullable(merchantUpdate.merchantLocation()).orElse(merchant.location()),
         ofNullable(merchantUpdate.merchantCategoryCode()).orElse(merchant.categoryCode()),

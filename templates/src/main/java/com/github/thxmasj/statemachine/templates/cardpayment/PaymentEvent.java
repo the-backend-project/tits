@@ -8,6 +8,7 @@ import com.github.thxmasj.statemachine.Tuples.Tuple2;
 import com.github.thxmasj.statemachine.Tuples.Tuple3;
 import com.github.thxmasj.statemachine.templates.cardpayment.AuthenticationDataCreator.AuthenticationData;
 import com.github.thxmasj.statemachine.templates.cardpayment.CaptureRequestDataCreator.CaptureRequestData;
+import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Merchant.Location;
 import com.github.thxmasj.statemachine.templates.cardpayment.validators.ValidatedAmount;
 import com.github.thxmasj.statemachine.templates.cardpayment.validators.ValidatedTransactionTime;
 import java.time.ZonedDateTime;
@@ -17,6 +18,7 @@ public interface PaymentEvent {
 
   record Authorisation(
       String merchantId,
+      MerchantDetails merchantDetails,
       String clientId,
       Amount amount,
       String merchantReference,
@@ -25,7 +27,13 @@ public interface PaymentEvent {
       ZonedDateTime transactionTime,
       String authenticationData,
       String simulation
-  ) {}
+  ) {
+    public record MerchantDetails(
+        String displayName,
+        String categoryCode,
+        Location location
+    ) {}
+  }
 
   record AuthenticationResult(
       String authenticationReference,
@@ -44,7 +52,6 @@ public interface PaymentEvent {
   record Merchant(
       String aggregatorId,
       String id,
-      String name,
       String displayName,
       Location location,
       String categoryCode,
@@ -81,6 +88,7 @@ public interface PaymentEvent {
   EventType<Tuple3<Authorisation, Merchant, AuthenticationData>, Tuple2<Authorisation, Merchant>> ValidPaymentRequest = BasicEventType.of("ValidPaymentRequest", UUID.fromString("a67a80c1-9b16-4445-9a14-76f114f49827"), new DataType<>(new TypeReference<>() {}, Authorisation.class, Merchant.class, AuthenticationData.class), new DataType<>(new TypeReference<>() {}, Authorisation.class, Merchant.class));
   EventType<MerchantId, MerchantId> UnknownMerchant = BasicEventType.of("UnknownMerchant", UUID.fromString("85638b45-2bc6-4363-901f-7c35d8a642b6"), MerchantId.class);
   EventType<MerchantId, MerchantId> IllegalMerchant = BasicEventType.of("IllegalMerchant", UUID.fromString("04ae10a7-fa0f-4f2e-bdbc-22371ef29c39"), MerchantId.class);
+  EventType<Void, Void> InsufficientMerchantDetails = BasicEventType.of("InsufficientMerchantDetails", UUID.fromString("a7f228ba-f5d2-43ab-bfc1-531954d223e7"), Void.class);
   EventType<ValidatedAmount.Invalid, ValidatedAmount.Invalid> InvalidAmount = BasicEventType.of("InvalidAmount", UUID.fromString("c19e6784-4059-4216-b67b-087ca5f2e764"), ValidatedAmount.Invalid.class);
   EventType<ValidatedTransactionTime.Invalid, ValidatedTransactionTime.Invalid> InvalidTransactionTime = BasicEventType.of("InvalidTransactionTime", UUID.fromString("9db62961-6fc5-48e1-95fe-0157d62f309c"), ValidatedTransactionTime.Invalid.class);
   EventType<AuthenticationResult, Void> AuthenticationFailed = BasicEventType.of("AuthenticationFailed", UUID.fromString("ad1dc496-ecdd-4871-9a87-715df7b30aac"), AuthenticationResult.class, Void.class);

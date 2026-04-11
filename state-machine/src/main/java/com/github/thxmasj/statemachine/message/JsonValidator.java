@@ -2,16 +2,20 @@ package com.github.thxmasj.statemachine.message;
 
 import static com.github.thxmasj.statemachine.message.JsonValidator.Status.Invalid;
 import static com.github.thxmasj.statemachine.message.JsonValidator.Status.Valid;
+import static java.util.stream.Collectors.joining;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
 import org.hibernate.validator.messageinterpolation.ParameterMessageInterpolator;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 public class JsonValidator {
 
@@ -49,7 +53,13 @@ public class JsonValidator {
     }
     var violations = jsonValidator.validate(target);
     if (!violations.isEmpty())
-      return new Result<>(Invalid, new ConstraintViolationException(violations).getMessage(), null);
+      return new Result<>(
+          Invalid,
+          violations.stream()
+              .map(v -> v == null ? "n/a" : v.getPropertyPath() + ": " + v.getMessage())
+              .collect(joining(", ")),
+          null
+      );
     return new Result<>(Valid, null, target);
   }
 

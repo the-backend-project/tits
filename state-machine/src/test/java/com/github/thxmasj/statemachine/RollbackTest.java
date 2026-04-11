@@ -179,7 +179,7 @@ public class RollbackTest {
                     new Data(-2, "test")
                 ))
         )
-        .expectErrorMessage("Rollback on Pacman rejected: Nested change rejected: Can't rollback to event number -1 (input=-2, last=1)")
+        .expectErrorMessage("Rollback on Pacman not allowed for Moving: Can't rollback to event number -1")
         .verify();
   }
 
@@ -192,7 +192,7 @@ public class RollbackTest {
                     new Data(2, "test")
                 ))
         )
-        .expectErrorMessage("Rollback on Pacman rejected: Nested change rejected: Can't rollback to event number 2 (input=2, last=1)")
+        .expectErrorMessage("Rollback on Pacman not allowed for Moving: Can't rollback to event number 2")
         .verify();
   }
 

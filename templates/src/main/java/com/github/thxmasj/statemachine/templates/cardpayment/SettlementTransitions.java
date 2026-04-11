@@ -3,11 +3,14 @@ package com.github.thxmasj.statemachine.templates.cardpayment;
 import static com.github.thxmasj.statemachine.BuiltinEntities.InboxExchange.AcceptedRequest;
 import static com.github.thxmasj.statemachine.EntitySelector.entityIdFromSession;
 import static com.github.thxmasj.statemachine.EntitySelector.newEntityId;
+import static com.github.thxmasj.statemachine.EntitySelector.secondaryId;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
 import static com.github.thxmasj.statemachine.Tuples.tuple;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Aggregate.Settlement;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Identifiers.AcquirerBatchNumber;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Identifiers.BatchNumber;
+import static com.github.thxmasj.statemachine.templates.cardpayment.Identifiers.MerchantId;
+import static com.github.thxmasj.statemachine.templates.cardpayment.MerchantEvent.Get;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.Begin;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.Error;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.Open;
@@ -88,11 +91,12 @@ public abstract class SettlementTransitions {
                 .output(Function.identity()),
             onEvent(CutOffRequest).to(ProcessingSettlement)
                 .assemble((input, log) -> tuple(input.data(), log.id(BatchNumber), log.id(AcquirerBatchNumber), log.entityId()))
-                .trigger(reconciliation()).with(d -> tuple(d.t2(), d.t3()))
+                .trigger(Get).on(Aggregate.Merchant).identifiedBy(secondaryId(MerchantId, d -> d.t1().merchantId()))
+                .trigger(reconciliation()).with(d -> tuple(d.t1().t2(), d.t1().t3(), d.t2().accepted().event().getUnmarshalledData()))
                 .to(Acquirer).guaranteed().responseValidator(validateSettlementResponse())
-                .trigger(SettlementEvent.Open).with(Tuple4::t3).on(Settlement).identifiedBy(newEntityId())
-                .trigger(AcceptedRequest).with(d -> d.t1().t4()).on(inboxExchange).identifiedBy(entityIdFromSession())
-                .output(d -> d.t1().t1().t1())
+                .trigger(SettlementEvent.Open).with(d -> d.t1().t3().next()).on(Settlement).identifiedBy(newEntityId())
+                .trigger(AcceptedRequest).with(d -> d.t1().t1().t4()).on(inboxExchange).identifiedBy(entityIdFromSession())
+                .output(d -> d.t1().t1().t1().t1())
         ),
         ProcessingSettlement, List.of(
             // For previous batch to stay open for ongoing capture exchanges when cut-off is performed

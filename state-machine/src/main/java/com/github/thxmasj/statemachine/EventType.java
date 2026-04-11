@@ -43,6 +43,12 @@ public interface EventType<I, O> {
       this.name = "(" + t1Type.getSimpleName() + ", " + t2Type.getSimpleName() + ", " + t3Type.getSimpleName() + ", " + t4Type.getSimpleName() + ")";
     }
 
+    public <T1, T2, T3, T4, T5> DataType(TypeReference<T> typeReference, Class<T1> t1Type, Class<T2> t2Type, Class<T3> t3Type, Class<T4> t4Type, Class<T5> t5Type) {
+      this.clazz = null;
+      this.typeReference = typeReference;
+      this.name = "(" + t1Type.getSimpleName() + ", " + t2Type.getSimpleName() + ", " + t3Type.getSimpleName() + ", " + t4Type.getSimpleName() + ", " + t5Type.getSimpleName() + ")";
+    }
+
     public Class<T> value() {
       return clazz;
     }

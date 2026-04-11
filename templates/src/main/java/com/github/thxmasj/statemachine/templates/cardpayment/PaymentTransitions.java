@@ -36,6 +36,7 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.InvalidPaymentTokenOwnership;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.InvalidPaymentTokenStatus;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.InvalidTransactionTime;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.InsufficientMerchantDetails;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.PaymentRequest;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Preauthorisation;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.PreauthorisationApproved;
@@ -80,6 +81,8 @@ import com.github.thxmasj.statemachine.templates.cardpayment.AuthorisationRevers
 import com.github.thxmasj.statemachine.templates.cardpayment.CaptureRequestDataCreator.CaptureRequestData;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthenticationResult;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Authorisation;
+import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Authorisation.MerchantDetails;
+import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Merchant;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.PaymentToken;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Refund;
 import com.github.thxmasj.statemachine.templates.cardpayment.PreauthorisationReversalDataCreator.PreauthorisationReversalData;
@@ -198,6 +201,16 @@ public abstract class PaymentTransitions {
                             .output(Tuple2::t1),
                         d -> new MerchantId(d.t1().t1().merchantId())
                     )
+                    .when(d -> d.t2().accepted().event().getUnmarshalledData().superMerchant() && !validateMerchantDetails(d.t1().t1().merchantDetails())).then(
+                        onEvent(InsufficientMerchantDetails).toSelf()
+                            .assembleInput()
+                            .trigger(InvalidRequest)
+                            .with(_ -> "Insufficient details for merchant provided")
+                            .on(inboxExchange)
+                            .identifiedBy(entityIdFromSession())
+                            .output(Tuple2::t1),
+                        _ -> null
+                    )
                     .when(d -> d.t1().t3().isInvalid()).then(
                         onEvent(InvalidAmount).toSelf()
                             .assembleInput()
@@ -222,7 +235,7 @@ public abstract class PaymentTransitions {
                         onEvent(ValidPaymentRequest).to(ProcessingAuthentication)
                             .assembleInput()
                             .trigger(authentication()).with(Tuple3::t3).to(Authenticator).responseValidator(validateAuthenticationResponse())
-                            .output(d -> tuple(d.t1(), d.t2())),
+                            .output(d -> tuple(d.t1(), merchant(d.t2(), d.t1().merchantDetails()))),
                         d -> tuple(d.t1().t1(), d.t2().accepted().event().getUnmarshalledData(), d.t1().t2())
                     )
                     .output()
@@ -230,17 +243,14 @@ public abstract class PaymentTransitions {
             ProcessingAuthentication, List.of(
                 onEvent(InvalidAuthenticationToken).to(Begin)
                     .trigger(InvalidRequest).with(_ -> "Invalid authentication token").on(inboxExchange).identifiedBy(entityIdFromSession())
-                    //.trigger(new BadRequest()).with(_ -> "Invalid authentication token")
                     .output(),
                 onEvent(InvalidPaymentTokenStatus).to(Begin)
                     .trigger(InvalidRequest).with(_ -> "Payment token is inactive").on(inboxExchange).identifiedBy(entityIdFromSession())
-                    //.trigger(new BadRequest()).with(_ -> "Payment token is inactive")
                     .output(),
                 onEvent(AuthenticationFailed).to(Begin)
                     .assemble((input, log) -> tuple(log.one(ValidPaymentRequest).t1(), log.one(ValidPaymentRequest).t2(), input.data()))
                     .trigger(failedAuthentication()).with(d -> tuple(d.t1(), d.t2(), d.t3(), paymentToken(d.t1().authenticationData()))).to(Acquirer).guaranteed()
                     .trigger(InvalidRequest).with(_ -> "Authentication failed").on(inboxExchange).identifiedBy(entityIdFromSession())
-                    //.trigger(new BadRequest()).with(_ -> "Authentication failed")
                     .output(),
                 onEvent(InvalidPaymentTokenOwnership).to(Begin)
                     .assemble((input, log) -> tuple(
@@ -251,7 +261,6 @@ public abstract class PaymentTransitions {
                     ))
                     .trigger(failedTokenValidation()).with(d -> d).to(Acquirer).guaranteed().responseValidator(validateAuthorisationAdviceResponse())
                     .trigger(InvalidRequest).with(_ -> "Payment token is not accessible").on(inboxExchange).identifiedBy(entityIdFromSession())
-                    //.trigger(new BadRequest()).with(_ -> "Payment token is not accessible")
                     .output(),
                 onEvent(RollbackRequest).toSelf()
                     .assemble((input, log) -> tuple(input.data(), log.entityId()))
@@ -446,6 +455,24 @@ public abstract class PaymentTransitions {
     );
   }
 
+  private Merchant merchant(Merchant merchant, MerchantDetails merchantDetails) {
+    return merchant.superMerchant() ?
+        new Merchant(
+            merchant.aggregatorId(),
+            merchant.id(),
+            merchantDetails.displayName(),
+            merchantDetails.location(),
+            merchantDetails.categoryCode(),
+            merchant.acquirerId(),
+            true
+        ) : merchant;
+  }
+
+  private boolean validateMerchantDetails(MerchantDetails merchantDetails) {
+    return merchantDetails != null && merchantDetails.categoryCode() != null && merchantDetails.displayName() != null
+        && merchantDetails.location() != null && merchantDetails.location().city() != null;
+  }
+
   private TransitionModel<?, ?> captureRequestTransition() {
     return onEvent(CaptureRequest).to(ProcessingCapture)
         .assemble((input, log) -> new CaptureRequestData(
@@ -466,7 +493,7 @@ public abstract class PaymentTransitions {
                 .assembleInput()
                 .trigger(GetAcquirerBatchNumber)
                 .with(d -> new MerchantId(d.merchant().id()))
-                .on(Settlement).identifiedBy(lastInIdGroup(BatchNumber, d -> d.merchant().id()))
+                .on(Settlement).identifiedBy(lastInIdGroup(BatchNumber, d -> d.merchant().id(), CreateIfNotExists))
                 .trigger(capture())
                 .with(d -> tuple(
                     d.t1(),

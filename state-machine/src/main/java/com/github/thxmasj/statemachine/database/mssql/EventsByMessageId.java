@@ -113,7 +113,7 @@ public class EventsByMessageId {
     })
         .onErrorMap(
             e -> e instanceof SQLServerException f && f.getErrorCode() == 50000,
-            _ -> new UnknownEntity(messageId)
+            _ -> new RuntimeException()//new UnknownEntity(messageId)
         );
   }
 
