@@ -22,7 +22,13 @@ public interface EventType<I, O> {
     public DataType(Class<T> clazz) {
       this.clazz = clazz;
       this.typeReference = new TypeReference<>() {};
-      this.name = clazz.getSimpleName();
+      this.name = clazz != null ? clazz.getSimpleName() : "?";
+    }
+
+    public DataType(TypeReference<T> typeReference, Class<T> clazz) {
+      this.clazz = clazz;
+      this.typeReference = typeReference;
+      this.name = clazz != null ? clazz.getSimpleName() : "?";
     }
 
     public <T1, T2> DataType(TypeReference<T> typeReference, Class<T1> t1Type, Class<T2> t2Type) {

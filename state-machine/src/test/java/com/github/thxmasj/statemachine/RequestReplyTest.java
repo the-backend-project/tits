@@ -1,11 +1,21 @@
 package com.github.thxmasj.statemachine;
 
+import static com.github.thxmasj.statemachine.BuiltinEntities.CompleteRequest;
 import static com.github.thxmasj.statemachine.BuiltinEntities.InboxExchange.AcceptedRequest;
 import static com.github.thxmasj.statemachine.BuiltinEntities.InboxExchange.MessageId;
 import static com.github.thxmasj.statemachine.BuiltinEntities.InboxExchange.Request;
+import static com.github.thxmasj.statemachine.BuiltinEntities.InboxExchange.Response;
 import static com.github.thxmasj.statemachine.BuiltinEntities.InboxExchange.RollbackResponse;
 import static com.github.thxmasj.statemachine.BuiltinEntities.InboxExchange.State.Requested;
 import static com.github.thxmasj.statemachine.BuiltinEntities.InboxExchange.State.Responded;
+import static com.github.thxmasj.statemachine.BuiltinEntities.InboxExchange.from;
+import static com.github.thxmasj.statemachine.BuiltinEntities.Models.RequestDispatching;
+import static com.github.thxmasj.statemachine.BuiltinEntities.Models.RequestRouting;
+import static com.github.thxmasj.statemachine.BuiltinEntities.RouteRequest;
+import static com.github.thxmasj.statemachine.BuiltinEntities.createResponseMessage;
+import static com.github.thxmasj.statemachine.BuiltinEntities.onResponseEvent;
+import static com.github.thxmasj.statemachine.BuiltinEntities.requestDispatchingTransitions;
+import static com.github.thxmasj.statemachine.BuiltinEntities.requestRoutingTransitions;
 import static com.github.thxmasj.statemachine.BuiltinEventTypes.Rollback;
 import static com.github.thxmasj.statemachine.EntitySelector.CreationMode.CreateIfNotExists;
 import static com.github.thxmasj.statemachine.EntitySelector.entityId;
@@ -35,8 +45,11 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.thxmasj.statemachine.BasicEventType.Rollback.Data;
+import com.github.thxmasj.statemachine.BuiltinEntities.CustomResponse;
+import com.github.thxmasj.statemachine.BuiltinEntities.HttpRequestRouter;
 import com.github.thxmasj.statemachine.BuiltinEntities.InboxExchange;
 import com.github.thxmasj.statemachine.BuiltinEntities.InboxExchange.RequestType;
+import com.github.thxmasj.statemachine.BuiltinEntities.RequestParser.ParsedRequest;
 import com.github.thxmasj.statemachine.EventTrigger.EventSpec;
 import com.github.thxmasj.statemachine.EventType.DataType;
 import com.github.thxmasj.statemachine.IncomingResponseValidator.Result;
@@ -68,6 +81,7 @@ import java.util.Random;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import org.eclipse.jetty.webapp.MetaData.Complete;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
@@ -117,24 +131,18 @@ public class RequestReplyTest {
             onEvent(SwitchOff).to(Off).output(),
             onEvent(Cancel).toSelf()
                 .assemble(c -> tuple(c.input().data(), c.log().entityId()))
-                .trigger(AcceptedRequest).with(Tuple2::t2).on(inboxExchange).identifiedBy(entityIdFromSession())
+                .trigger(CompleteRequest).with(d -> tuple("Cancelled", d.t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t1()),
             onEvent(ZeroProcessing).toSelf()
                 .assemble(c -> tuple(c.input().data(), c.log().entityId()))
-                .trigger(AcceptedRequest).with(Tuple2::t2).on(inboxExchange).identifiedBy(entityIdFromSession())
+                .trigger(CompleteRequest).with(d -> tuple("Complete", d.t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t1())
         ),
         Off, List.of(
             onEvent(InternalProcessing).to(On)
                 .assemble(c -> c.log().entityId())
-                .trigger(new ProcessRequest(0))
-                .with(_ -> null)
-                .to(DeviceListener)
-                .guaranteed()
-                .trigger(InternalProcessResponse)
-                .with(d -> tuple(d, "Light is on! " + random.nextLong()))
-                .on(inboxExchange)
-                .identifiedBy(entityIdFromSession())
+                .trigger(new ProcessRequest(0)).with(_ -> null).to(DeviceListener).guaranteed()
+                .trigger(CompleteRequest).with(d -> tuple("Light is on! " + random.nextLong(), d)).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(),
             onEvent(ComplexInternalProcessing).to(Processing)
                 .assemble(d -> d)
@@ -184,16 +192,12 @@ public class RequestReplyTest {
         Processing, List.of(
             onEvent(Rollback).toSelf().assembleInput().output(d -> d),
             onEvent(ComplexInternalProcessingDone).to(On)
-                .trigger(ComplexInternalProcessResponse)
-                .with(_ -> "Phew! Light is switched on! " + random.nextLong())
-                .on(inboxExchange)
-                .identifiedBy(entityIdFromSession())
+                .assemble((_, log) -> log.entityId())
+                .trigger(CompleteRequest).with(d -> tuple("Phew! Light is switched on! " + random.nextLong(), d)).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(),
             onEvent(ExternalProcessingDone).to(On)
-                .trigger(ExternalProcessResponse)
-                .with(_ -> "Light is externally switched on! " + random.nextLong())
-                .on(inboxExchange)
-                .identifiedBy(entityIdFromSession())
+                .assemble((_, log) -> log.entityId())
+                .trigger(CompleteRequest).with(d -> tuple("Light is externally switched on! " + random.nextLong(), d)).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output()
         ),
         Unreachable, List.of(
@@ -334,8 +338,121 @@ public class RequestReplyTest {
     return new SimpleImmutableEntry<>(key, value);
   }
 
+  static List<HttpRequestRouter<?, ?>> routers = List.of(
+    new HttpRequestRouter<>(
+        m -> m.requestLine().matches("PUT .*/zero/.*"),
+        false,
+        BasicEventType.of("ZeroProcessRequest", UUID.fromString("c5eb5fb3-8742-49e6-b8a2-351afc44304c"), new DataType<>(new TypeReference<>() {}, null), Void.class),
+        ZeroProcessing,
+        Lamp,
+        entityId(d -> UUID.fromString(requireNonNull(from(d.request().requestLine(), "PUT .*/zero/(.*)", 1)))),
+        Void.class,
+        (request, _) -> ZeroProcessRequest.id() + "/" + requireNonNull(from(request.requestLine(), "PUT .*/zero/(.*)", 1)),
+        _ -> new Zero("Hey!")
+    ),
+    new HttpRequestRouter<>(
+        m -> m.requestLine().matches("PUT .*/handledunknown/.*"),
+        false,
+        BasicEventType.of("HandledUnknownId", UUID.fromString("cae56547-1999-49d4-ab34-b846942f6526"), new DataType<>(null), Void.class),
+        InternalProcessing,
+        Lamp,
+        entityId(UUID.randomUUID()), // Unknown id
+        Void.class,
+        null,
+        _ -> null
+    ),
+    new HttpRequestRouter<>(
+        m -> m.requestLine().matches("PUT .*/handledreject/.*"),
+        false,
+        BasicEventType.of("HandledReject", UUID.fromString("bd065522-30b4-4495-8f22-a0576d798cc7"), new DataType<>(null), Void.class),
+        EventThatIsAlwaysRejected,
+        Lamp,
+        newEntityId(),
+        Void.class,
+        null,
+        _ -> null
+    ),
+    new HttpRequestRouter<>(
+        m -> {System.out.println("Testing InternalProcessRequest with " + m.requestLine() + ": " + m.requestLine().matches("PUT .*/internal/.*")); return m.requestLine().matches("PUT .*/internal/.*");},
+        false,
+        BasicEventType.of("InternalProcessRequest", UUID.fromString("74b6a36a-135f-4cef-bb78-4e6279bd337b"), new DataType<>(null), Void.class),
+        InternalProcessing,
+        Lamp,
+        newEntityId(),
+        Void.class,
+        (request, _) -> from(request.requestLine(), "PUT .*/internal/(.*)", 1),
+        _ -> null
+    ),
+    new HttpRequestRouter<>(
+        m -> m.requestLine().matches("PUT .*/complexinternal/.*"),
+        false,
+        BasicEventType.of("ComplexInternalProcessRequest", UUID.fromString("baafef75-8d74-4984-967e-cbd3215ec1de"), new DataType<>(null), Void.class),
+        ComplexInternalProcessing,
+        Lamp,
+        newEntityId(),
+        Void.class,
+        (request, _) -> from(request.requestLine(), "PUT .*/complexinternal/(.*)", 1),
+        _ -> null
+    ),
+    new HttpRequestRouter<>(
+        m -> m.requestLine().matches("PUT .*/external/.*"),
+        false,
+        BasicEventType.of("ExternalProcessRequest", UUID.fromString("ec71b8fd-d1bd-4ebb-b993-0a62f69d21e5"), new DataType<>(null), Void.class),
+        ExternalProcessing,
+        Lamp,
+        newEntityId(),
+        Void.class,
+        (request, _) -> from(request.requestLine(), "PUT .*/external/(.*)", 1),
+        _ -> null
+    ),
+    new HttpRequestRouter<>(
+        m -> m.requestLine().matches("PUT .*/long-external/.*"),
+        false,
+        BasicEventType.of("LongExternalProcessRequest", UUID.fromString("0b4397d3-c3cc-4950-8513-18e9522b18c5"), new DataType<>(null), Void.class),
+        LongExternalProcessing,
+        Lamp,
+        newEntityId(),
+        Void.class,
+        null,
+        _ -> null
+    ),
+    new HttpRequestRouter<>(
+        m -> m.requestLine().matches("PUT .*/rejected/.*"),
+        false,
+        BasicEventType.of("RequestWhichIsRejected", UUID.fromString("fb0c25f5-e361-44be-b8fe-0632749849ff"), new DataType<>(null), Void.class),
+        EventThatIsAlwaysRejected,
+        Lamp,
+        newEntityId(),
+        Void.class,
+        (request, _) -> from(request.requestLine(), "PUT .*/rejected/(.*)", 1),
+        _ -> null
+    )
+  );
 
-
+  static List<HttpRequestRouter<?, ?>> rollbackRouters = List.of(
+      new HttpRequestRouter<>(
+          m -> m.requestLine().matches("DELETE .*/lamps/messages/.*"),
+          false,
+          BasicEventType.of("RollbackRequest", UUID.fromString("9c8914f1-60f7-4829-8eaa-c0a60c65d377"), new DataType<>(null), Void.class),
+          Rollback,
+          Lamp,
+          null,
+          Void.class,
+          (request, _) -> from(request.requestLine(), "DELETE .*/lamps/messages/(.*)", 1),
+          _ -> null
+      ),
+      new HttpRequestRouter<>(
+          m -> m.requestLine().matches("DELETE .*/internal/.*"),
+          false,
+          BasicEventType.of("CancelRequest", UUID.fromString("86de7919-4e2f-406b-8d72-568bae6cbf32"), new DataType<>(null), Void.class),
+          Cancel,
+          Lamp,
+          entityId(d -> UUID.fromString(requireNonNull(from(d.request().requestLine(), "DELETE .*/internal/(.*)", 1)))),
+          Void.class,
+          (request, _) -> from(request.requestLine(), "DELETE .*/lamps/messages/(.*)", 1),
+          _ -> null
+      )
+  );
 
   static InboxExchange inboxExchange = new InboxExchange() {
 
@@ -663,7 +780,9 @@ public class RequestReplyTest {
     server.start();
     Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions = new HashMap<>();
     transitions.put(Lamp, lampTransitions());
-    transitions.put(inboxExchange, inboxExchange.transitions());
+    //transitions.put(inboxExchange, inboxExchange.transitions());
+    transitions.put(RequestRouting, requestRoutingTransitions(routers, rollbackRouters));
+    transitions.put(RequestDispatching, requestDispatchingTransitions(routers, rollbackRouters, List.of()));
     //noinspection SwitchStatementWithTooFewBranches
     stateMachine = Init.stateMachine(
         transitions,
@@ -673,6 +792,23 @@ public class RequestReplyTest {
         }
     );
   }
+
+//  @Override
+//  protected List<TransitionModel<?, ?>> responseTransitions() {
+//    return List.of(
+//        onEvent(InternalProcessResponse).to(Responded)
+//            .assemble(c -> tuple(c.input().data(), c.timestamp(), c.correlationId()))
+//            .when(_ -> true).then(
+//                onEvent(Response).to(Responded).assembleInput().output(d -> d),
+//                d -> createResponseMessage(new Created(), d.t1().t1(), d.t3(), d.t2(), d.t1().t2())
+//            )
+//            .output(),
+//        //onResponseEvent(InternalProcessResponse, new Created()),
+//        onResponseEvent(ComplexInternalProcessResponse, new Created()),
+//        onResponseEvent(ExternalProcessResponse, new Created())
+//    );
+//  }
+
 
   @Test
   public void whenInternalProcessRequestThenInternalProcessResponse() throws JsonProcessingException {
@@ -878,9 +1014,9 @@ public class RequestReplyTest {
   private Event<?> onRequest(Method method, URI uri, String body) {
     return onRequest(
         new EventTrigger<>(
-            new EventSpec<>(Request, Function.identity()),
+            new EventSpec<>(RouteRequest, Function.identity()),
             List.of(newEntityId()),
-            inboxExchange,
+            RequestRouting,
             false
         ),
         new HttpRequestMessage(method, uri, Map.of(), body)

@@ -1,11 +1,13 @@
 package com.github.thxmasj.statemachine;
 
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
+import static com.github.thxmasj.statemachine.Tuples.tuple;
 import static java.util.Collections.unmodifiableList;
 import static java.util.stream.Collectors.joining;
 
 import com.github.thxmasj.statemachine.BasicEventType.Rollback;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
+import com.github.thxmasj.statemachine.Tuples.Tuple2;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -18,15 +20,15 @@ public class Traverser {
 
   public State currentState(EventLog eventLog) {
     var effectiveEvents = eventLog.effectiveEvents();
-//    System.out.printf(
-//        """
-//        Traverser.currentState:
-//        Effective events: %s
-//        Actual events:    %s
-//        """,
-//        effectiveEvents.stream().map(Event::typeName).collect(joining(", ")),
-//        eventLog.events().stream().map(Event::typeName).collect(joining(", "))
-//    );
+    System.out.printf(
+        """
+        Traverser.currentState:
+        Effective events: %s
+        Actual events:    %s
+        """,
+        effectiveEvents.stream().map(Event::typeName).collect(joining(", ")),
+        eventLog.events().stream().map(Event::typeName).collect(joining(", "))
+    );
     State currentState = eventLog.entityModel().initialState();
     if (effectiveEvents.isEmpty()) {
       return currentState;
@@ -45,24 +47,30 @@ public class Traverser {
     return transition.toState() != null ? transition.toState() : currentState; // toSelf
   }
 
-  public State targetState(State currentState, EventType<?, ?> eventType) {
-    var model = accept(currentState, eventType);
-    if (model == null) throw new IllegalStateException("No transition found for event " + eventType);
-    return targetState(currentState, model);
-  }
+//  public State targetState(State currentState, EventType<?, ?> eventType) {
+//    var model = accept(currentState, eventType);
+//    if (model == null) throw new IllegalStateException("No transition found for event " + eventType);
+//    return targetState(currentState, model);
+//  }
 
-  public TransitionModel<?, ?> accept(EventLog eventLog, EventType<?, ?> eventType) {
+  public Tuple2<State, TransitionModel<?, ?>> accept(EventLog eventLog, EventType<?, ?> eventType) {
     var currentState = currentState(eventLog);
-    return accept(currentState, eventType);
-  }
-
-  public TransitionModel<?, ?> accept(State currentState, EventType<?, ?> eventType) {
     var availableTransitions = transitions.get(currentState);
+    if (availableTransitions == null) throw new IllegalStateException("No available transitions for current state " + currentState + " on " + eventLog.entityModel().name());
     var t = findTransition(eventType, availableTransitions);
     if (t == null && eventType == BuiltinEventTypes.Rollback && eventType instanceof BasicEventType.Rollback rollback)
       t = onEvent(rollback).toSelf().assembleInput().output(d -> d);
-    return t;
+    return tuple(currentState, t);
   }
+
+//  public TransitionModel<?, ?> accept(State currentState, EventType<?, ?> eventType) {
+//    var availableTransitions = transitions.get(currentState);
+//    if (availableTransitions == null) throw new IllegalStateException("No available transitions for current state " + currentState);
+//    var t = findTransition(eventType, availableTransitions);
+//    if (t == null && eventType == BuiltinEventTypes.Rollback && eventType instanceof BasicEventType.Rollback rollback)
+//      t = onEvent(rollback).toSelf().assembleInput().output(d -> d);
+//    return t;
+//  }
 
   public TransitionModel<?, ?> transitionForEventNumber(EventLog eventLog, int eventNumber) {
     var events = eventLog.events();

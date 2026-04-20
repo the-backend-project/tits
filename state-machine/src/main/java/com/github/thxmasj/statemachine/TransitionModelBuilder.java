@@ -9,9 +9,11 @@ import static java.util.stream.Collectors.joining;
 
 import com.github.thxmasj.statemachine.BasicEventType.Rollback;
 import com.github.thxmasj.statemachine.BasicEventType.Rollback.Data;
+import com.github.thxmasj.statemachine.BuiltinEntities.Choice;
 import com.github.thxmasj.statemachine.EventTrigger.EventSpec;
 import com.github.thxmasj.statemachine.OutgoingRequestModel.Builder;
 import com.github.thxmasj.statemachine.StateMachine.ChangeSet;
+import com.github.thxmasj.statemachine.StateMachine.CircularChange;
 import com.github.thxmasj.statemachine.StateMachine.ProcessResult;
 import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Accepted;
 import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Entity;
@@ -24,7 +26,9 @@ import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.Init
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.NewIdentifierChangeContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.OutgoingRequestChangeContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.OutputChangeContext;
+import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.PendingTriggerChangeContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.RejectedTriggerChangeContext;
+import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.ResolvedPendingTriggerChangeContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.ReversalChangeContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.ScheduledChangeContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.TriggerChangeContext;
@@ -97,7 +101,7 @@ public class TransitionModelBuilder<I, T, O> {
 
   }
 
-  sealed interface ChangeContext<T> {
+  public sealed interface ChangeContext<T> {
     TransitionContext<?> transitionContext();
 
     ChangeContext<?> previous();
@@ -119,12 +123,17 @@ public class TransitionModelBuilder<I, T, O> {
       while (changeContext != null) {
         switch (changeContext) {
           case TriggerChangeContext<?, ?> c -> changes.add(c.changeSet);
+          case PendingTriggerChangeContext<?, ?> c -> {}
+          case ResolvedPendingTriggerChangeContext<?, ?> c -> {
+            System.out.println("Including resolved pending trigger changes in nested changes: " + c.changeSet);
+            changes.add(c.changeSet);
+          }
           case RejectedTriggerChangeContext<?, ?> c -> changes.add(c.changeSet);
           case UnknownEntityTriggerChangeContext<?, ?> c -> changes.add(c.changeSet);
           case ChoiceChangeContext<?, ?> c -> changes.add(c.changeSet);
           case InitialReversalChangeContext<?> c -> c.changeSet.ifPresent(changes::add);
           case ReversalChangeContext<?> c -> changes.add(c.changeSet);
-          case ScheduledChangeContext<?,?> c -> changes.add(c.changeSet);
+          case ScheduledChangeContext<?, ?> c -> changes.add(c.changeSet);
           case InitialChangeContext<?> _,
                NewIdentifierChangeContext<?, ?> _,
                OutgoingRequestChangeContext<?> _,
@@ -141,6 +150,8 @@ public class TransitionModelBuilder<I, T, O> {
       while (changeContext != null) {
         switch (changeContext) {
           case TriggerChangeContext<?, ?> c -> changes.add(c.changeSet);
+          case PendingTriggerChangeContext<?, ?> _ -> {}
+          case ResolvedPendingTriggerChangeContext<?, ?> c -> changes.add(c.changeSet);
           case RejectedTriggerChangeContext<?, ?> _ -> {}
           case UnknownEntityTriggerChangeContext<?, ?> _ -> {}
           case ChoiceChangeContext<?, ?> c -> changes.add(c.changeSet);
@@ -205,7 +216,8 @@ public class TransitionModelBuilder<I, T, O> {
     }
 
     record TriggerChangeContext<T, O1>(
-        TransitionContext<?> transitionContext, ChangeContext<T> previous,
+        TransitionContext<?> transitionContext,
+        ChangeContext<T> previous,
         ChangeSet<O1> changeSet
     ) implements ChangeContext<Tuple2<T, ProcessResult<O1>>> {
 
@@ -269,6 +281,39 @@ public class TransitionModelBuilder<I, T, O> {
         return tuple(previous.stepOutput(), rejectedResult);
         // Can't do this, as test() on choice predicates rely on it
         //throw rejectedResult().exception();
+      }
+    }
+
+    record PendingTriggerChangeContext<T, O1>(
+        TransitionContext<?> transitionContext,
+        ChangeContext<T> previous,
+        EventTrigger<T, ?, O1> eventTrigger,
+        CircularChange e
+    ) implements ChangeContext<Tuple2<T, ProcessResult<O1>>> {
+
+      public PendingTriggerChangeContext {
+        System.out.println("Creating PendingTriggerChangeContext for " + eventTrigger.eventSpec().eventType().name() + " on " + eventTrigger.entityModel().name() + " (" + e.getMessage() + ")");
+      }
+
+      @Override
+      public Tuple2<T, ProcessResult<O1>> stepOutput() {
+        throw new IllegalStateException("Event trigger is pending");
+      }
+    }
+
+    record ResolvedPendingTriggerChangeContext<T, O1>(
+        TransitionContext<?> transitionContext,
+        ChangeContext<T> previous,
+        ChangeSet<O1> changeSet
+    ) implements ChangeContext<T> {
+
+      public ResolvedPendingTriggerChangeContext {
+        System.out.println("Creating ResolvedPendingTriggerChangeContext");
+      }
+
+      @Override
+      public T stepOutput() {
+        return previous().stepOutput();
       }
     }
 
@@ -647,12 +692,35 @@ public class TransitionModelBuilder<I, T, O> {
     return new WithOutgoingRequest<>(this, outgoingRequestCreator);
   }
 
-  public TransitionModelBuilder<I, T, O> when(Map<Predicate<T>, Alternative<T, ?, ?>> choices) {
+  public TransitionModelBuilder<I, T, O> when2(Map<Predicate<T>, Alternative<T, ?, ?>> choices) {
     var builder = this;
     for (var entry : choices.entrySet()) {
       builder = builder.when(entry.getKey()).then(entry.getValue());
     }
     return builder;
+  }
+
+  public TransitionModelBuilder<I, T, O> when(Map<Predicate<T>, TransitionModel<T, ?>> choices) {
+    var builder = this;
+    for (var entry : choices.entrySet()) {
+      builder = builder.when(entry.getKey()).then(entry.getValue());
+    }
+    return builder;
+  }
+
+  public TransitionModelBuilder<I, T, O> when(List<Choice<T, ?, ?>> choices) {
+    var builder = this;
+    for (var choice : choices) {
+      builder = builder.when(choice);
+    }
+    return builder;
+  }
+
+  public <I1, O1> TransitionModelBuilder<I, T, O> when(Choice<T, I1, O1> choice) {
+    return when(choice.condition().and(choice.adapter().andThen(Validation::isValid)::apply)).then(
+        choice.then(),
+        choice.adapter().andThen(Validation::valid)
+    );
   }
 
   public WithFilter<I, T, O> when(Predicate<T> filter) {
@@ -737,18 +805,21 @@ public class TransitionModelBuilder<I, T, O> {
                 }
                 log(modelContext, "using alternative: " + filter.alternative().model().eventType().name());
                 return filter.alternative().model().calculate(
-                        c.transitionContext().eventNumber,
-                        c.transitionContext().from(),
-                        null,
-                        c.transitionContext().stateMachine(),
-                        Clock.systemUTC(), // TODO
-                        new InputEvent<>(
-                            filter.alternative().model().eventType(),
-                            filter.alternative().dataAdapter().apply(c.stepOutput())
+                        new TransitionContext<>(
+                            c.transitionContext().from(),
+                            c.transitionContext().eventNumber,
+                            c.transitionContext().timestamp(),
+                            c.transitionContext().correlationId(),
+                            c.transitionContext().stateMachine(),
+                            new InputEvent<>(
+                                filter.alternative().model().eventType(),
+                                filter.alternative().dataAdapter().apply(c.stepOutput())
+                            ),
+                            c.transitionContext().log(),
+                            null
                         ),
-                        c.transitionContext().log(),
-                        c.transitionContext().timestamp(),
-                        c.transitionContext().correlationId()
+                        Clock.systemUTC(), // TODO
+                        null
                     )
                     .map(change -> new ChoiceChangeContext<>(c.transitionContext(), c, change));
               })
@@ -882,37 +953,38 @@ public class TransitionModelBuilder<I, T, O> {
   private <I1, O1> TransitionModelBuilder<I, Tuple2<T, ProcessResult<O1>>, O> trigger(EventTrigger<T, I1, O1> eventTrigger) {
     Function<Mono<ChangeContext<T>>, Mono<ChangeContext<Tuple2<T, ProcessResult<O1>>>>> f =
         changeContext -> changeContext
-            .flatMap(c -> c.transitionContext().stateMachine().calculateTriggeredEvent(
-                        eventTrigger,
-                        c.stepOutput(),
-                        c.transitionContext().correlationId,
-                        c.transitionContext().timestamp,
-                        c.nestedChanges()
-                    )
+            .flatMap(c -> Mono.just("").doOnNext(_ -> log(modelContext, "BEFORE calculateTriggeredEvent " + eventTrigger.eventSpec().eventType().name()))
+                    .then(c.transitionContext().stateMachine().calculateTriggeredEvent(eventTrigger, c, c.nestedChanges(), false))
+                    .onErrorResume(CircularChange.class, e -> Mono.just(new ChangeSet<>(ProcessResult.pending(eventTrigger.eventSpec().eventType(), e), List.of())))
                     .doOnNext(changeSet -> log(modelContext, "calculateTriggeredEvent " + eventTrigger.eventSpec().eventType().name() + " result: " + changeSet.result().getClass().getSimpleName()))
                     .map(changeSet -> switch (changeSet.result()) {
-                      case Accepted<?> r -> new TriggerChangeContext<>(c.transitionContext(), c, changeSet);
-                      case ProcessResult.DuplicateId<O1> v -> throw new IllegalStateException();
-                      case ProcessResult.Failed<O1> v -> throw new IllegalStateException();
-                      case ProcessResult.Raced<O1> v -> throw new IllegalStateException();
+                      case Accepted<?> _ -> new TriggerChangeContext<>(c.transitionContext(), c, changeSet);
                       case ProcessResult.Rejected<O1> r ->
                           new RejectedTriggerChangeContext<>(c.transitionContext(), c, changeSet, r);
                       case ProcessResult.UnknownId<O1> r ->
                           new UnknownEntityTriggerChangeContext<>(c.transitionContext(), c, changeSet, r);
+                      case ProcessResult.DuplicateId<O1> _,
+                           ProcessResult.Failed<O1> _,
+                           ProcessResult.Raced<O1> _ -> throw new IllegalStateException();
+                      case ProcessResult.Pending<O1> r -> {
+                        log(modelContext, "calculateTriggeredEvent got pending result: " + r);
+                        yield new PendingTriggerChangeContext<>(c.transitionContext(), c, eventTrigger, r.exception());
+                      }
                     })
                       .contextWrite(ctx -> {
                         EventLog eventLog = c.transitionContext().log();
                         if (modelContext.eventType() == null)
                           return ctx;
-                        System.out.println("Creating fake event for " + modelContext.eventType.name());
-                        var sessionLog = eventLog.withNewEvent(new Event<>(
-                            eventLog.entityId().value(),
-                            eventLog.lastEventNumber() + 1,
-                            modelContext.eventType,
-                            Clock.systemUTC()
-                        ));
-                        return ctx.put(sessionLog.entityModel(), sessionLog.entityId())
-                            .put(sessionLog.entityId(), sessionLog);
+//                        System.out.println("Creating fake event for " + modelContext.eventType.name());
+//                        var sessionLog = eventLog.withNewEvent(new Event<>(
+//                            eventLog.entityId().value(),
+//                            eventLog.lastEventNumber() + 1,
+//                            modelContext.eventType,
+//                            Clock.systemUTC()
+//                        ));
+                        return ctx
+                            .put(eventLog.entityModel(), eventLog.entityId());
+                            //.put(sessionLog.entityId(), sessionLog);
                       })
 
               );
@@ -1107,24 +1179,6 @@ public class TransitionModelBuilder<I, T, O> {
       );
     }
 
-    public Mono<ChangeSet<O>> calculate(
-        int eventNumber,
-        State fromState,
-        IncomingMessage incomingMessage,
-        StateMachine stateMachine,
-        Clock clock,
-        InputEvent<I> input,
-        EventLog eventLog,
-        ZonedDateTime timestamp,
-        String correlationId
-    ) {
-      return calculate(
-          new TransitionContext<>(fromState, eventNumber, timestamp, correlationId, stateMachine, input, eventLog, null),
-          clock,
-          incomingMessage
-      );
-    }
-
     public Mono<ChangeSet<O>> calculate(TransitionContext<I> transitionContext, Clock clock, IncomingMessage incomingMessage) {
       log(modelContext, "calculate " + transitionContext.input().eventType().name() + " on " + transitionContext.log().entityModel().name());
       Function<TransitionContext<I>, Mono<ChangeContext<O>>> finalBuilderFunction;
@@ -1166,7 +1220,7 @@ public class TransitionModelBuilder<I, T, O> {
       }
       if (rollbackTo >= eventLog.lastEventNumber() || rollbackTo < 0) {
         return Mono.just(ChangeSet.empty(
-            ProcessResult.rejected(eventType, new RejectedEvent(eventType, eventLog.entityModel(), currentState, rollbackTo))
+            ProcessResult.rejected(eventType, new RejectedEvent(eventType, eventLog.entityModel(), eventLog.entityId(), currentState, rollbackTo))
         ));
 //        , String.format(
 //            "Can't rollback to event number %d (input=%d, last=%d)",
@@ -1211,6 +1265,32 @@ public class TransitionModelBuilder<I, T, O> {
       return reverseChangeSet;
     }
 
+    List<PendingTriggerChangeContext<?, ?>> pendingChanges(ChangeContext<?> x) {
+      ArrayList<PendingTriggerChangeContext<?, ?>> pendingChanges = new ArrayList<>();
+      ChangeContext<?> changeContext = x;
+      while (changeContext != null) {
+        if (changeContext instanceof PendingTriggerChangeContext<?, ?> c) {
+          pendingChanges.add(c);
+        }
+        changeContext = changeContext.previous();
+      }
+      return pendingChanges;
+    }
+
+    private <T, O1> Mono<ChangeSet<O1>> calculatePendingChange(
+        PendingTriggerChangeContext<T, O1> pendingChange,
+        List<ChangeSet<?>> nestedChanges
+    ) {
+      // TODO: nestedChanges, which is used for eventLogFromNestedChanges,
+      //  is not up2date after resolving circle as they are calculated from pendingChange.previous(),
+      System.out.println("Calculating pending change for " + pendingChange.eventTrigger.eventSpec().eventType().name());
+      return pendingChange.transitionContext().stateMachine().calculateTriggeredEvent(
+          pendingChange.eventTrigger(),
+          pendingChange.previous(),
+          nestedChanges,
+          true
+      );
+    }
 
     private Mono<ChangeSet<O>> calculateInternal(
         TransitionContext<I> transitionContext,
@@ -1219,6 +1299,17 @@ public class TransitionModelBuilder<I, T, O> {
         Clock clock
     ) {
       log(modelContext, "calculateInternal " + transitionContext.input().eventType().name());
+//      builderFunction = builderFunction.andThen(changeContext -> changeContext.flatMap(c -> {
+//            List<PendingTriggerChangeContext<?, ?>> pendingChanges = pendingChanges(c);
+//        System.out.println("Pending changes: " + pendingChanges.stream().map(pc -> pc.eventTrigger().eventSpec().eventType().name()).collect(joining(",")));
+//            Mono<ChangeContext<O>> resultChangeContext = changeContext;
+//            for (var pendingChange : pendingChanges) {
+//              Mono<ChangeContext<O>> previousChangeContext = resultChangeContext;
+//              resultChangeContext = calculatePendingChange(pendingChange, c.nestedChanges()).flatMap(changeSet -> previousChangeContext.map(prev -> new ResolvedPendingTriggerChangeContext<>(c.transitionContext(), prev, changeSet)));
+//            }
+//            return resultChangeContext;
+//          }
+//      ));
       return builderFunction.apply(transitionContext).map(finalChangeContext -> {
             log(modelContext, "calculate final " + transitionContext.input().eventType().name() + ": choice? " + finalChangeContext.isChoiceTransition());
             Event<O> resultingEvent = modelContext.reversal() ? null : new Event<>(

@@ -42,6 +42,7 @@ public sealed interface Validation<T> permits Valid, Invalid {
 
     @Override
     public boolean isValid() {
+      System.out.println("Not valid: " + reason);
       return false;
     }
 

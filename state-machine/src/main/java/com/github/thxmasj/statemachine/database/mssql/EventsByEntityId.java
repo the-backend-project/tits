@@ -64,9 +64,9 @@ public class EventsByEntityId {
   }
 
   public Mono<EventLog> execute(EntityModel entityModel, EntityId entityId) {
-    System.out.println("Finding event log for " + entityModel.name() + "/" + entityId.value());
     String sqlToPrepare = requireNonNull(sqls.get(entityModel), "Unknown model " + entityModel.name());
     return Mono.fromCallable(() -> {
+      System.out.println("Finding event log for " + entityModel.name() + "/" + entityId.value());
       try (
           var connection = dataSource.getConnection();
           var statement = prepare(sqlToPrepare, Map.of("entityId", entityId.value()), connection)
