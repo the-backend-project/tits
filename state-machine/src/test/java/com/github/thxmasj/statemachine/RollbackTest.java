@@ -89,7 +89,6 @@ public class RollbackTest {
                       .reversible(
                           assemble((log, _) -> log.id(SpeedId))
                               .trigger(Decrease).on(Speed).identifiedBy(entityId(d -> d))
-                              .output()
                       )
                       .output()
               ),
@@ -102,7 +101,6 @@ public class RollbackTest {
                       .reversible(
                           assemble((log, _) -> log.id(SpeedId))
                               .trigger(Increase).on(Speed).identifiedBy(entityId(d -> d))
-                              .output()
                       )
                       .output(),
                   onEvent(Forward).toSelf()
@@ -111,12 +109,11 @@ public class RollbackTest {
                       .reversible(
                           assemble((log, _) -> log.id(SpeedId))
                               .trigger(Decrease).on(Speed).identifiedBy(entityId(d -> d))
-                              .output()
                       )
                       .output(),
                   onEvent(Stop).to(Stopped).output(),
-                  onEvent(Crash).to(Dead).output(),
-                  onEvent(Rollback).toSelf().assembleInput().output(d -> d)
+                  onEvent(Crash).to(Dead).output()//,
+                  //onEvent(Rollback).toSelf().assembleInput().output(d -> d)
               ),
               Dead, List.of()
           ),

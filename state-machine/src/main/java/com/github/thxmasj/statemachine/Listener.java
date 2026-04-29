@@ -40,7 +40,6 @@ public interface Listener {
         Entity entity,
         ZonedDateTime timeout,
         Event event,
-        String targetState,
         List<String> secondaryIds,
         //List<String> incomingRequests,
         //List<String> outgoingResponses,

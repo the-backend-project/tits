@@ -1,6 +1,7 @@
 package com.github.thxmasj.statemachine.templates.cardpayment;
 
-import static com.github.thxmasj.statemachine.BuiltinEntities.InboxExchange.AcceptedRequest;
+import static com.github.thxmasj.statemachine.BuiltinEntities.CompleteRequest;
+import static com.github.thxmasj.statemachine.BuiltinEntities.Models.RequestDispatching;
 import static com.github.thxmasj.statemachine.EntitySelector.entityIdFromSession;
 import static com.github.thxmasj.statemachine.EntitySelector.newEntityId;
 import static com.github.thxmasj.statemachine.EntitySelector.secondaryId;
@@ -31,7 +32,6 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEv
 import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Reconcile;
 import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Timeout;
 
-import com.github.thxmasj.statemachine.BuiltinEntities.InboxExchange;
 import com.github.thxmasj.statemachine.IncomingResponseValidator;
 import com.github.thxmasj.statemachine.State;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
@@ -42,10 +42,6 @@ import java.util.Map;
 import java.util.function.Function;
 
 public abstract class SettlementTransitions {
-
-  private final InboxExchange inboxExchange;
-
-  public SettlementTransitions(InboxExchange inboxExchange) {this.inboxExchange = inboxExchange;}
 
   protected abstract IncomingResponseValidator<AcquirerResponse> validateSettlementResponse();
 
@@ -60,9 +56,9 @@ public abstract class SettlementTransitions {
                 .assembleInput()
                 .newIdentifier(AcquirerBatchNumber, d -> d)
                 .newIdentifierInGroup(BatchNumber, d -> d.t1().merchantId())
-                .output(d -> d.t2().data()),
+                .output(d -> d.t2().accepted().id().data()),
             onEvent(GetAcquirerBatchNumber).toSelf()
-                .assemble(d -> new AcquirerBatchNumber(d.input().data().value(), 0))
+                .assemble(d -> new AcquirerBatchNumber(d.input().value(), 0))
                 .output(d -> d),
             onEvent(SettlementEvent.Open).to(Open)
                 .assembleInput()
@@ -78,38 +74,38 @@ public abstract class SettlementTransitions {
                 .assemble(d -> d.log().id(AcquirerBatchNumber))
                 .output(d -> d),
             onEvent(MerchantCredit).toSelf()
-                .assemble((input, _) -> input.data())
+                .assemble((input, _) -> input)
                 .output(Function.identity()),
             onEvent(MerchantDebit).toSelf()
-                .assemble((input, _) -> input.data())
+                .assemble((input, _) -> input)
                 .output(Function.identity()),
             onEvent(MerchantCreditReversed).toSelf()
-                .assemble((input, _) -> input.data())
+                .assemble((input, _) -> input)
                 .output(Function.identity()),
             onEvent(MerchantDebitReversed).toSelf()
-                .assemble((input, _) -> input.data())
+                .assemble((input, _) -> input)
                 .output(Function.identity()),
             onEvent(CutOffRequest).to(ProcessingSettlement)
-                .assemble((input, log) -> tuple(input.data(), log.id(BatchNumber), log.id(AcquirerBatchNumber), log.entityId()))
+                .assemble((input, log) -> tuple(input, log.id(BatchNumber), log.id(AcquirerBatchNumber), log.entityId()))
                 .trigger(Get).on(Aggregate.Merchant).identifiedBy(secondaryId(MerchantId, d -> d.t1().merchantId()))
                 .trigger(reconciliation()).with(d -> tuple(d.t1().t2(), d.t1().t3(), d.t2().accepted().event().getUnmarshalledData()))
                 .to(Acquirer).guaranteed().responseValidator(validateSettlementResponse())
                 .trigger(SettlementEvent.Open).with(d -> d.t1().t3().next()).on(Settlement).identifiedBy(newEntityId())
-                .trigger(AcceptedRequest).with(d -> d.t1().t1().t4()).on(inboxExchange).identifiedBy(entityIdFromSession())
+                .trigger(CompleteRequest).with(d -> tuple("", d.t1().t1().t4())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t1().t1().t1())
         ),
         ProcessingSettlement, List.of(
             // For previous batch to stay open for ongoing capture exchanges when cut-off is performed
-            onEvent(MerchantCredit).toSelf().assemble((input, _) -> input.data()).output(Function.identity()),
-            onEvent(MerchantDebit).toSelf().assemble((input, _) -> input.data()).output(Function.identity()),
-            onEvent(MerchantCreditReversed).toSelf().assemble((input, _) -> input.data()).output(Function.identity()),
-            onEvent(MerchantDebitReversed).toSelf().assemble((input, _) -> input.data()).output(Function.identity()),
+            onEvent(MerchantCredit).toSelf().assemble((input, _) -> input).output(Function.identity()),
+            onEvent(MerchantDebit).toSelf().assemble((input, _) -> input).output(Function.identity()),
+            onEvent(MerchantCreditReversed).toSelf().assemble((input, _) -> input).output(Function.identity()),
+            onEvent(MerchantDebitReversed).toSelf().assemble((input, _) -> input).output(Function.identity()),
             onEvent(Reconcile).to(Reconciled)
                 .assemble((input, log) -> tuple(
                     log.one(CutOffRequest),
                     reconciliationValues(log),
-                    input.data().reconciliationValues(),
-                    input.data()
+                    input.reconciliationValues(),
+                    input
                 ))
                 .when(d -> d.t2().equals(d.t3()))
                 .then(
@@ -117,8 +113,8 @@ public abstract class SettlementTransitions {
                         .assemble((input, log) -> tuple(
                             log.one(CutOffRequest),
                             reconciliationValues(log),
-                            input.data().reconciliationValues(),
-                            input.data()
+                            input.reconciliationValues(),
+                            input
                         ))
                         .trigger(approvedCutOff()).with(d -> new Tuple2<>(d.t1(), d.t2())).to(Merchant).guaranteed()
                         .output(),

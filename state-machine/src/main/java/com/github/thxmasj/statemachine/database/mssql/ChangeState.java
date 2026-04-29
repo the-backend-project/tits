@@ -10,6 +10,7 @@ import com.github.thxmasj.statemachine.Event;
 import com.github.thxmasj.statemachine.EventLog;
 import com.github.thxmasj.statemachine.SecondaryId;
 import com.github.thxmasj.statemachine.State;
+import com.github.thxmasj.statemachine.StateMachine.ProcessResult;
 import com.github.thxmasj.statemachine.database.ChangeRaced;
 import com.github.thxmasj.statemachine.database.Client;
 import com.github.thxmasj.statemachine.database.Client.PrimaryKeyConstraintViolation;
@@ -18,6 +19,7 @@ import com.github.thxmasj.statemachine.database.Client.UniqueIndexConstraintViol
 import com.github.thxmasj.statemachine.database.EventAlreadyExists;
 import com.github.thxmasj.statemachine.database.SecondaryIdAlreadyExists;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.Column;
+import com.github.thxmasj.statemachine.message.Message;
 import com.github.thxmasj.statemachine.message.Message.IncomingResponse;
 import com.github.thxmasj.statemachine.message.Message.OutgoingRequest;
 import java.time.Clock;
@@ -43,13 +45,12 @@ public class ChangeState {
     this.schema = schema;
   }
 
-  private void bind(Builder spec, ZonedDateTime timestamp, Change change) {
+  private void bind(Builder spec, ZonedDateTime timestamp, String correlationId, Change change) {
     Event<?> event = change.newEvent();
     ZonedDateTime deadline = change.deadline();
-    String correlationId = change.correlationId();
-    if (change.eventLog().entityId() != null)
-      spec.bind("entityId", change.eventLog().entityId().value());
-    spec.bind("entityModelId", change.eventLog().entityModel().id());
+    if (change.entityId() != null)
+      spec.bind("entityId", change.entityId().value());
+    spec.bind("entityModelId", change.entityModel().id());
     spec.bind("timestamp", timestamp.withZoneSameInstant(clock.getZone()).toLocalDateTime());
     if (event != null) {
       spec.bind("eventNumber", event.eventNumber())
@@ -109,13 +110,13 @@ public class ChangeState {
 
   public interface Change {
 
-    EventLog eventLog();
-
+    EntityModel entityModel();
+    
+    EntityId entityId();
+    
     boolean storeEvent();
 
     Event<?> newEvent();
-
-    State toState();
 
     List<SecondaryId<?>> newSecondaryIds();
 
@@ -125,12 +126,198 @@ public class ChangeState {
 
     ZonedDateTime deadline();
 
-    String correlationId();
+    static Change fromAcceptedEvent(ProcessResult.Accepted<?> acceptedEvent) {
+      return new Change() {
+        @Override
+        public EntityModel entityModel() {
+          return acceptedEvent.entityModel();
+        }
+
+        @Override
+        public EntityId entityId() {
+          return new EntityId.UUID(acceptedEvent.event().entityId());
+        }
+
+        @Override
+        public boolean storeEvent() {
+          return true;
+        }
+
+        @Override
+        public Event<?> newEvent() {
+          return acceptedEvent.event();
+        }
+
+        @Override
+        public List<SecondaryId<?>> newSecondaryIds() {
+          return List.of();
+        }
+
+        @Override
+        public List<OutgoingRequest> outgoingRequests() {
+          return List.of();
+        }
+
+        @Override
+        public IncomingResponse incomingResponse() {
+          return null;
+        }
+
+        @Override
+        public ZonedDateTime deadline() {
+          return null;
+        }
+
+        @Override
+        public String toString() {
+          return entityModel().name() + ":" +
+              entityId().value() + ":" +
+              newEvent().typeName() + ":" +
+              newEvent().eventNumber();
+        }
+
+      };
+    }
+
+    static Change fromIdentifier(SecondaryId<?> id, EntityModel entityModel, EntityId entityId) {
+      return new Change() {
+        @Override
+        public EntityModel entityModel() {
+          return entityModel;
+        }
+
+        @Override
+        public EntityId entityId() {
+          return entityId;
+        }
+
+        @Override
+        public boolean storeEvent() {
+          return false;
+        }
+
+        @Override
+        public Event<?> newEvent() {
+          return null;
+        }
+
+        @Override
+        public List<SecondaryId<?>> newSecondaryIds() {
+          return List.of(id);
+        }
+
+        @Override
+        public List<OutgoingRequest> outgoingRequests() {
+          return List.of();
+        }
+
+        @Override
+        public IncomingResponse incomingResponse() {
+          return null;
+        }
+
+        @Override
+        public ZonedDateTime deadline() {
+          return null;
+        }
+      };
+    }
+
+    static Change fromOutgoingRequest(OutgoingRequest outgoingRequest, EntityModel entityModel, EntityId entityId) {
+      return new Change() {
+        @Override
+        public EntityModel entityModel() {
+          return entityModel;
+        }
+
+        @Override
+        public EntityId entityId() {
+          return entityId;
+        }
+
+        @Override
+        public boolean storeEvent() {
+          return false;
+        }
+
+        @Override
+        public Event<?> newEvent() {
+          return null;
+        }
+
+        @Override
+        public List<SecondaryId<?>> newSecondaryIds() {
+          return List.of();
+        }
+
+        @Override
+        public List<OutgoingRequest> outgoingRequests() {
+          return List.of(outgoingRequest);
+        }
+
+        @Override
+        public IncomingResponse incomingResponse() {
+          return null;
+        }
+
+        @Override
+        public ZonedDateTime deadline() {
+          return null;
+        }
+
+      };
+    }
+
+    static Change fromIncomingResponse(IncomingResponse incomingResponse, EntityModel entityModel, EntityId entityId) {
+      return new Change() {
+        @Override
+        public EntityModel entityModel() {
+          return entityModel;
+        }
+
+        @Override
+        public EntityId entityId() {
+          return entityId;
+        }
+
+        @Override
+        public boolean storeEvent() {
+          return false;
+        }
+
+        @Override
+        public Event<?> newEvent() {
+          return null;
+        }
+
+        @Override
+        public List<SecondaryId<?>> newSecondaryIds() {
+          return List.of();
+        }
+
+        @Override
+        public List<OutgoingRequest> outgoingRequests() {
+          return List.of();
+        }
+
+        @Override
+        public IncomingResponse incomingResponse() {
+          return incomingResponse;
+        }
+
+        @Override
+        public ZonedDateTime deadline() {
+          return null;
+        }
+
+      };
+    }
+
   }
 
   public record OutboxElement(int changeIndex, int messageIndex, UUID requestId, byte[] elementId) {}
 
-  public Flux<OutboxElement> execute(ZonedDateTime timestamp, List<Change> changes) {
+  public Flux<OutboxElement> execute(ZonedDateTime timestamp, String correlationId, List<Change> changes) {
     String sql =
         """
         SET XACT_ABORT ON;
@@ -141,7 +328,7 @@ public class ChangeState {
         """ + IntStream.range(0, changes.size()).mapToObj(i -> insertSql(
             i,
             "p" + i + "_",
-            changes.get(i).eventLog().entityModel(),
+            changes.get(i).entityModel(),
             changes.get(i).newEvent() != null && changes.get(i).storeEvent(),
             changes.get(i).newSecondaryIds(),
             changes.get(i).outgoingRequests(),
@@ -157,7 +344,7 @@ public class ChangeState {
             COMMIT TRANSACTION;
             """;
     Builder spec = databaseClient.sql(sql).name("ChangeState");
-    for (int i = 0; i < changes.size(); i++) {bind(spec.parameterPrefix("p" + i + "_"), timestamp, changes.get(i));}
+    for (int i = 0; i < changes.size(); i++) {bind(spec.parameterPrefix("p" + i + "_"), timestamp, correlationId, changes.get(i));}
     return spec.map(row -> new OutboxElement(
             row.get("ChangeIndex", Integer.class),
             row.get("MessageIndex", Integer.class),
@@ -499,11 +686,11 @@ public class ChangeState {
           return new EventAlreadyExists(
               entityId,
               eventNumber,
-              changes.stream()
-                  .filter(c -> c.newEvent() != null && c.newEvent().eventNumber().equals(eventNumber) && c.eventLog()
-                      .entityId()
-                      .equals(entityId))
-                  .toList()
+              changes
+//                  .stream()
+//                  .filter(c -> c.newEvent() != null && c.newEvent().eventNumber().equals(eventNumber) && c.entityId()
+//                      .equals(entityId))
+//                  .toList()
           );
         } catch (Exception e) {
           return new EventAlreadyExists(pkViolation.duplicateKey());
@@ -512,8 +699,8 @@ public class ChangeState {
       }
       return changes.stream()
           .map(change ->
-              change.eventLog().entityModel().secondaryIds().stream()
-                  .map(id -> new SchemaNames(schema, change.eventLog().entityModel()).idTableName(id))
+              change.entityModel().secondaryIds().stream()
+                  .map(id -> new SchemaNames(schema, change.entityModel()).idTableName(id))
                   .filter(idTableName -> pkViolation.tableName().equals(idTableName))
                   .map(idTableName -> new ChangeRaced(change, idTableName))
                   .findFirst().orElseThrow()
@@ -526,7 +713,7 @@ public class ChangeState {
     return indexViolation -> changes.stream()
         .flatMap(change -> change.newSecondaryIds().stream().map(secondaryId -> tuple(change, secondaryId)))
         .filter(tuple -> indexViolation.tableName()
-            .equals(new SchemaNames(schema, tuple.t1().eventLog().entityModel()).idTableName(tuple.t2().model())))
+            .equals(new SchemaNames(schema, tuple.t1().entityModel()).idTableName(tuple.t2().model())))
         // TODO: Wrong SecondaryId can be picked here if several of the same type (hence table) are created in the same
         //       transaction. We only check for first table match.
         //       => The duplicateKey needs to be parsed and compared, too. Perhaps use the indexName as well.
@@ -547,7 +734,7 @@ public class ChangeState {
             tuple.t1(),
             tuple.t2(),
             indexViolation.duplicateKey(),
-            new SchemaNames(schema, tuple.t1().eventLog().entityModel()).idTableName(tuple.t2().model())
+            new SchemaNames(schema, tuple.t1().entityModel()).idTableName(tuple.t2().model())
         ))
         .findFirst().orElseThrow();
   }
@@ -557,11 +744,11 @@ public class ChangeState {
       return changes.stream()
           .filter(change ->
               pkViolation.tableName().equals("Event") ||
-                  change.eventLog()
+                  change
                       .entityModel()
                       .secondaryIds()
                       .stream()
-                      .map(id -> new SchemaNames(schema, change.eventLog().entityModel()).idTableName(id))
+                      .map(id -> new SchemaNames(schema, change.entityModel()).idTableName(id))
                       .anyMatch(idTableName -> pkViolation.tableName().equals(idTableName))
           )
           .findFirst().orElseThrow();
@@ -569,7 +756,7 @@ public class ChangeState {
       return changes.stream()
           .filter(change -> change.newSecondaryIds()
               .stream()
-              .map(id -> new SchemaNames(schema, change.eventLog().entityModel()).idTableName(id.model()))
+              .map(id -> new SchemaNames(schema, change.entityModel()).idTableName(id.model()))
               .anyMatch(idTableName -> idTableName.equals(ixViolation.tableName())))
           .findFirst().orElseThrow();
     }

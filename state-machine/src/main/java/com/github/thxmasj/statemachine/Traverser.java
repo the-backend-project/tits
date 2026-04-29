@@ -1,6 +1,7 @@
 package com.github.thxmasj.statemachine;
 
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
+import static com.github.thxmasj.statemachine.TransitionModelBuilder.rollbackOn;
 import static com.github.thxmasj.statemachine.Tuples.tuple;
 import static java.util.Collections.unmodifiableList;
 import static java.util.stream.Collectors.joining;
@@ -59,7 +60,8 @@ public class Traverser {
     if (availableTransitions == null) throw new IllegalStateException("No available transitions for current state " + currentState + " on " + eventLog.entityModel().name());
     var t = findTransition(eventType, availableTransitions);
     if (t == null && eventType == BuiltinEventTypes.Rollback && eventType instanceof BasicEventType.Rollback rollback)
-      t = onEvent(rollback).toSelf().assembleInput().output(d -> d);
+      //t = onEvent(rollback).toSelf().assembleInput().output(d -> d);
+      t = rollbackOn(rollback);
     return tuple(currentState, t);
   }
 

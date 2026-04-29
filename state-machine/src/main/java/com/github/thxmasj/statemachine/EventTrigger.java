@@ -7,6 +7,7 @@ import java.util.function.Function;
 import java.util.stream.Stream;
 
 import static com.github.thxmasj.statemachine.EntitySelector.entityId;
+import static com.github.thxmasj.statemachine.EntitySelector.newEntityId;
 import static com.github.thxmasj.statemachine.EntitySelector.secondaryId;
 
 public class EventTrigger<T, I, O> {
@@ -33,8 +34,12 @@ public class EventTrigger<T, I, O> {
     this.createEntity = createEntity;
   }
 
+  public static <I, O> EventTrigger<I, I, O> trigger(EventType<I, O> eventType, EntityModel entityModel, UUID entityId, I data) {
+    return new EventTrigger<>(new EventSpec<>(eventType, _ -> data), List.of(entityId(entityId)), entityModel, false);
+  }
+
   public static <I, O> EventTrigger<I, I, O> trigger(EventType<I, O> eventType, EntityModel entityModel) {
-    return new EventTrigger<>(new EventSpec<>(eventType, d -> d), List.of(EntitySelector.newEntityId()), entityModel, false);
+    return new EventTrigger<>(new EventSpec<>(eventType, d -> d), List.of(newEntityId()), entityModel, false);
   }
 
   public static <I, O> EventTrigger<I, I, O> trigger(EventType<I, O> eventType, EntityModel entityModel, UUID entityId) {

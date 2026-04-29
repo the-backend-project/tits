@@ -39,6 +39,24 @@ public final class Event<T> {
     this(entityId, eventNumber, type, LocalDateTime.ofInstant(clock.instant(), clock.getZone()), clock, data);
   }
 
+  public Event(UUID entityId, int eventNumber, EventType<?, T> type, ZonedDateTime timestamp) {
+    requireNonNull(type, "type is null");
+    this.entityId = entityId;
+    this.eventNumber = eventNumber;
+    this.type = type;
+    this.timestamp = timestamp;
+  }
+
+  public Event(UUID entityId, int eventNumber, EventType<?, T> type, ZonedDateTime timestamp, T data) {
+    requireNonNull(type, "type is null");
+    this.entityId = entityId;
+    this.eventNumber = eventNumber;
+    this.type = type;
+    this.timestamp = timestamp;
+    this.data = marshal(data);
+    this.unmarshalledData = data;
+  }
+
   public Event(UUID entityId, Integer eventNumber, EventType<?, T> type, LocalDateTime timestamp, Clock clock, String data) {
     this.entityId = entityId;
 //    if (type.outputDataType().value() != Void.class)
@@ -63,7 +81,7 @@ public final class Event<T> {
     return timestamp;
   }
 
-  public EventType<?, ?> type() {
+  public EventType<?, T> type() {
     return type;
   }
 

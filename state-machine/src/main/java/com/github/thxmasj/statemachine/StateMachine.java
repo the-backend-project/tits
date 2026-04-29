@@ -15,16 +15,15 @@ import static java.util.Optional.ofNullable;
 import static java.util.stream.Collectors.joining;
 import static java.util.stream.Collectors.toMap;
 
-import com.github.thxmasj.statemachine.BasicEventType.Rollback;
 import com.github.thxmasj.statemachine.BasicEventType.Rollback.Data;
 import com.github.thxmasj.statemachine.EntitySelector.BySecondaryId;
 import com.github.thxmasj.statemachine.IncomingResponseValidator.Context;
 import com.github.thxmasj.statemachine.IncomingResponseValidator.Result;
 import com.github.thxmasj.statemachine.IncomingResponseValidator.Result.Status;
-import com.github.thxmasj.statemachine.Input.IncomingResponse;
 import com.github.thxmasj.statemachine.OutboxWorker.ForwardStatus;
 import com.github.thxmasj.statemachine.State.Timeout;
 import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Accepted;
+import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Completed;
 import com.github.thxmasj.statemachine.StateMachine.ProcessResult.DuplicateId;
 import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Entity;
 import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Failed;
@@ -33,7 +32,14 @@ import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Raced;
 import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Rejected;
 import com.github.thxmasj.statemachine.StateMachine.ProcessResult.UnknownId;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext;
-import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionContext;
+import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.ChoiceChangeContext;
+import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.CombinedChangeContext;
+import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.IdentityChangeContext;
+import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.InitialChangeContext;
+import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.OutputChangeContext;
+import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.PendingChangeContext;
+import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.RejectedChangeContext;
+import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.UnknownIdChangeContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.statemachine.Tuples.Tuple3;
 import com.github.thxmasj.statemachine.database.ChangeRaced;
@@ -60,10 +66,12 @@ import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdMod
 import com.github.thxmasj.statemachine.http.HttpClient;
 import com.github.thxmasj.statemachine.http.RequestMapper;
 import com.github.thxmasj.statemachine.message.Message;
-import com.github.thxmasj.statemachine.message.Message.IncomingMessage;
+import com.github.thxmasj.statemachine.message.Message.IncomingResponse;
 import com.github.thxmasj.statemachine.message.Message.OutgoingRequest;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
+import jakarta.annotation.Nullable;
+import jakarta.validation.constraints.NotNull;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.time.Clock;
@@ -74,6 +82,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.NoSuchElementException;
 import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -129,15 +138,22 @@ public class StateMachine {
     //this.begin = transitions.entrySet().stream().collect(toMap(Entry::getKey, e -> TraversableState.create(e.getKey(), e.getValue())));
     this.traversers = transitions.entrySet().stream().collect(toMap(Entry::getKey, e -> new Traverser(e.getValue())));
     List<EntityModel> entityModels = transitions.keySet().stream().toList();
-    List<TransitionModel<?, ?>> allTransitions = transitions.values().stream().flatMap(m -> m.values().stream()).flatMap(Collection::stream).toList();
+    List<TransitionModel<?, ?>> allTransitions = transitions.values()
+        .stream()
+        .flatMap(m -> m.values().stream())
+        .flatMap(Collection::stream)
+        .toList();
     List<EventType<?, ?>> allEventTypes = Stream.concat(
         allTransitions.stream().flatMap(t -> Mappers.eventTypesFor(t).stream()),
         BuiltinEventTypes.ALL.stream()
     ).distinct().toList();
     this.outgoingRequestCreators = Stream.concat(
-        allTransitions.stream().flatMap(t -> t.outgoingRequests().stream()),
-        allTransitions.stream().filter(t -> t.reverseModel() != null).map(TransitionModel::reverseModel).flatMap(t -> t.outgoingRequests().stream())
-    )
+            allTransitions.stream().flatMap(t -> t.outgoingRequests().stream()),
+            allTransitions.stream()
+                .filter(t -> t.reverseModel() != null)
+                .map(TransitionModel::reverseModel)
+                .flatMap(t -> t.outgoingRequests().stream())
+        )
 //            entityModels.stream()
 //                    .flatMap(e -> e.transitions().values().stream().flatMap(Collection::stream))
 //                    .flatMap(t -> t.outgoingRequests().stream()),
@@ -147,14 +163,15 @@ public class StateMachine {
 //                    .map(TransitionModel::reverseModel)
 //                    .flatMap(t -> t.outgoingRequests().stream())
 //            )
-            .filter(r -> r.creator() != null)
-            .map(OutgoingRequestModel::creator)
-            .distinct()
-            .collect(toMap(OutgoingRequestCreator::id, nc -> nc));
+        .filter(r -> r.creator() != null)
+        .map(OutgoingRequestModel::creator)
+        .distinct()
+        .collect(toMap(OutgoingRequestCreator::id, nc -> nc));
     this.delayer = delayer != null ? delayer : _ -> Mono.empty();
     this.beanRegistry = beanRegistry;
     if (schemaDataSource != null) {
-      new CreateSchema(entityModels, schemaName, role).execute(new JDBCClient(schemaDataSource)).blockOptional(ofSeconds(10));
+      new CreateSchema(entityModels, schemaName, role).execute(new JDBCClient(schemaDataSource))
+          .blockOptional(ofSeconds(10));
     }
     this.clock = clock;
     var jdbcClient = new JDBCClient(dataSource);
@@ -163,7 +180,13 @@ public class StateMachine {
     this.eventsByEntityId = new EventsByEntityId(dataSource, entityModels, schemaName, eventMapper);
     this.eventsByLookupId = new EventsByLookupId(dataSource, entityModels, schemaName, eventMapper);
     //this.eventsByMessageId = new EventsByMessageId(dataSource, entityModels, schemaName, eventMapper);
-    this.eventsByLastEntity = new EventsByLastEntity(dataSource, entityModels, schemaName, Mappers.eventTypeMapper(allEventTypes), clock);
+    this.eventsByLastEntity = new EventsByLastEntity(
+        dataSource,
+        entityModels,
+        schemaName,
+        Mappers.eventTypeMapper(allEventTypes),
+        clock
+    );
     //this.secondaryIdByEntityId = new SecondaryIdByEntityId(dataSource, entityModels, schemaName);
     this.lastSecondaryId = new LastSecondaryId(dataSource, entityModels, schemaName);
     this.dequeueAndStoreReceipt = new DequeueAndStoreReceipt(jdbcClient, schemaName, clock);
@@ -203,7 +226,7 @@ public class StateMachine {
     }
   }
 
-   private EventLog emptyEventLog(EntityModel entityModel) {
+  private EventLog emptyEventLog(EntityModel entityModel) {
     return new EventLog(entityModel, newEntityId(), List.of(), List.of());
   }
 
@@ -211,58 +234,58 @@ public class StateMachine {
     return new EventLog(entityModel, entityId, List.of(), List.of());
   }
 
-/*
-  public Mono<ProcessResult> processRequest(String requestData) {
-    try {
-      HttpRequestMessage message;
+  /*
+    public Mono<ProcessResult> processRequest(String requestData) {
       try {
-        message = HttpMessageParser.parseRequest(requestData);
+        HttpRequestMessage message;
+        try {
+          message = HttpMessageParser.parseRequest(requestData);
+        } catch (Exception e) {
+          return Mono.just(new ProcessResult(Status.Rejected, null, String.format("Failed to parse incoming message: %s", e.getMessage())));
+        }
+        System.out.println("Process request " + message.requestLine());
+        IncomingRequestModelBuilder requestModelBuilder;
+        try {
+          requestModelBuilder = requestMapper.incomingRequest(message);
+        } catch (Exception e) {
+          return Mono.just(new ProcessResult(Status.Rejected, null, String.format("Failed to map incoming request: %s\n%s", e, message.message())));
+        }
+        if (requestModelBuilder == null) {
+          return Mono.just(new ProcessResult(Status.Rejected, null, String.format("No mapping for incoming message: %s", message.requestLine())));
+        }
+        IncomingRequestModel<?> requestModel;
+        try {
+          requestModel = requestModelBuilder.build();
+        } catch (Exception e) {
+          return Mono.just(new ProcessResult(Status.Rejected, null, String.format("Failed to build request model for incoming message: %s\n%s", e, message.requestLine())));
+        }
+        var incomingRequest = new IncomingRequest(
+            UUID.randomUUID(),
+            requestModel.clientId(),
+            requestModel.derivedMessageId() ? (entityId, eventType) -> entityId.value() + "-" + eventType.id() : (_, _) -> requestModel.messageId(),
+            requestModel.digest() != null ? requestModel.digest() : MessageDigest.getInstance("SHA256").digest(message.message().getBytes(StandardCharsets.UTF_8)),
+            message
+        );
+        EventTrigger<?, ?, ?> eventTrigger = requestModel.eventTrigger(); // TODO: Errors end up in the big try/catch. Related: https://github.com/orgs/the-backend-project/projects/1/views/1?pane=issue&itemId=79673689
+        String correlationId = requireNonNullElse(requestModel.correlationId(), requireNonNullElse(message.headerValue("X-Correlation-Id"), "processRequest"));
+        One<HttpResponseMessage> responseSink = Sinks.one();
+        return (eventTrigger.eventSpec().eventType() instanceof BasicEventType.Rollback ?
+            doProcessRollback(1, incomingRequest, requestModel) :
+            doProcessIncomingRequest(1, incomingRequest, requestModel)
+        )
+            .flatMap(processResult -> processResult.responseMessage() != null ?
+                Mono.just(processResult) :
+                responseSink.asMono()
+                    .map(responseMessage -> new ProcessResult(processResult.status(), responseMessage, processResult.error()))
+                    .timeout(ofSeconds(20))
+                )
+            .contextWrite(Correlation.contextOf(correlationId, responseSink, incomingRequest.id()));
       } catch (Exception e) {
-        return Mono.just(new ProcessResult(Status.Rejected, null, String.format("Failed to parse incoming message: %s", e.getMessage())));
+        listener.clientRequestFailed("N/A", null, e);
+        return Mono.just(new ProcessResult(Failed, null, "Request failed: " + e));
       }
-      System.out.println("Process request " + message.requestLine());
-      IncomingRequestModelBuilder requestModelBuilder;
-      try {
-        requestModelBuilder = requestMapper.incomingRequest(message);
-      } catch (Exception e) {
-        return Mono.just(new ProcessResult(Status.Rejected, null, String.format("Failed to map incoming request: %s\n%s", e, message.message())));
-      }
-      if (requestModelBuilder == null) {
-        return Mono.just(new ProcessResult(Status.Rejected, null, String.format("No mapping for incoming message: %s", message.requestLine())));
-      }
-      IncomingRequestModel<?> requestModel;
-      try {
-        requestModel = requestModelBuilder.build();
-      } catch (Exception e) {
-        return Mono.just(new ProcessResult(Status.Rejected, null, String.format("Failed to build request model for incoming message: %s\n%s", e, message.requestLine())));
-      }
-      var incomingRequest = new IncomingRequest(
-          UUID.randomUUID(),
-          requestModel.clientId(),
-          requestModel.derivedMessageId() ? (entityId, eventType) -> entityId.value() + "-" + eventType.id() : (_, _) -> requestModel.messageId(),
-          requestModel.digest() != null ? requestModel.digest() : MessageDigest.getInstance("SHA256").digest(message.message().getBytes(StandardCharsets.UTF_8)),
-          message
-      );
-      EventTrigger<?, ?, ?> eventTrigger = requestModel.eventTrigger(); // TODO: Errors end up in the big try/catch. Related: https://github.com/orgs/the-backend-project/projects/1/views/1?pane=issue&itemId=79673689
-      String correlationId = requireNonNullElse(requestModel.correlationId(), requireNonNullElse(message.headerValue("X-Correlation-Id"), "processRequest"));
-      One<HttpResponseMessage> responseSink = Sinks.one();
-      return (eventTrigger.eventSpec().eventType() instanceof BasicEventType.Rollback ?
-          doProcessRollback(1, incomingRequest, requestModel) :
-          doProcessIncomingRequest(1, incomingRequest, requestModel)
-      )
-          .flatMap(processResult -> processResult.responseMessage() != null ?
-              Mono.just(processResult) :
-              responseSink.asMono()
-                  .map(responseMessage -> new ProcessResult(processResult.status(), responseMessage, processResult.error()))
-                  .timeout(ofSeconds(20))
-              )
-          .contextWrite(Correlation.contextOf(correlationId, responseSink, incomingRequest.id()));
-    } catch (Exception e) {
-      listener.clientRequestFailed("N/A", null, e);
-      return Mono.just(new ProcessResult(Failed, null, "Request failed: " + e));
     }
-  }
-*/
+  */
   public enum ResolverStatus {Ok, Empty, Error}
 
   /**
@@ -279,11 +302,13 @@ public class StateMachine {
             // Race! The state has already been resolved by another resolver or incoming request. Which is OK!
             return Mono.just(ResolverStatus.Ok);
           }
-          System.out.println("Deadline eventNumber: " + deadline.eventNumber() + ", log's last event number: " + eventLog.lastEventNumber());
+          System.out.println("Deadline eventNumber: " + deadline.eventNumber() + ", log's last event number: "
+              + eventLog.lastEventNumber());
           //var currentState = begin(deadline.entityModel()).forward(eventLog.events().stream().map(Event::type).toList());
           var currentState = traversers.get(deadline.entityModel()).currentState(eventLog);
           if (currentState == null)
-            return Mono.error(new RuntimeException("Invalid event log: " + eventLog.events().stream().map(Event::typeName).collect(joining(","))));
+            return Mono.error(new RuntimeException(
+                "Invalid event log: " + eventLog.events().stream().map(Event::typeName).collect(joining(","))));
           InputEvent<?> event = currentState.timeout()
               .map(Timeout::event)
               .orElseThrow(() -> new RuntimeException(
@@ -293,6 +318,7 @@ public class StateMachine {
               deadline.correlationId(),
               event,
               eventLog,
+              null,
               null
           )
 //          return processEvents(
@@ -302,34 +328,34 @@ public class StateMachine {
 //              deadline.correlationId()
 //          )
               .flatMap(processResult -> switch (processResult) {
-                // State is resolved and deadline already deleted by the change triggered by this event.
-                case Accepted _ -> Mono.just(ResolverStatus.Ok);
-                // State is resolved and deadline already deleted by the change triggered by the racing event.
-                case Raced _ -> Mono.just(ResolverStatus.Ok);
-                // Need to retry. Deadline was already modified when reading.
-                case Failed r -> {
-                  listener.resolveStateFailed(
-                      deadline.correlationId(),
-                      eventLog.entityId(),
-                      currentState.name(),
-                      event.eventType(),
-                      r.reason()
-                  );
-                  yield backoff.isExhausted(eventLog.events().getLast().timestamp(), deadline.nextAttemptAt(), clock) ?
-                      Mono.error(new RuntimeException("Period for state resolving exhausted: " + Duration.between(
-                          eventLog.events()
+                    // State is resolved and deadline already deleted by the change triggered by this event.
+                    case Accepted _ -> Mono.just(ResolverStatus.Ok);
+                    // State is resolved and deadline already deleted by the change triggered by the racing event.
+                    case Raced _ -> Mono.just(ResolverStatus.Ok);
+                    // Need to retry. Deadline was already modified when reading.
+                    case Failed r -> {
+                      listener.resolveStateFailed(
+                          deadline.correlationId(),
+                          eventLog.entityId(),
+                          currentState.name(),
+                          event.eventType(),
+                          r.reason()
+                      );
+                      yield backoff.isExhausted(eventLog.events().getLast().timestamp(), deadline.nextAttemptAt(), clock) ?
+                          Mono.error(new RuntimeException("Period for state resolving exhausted: " + Duration.between(
+                              eventLog.events()
                               .getLast()
                               .timestamp(), ZonedDateTime.now(clock)
-                      ))) :
-                      Mono.just(ResolverStatus.Ok);
-                }
-                // This is a bug.
-                // - Rejection should not happen unless model is wrong. TODO: sanitize
-                // - Repeated and DuplicateId should only happen with incoming requests (which this is not).
-                case ProcessResult r -> Mono.error(new IllegalStateException(
-                    "Unexpected result for state resolving: " + r.getClass().getSimpleName()));
-              }
-          ).contextWrite(Correlation.contextOf(deadline.correlationId()));
+                          ))) :
+                          Mono.just(ResolverStatus.Ok);
+                    }
+                    // This is a bug.
+                    // - Rejection should not happen unless model is wrong. TODO: sanitize
+                    // - Repeated and DuplicateId should only happen with incoming requests (which this is not).
+                    case ProcessResult r -> Mono.error(new IllegalStateException(
+                        "Unexpected result for state resolving: " + r.getClass().getSimpleName()));
+                  }
+              ).contextWrite(Correlation.contextOf(deadline.correlationId()));
         })
         .onErrorReturn(MappingFailure.class, ResolverStatus.Error)
         .doOnError(listener::processNextDeadlineFailed)
@@ -599,7 +625,7 @@ public class StateMachine {
         entityId,
         new IncomingResponseContext<>(currentEventNumber),
         requestMessage,
-        new IncomingResponse(
+        new Input.IncomingResponse(
             responseMessage,
             currentEventNumber
         )
@@ -668,10 +694,12 @@ public class StateMachine {
 
     @Override
     public InputEvent<Data> rollback(String cause) {
-      return new InputEvent<>(Rollback, new Data(
+      return new InputEvent<>(
+          Rollback, new Data(
           currentEventNumber - 2, // To the event before the request (current is response)
           cause
-      ));
+      )
+      );
     }
   }
 
@@ -799,34 +827,80 @@ public class StateMachine {
     return correlationId().doOnNext(consumer).then();
   }
 
-  public sealed interface ProcessResult<T> permits Accepted, DuplicateId, Failed, Pending, Raced, Rejected, UnknownId {
+  public sealed interface IdentityResult<T> permits IdentityResult.Accepted, IdentityResult.Rejected {
 
-    record Accepted<T>(EntityId entityId, Event<T> event) implements ProcessResult<T> {
-      public Accepted<T> accepted() { return this; }
+    record Accepted<T>(SecondaryId<T> id) implements IdentityResult<T> {
+      public Accepted<T> accepted() {return this;}
     }
+
+    record Rejected<T>(SecondaryId<T> id, EventLog log) implements IdentityResult<T> {
+      public Rejected<T> rejected() {return this;}
+    }
+
+    static <T> Accepted<T> accepted(SecondaryId<T> id) {
+      return new Accepted<>(id);
+    }
+
+    static <T> Rejected<T> rejected(SecondaryId<T> id, EventLog log) {
+      return new Rejected<>(id, log);
+    }
+
+    SecondaryId<T> id();
+
+    default boolean isAccepted() {
+      return this instanceof Accepted;
+    }
+
+    default Accepted<T> accepted() {
+      throw new IllegalStateException("Result is " + this);
+    }
+
+    default boolean isRejected() {
+      return this instanceof Rejected;
+    }
+
+    default Rejected<T> rejected() {
+      throw new IllegalStateException("Result is " + this);
+    }
+
+  }
+
+  public sealed interface ProcessResult<T> permits Accepted, Completed, DuplicateId, Failed, Pending, Raced, Rejected,
+      UnknownId {
+
+    record Completed<T>() implements ProcessResult<T> {}
+
+    record Accepted<T>(Event<T> event, EntityModel entityModel) implements ProcessResult<T> {
+      public Accepted<T> accepted() {return this;}
+    }
+
     record Rejected<T>(EventType<?, T> eventType, RejectedEvent exception) implements ProcessResult<T> {
+
       public Accepted<T> accepted() {
         System.out.println("accepted() called on ProcessResult.Rejected");
         throw exception;
       }
-      public Rejected<T> rejected() { return this; }
-    }
-    record DuplicateId<T>(SecondaryId<?> id) implements ProcessResult<T> {}
-    record UnknownId<T>(EventType<?, T> eventType, UnknownEntity exception) implements ProcessResult<T> {
-      public UnknownId<T> unknownId() { return this; }
-    }
-    record Failed<T>(String reason) implements ProcessResult<T> {}
-    record Raced<T>() implements ProcessResult<T> {}
-    record Pending<T>(EventType<?, T> eventType, CircularChange exception) implements ProcessResult<T> {
-      public Pending {
-        System.out.println("Creating Pending result with event type " + eventType.name() + " (" + exception.getMessage() + ")");
-      }
+
+      public Rejected<T> rejected() {return this;}
     }
 
+    record DuplicateId<T>(SecondaryId<?> id) implements ProcessResult<T> {}
+
+    record UnknownId<T>(EventType<?, T> eventType, UnknownEntity exception) implements ProcessResult<T> {
+
+      public UnknownId<T> unknownId() {return this;}
+    }
+
+    record Failed<T>(String reason) implements ProcessResult<T> {}
+
+    record Raced<T>() implements ProcessResult<T> {}
+
+    record Pending<T, I, O>(EventTrigger<T, I, O> trigger, T inputData, CircularChange exception) implements ProcessResult<O> {}
+
     record Entity(
-       EntityId id,
-       List<SecondaryId<?>> secondaryIds,
-       EntityModel model
+        EntityId id,
+        List<SecondaryId<?>> secondaryIds,
+        EntityModel model
     ) {}
 
 //    public enum Status {
@@ -840,8 +914,12 @@ public class StateMachine {
 //      Raced // Storing was raced by another event (can try again)
 //    }
 
-    static <T> Accepted<T> accepted(EntityId entityId, Event<T> event) {
-      return new Accepted<>(entityId, event);
+    static <T> Completed<T> completed() {
+      return new Completed<>();
+    }
+
+    static <T> Accepted<T> accepted(Event<T> event, EntityModel entityModel) {
+      return new Accepted<>(event, entityModel);
     }
 
     default boolean isAccepted() {
@@ -872,8 +950,16 @@ public class StateMachine {
       return this instanceof Pending;
     }
 
-    static <T> Pending<T> pending(EventType<?, T> eventType, CircularChange exception) {
-      return new Pending<>(eventType, exception);
+    static <T, I, O> Pending<T, I, O> pending(EventTrigger<T, I, O> trigger, T inputData, CircularChange exception) {
+      return new Pending<>(trigger, inputData, exception);
+    }
+
+    default boolean isDuplicateId() {
+      return this instanceof DuplicateId;
+    }
+
+    static <T> DuplicateId<T> duplicateId(SecondaryId<?> id) {
+      return new DuplicateId<>(id);
     }
 
     default boolean isUnknownId() {
@@ -947,9 +1033,12 @@ public class StateMachine {
   private Mono<EventLog> eventLogFromSession(EntityModel entityModel, ContextView ctx) {
     var log = ctx.<EventLog>getOrEmpty(entityModel).orElseThrow(
         () -> new IllegalStateException("No event log found in session for " + entityModel.name() + ". Found: " +
-            ctx.stream().filter(e -> e.getKey() instanceof EntityModel).map(e -> ((EntityModel)e.getKey()).name()).collect(
-                joining(", "))
-            )
+            ctx.stream()
+                .filter(e -> e.getKey() instanceof EntityModel)
+                .map(e -> ((EntityModel) e.getKey()).name())
+                .collect(
+                    joining(", "))
+        )
     );
     return eventLogByEntityId(entityModel, log.entityId());
 //    System.out.println("Got event log for entity " + entityModel.name() + "/" + log.entityId().value() + " from session: " + log.events().stream().map(Event::typeName).collect(joining(", ")));
@@ -1085,10 +1174,9 @@ public class StateMachine {
 //                        rootEntity,
 //                        eventTrigger.withFallbackSelector(),
 //                        sourceData
-////                        join(selectors.getFirst().fallback(), selectors.subList(1, selectors.size())),
-////                        entityModel,
-////                        eventType,
-////                        eventData
+
+  /// /                        join(selectors.getFirst().fallback(), selectors.subList(1, selectors.size())), /
+  ///               entityModel, /                        eventType, /                        eventData
 //                    );
 //                  } else if ((e.secondaryId() != null && isInitialInGroup(e.secondaryId())) || selectors.getFirst().creationMode() == CreateIfNotExists) {
 //                    return calculateNewIds(rootEntity, selectors.subList(1, selectors.size()), sourceData)
@@ -1170,13 +1258,13 @@ public class StateMachine {
 //        });
 //  }
 
-  public record ChangeSet<O>(ProcessResult<O> result, List<Change> changes) {
-
-    public static <O> ChangeSet<O> empty(ProcessResult<O> result) {
-      return new ChangeSet<>(result, List.of());
-    }
-
-  }
+//  public record ChangeSet<O>(ProcessResult<O> result, List<Change> changes) {
+//
+//    public static <O> ChangeSet<O> empty(ProcessResult<O> result) {
+//      return new ChangeSet<>(result, List.of());
+//    }
+//
+//  }
 
 //  private ChangeSet<Void> merge(List<ChangeSet<?>> sets) {
 //    return sets.stream()
@@ -1234,7 +1322,6 @@ public class StateMachine {
 //        changeSet.map(c -> new ChangeSet<>(c.result(), join(c.changes(), o.changes()), c.output()))
 //    );
 //  }
-
 
 //    inputTransition.eventNumber = eventLog.lastEventNumber() + scheduledEvents.size() + 1;
 //    inputTransition.input = new InputEvent<>(eventType, inputData);
@@ -1782,11 +1869,11 @@ public class StateMachine {
   }
 
   public <O> Flux<Event<?>> onEvent(String correlationId, EventTrigger<Void, Void, O> eventTrigger) {
-    return onEvent(correlationId, eventTrigger, null);
+    return onEvent(correlationId, eventTrigger, null, null);
   }
 
   public <I, O> Flux<Event<?>> onEvent(EventTrigger<I, I, O> eventTrigger, I input) {
-    return onEvent(UUID.randomUUID().toString(), eventTrigger, input);
+    return onEvent(UUID.randomUUID().toString(), eventTrigger, input, null);
   }
 
   private String trace(EventTrigger<?, ?, ?> eventTrigger, String text) {
@@ -1808,29 +1895,39 @@ public class StateMachine {
   }
 
   public <T, I, O> Flux<Event<?>> onEvent(String correlationId, EventTrigger<T, I, O> eventTrigger, T input) {
+    return onEvent(correlationId, eventTrigger, input, null);
+  }
+
+  private <T, I, O> Flux<Event<?>> onEvent(String correlationId, EventTrigger<T, I, O> eventTrigger, T input, ChangeContext<?> stage1) {
     System.out.println("onEvent " + correlationId + " " + eventTrigger.eventSpec().eventType().name());
     I adaptedInput = eventTrigger.eventSpec().inputAdapter().apply(input);
     Many<Event<?>> responseSink = Sinks.many().unicast().onBackpressureBuffer();
-    return eventLog(eventTrigger, input, List.of())
+    return eventLog(eventTrigger, input, null)
         .flatMapMany(log ->
-            onEvent(correlationId, eventTrigger.eventSpec().eventType(), adaptedInput, log, null)
-                .contextWrite(ctx -> ctx
-                    //.put("RS/" + (tuple.t1().lastEventNumber() + 2) + "/" + tuple.t1().entityId().value(), responseSink)
-                    .put("RS/" + log.entityId().value(), responseSink)
-                    .put(log.entityModel(), log.entityId())
-                )
-                .thenMany(responseSink.asFlux())
-                .doOnNext(e -> System.out.println("onEvent output: " + e.type().name() + " (#" + e.eventNumber() + ")"))
-                .retryWhen(RetrySpec.fixedDelay(3, Duration.ofMillis(500))
-                    .filter(e -> e instanceof EventAlreadyExists)
-                    // Avoid the "Thundering Herd" problem
-                    .jitter(1.0)
-                    .doAfterRetry(signal -> System.out.println(System.currentTimeMillis() + ": Retried (" + signal.totalRetries() + ") due to " + signal.failure().getMessage()))
-                    // Rethrow the exception on exhaustion so it can be handled downstream
-                    .onRetryExhaustedThrow((_, signal) -> signal.failure())
-                )
+                onEvent(correlationId, eventTrigger.eventSpec().eventType(), adaptedInput, log, null, stage1, List.of())
+                    .contextWrite(ctx -> {
+                      System.out.println("Putting " + log.entityModel().name() + " on context");
+                          return ctx
+                              //.put("RS/" + (tuple.t1().lastEventNumber() + 2) + "/" + tuple.t1().entityId().value(), responseSink)
+                              .put("RS/" + log.entityId().value(), responseSink)
+                              //.put(log.entityModel(), log.entityId())
+                              ;
+                        }
+                    )
+                    .thenMany(responseSink.asFlux())
+                    .doOnNext(e -> System.out.println("onEvent output: " + e.type().name() + " (#" + e.eventNumber() + ")"))
+                    .retryWhen(RetrySpec.fixedDelay(3, Duration.ofMillis(500))
+                        .filter(e -> e instanceof EventAlreadyExists)
+                        // Avoid the "Thundering Herd" problem
+                        .jitter(1.0)
+                        .doAfterRetry(signal -> System.out.println(
+                            System.currentTimeMillis() + ": Retried (" + signal.totalRetries() + ") due to "
+                                + signal.failure().getMessage()))
+                        // Rethrow the exception on exhaustion so it can be handled downstream
+                        .onRetryExhaustedThrow((_, signal) -> signal.failure())
+                    )
 //                .onErrorResume(EventAlreadyExists.class, _ -> onEvent(correlationId, eventTrigger, input))
-                .switchIfEmpty(Flux.error(new RuntimeException("onEvent: No response")))
+                    .switchIfEmpty(Flux.error(new RuntimeException("onEvent: No response")))
         );
   }
 
@@ -1838,9 +1935,35 @@ public class StateMachine {
       String correlationId,
       InputEvent<I> inputEvent,
       EventLog eventLog,
-      IncomingMessage inflightMessage
+      IncomingResponse inflightMessage,
+      ChangeContext<?> requestChangeContext
   ) {
-    return onEvent(correlationId, inputEvent.eventType(), inputEvent.data(), eventLog, inflightMessage);
+    return onEvent(correlationId, inputEvent.eventType(), inputEvent.data(), eventLog, inflightMessage, requestChangeContext, List.of());
+  }
+
+  private List<Change> changes(@NotNull ChangeContext<?> tail) {
+    ArrayList<Change> changes = new ArrayList<>();
+    for (var c = tail; c != null; c = c.previous()) {
+      switch (c) {
+        case OutputChangeContext<?> occ when occ.stepOutput().isAccepted() && !(occ.previous() instanceof ChangeContext.ChoiceChangeContext<?>) -> changes.add(Change.fromAcceptedEvent(occ.stepOutput().accepted()));
+        case ChangeContext.OutputChangeContext<?> _ -> {}
+        case ChangeContext.AssembledChangeContext<?> _ -> {}
+        case ChangeContext.ChoiceChangeContext<?> _ -> {}
+        case ChangeContext.InitialChangeContext<?> icc when icc.incomingResponse() != null -> changes.add(Change.fromIncomingResponse(icc.incomingResponse(), icc.log().entityModel(), icc.log().entityId()));
+        case ChangeContext.InitialChangeContext<?> _ -> {}
+        case ChangeContext.IdentityChangeContext<?> icc when icc.stepOutput().isAccepted() -> changes.add(Change.fromIdentifier(icc.stepOutput().accepted().id(), icc.entityModel(), icc.entityId()));
+        case ChangeContext.IdentityChangeContext<?> _ -> {}
+        case ChangeContext.OutgoingRequestChangeContext<?> orcc -> changes.add(Change.fromOutgoingRequest(orcc.outgoingRequest(), orcc.entityModel(), orcc.entityId()));
+        case ChangeContext.PendingTriggerChangeContext<?, ?> _ -> {}
+        case ChangeContext.ScheduledChangeContext<?> _ -> {}
+        case ChangeContext.TriggerChangeContext<?, ?> _ -> {}
+        case ChangeContext.PendingChangeContext<?, ?, ?> _ -> {}
+        case ChangeContext.CombinedChangeContext<?, ?> _ -> {}
+        case ChangeContext.RejectedChangeContext<?> _ -> {}
+        case ChangeContext.UnknownIdChangeContext<?> _ -> {}
+      }
+    }
+    return changes;
   }
 
   private <I, O> Mono<ProcessResult<?>> onEvent(
@@ -1848,140 +1971,193 @@ public class StateMachine {
       EventType<I, O> eventType,
       I input,
       EventLog eventLog,
-      IncomingMessage inflightMessage
+      IncomingResponse incomingResponse,
+      ChangeContext<?> stage1,
+      List<IdentityResult<?>> identityResults
   ) {
     var now = ZonedDateTime.now(clock);
     var tuple = transitionModel(eventLog, eventType);
     if (tuple.t2() == null)
-      return Mono.just(ProcessResult.rejected(eventType, new RejectedEvent(eventType, eventLog.entityModel(), eventLog.entityId(), tuple.t3())));
-    System.out.println(trace(
-        eventType, eventLog.entityModel(),
-        String.format(
-            "calculating with log [%s] and transition [%s] from state [%s]",
-            tuple.t1() != null ? tuple.t1().events().stream().map(Event::typeName).collect(joining(", ")) : "<N/A>",
-            tuple.t2(),
-            tuple.t3() != null ? tuple.t3().name() : "<N/A>"
-        )
-    ));
+      return Mono.just(ProcessResult.rejected(
+          eventType,
+          new RejectedEvent(eventType, eventLog.entityModel(), eventLog.entityId(), tuple.t3())
+      ));
     return tuple.t2().calculate(
-            new TransitionContext<>(
+            new InitialChangeContext<>(
+                stage1,
+                null,
+                tuple.t2(),
                 tuple.t3(),
-                tuple.t1().lastEventNumber() + 1,
+                tuple.t1(),
                 now,
                 correlationId,
+                input,
                 this,
-                new InputEvent<>(eventType, input),
-                tuple.t1(),
-                null
-            ),
-            clock,
-            inflightMessage
+                incomingResponse,
+                identityResults
+            )
         )
-        .doOnNext(changeSet -> System.out.println("onEvent result: " + changeSet.result()))
-        .flatMap(changeSet -> switch (changeSet.result()) {
-          case Accepted<O> _ -> storeChanges(now, changeSet.changes()).thenReturn(changeSet.result())
-              .onErrorResume(
-                  SecondaryIdAlreadyExists.class,
-                  e -> eventsByLookupId.execute(e.change().eventLog().entityModel(), e.secondaryId())
-                      .flatMap(originalLog -> tuple.t2()
-                          .duplicateModel(e.secondaryId().model(), input, originalLog)
-                          .map(duplicateModel -> duplicateModel.calculate(
-                                  new TransitionContext<>(
-                                      tuple.t3(),
-                                      tuple.t1().lastEventNumber() + 1,
-                                      now,
-                                      correlationId,
-                                      this,
-                                      new InputEvent<>(duplicateModel.eventType(), tuple(input, originalLog)),
-                                      tuple.t1(),
-                                      null
-                                  ),
-                                  clock,
-                                  null
-                              ).flatMap(duplicateChanges -> duplicateChanges.result().isAccepted() ?
-                                  storeChanges(now, duplicateChanges.changes()).thenReturn(changeSet.result()) :
-                                  Mono.error(new RuntimeException(
-                                      "Failed to handle event with duplicate id: " + duplicateChanges.result()))
-                              )
-                          )
-                          .orElse(Mono.error(e))
-                      )
-              );
-          case Rejected<O> r -> tuple.t2().rejectModel() == null ? Mono.error(r.exception()) :
+        .doOnNext(output -> System.out.printf("onEvent result with pending unresolved:\n" + chainToString(output)))
+        .flatMap(this::calculatePendingChanges)
+        .doOnNext(output -> System.out.printf("onEvent result:\n" + chainToString(output)))
+        .flatMap(output -> switch (output.stepOutput()) {
+          case Accepted<?> _, Completed<?> _ -> storeChanges(now, correlationId, output)
+              .thenReturn(output.stepOutput());
+          case Rejected<?> r -> tuple.t2().rejectModel() == null ? Mono.error(r.exception()) :
               tuple.t2().rejectModel().calculate(
-                  new TransitionContext<>(
+                  new InitialChangeContext<>(
+                      null,
+                      null,
+                      tuple.t2(),
                       tuple.t3(),
-                      tuple.t1().lastEventNumber() + 1,
+                      tuple.t1(),
                       now,
                       correlationId,
-                      this,
-                      new InputEvent<>(
-                          tuple.t2().rejectModel().eventType(),
-                          tuple(
-                              input,
-                              eventLog.entityModel(),
-                              eventType,
-                              r.exception.getMessage()
-                          )
+                      tuple(
+                          input,
+                          eventLog.entityModel(),
+                          eventType,
+                          r.exception.getMessage()
                       ),
-                      tuple.t1(),
-                      null
-                  ),
-                  clock,
-                  null
-              ).flatMap(rejectChanges -> rejectChanges.result().isAccepted() ?
-                  storeChanges(now, rejectChanges.changes()).thenReturn(rejectChanges.result()) :
+                      this,
+                      incomingResponse,
+                      List.of()
+                  )
+              )
+              .flatMap(rejectChanges -> rejectChanges.stepOutput().isAccepted() ?
+                  storeChanges(now, correlationId, rejectChanges).thenReturn(rejectChanges.stepOutput()) :
                   Mono.error(new RuntimeException(
-                      "Failed to handle rejected event: " + rejectChanges.result() + " (original: "
-                          + changeSet.result() + ")"))
+                      "Failed to handle rejected event: " + rejectChanges.stepOutput() + " (original: "
+                      + output.stepOutput() + ")"))
               );
-          case ProcessResult<O> r -> Mono.error(new RuntimeException("Failed to handle event: " + r));
-        });
-
+          case ProcessResult<?> r -> Mono.error(new RuntimeException("onEvent: " + r));
+        })
+        .onErrorResume(
+            SecondaryIdAlreadyExists.class,
+            e -> {
+              return eventsByLookupId.execute(e.change().entityModel(), e.secondaryId())
+                  .doOnNext(originalLog -> System.out.println(e.secondaryId().data() + " already exists. Original log: " + originalLog.events().stream().map(Event::typeName).collect(joining(","))))
+                  .map(originalLog -> IdentityResult.rejected(e.secondaryId(), originalLog))
+                  .flatMap(identityResult -> onEvent(correlationId, eventType, input, eventLog, incomingResponse, stage1, List.of(identityResult)));
+//              return eventsByLookupId.execute(e.change().entityModel(), e.secondaryId())
+//                  .flatMap(originalLog -> tuple.t2()
+//                      .duplicateModel(e.secondaryId().model(), input, originalLog)
+//                      .map(duplicateModel -> duplicateModel.calculate(
+//                              new InitialChangeContext<>(
+//                                  stage1,
+//                                  null,
+//                                  tuple.t2(),
+//                                  tuple.t3(),
+//                                  tuple.t1(),
+//                                  now,
+//                                  correlationId,
+//                                  tuple(input, originalLog),
+//                                  this,
+//                                  incomingResponse,
+//                                  List.of()
+//                              )
+//                          ).flatMap(duplicateChanges -> duplicateChanges.stepOutput().isAccepted() ?
+//                              storeChanges(now, correlationId, duplicateChanges).thenReturn(duplicateChanges.stepOutput()) :
+//                              Mono.error(new RuntimeException(
+//                                  "Failed to handle event with duplicate id: " + duplicateChanges.stepOutput()))
+//                          )
+//                      )
+//                      .orElse(Mono.error(e))
+//                  );
+            }
+        );
   }
 
+  private String chainToString(ChangeContext<?> tail) {
+    StringBuilder b = new StringBuilder();
+    for (ChangeContext<?> c = tail; c != null; c = c.previous()) {
+      b.append(c).append("\n");
+    }
+    return b.toString();
+  }
+
+  private Mono<ChangeContext<? extends ProcessResult<?>>> calculatePendingChanges(@NotNull ChangeContext<? extends ProcessResult<?>> tail) {
+    List<PendingChangeContext<?, ?, ?>> pendingChanges = new ArrayList<>();
+    for (ChangeContext<?> current = tail; current != null; current = current.previous()) {
+      if (current instanceof PendingChangeContext<?, ?, ?> p) pendingChanges.add(p);
+    }
+    Mono<ChangeContext<? extends ProcessResult<?>>> result = Mono.just(tail);
+    for (var p : pendingChanges) {
+      result = result.flatMap(r -> calculatePendingChange(p, r));
+    }
+    return result;
+  }
+
+  private <T, I, O> Mono<? extends ChangeContext<? extends ProcessResult<?>>> calculatePendingChange(PendingChangeContext<T, I, O> p, ChangeContext<?> previous) {
+    return calculateTriggeredEvent(p.stepOutput().trigger(), previous, p.stepOutput().inputData(), false);
+  }
+
+
   public Mono<State> onStatus(EntitySelector<Void> entitySelector, EntityModel entityModel) {
-    return eventLog(entitySelector, null, entityModel, List.of())
+    return eventLog(entitySelector, null, entityModel, null)
         .map(log -> traversers.get(entityModel).currentState(log));
   }
 
-  private <T, I, O> Mono<EventLog> eventLog(EventTrigger<T, I, O> eventTrigger, T inputData, List<ChangeSet<?>> nestedChanges) {
+  private <T, I, O> Mono<EventLog> eventLog(
+      EventTrigger<T, I, O> eventTrigger,
+      T inputData,
+      ChangeContext<?> changeContext
+  ) {
+    System.out.println("Finding log for " + eventTrigger.eventSpec().eventType().name() + " on " + eventTrigger.entityModel().name());
     return eventTrigger.createEntity() ?
         Mono.just(emptyEventLog(eventTrigger.entityModel())) :
-        eventLog(eventTrigger.entitySelectors().getFirst(), inputData, eventTrigger.entityModel(), nestedChanges);
+        eventLog(eventTrigger.entitySelectors().getFirst(), inputData, eventTrigger.entityModel(), changeContext);
   }
 
-  private EventLog logFromNestedChanges(EntityId entityId, List<ChangeSet<?>> nestedChanges) {
-    System.out.println("logFromNestedChanges(" + entityId.value() + ", " + nestedChanges);
-    List<Change> changes = nestedChanges.stream()
-        .flatMap(changeSet -> changeSet.changes().stream())
-        .filter(change -> change.eventLog().entityId().equals(entityId))
-        .sorted(comparing(change -> change.newEvent().eventNumber()))
-        .toList();
-    System.out.println("Found log from nested changes: " + (changes.isEmpty() ? "No" : (changes.getLast().eventLog().entityModel().name() + ": " + changes.getLast().eventLog().events().stream().map(Event::typeName).collect(joining(",")))));
-    return changes.isEmpty() ? null : changes.getLast().eventLog().withNewEvent(changes.getLast().newEvent());
+  private EventLog logFromNestedChanges(EntityId entityId, ChangeContext<?> changeContext) {
+    // TODO: Duplicates changes(ChangeContext<?>) a bit..
+    System.out.println("Finding log from change context for entity id " + entityId.value());
+    for (var c = changeContext; c != null; c = c.previous()) {
+      if (c instanceof OutputChangeContext<?>(TransitionModelBuilder.ChangeContext<?> previous, ProcessResult<?> stepOutput)
+          && stepOutput instanceof Accepted<?>(Event<?> event, _)
+          && event.entityId().equals(entityId.value())
+          && !(previous instanceof ChoiceChangeContext)) {
+        return c.initialChangeContext().log().withNewEvent(event);
+      }
+    }
+    return null;
+//    List<Change> changes = nestedChanges.stream()
+//        .flatMap(changeSet -> changeSet.changes().stream())
+//        .filter(change -> change.eventLog().entityId().equals(entityId))
+//        .sorted(comparing(change -> change.newEvent().eventNumber()))
+//        .toList();
+//    System.out.println("Found log from nested changes: " + (changes.isEmpty() ? "No" : (changes.getLast().eventLog().entityModel().name() + ": " + changes.getLast().eventLog().events().stream().map(Event::typeName).collect(joining(",")))));
+//    return changes.isEmpty() ? null : changes.getLast().eventLog().withNewEvent(changes.getLast().newEvent());
   }
 
-  private <I> Mono<EventLog> eventLog(EntitySelector<I> entitySelector, I inputData, EntityModel entityModel, List<ChangeSet<?>> nestedChanges) {
-    System.out.println("Finding event log for " + entityModel.name() + " with selector type " + entitySelector.getClass().getSimpleName() + " (" + entitySelector.creationMode().name() + ")");
+  private <I> Mono<EventLog> eventLog(
+      EntitySelector<I> entitySelector,
+      I inputData,
+      EntityModel entityModel,
+      @Nullable ChangeContext<?> changeContext
+  ) {
+    System.out.println(
+        "Finding event log for " + entityModel.name() + " with selector type " + entitySelector.getClass()
+            .getSimpleName() + " (" + entitySelector.creationMode().name() + ")");
     return switch (entitySelector) {
-      case EntitySelector.ByIdFromSession<I> _ ->
-          Mono.deferContextual(ctx ->
-              Mono.justOrEmpty(ctx.<EntityId>getOrEmpty(entityModel))
-                  .switchIfEmpty(Mono.error(new RuntimeException("No id found in session for entity type " + entityModel.name())))
+      case EntitySelector.ByIdFromSession<I> _ -> Mono.deferContextual(ctx ->
+              Mono.just(entityIdFromChangeContext(changeContext, entityModel))
+//              Mono.justOrEmpty(ctx.<EntityId>getOrEmpty(entityModel))
+//                  .switchIfEmpty(Mono.error(new RuntimeException(
+//                      "No id found in session for entity type " + entityModel.name())))
 //                  .doOnNext(entityId -> System.out.println("Found entity id for entity type " + entityModel.name() + " in session: " + entityId.value()))
                   .flatMap(entityId -> Mono.justOrEmpty(ctx.<EventLog>getOrEmpty(entityId))
-//                      .doOnNext(eventLog -> System.out.println("Found event log for entity " + entityModel.name() + "/" + entityId.value() + " in session: " + eventLog.events().stream().map(Event::typeName).collect(joining(","))))
-                       .switchIfEmpty(Mono.justOrEmpty(logFromNestedChanges(entityId, nestedChanges)))
-                       .switchIfEmpty(eventLogByEntityId(entityModel, entityId))
+                      .doOnNext(eventLog -> System.out.println("Found event log for entity " + entityModel.name() + "/" + entityId.value() + " in session: " + eventLog.events().stream().map(Event::typeName).collect(joining(","))))
+                          .switchIfEmpty(Mono.justOrEmpty(logFromNestedChanges(entityId, changeContext)))
+                          .switchIfEmpty(eventLogByEntityId(entityModel, entityId))
                   )
-          );
+      );
       case EntitySelector.ById<I> s -> {
         EntityId entityId = s.id().apply(inputData);
         yield switch (s.creationMode()) {
-          case NeverCreate -> Mono.justOrEmpty(logFromNestedChanges(entityId, nestedChanges))
+          case NeverCreate -> Mono.justOrEmpty(logFromNestedChanges(entityId, changeContext))
               .switchIfEmpty(eventsByEntityId.execute(entityModel, entityId));
-          case CreateIfNotExists -> Mono.justOrEmpty(logFromNestedChanges(entityId, nestedChanges))
+          case CreateIfNotExists -> Mono.justOrEmpty(logFromNestedChanges(entityId, changeContext))
               .switchIfEmpty(eventsByEntityId.execute(entityModel, entityId))
               .onErrorResume(UnknownEntity.class, _ -> Mono.just(emptyEventLog(entityModel, entityId)));
           case AlwaysCreate -> Mono.just(emptyEventLog(entityModel, s.id().apply(inputData)));
@@ -1989,7 +2165,11 @@ public class StateMachine {
       }
       case EntitySelector.BySecondaryId<I, ?> selector -> switch (selector.creationMode()) {
         case NeverCreate -> eventsByLookupId.execute(entityModel, secondaryId(selector, inputData))
-            .onErrorResume(UnknownEntity.class, e -> selector.fallback() != null ? eventLog(selector.fallback(), inputData, entityModel, nestedChanges) : Mono.error(e));
+            .onErrorResume(
+                UnknownEntity.class,
+                e -> selector.fallback() != null ? eventLog(selector.fallback(), inputData, entityModel, changeContext)
+                    : Mono.error(e)
+            );
         case CreateIfNotExists -> eventsByLookupId.execute(entityModel, secondaryId(selector, inputData))
             .onErrorResume(UnknownEntity.class, _ -> Mono.just(emptyEventLog(entityModel)));
         case AlwaysCreate -> Mono.just(emptyEventLog(entityModel));
@@ -2015,109 +2195,118 @@ public class StateMachine {
     return new SecondaryId<>(selector.model(), selector.id().apply(inputData));
   }
 
-  public <T, I, O> Mono<ChangeSet<O>> calculateTriggeredEvent(
+  private EntityId entityIdFromChangeContext(ChangeContext<?> context, EntityModel entityModel) {
+    for (var c = context; c != null; c = c.previous()) {
+      if (c instanceof ChangeContext.InitialChangeContext<?> i && i.log().entityModel().equals(entityModel)) {
+        return i.log().entityId();
+      }
+    }
+    InitialChangeContext<?> initial = null;
+    for (var c = context; c != null; c = c.previous()) {
+      if (c instanceof ChangeContext.InitialChangeContext<?> i) initial = i;
+    }
+    System.out.println("entityIdFromChangeContext - found nothing. Is there a requestChangeContext? " + initial.stage1() != null);
+    for (var c = initial.stage1(); c != null; c = c.previous()) {
+      if (c instanceof ChangeContext.InitialChangeContext<?> i && i.log().entityModel().equals(entityModel)) {
+        return i.log().entityId();
+      }
+    }
+    throw new NoSuchElementException(entityModel.name() + " not found in change context");
+  }
+
+  public <T, I, O> Mono<ChangeContext<ProcessResult<O>>> calculateTriggeredEvent(
       EventTrigger<T, I, O> eventTrigger,
-      ChangeContext<T> changeContext,
-      List<ChangeSet<?>> nestedChanges,
+      ChangeContext<?> previous,
+      T data,
       boolean skipCircularCheck
   ) {
-    I adaptedData = eventTrigger.eventSpec().inputAdapter().apply(changeContext.stepOutput());
+    I adaptedData = eventTrigger.eventSpec().inputAdapter().apply(data);
     return Mono.deferContextual(ctx -> {
-      System.out.println("#calculateTriggeredEvent " + eventTrigger.eventSpec().eventType().name() +
-          " on " + eventTrigger.entityModel().name());
-      EntityId entityId = switch (eventTrigger.entitySelectors().getFirst()) {
-        case EntitySelector.ByIdFromSession<T> _ -> ctx.get(eventTrigger.entityModel());
-        case EntitySelector.ById<T> s -> s.id().apply(changeContext.stepOutput());
-        default -> null;
-      };
-      if (!skipCircularCheck && ctx.hasKey(eventTrigger.entityModel())) {
-            System.out.println("Potential circular change on event " + eventTrigger.eventSpec().eventType().name() + " on " + eventTrigger.entityModel().name() + ", origin id=" + ctx.get(eventTrigger.entityModel()) + ", trigger id=" + entityId);
+          EntityId entityId = switch (eventTrigger.entitySelectors().getFirst()) {
+            case EntitySelector.ByIdFromSession<T> _ -> {
+              try {
+                yield entityIdFromChangeContext(previous, eventTrigger.entityModel());
+                //yield ctx.get(eventTrigger.entityModel());
+              } catch (NoSuchElementException e) {
+                throw new RuntimeException(e.getMessage() + "\nFound in Reactor context:\n" +
+                    ctx.stream().map(x -> x.toString()).collect(joining("\n")));
+              }
+            }
+            case EntitySelector.ById<T> s -> s.id().apply(data);
+            default -> null;
+          };
+          if (!skipCircularCheck && ctx.hasKey(eventTrigger.entityModel())) {
             if (ctx.get(eventTrigger.entityModel()).equals(entityId)) {
-              System.out.println("It is a circular change: " + eventTrigger.eventSpec().eventType().name() + " on " + eventTrigger.entityModel().name());
-              throw new CircularChange(eventTrigger.eventSpec().eventType(), eventTrigger.entityModel(), entityId);
+              throw new CircularChange(
+                  new InputEvent<>(eventTrigger.eventSpec().eventType(), adaptedData),
+                  eventTrigger.entityModel(),
+                  entityId
+              );
             }
           }
           return Mono.just(ctx);
         }
-    ).flatMap(_ -> eventLog(eventTrigger, changeContext.stepOutput(), nestedChanges/*changeContext.nestedChanges()*/)
-//        .doOnNext(log -> System.out.println(
-//            "calculateTriggeredEvent " + eventTrigger.eventSpec().eventType().name() +
-//                " on " + eventTrigger.entityModel().name() +
-//                " with " + (adaptedData != null ? adaptedData : "nothing") +
-//                " (log[" + log.entityModel().name() + "/" + log.entityId().value() + "]: " + log.events()
-//                .stream()
-//                .map(Event::typeName)
-//                .collect(joining(", ")) + ") (other changes: " +
-//                changeContext.nestedChanges().stream()
-//                    .flatMap(cs -> cs.changes().stream())
-//                    .filter(c ->
-//                        c.eventLog().entityModel().equals(eventTrigger.entityModel()) &&
-//                            c.eventLog().entityId().equals(log.entityId()) &&
-//                            c.newEvent() != null
-//                    )
-//                    .map(Change::newEvent)
-//                    .map(e -> e.typeName() + "(" + e.eventNumber() + ")")
-//                    .collect(joining(","))
-//            + ")"
-//        ))
-        .map(eventLog -> transitionModel(eventLog, eventTrigger.eventSpec().eventType()))
-        .map(tuple -> {
-          if (tuple.t2() != null) return tuple;
-          throw new RejectedEvent(eventTrigger.eventSpec().eventType(), eventTrigger.entityModel(), tuple.t1().entityId(), tuple.t3());
-        })
-        .retryWhen(RetrySpec.fixedDelay(3, Duration.ofMillis(500))
-            .filter(e -> e instanceof RejectedEvent)
-            // Avoid the "Thundering Herd" problem
-            .jitter(1.0)
-            .doAfterRetry(signal -> System.out.println(System.currentTimeMillis() + ": Retried (" + signal.totalRetries() + ") due to " + signal.failure().getMessage()))
-            // Rethrow the exception on exhaustion so it can be handled downstream
-            .onRetryExhaustedThrow((_, signal) -> signal.failure())
-        )
-        .flatMap(tuple -> tuple.t2().calculate(
-            new TransitionContext<>(
-                tuple.t3(),
-                tuple.t1().lastEventNumber() + 1,
-                changeContext.transitionContext().timestamp(),
-                changeContext.transitionContext().correlationId(),
-                changeContext.transitionContext().stateMachine(),
-                new InputEvent<>(tuple.t2().eventType(), adaptedData),
-                tuple.t1(),
-                null
-            ),
-            clock,
-            null
-        ))
-        .onErrorResume(CircularChange.class, e -> Mono.just(new ChangeSet<>(ProcessResult.pending(eventTrigger.eventSpec().eventType(), e), List.of())))
-        .onErrorResume(UnknownEntity.class, e -> Mono.just(new ChangeSet<>(ProcessResult.unknownId(eventTrigger.eventSpec().eventType(), e), List.of())))
-//        .onErrorResume(EntityGroupNotInitialised.class, e -> Mono.just(new ChangeSet<>(ProcessResult.rejected(eventTrigger.eventSpec().eventType(), new RejectedEvent(eventTrigger.eventSpec().eventType(), eventTrigger.entityModel(), null)), List.of())))
-        .onErrorResume(RejectedEvent.class,
-            e -> Mono.just(ChangeSet.empty(ProcessResult.rejected(eventTrigger.eventSpec().eventType(), e)))
-                .doOnNext(cs -> System.out.println(
-                    "RejectedEvent converted to ProcessResult.Rejected in calculateTriggeredEvent for "
-                        + eventTrigger.eventSpec().eventType().name()))
-        )
+    ).flatMap(_ -> eventLog(eventTrigger, data, previous)
+            .map(eventLog -> transitionModel(eventLog, eventTrigger.eventSpec().eventType()))
+            .map(tuple -> {
+              if (tuple.t2() != null)
+                return tuple;
+              throw new RejectedEvent(
+                  eventTrigger.eventSpec().eventType(),
+                  eventTrigger.entityModel(),
+                  tuple.t1().entityId(),
+                  tuple.t3()
+              );
+            })
+            .retryWhen(RetrySpec.fixedDelay(3, Duration.ofMillis(500))
+                .filter(e -> e instanceof RejectedEvent)
+                // Avoid the "Thundering Herd" problem
+                .jitter(1.0)
+                .doAfterRetry(signal -> System.out.println(
+                    System.currentTimeMillis() + ": Retried (" + signal.totalRetries() + ") due to " + signal.failure()
+                        .getMessage()))
+                // Rethrow the exception on exhaustion so it can be handled downstream
+                .onRetryExhaustedThrow((_, signal) -> signal.failure())
+            )
+            .flatMap(tuple -> tuple.t2().calculate(
+                new InitialChangeContext<>(
+                    null,
+                    previous,
+                    tuple.t2(),
+                    tuple.t3(),
+                    tuple.t1(),
+                    previous.initialChangeContext().timestamp(),
+                    previous.initialChangeContext().correlationId(),
+                    adaptedData,
+                    previous.initialChangeContext().stateMachine(),
+                    null,
+                    List.of()
+                )
+            ))
     );
   }
 
   public static class CircularChange extends RuntimeException {
-    private final EventType<?, ?> eventType;
+
+    private final InputEvent<?> inputEvent;
     private final EntityModel entityModel;
     private final EntityId entityId;
 
-    public CircularChange(EventType<?, ?> eventType, EntityModel entityModel, EntityId entityId) {
+    public CircularChange(InputEvent<?> inputEvent, EntityModel entityModel, EntityId entityId) {
       super(String.format(
           "%s on %s/id=%s is circular",
-          eventType != null ? eventType.name() : "<no event type>",
-          entityModel != null ? entityModel.name() : "<no entity model>",
+          inputEvent.eventType().name(),
+          entityModel.name(),
           entityId.value().toString()
       ));
-      this.eventType = eventType;
+      this.inputEvent = inputEvent;
       this.entityModel = entityModel;
       this.entityId = entityId;
     }
   }
 
   public static class RejectedEvent extends RuntimeException {
+
     private final EventType<?, ?> eventType;
     private final EntityModel entityModel;
     private final EntityId entityId;
@@ -2136,7 +2325,13 @@ public class StateMachine {
       this.currentState = currentState;
     }
 
-    public RejectedEvent(Rollback eventType, EntityModel entityModel, EntityId entityId, State currentState, int rollbackTo) {
+    public RejectedEvent(
+        EventType<?, ?> eventType,
+        EntityModel entityModel,
+        EntityId entityId,
+        State currentState,
+        int rollbackTo
+    ) {
       super(String.format(
           "%s on %s not allowed for %s: Can't rollback to event number %d",
           eventType != null ? eventType.name() : "<no event type>",
@@ -2167,35 +2362,44 @@ public class StateMachine {
     }
   }
 
-  private <I, O> Tuple3<EventLog, TransitionModel<I, O>, State> transitionModel(EventLog eventLog, EventType<I, O> eventType) {
+  private <I, O> Tuple3<EventLog, TransitionModel<I, O>, State> transitionModel(
+      EventLog eventLog,
+      EventType<I, O> eventType
+  ) {
     var traverser = traversers.get(eventLog.entityModel());
     var currentStateAndTransition = traverser.accept(eventLog, eventType);
 //    var currentState = traverser.currentState(eventLog);
 //    // TODO
 //    var modelForCurrentTransition = (TransitionModel<I, O>)traverser.accept(currentState, eventType);
 //    return tuple(eventLog, modelForCurrentTransition, currentState);
-    return tuple(eventLog, (TransitionModel<I, O>)currentStateAndTransition.t2(), currentStateAndTransition.t1());
+    return tuple(eventLog, (TransitionModel<I, O>) currentStateAndTransition.t2(), currentStateAndTransition.t1());
   }
 
-  public <I, T> Mono<ChangeSet<T>> calculateChange(EventType<I, T> eventType, EventLog eventLog, ZonedDateTime timestamp, String correlationId) {
+  public <I, T> Mono<? extends ChangeContext<ProcessResult<T>>> calculateChange(
+      EventType<I, T> eventType,
+      EventLog eventLog,
+      ZonedDateTime timestamp,
+      String correlationId
+  ) {
     Traverser traverser = traversers.get(eventLog.entityModel());
     var currentStateAndTransition = traverser.accept(eventLog, eventType);
 //    State currentState = traverser.currentState(eventLog);
 //    TransitionModel<I, T> transitionModel = (TransitionModel<I, T>)traverser.accept(currentState, eventType); // TODO
     //return transitionModel.calculate(
-    return ((TransitionModel<I, T>)currentStateAndTransition.t2()).calculate(
-        new TransitionContext<>(
+    return ((TransitionModel<I, T>) currentStateAndTransition.t2()).calculate(
+        new InitialChangeContext<>(
+            null,
+            null,
+            currentStateAndTransition.t2(),
             currentStateAndTransition.t1(),
-            eventLog.lastEventNumber() + 1,
+            eventLog,
             timestamp,
             correlationId,
+            null,
             this,
-            new InputEvent<>(eventType, null),
-            eventLog,
-            null
-        ),
-        clock,
-        null
+            null,
+            List.of()
+        )
     );
   }
 
@@ -2228,8 +2432,8 @@ public class StateMachine {
         .filter(Change::storeEvent)
         .map(change -> new Listener.Change(
                 new Listener.Change.Entity(
-                    change.eventLog().entityModel().name(),
-                    change.eventLog().entityId().value(),
+                    change.entityModel().name(),
+                    change.entityId().value(),
                     change.newSecondaryIds().stream().map(id -> id.model().name() + ":" + id.data()).toList()
                 ),
                 change.deadline(),
@@ -2238,7 +2442,6 @@ public class StateMachine {
                     change.newEvent().type().name(),
                     change.newEvent().data()
                 ) : null,
-                change.toState() != null ? change.toState().name() : "self",
                 change.newSecondaryIds().stream().map(id -> id.model().name() + ":" + id.data()).toList(),
                 //change.incomingRequest() != null ? List.of(change.incomingRequest().message().requestLine()) : List.of(),
                 //change.outgoingResponse() != null ? List.of(change.outgoingResponse().message().statusLine()) : List.of(),
@@ -2247,7 +2450,7 @@ public class StateMachine {
                     .toList(),
                 change.incomingResponse() != null ?
                     List.of(change.incomingResponse().message().message()
-                        .substring(0, Math.min(1000, change.incomingResponse().message().message().length()))) :
+                            .substring(0, Math.min(1000, change.incomingResponse().message().message().length()))) :
                     List.of()
             )
         )
@@ -2277,30 +2480,32 @@ public class StateMachine {
 
   private Mono<Void> storeChanges(
       ZonedDateTime timestamp,
-      List<Change> changes
+      String correlationId,
+      ChangeContext<?> changeContext
   ) {
-//    System.out.println("storeChanges " + unfilteredChanges.stream().map(c -> c.newEvent() != null ? c.eventLog().entityModel().name() + "/" + c.newEvent().typeName() : "N/A").collect(Collectors.joining(", ")));
+    List<Change> changes = changes(changeContext);
+    //    System.out.println("storeChanges " + unfilteredChanges.stream().map(c -> c.newEvent() != null ? c.eventLog().entityModel().name() + "/" + c.newEvent().typeName() : "N/A").collect(Collectors.joining(", ")));
     System.out.println("Changes to store: " + changes.stream().map(c -> c.toString()).collect(joining("\n")));
 //    List<Change> storableChanges = changes.stream()
-        // TODO: Changes for ReadOnly events which have side effects must still be stored. Do we need ReadOnly events
-        //       when Status doesn't use event anymore.
-        //.filter(change -> change.newEvent() == null || !(change.newEvent().type() instanceof BasicEventType.ReadOnly))
+    // TODO: Changes for ReadOnly events which have side effects must still be stored. Do we need ReadOnly events
+    //       when Status doesn't use event anymore.
+    //.filter(change -> change.newEvent() == null || !(change.newEvent().type() instanceof BasicEventType.ReadOnly))
 //        .toList();
 //    if (changes.isEmpty()) return Mono.just(ProcessResult.accepted());
-    return Mono.just(changes.getFirst()
-              .correlationId()) //correlationId()
+    return Mono.just("") //correlationId()
         // TODO: Not really handling multiple changes at once
 //        .delayUntil(c -> changes.getLast().newEvent() == null ?
 //            Mono.empty() :
 //            delayer.apply(List.of(c + "-" + changes.getLast().newEvent().typeName()))
 //        )
-        .delayUntil(correlationId -> delayer.apply(changes.stream()
+        .delayUntil(_ -> delayer.apply(changes.stream()
             .filter(change -> change.newEvent() != null)
             .map(change -> correlationId + "-" + change.newEvent().typeName())
             .toList())
         )
-        .flatMap(correlationId -> changeState.execute(
+        .flatMap(_ -> changeState.execute(
                     timestamp,
+                    correlationId,
                     changes.stream()
                         //.filter(c -> c.newEvent() == null || !(c.newEvent().type() instanceof BasicEventType.ReadOnly))
                         .toList()
@@ -2312,14 +2517,16 @@ public class StateMachine {
                           changes.stream()
                               .filter(change -> change.newEvent() != null && change.storeEvent())
                               .collect(Collectors.groupingBy(
-                                  change -> change.eventLog().entityId(),
+                                  Change::entityId,
                                   Collectors.toList()
                               ))
                               .forEach((entityId, changeList) -> {
                                 changeList.sort(comparing(change -> change.newEvent().eventNumber()));
                                 ctx.<Many<Event<?>>>getOrEmpty("RS/" + entityId.value())
                                     .map(responseSink -> {
-                                      System.out.println("Sending events to response sink for changes:\n" + changeList.stream().map(c -> c.toString()).collect(joining("\n")));
+                                      System.out.println("Sending events to response sink for changes:\n" + changeList.stream()
+                                          .map(Object::toString)
+                                          .collect(joining("\n")));
                                       changeList.forEach(change -> responseSink.tryEmitNext(change.newEvent()).orThrow());
                                       return responseSink;
                                     });
@@ -2330,13 +2537,14 @@ public class StateMachine {
                 )
                 .doOnNext(_ -> {
                   if (!changes.isEmpty()) {
-                    listener.changeAccepted(changes.getFirst().correlationId(), toListenerFormat(changes));
+                    listener.changeAccepted(correlationId, toListenerFormat(changes));
                   }
                 })
                 // Forward outgoing requests (for guaranteed delivery this will be the first attempt)
                 .transformDeferredContextual((publisher, ctx) -> publisher
                     .doOnNext(outboxElementsToForward -> outboxElementsToForward.forEach(q ->
                             forwardInitial(
+                                changeContext,
                                 changes.get(q.changeIndex()),
                                 q.elementId(),
                                 q.requestId(),
@@ -2355,11 +2563,16 @@ public class StateMachine {
     try {
       return change.outgoingRequests().get(messageIndex);
     } catch (Exception e) {
-      throw new RuntimeException("Failed to get outgoing request for change index " + changeIndex + " and message index " + messageIndex + ". Change: " + change, e);
+      throw new RuntimeException(
+          "Failed to get outgoing request for change index " + changeIndex + " and message index " + messageIndex
+              + ". Change: " + change,
+          e
+      );
     }
   }
 
   private Mono<ForwardStatus> forwardInitial(
+      ChangeContext<?> changeContext,
       Change change,
       byte[] queueElementId,
       UUID requestId,
@@ -2374,8 +2587,8 @@ public class StateMachine {
     var queueElement = new OutboxElement(
         queueElementId,
         requestId,
-        change.eventLog().entityId(),
-        change.eventLog().entityModel(),
+        change.entityId(),
+        change.entityModel(),
         outgoingRequest.eventNumber(),
         outgoingRequest.creatorId(),
         outgoingRequest.queue(),
@@ -2387,22 +2600,17 @@ public class StateMachine {
         null,
         null
     );
-    return doForward(queueElement, outgoingRequest.maxRetryAttempts(), outgoingRequest.retryInterval());
+    return doForward(changeContext, queueElement, outgoingRequest.maxRetryAttempts(), outgoingRequest.retryInterval());
   }
 
   Mono<ForwardStatus> forward(OutboxElement queueElement) {
 //    System.out.println("forward: " + queueElement.entityModel().name() + "/" + queueElement.entityId().value() + "/" + queueElement.eventNumber());
-    return doForward(queueElement, 0, null).contextWrite(Correlation.contextOf(queueElement.correlationId()));
+    return doForward(null, queueElement, 0, null).contextWrite(Correlation.contextOf(queueElement.correlationId()));
   }
 
   private record ResponseValidationResult(Result validationResult, Message.IncomingResponse response) {}
 
-  public Mono<EventLog> trace(SecondaryId<?> secondaryId, EntityModel entityModel) {
-    return eventsByLookupId.execute(entityModel, secondaryId);
-  }
-
-  private Mono<ForwardStatus> doForward(OutboxElement queueElement, int maxRetryAttempts, Duration retryInterval) {
-//    System.out.println("doForward: " + queueElement.entityModel().name() + "/" + queueElement.entityId().value() + "/" + queueElement.eventNumber());
+  private Mono<ForwardStatus> doForward(@Nullable ChangeContext<?> requestChangeContext, OutboxElement queueElement, int maxRetryAttempts, Duration retryInterval) {
     OutgoingRequestCreator<?> c = outgoingRequestCreators.get(queueElement.creatorId());
     Mono<HttpRequestMessage> requestMessage = c != null && queueElement.attempt() > 1 ?
         c.repeatedReactive(queueElement.data()) :
@@ -2441,7 +2649,8 @@ public class StateMachine {
                           queueElement.correlationId(),
                           validationOutput.validationResult().inputEvent(),
                           eventLog,
-                          validationOutput.response
+                          validationOutput.response,
+                          requestChangeContext
                       )
 //                      processEvents(
 //                          eventLog,
@@ -2449,12 +2658,12 @@ public class StateMachine {
 //                          validationOutput.response(),
 //                          queueElement.correlationId()
 //                      )
-                          .flatMap(processResult -> processResult instanceof Raced ?
-                              Mono.error(new ProcessEventsRaced()) :
-                              Mono.just(processResult)
-                          )
-                          .retryWhen(RetrySpec.fixedDelay(3, Duration.ofMillis(100))
-                              .filter(e -> e instanceof ProcessEventsRaced))
+                      .flatMap(processResult -> processResult instanceof Raced ?
+                          Mono.error(new ProcessEventsRaced()) :
+                          Mono.just(processResult)
+                      )
+                      .retryWhen(RetrySpec.fixedDelay(3, Duration.ofMillis(100))
+                                 .filter(e -> e instanceof ProcessEventsRaced))
 //                          .flatMap(processResult -> Mono.deferContextual(ctx -> {
 //                            if (processResult.responseMessage() != null && hasResponseSink(ctx)) {
 //                              One<HttpResponseMessage> sink = responseSink(ctx);
@@ -2462,18 +2671,21 @@ public class StateMachine {
 //                            }
 //                            return Mono.just(processResult);
 //                          }))
-                          .map(processResult -> new IncomingResponseStatus(
-                              validationOutput.response(),
-                              processResult,
-                              validationOutput.validationResult()
-                          )) :
-                      Mono.just(new IncomingResponseStatus(
+                      .map(processResult -> new IncomingResponseStatus(
                           validationOutput.response(),
-                          ProcessResult.rejected(null, new RejectedEvent(null, queueElement.entityModel(), eventLog.entityId(), null)),
+                          processResult,
                           validationOutput.validationResult()
+                      )) :
+                      Mono.just(new IncomingResponseStatus(
+                              validationOutput.response(),
+                              ProcessResult.rejected(
+                                  null,
+                                  new RejectedEvent(null, queueElement.entityModel(), eventLog.entityId(), null)
+                              ),
+                              validationOutput.validationResult()
+                          )
                       )
-                  )
-              ))
+                  ))
               .flatMap(result -> switch (result.processResult()) {
                     case Accepted _ -> Mono.just(ForwardStatus.Ok);
                     case Rejected r -> switch (result.validationResult().status()) {
@@ -2495,11 +2707,13 @@ public class StateMachine {
                       case PermanentError -> moveToDLQ.execute(queueElement, result.validationResult().message())
                           .doOnSuccess(_ -> logDead(queueElement, result.validationResult().message()))
                           .thenReturn(ForwardStatus.Ok);
-                      case TransientError -> backOffOrDie(queueElement, requireNonNullElse(result.validationResult().message(), "TransientError")).thenReturn(ForwardStatus.Ok);
+                      case TransientError -> backOffOrDie(
+                          queueElement,
+                          requireNonNullElse(result.validationResult().message(), "TransientError")
+                      ).thenReturn(ForwardStatus.Ok);
                     };
                     case Raced r -> Mono.error(new IllegalStateException("Raced response not handled"));
-                    case Failed r ->
-                        backOffOrDie(queueElement, r.reason()).thenReturn(ForwardStatus.Ok);
+                    case Failed r -> backOffOrDie(queueElement, r.reason()).thenReturn(ForwardStatus.Ok);
                     case ProcessResult r -> Mono.error(new IllegalStateException("Unexpected value: " + r));
                   }
               );
@@ -2509,7 +2723,12 @@ public class StateMachine {
 
   private static class ProcessEventsRaced extends RuntimeException {}
 
-  private OutgoingRequestModel<?, ?> findOutgoingRequestModel(EventLog eventLog, int eventNumber, OutboxQueue queue, UUID requestModelId) {
+  private OutgoingRequestModel<?, ?> findOutgoingRequestModel(
+      EventLog eventLog,
+      int eventNumber,
+      OutboxQueue queue,
+      UUID requestModelId
+  ) {
     TransitionModel<?, ?> transitionForEvent = traversers.get(eventLog.entityModel())
         .transitionForEventNumber(eventLog, eventNumber);
     return Stream.concat(
@@ -2537,13 +2756,18 @@ public class StateMachine {
   }
 
   private static class TransientError extends RuntimeException {
+
     ResponseValidationResult transientResult;
+
     public TransientError(ResponseValidationResult transientResult) {
       this.transientResult = transientResult;
     }
   }
 
-  private Message.IncomingResponse responseMessageOnQueue(OutboxElement queueElement, HttpResponseMessage responseMessage) {
+  private Message.IncomingResponse responseMessageOnQueue(
+      OutboxElement queueElement,
+      HttpResponseMessage responseMessage
+  ) {
     return new Message.IncomingResponse(
         // Synchronous response will always trigger an event following directly the request event
         queueElement.eventNumber() + 1,
@@ -2565,10 +2789,14 @@ public class StateMachine {
   }
 
   private Mono<ForwardStatus> backOffOrDie(OutboxElement queueElement, String reason) {
-    if (queueElement.nextAttemptAt() != null && backoff.isExhausted(queueElement.enqueuedAt(), queueElement.nextAttemptAt(), clock)) {
+    if (queueElement.nextAttemptAt() != null && backoff.isExhausted(
+        queueElement.enqueuedAt(),
+        queueElement.nextAttemptAt(),
+        clock
+    )) {
       return moveToDLQ.execute(queueElement, reason)
-              .doOnSuccess(_ -> logDeadByExhaustion(queueElement, reason))
-              .thenReturn(ForwardStatus.Dead);
+          .doOnSuccess(_ -> logDeadByExhaustion(queueElement, reason))
+          .thenReturn(ForwardStatus.Dead);
     } else {
       logBackoff(queueElement, reason);
       return Mono.just(ForwardStatus.Backoff);
@@ -2689,33 +2917,48 @@ public class StateMachine {
 //    return secondaryIdFlux;
 //  }
 
+  private EntityId parentEntityId(ChangeContext<?> previous, EntityModel parentEntityModel) {
+    EntityId parentEntityId = null;
+    for (var c = previous; c != null; c = c.previous()) {
+      if (c instanceof ChangeContext.OutputChangeContext<?> o) {
+        if (o.stepOutput().accepted().entityModel().equals(parentEntityModel)) {
+          parentEntityId = new EntityId.UUID(o.stepOutput().accepted().event().entityId());
+          break;
+        }
+      }
+    }
+    return parentEntityId;
+  }
+
   public <P, U> Mono<OutgoingRequest> createOutgoingRequest(
       boolean reverse,
       ZonedDateTime timestamp,
       Entity entity,
       P assembledData,
       int eventNumber,
-      List<Change> nestedChanges,
+      ChangeContext<?> previous,
       OutgoingRequestModel<P, U> model,
       String correlationId
   ) {
     OutgoingRequestCreator<U> creator = model.creatorType() != null ?
         beanRegistry.getBean(model.creatorType()) :
         model.creator();
-    System.out.println("createOutgoingRequest (" + (reverse ? "<reverse>" : "")  + ") for event number " + eventNumber + " on " + entity.model.name() + " with " + creator.getClass().getSimpleName());
-    EntityId parentEntity = nestedChanges.stream().filter(nc -> nc.eventLog().entityModel().equals(entity.model().parentEntity())).map(c -> c.eventLog().entityId()).findFirst().orElse(null);
+    System.out.println(
+        "createOutgoingRequest (" + (reverse ? "<reverse>" : "") + ") for event number " + eventNumber + " on "
+            + entity.model.name() + " with " + creator.getClass().getSimpleName());
+    EntityId parentEntity = parentEntityId(previous, entity.model().parentEntity());
     return (reverse ?
         outgoingRequestByEvent.execute(entity.id(), eventNumber, model.queue())
-            .switchIfEmpty(creator.reversedReactive(
-                model.dataAdapter().apply(assembledData),
-                reversalContext(null, entity.id(), correlationId, timestamp)
-            ))
-            .flatMap(originalMessage -> creator.reversedReactive(
-                model.dataAdapter().apply(assembledData),
-                reversalContext(originalMessage, entity.id(), correlationId, timestamp)
-            )) :
+        .switchIfEmpty(creator.reversedReactive(
+            model.dataAdapter().apply(assembledData),
+            reversalContext(null, entity.id(), correlationId, timestamp)
+        ))
+        .flatMap(originalMessage -> creator.reversedReactive(
+            model.dataAdapter().apply(assembledData),
+            reversalContext(originalMessage, entity.id(), correlationId, timestamp)
+        )) :
         creator.createReactive(model.dataAdapter().apply(assembledData), context(entity.id(), correlationId, timestamp))
-            .switchIfEmpty(Mono.error(new IllegalStateException()))
+        .switchIfEmpty(Mono.error(new IllegalStateException()))
     ).map(message -> new OutgoingRequest(
         UUID.randomUUID(),
         eventNumber,
@@ -2815,7 +3058,7 @@ public class StateMachine {
 //              ))
 //          .switchIfEmpty(handleRaceOrError.get());
 //    } else {
-      return handleRaceOrError.get();
+    return handleRaceOrError.get();
 //    }
   }
 
@@ -2888,7 +3131,8 @@ public class StateMachine {
 //    if (events.isEmpty()) {
 //      throw new IllegalStateException("Event log is empty");
 //    }
-////    TraversableState state = begin(eventLog.entityModel());
+
+  /// /    TraversableState state = begin(eventLog.entityModel());
 //    State state = eventLog.entityModel().initialState();
 //    for (var event : events) {
 //      if (event.eventNumber() == eventNumber) {
@@ -2915,7 +3159,6 @@ public class StateMachine {
 //    }
 //    throw new IllegalArgumentException("No event with number " + eventNumber);
 //  }
-
   private EntityId newEntityId() {
     return new EntityId.UUID(UUID.randomUUID());
   }

@@ -10,8 +10,8 @@ public class EventAlreadyExists extends RuntimeException {
     super("Event with raw id " + duplicateKey + " already exists");
   }
 
-  public EventAlreadyExists(EntityId entityId, int eventNumber, List<Change> offendingChanges) {
-    super("Event " + eventNumber + " on entity " + entityId.value() + " already exists. Offending changes: " + offendingChanges);
+  public EventAlreadyExists(EntityId entityId, int eventNumber, List<Change> changes) {
+    super("Event " + eventNumber + " on entity " + entityId.value() + " already exists. Changes:\n" + changes);
   }
 
 }

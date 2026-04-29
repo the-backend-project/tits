@@ -1,6 +1,7 @@
 package com.github.thxmasj.statemachine;
 
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
+import java.util.Objects;
 
 public class SecondaryId<T> {
 
@@ -39,5 +40,17 @@ public class SecondaryId<T> {
         ", value=" + value +
         ", serialNumber=" + serialNumber +
         '}';
+  }
+
+  @Override
+  public boolean equals(Object o) {
+    if (!(o instanceof SecondaryId<?> that))
+      return false;
+    return serialNumber == that.serialNumber && Objects.equals(model, that.model) && Objects.equals(value, that.value);
+  }
+
+  @Override
+  public int hashCode() {
+    return Objects.hash(model, value, serialNumber);
   }
 }

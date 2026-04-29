@@ -1,9 +1,11 @@
 package com.github.thxmasj.statemachine.templates.cardpayment;
 
+import static com.github.thxmasj.statemachine.BuiltinEntities.CompleteInvalidRequest;
+import static com.github.thxmasj.statemachine.BuiltinEntities.CompleteRequest;
+import static com.github.thxmasj.statemachine.BuiltinEntities.Models.RequestDispatching;
 import static com.github.thxmasj.statemachine.EntitySelector.entityIdFromSession;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
 import static com.github.thxmasj.statemachine.Tuples.tuple;
-import static com.github.thxmasj.statemachine.templates.cardpayment.Aggregate.Merchant;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Identifiers.MerchantId;
 import static com.github.thxmasj.statemachine.templates.cardpayment.MerchantEvent.Create;
 import static com.github.thxmasj.statemachine.templates.cardpayment.MerchantEvent.Delete;
@@ -17,45 +19,38 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.MerchantStat
 import static com.github.thxmasj.statemachine.templates.cardpayment.MerchantState.Suspended;
 import static java.util.Optional.ofNullable;
 
-import com.github.thxmasj.statemachine.BuiltinEntities.InboxExchange;
 import com.github.thxmasj.statemachine.BuiltinEventTypes;
-import com.github.thxmasj.statemachine.PlantUMLFormatter;
 import com.github.thxmasj.statemachine.State;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.statemachine.templates.cardpayment.MerchantEvent.MerchantUpdate;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Merchant;
-import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 
 public class MerchantTransitions {
 
-  private final InboxExchange inboxExchange;
-
-  public MerchantTransitions(InboxExchange inboxExchange) {this.inboxExchange = inboxExchange;}
-
   public Map<State, List<TransitionModel<?, ?>>> transitions() {
     return Map.of(
         Begin, List.of(
             onEvent(Create).to(Active)
-                .assemble(c -> tuple(c.input().data(), c.log().entityId()))
+                .assemble(c -> tuple(c.input(), c.log().entityId()))
                 .newIdentifier(MerchantId, d -> d.t1().id())
-                .trigger(InboxExchange.AcceptedRequest).with(d -> d.t1().t2()).on(inboxExchange).identifiedBy(entityIdFromSession())
+                .trigger(CompleteRequest).with(d -> tuple("", d.t1().t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t1().t1()),
             onEvent(BuiltinEventTypes.SecondaryIdAlreadyExists).toSelf()
-                .assembleInput()
-                .trigger(InboxExchange.InvalidRequest).with(d -> d.t2().data().toString()).on(inboxExchange).identifiedBy(entityIdFromSession())
+                .assemble(c -> tuple(c.input().t2(), c.log().entityId()))
+                .trigger(CompleteInvalidRequest).with(d -> tuple(d.t1().data().toString(), d.t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output()
         ),
         Active, List.of(
             onEvent(Suspend).to(Suspended).output(),
             onEvent(Delete).to(Deleted).output(),
-            onEvent(Update).toSelf().assemble((input, log) -> merge(log.last(Merchant.class), input.data())).output(d -> d),
+            onEvent(Update).toSelf().assemble((input, log) -> merge(log.last(Merchant.class), input)).output(d -> d),
             onEvent(Get).toSelf().assemble((_, log) -> log.last(Merchant.class)).output(d -> d)
         ),
         Suspended, List.of(
             onEvent(Resume).to(Active).output(),
-            onEvent(Update).toSelf().assemble((input, log) -> merge(log.last(Merchant.class), input.data())).output(d -> d),
+            onEvent(Update).toSelf().assemble((input, log) -> merge(log.last(Merchant.class), input)).output(d -> d),
             onEvent(Delete).to(Deleted).output()
         ),
         Deleted, List.of()
@@ -72,10 +67,6 @@ public class MerchantTransitions {
         merchant.acquirerId(),
         merchant.superMerchant()
     );
-  }
-
-  static void main() throws IOException {
-    System.out.println(new PlantUMLFormatter(Merchant, new MerchantTransitions(null).transitions()).formatToImage("docs/images"));
   }
 
 }

@@ -11,7 +11,7 @@ public class ChangeRaced extends RuntimeException {
     super(String.format("Change for event %s (%d) on %s raced on table %s",
         change.newEvent() != null ? change.newEvent().typeName() : "N/A",
         change.newEvent() != null ? change.newEvent().eventNumber() : -1,
-        change.eventLog().entityModel().name(),
+        change.entityModel().name(),
         tableName
     ));
     this.change = change;
