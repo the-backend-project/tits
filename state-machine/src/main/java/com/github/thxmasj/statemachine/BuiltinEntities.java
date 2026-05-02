@@ -2,7 +2,7 @@ package com.github.thxmasj.statemachine;
 
 import static com.github.thxmasj.statemachine.BuiltinEntities.Models.RequestDispatching;
 import static com.github.thxmasj.statemachine.BuiltinEntities.Models.RequestRouting;
-import static com.github.thxmasj.statemachine.BuiltinEntities.RequestParser.validate;
+import static com.github.thxmasj.statemachine.BuiltinEntities.RequestParser.parseRequest;
 import static com.github.thxmasj.statemachine.BuiltinEntities.States.Begin;
 import static com.github.thxmasj.statemachine.BuiltinEntities.States.Completed;
 import static com.github.thxmasj.statemachine.BuiltinEntities.States.Dispatched;
@@ -202,8 +202,6 @@ public class BuiltinEntities {
 
   public static class RequestParser {
 
-    private static final ObjectMapper objectMapper = new ObjectMapper();
-
     public record ParsedRequest<T>(
         HttpRequestMessage request,
         T body,
@@ -211,29 +209,29 @@ public class BuiltinEntities {
         ParsedAuthorizationClaims.Valid authorizationClaims
     ) {}
 
-    public static <T> Validation<ParsedRequest<T>> validate(
-        HttpRequestMessage httpRequest,
-        Class<T> bodyType,
+    public static <T> Validation<ParsedRequest<T>> parseRequest(
+        HttpRequestMessage request,
+        Function<HttpRequestMessage, Validation<T>> bodyParser,
         BiFunction<HttpRequestMessage, T, String> messageIdParser,
         boolean authorize
     ) {
-      T body;
-      if (bodyType == Void.class) {
-        body = null;
-      } else {
-        try {
-          body = objectMapper.readValue(httpRequest.body(), bodyType);
-        } catch (JsonProcessingException e) {
-          return new Invalid<>("Failed to parse body with " + bodyType.getName() + ": " + e.getMessage());
-        }
+      T body = null;
+      if (bodyParser != null) {
+        Validation<T> validatedBody = bodyParser.apply(request);
+        if (validatedBody.isInvalid())
+          return new Invalid<>(validatedBody.invalid());
+        body = validatedBody.valid();
       }
       ParsedAuthorizationClaims authorizationClaims = null;
       if (authorize) {
-        authorizationClaims = ParsedAuthorizationClaims.claimsFromBearerToken(httpRequest);
+        authorizationClaims = ParsedAuthorizationClaims.claimsFromBearerToken(request);
         if (authorizationClaims.isInvalid()) return new Invalid<>(authorizationClaims.invalid().error());
       }
-      MessageId messageId = messageIdParser != null ? new MessageId(authorize ? authorizationClaims.valid().subject() : "N/A", messageIdParser.apply(httpRequest, body)) : null;
-      return new Valid<>(new ParsedRequest<>(httpRequest, body, messageId, authorize ? authorizationClaims.valid() : null));
+      MessageId messageId = messageIdParser != null ? new MessageId(
+          authorize ? authorizationClaims.valid().subject() : "N/A",
+          messageIdParser.apply(request, body)
+      ) : null;
+      return new Valid<>(new ParsedRequest<>(request, body, messageId, authorize ? authorizationClaims.valid() : null));
     }
   }
 
@@ -244,17 +242,33 @@ public class BuiltinEntities {
       EventType<U, ?> processEventType,
       EntityModel processEntity,
       EntitySelector<ParsedRequest<T>> processEntitySelector,
-      Class<T> bodyType,
+      Function<HttpRequestMessage, Validation<T>> bodyParser,
       BiFunction<HttpRequestMessage, T, String> messageIdParser,
       Function<ParsedRequest<T>, U> processInput
   ) {}
 
   public record Choice<T, I1, O1>(Predicate<T> condition, Function<T, Validation<I1>> adapter, TransitionModel<I1, O1> then) {}
 
+  private static final ObjectMapper objectMapper = new ObjectMapper();
+
+  public static <T> Function<HttpRequestMessage, Validation<T>> jsonParser(Class<T> bodyType) {
+      return request -> {
+        if (bodyType == Void.class) {
+          return new Valid<>(null);
+        } else {
+          try {
+            return new Valid<>(objectMapper.readValue(request.body(), bodyType));
+          } catch (JsonProcessingException e) {
+            return new Invalid<>("Failed to parse body with " + bodyType.getName() + ": " + e.getMessage());
+          }
+        }
+      };
+  }
+
   private static <T> Choice<HttpRequestMessage, ParsedRequest<T>, Void> choice(HttpRequestRouter<T, ?> r, boolean rollback) {
     return new Choice<>(
         r.routingPredicate,
-        m -> validate(m, r.bodyType, r.messageIdParser, r.authorize),
+        m -> parseRequest(m, r.bodyParser, r.messageIdParser, r.authorize),
         onEvent(r.dispatchingEventType).to(Routed)
             .assembleInput()
             .trigger(r.dispatchingEventType).with(d -> d).on(RequestDispatching).identifiedBy(rollback ? secondaryId(MessageId, d -> d.messageId, CreateIfNotExists) : newEntityId())

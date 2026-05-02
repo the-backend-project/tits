@@ -1,10 +1,10 @@
 package com.github.thxmasj.statemachine;
 
 import static com.github.thxmasj.statemachine.BuiltinEntities.CompleteRequest;
-import static com.github.thxmasj.statemachine.BuiltinEntities.from;
 import static com.github.thxmasj.statemachine.BuiltinEntities.Models.RequestDispatching;
 import static com.github.thxmasj.statemachine.BuiltinEntities.Models.RequestRouting;
 import static com.github.thxmasj.statemachine.BuiltinEntities.RouteRequest;
+import static com.github.thxmasj.statemachine.BuiltinEntities.from;
 import static com.github.thxmasj.statemachine.BuiltinEntities.requestDispatchingTransitions;
 import static com.github.thxmasj.statemachine.BuiltinEntities.requestRoutingTransitions;
 import static com.github.thxmasj.statemachine.BuiltinEventTypes.Rollback;
@@ -323,7 +323,7 @@ public class RequestReplyTest {
         ZeroProcessing,
         Lamp,
         entityId(d -> UUID.fromString(requireNonNull(from(d.request().requestLine(), "PUT .*/zero/(.*)", 1)))),
-        Void.class,
+        null,
         (request, _) -> ZeroProcessing.id() + "/" + requireNonNull(from(request.requestLine(), "PUT .*/zero/(.*)", 1)),
         _ -> new Zero("Hey!")
     ),
@@ -334,7 +334,7 @@ public class RequestReplyTest {
         InternalProcessing,
         Lamp,
         entityId(UUID.randomUUID()), // Unknown id
-        Void.class,
+        null,
         null,
         _ -> null
     ),
@@ -345,7 +345,7 @@ public class RequestReplyTest {
         EventThatIsAlwaysRejected,
         Lamp,
         newEntityId(),
-        Void.class,
+        null,
         null,
         _ -> null
     ),
@@ -356,7 +356,7 @@ public class RequestReplyTest {
         InternalProcessing,
         Lamp,
         newEntityId(),
-        Void.class,
+        null,
         (request, _) -> from(request.requestLine(), "PUT .*/internal/(.*)", 1),
         _ -> null
     ),
@@ -367,7 +367,7 @@ public class RequestReplyTest {
         ComplexInternalProcessing,
         Lamp,
         newEntityId(),
-        Void.class,
+        null,
         (request, _) -> from(request.requestLine(), "PUT .*/complexinternal/(.*)", 1),
         _ -> null
     ),
@@ -378,7 +378,7 @@ public class RequestReplyTest {
         ExternalProcessing,
         Lamp,
         newEntityId(),
-        Void.class,
+        null,
         (request, _) -> from(request.requestLine(), "PUT .*/external/(.*)", 1),
         _ -> null
     ),
@@ -389,7 +389,7 @@ public class RequestReplyTest {
         LongExternalProcessing,
         Lamp,
         newEntityId(),
-        Void.class,
+        null,
         null,
         _ -> null
     ),
@@ -400,7 +400,7 @@ public class RequestReplyTest {
         EventThatIsAlwaysRejected,
         Lamp,
         newEntityId(),
-        Void.class,
+        null,
         (request, _) -> from(request.requestLine(), "PUT .*/rejected/(.*)", 1),
         _ -> null
     ),
@@ -411,7 +411,7 @@ public class RequestReplyTest {
         Rollback,
         Lamp,
         entityId(d -> UUID.fromString(requireNonNull(from(d.request().requestLine(), "DELETE .*/internal/(.*)", 1)))),
-        Void.class,
+        null,
         null,
         _ -> new Data(0, "Cancel")
     )
@@ -425,7 +425,7 @@ public class RequestReplyTest {
           Rollback,
           Lamp,
           null,
-          Void.class,
+          null,
           (request, _) -> from(request.requestLine(), "DELETE .*/lamps/messages/(.*)", 1),
           _ -> null
       )
