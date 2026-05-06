@@ -2,7 +2,6 @@ package com.github.thxmasj.statemachine;
 
 import static com.github.thxmasj.statemachine.BuiltinEntities.Models.RequestDispatching;
 import static com.github.thxmasj.statemachine.BuiltinEntities.Models.RequestRouting;
-import static com.github.thxmasj.statemachine.BuiltinEntities.RequestParser.parseRequest;
 import static com.github.thxmasj.statemachine.BuiltinEntities.States.Begin;
 import static com.github.thxmasj.statemachine.BuiltinEntities.States.Completed;
 import static com.github.thxmasj.statemachine.BuiltinEntities.States.Dispatched;
@@ -32,8 +31,8 @@ import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;
 import com.github.thxmasj.statemachine.Tuples.Tuple3;
-import com.github.thxmasj.statemachine.Validation.Invalid;
-import com.github.thxmasj.statemachine.Validation.Valid;
+import com.github.thxmasj.statemachine.Validated.Invalid;
+import com.github.thxmasj.statemachine.Validated.Valid;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.Column;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
 import com.github.thxmasj.statemachine.http.ParsedAuthorizationClaims;
@@ -135,12 +134,6 @@ public class BuiltinEntities {
       new DataType<>(new TypeReference<>() {}, HttpRequestMessage.class, HttpResponseMessage.class),
       HttpRequestMessage.class
   );
-  public static EventType<Tuple2<ParsedRequest<?>, EventReference>, HttpRequestMessage> DispatchRequest = BasicEventType.of(
-      "Dispatch request",
-      UUID.fromString("cf5802ee-bab2-492a-8e8c-45e7c4d180a3"),
-      new DataType<>(new TypeReference<>() {}, ParsedRequest.class, EventReference.class),
-      HttpRequestMessage.class
-  );
   public static EventType<Tuple2<ParsedRequest<?>, EventReference>, HttpRequestMessage> AcceptRequest = BasicEventType.of(
       "Accept request",
       UUID.fromString("9615c3fb-4f15-47f5-b5d3-6149a6164d70"),
@@ -209,15 +202,15 @@ public class BuiltinEntities {
         ParsedAuthorizationClaims.Valid authorizationClaims
     ) {}
 
-    public static <T> Validation<ParsedRequest<T>> parseRequest(
+    public static <T> Validated<ParsedRequest<T>> parseRequest(
         HttpRequestMessage request,
-        Function<HttpRequestMessage, Validation<T>> bodyParser,
+        Function<HttpRequestMessage, Validated<T>> bodyParser,
         BiFunction<HttpRequestMessage, T, String> messageIdParser,
         boolean authorize
     ) {
       T body = null;
       if (bodyParser != null) {
-        Validation<T> validatedBody = bodyParser.apply(request);
+        Validated<T> validatedBody = bodyParser.apply(request);
         if (validatedBody.isInvalid())
           return new Invalid<>(validatedBody.invalid());
         body = validatedBody.valid();
@@ -236,22 +229,24 @@ public class BuiltinEntities {
   }
 
   public record HttpRequestRouter<T, U>(
-      Predicate<HttpRequestMessage> routingPredicate,
+      Predicate<HttpRequestMessage> metaDataRoutingPredicate,
+      Predicate<Tuple2<HttpRequestMessage, T>> contentRoutingPredicate,
       boolean authorize,
+      EventType<HttpRequestMessage, Void> metaDataRoutingEventType,
       EventType<ParsedRequest<T>, Void> dispatchingEventType,
       EventType<U, ?> processEventType,
       EntityModel processEntity,
       EntitySelector<ParsedRequest<T>> processEntitySelector,
-      Function<HttpRequestMessage, Validation<T>> bodyParser,
+      Function<HttpRequestMessage, Validated<T>> bodyParser,
       BiFunction<HttpRequestMessage, T, String> messageIdParser,
       Function<ParsedRequest<T>, U> processInput
   ) {}
 
-  public record Choice<T, I1, O1>(Predicate<T> condition, Function<T, Validation<I1>> adapter, TransitionModel<I1, O1> then) {}
+  public record Rule<T, I1, O1>(Predicate<T> predicate, TransitionModel<I1, O1> then) {}
 
   private static final ObjectMapper objectMapper = new ObjectMapper();
 
-  public static <T> Function<HttpRequestMessage, Validation<T>> jsonParser(Class<T> bodyType) {
+  public static <T> Function<HttpRequestMessage, Validated<T>> jsonParser(Class<T> bodyType) {
       return request -> {
         if (bodyType == Void.class) {
           return new Valid<>(null);
@@ -265,12 +260,15 @@ public class BuiltinEntities {
       };
   }
 
-  private static <T> Choice<HttpRequestMessage, ParsedRequest<T>, Void> choice(HttpRequestRouter<T, ?> r, boolean rollback) {
-    return new Choice<>(
-        r.routingPredicate,
-        m -> parseRequest(m, r.bodyParser, r.messageIdParser, r.authorize),
-        onEvent(r.dispatchingEventType).to(Routed)
-            .assembleInput()
+  private static <T> Rule<HttpRequestMessage, ParsedRequest<T>, Void> rule(HttpRequestRouter<T, ?> r, boolean rollback) {
+    return new Rule<>(
+        r.metaDataRoutingPredicate,
+        //m -> parseRequest(m, r.bodyParser, r.messageIdParser, r.authorize),
+        onEvent(r.metaDataRoutingEventType).to(Routed)
+            .assemble(d -> tuple(d.input(), r.bodyParser().apply(d.input())))
+            .when(d -> d.t2().isInvalid()).then(/* invalid body */)
+            .when(/* BODY routing 1 */)
+            .when(/* BODY routing 2 */)
             .trigger(r.dispatchingEventType).with(d -> d).on(RequestDispatching).identifiedBy(rollback ? secondaryId(MessageId, d -> d.messageId, CreateIfNotExists) : newEntityId())
             .output()
     );
@@ -284,8 +282,8 @@ public class BuiltinEntities {
         Begin, List.of(
             onEvent(RouteRequest).to(Routed)
                 .assembleInput()
-                .when(routers.stream().map(r -> choice(r, false)).collect(toList()))
-                .when(rollbackRouters.stream().map(r -> choice(r, true)).collect(toList()))
+                .when(routers.stream().map(r -> rule(r, false)).collect(toList()))
+                .when(rollbackRouters.stream().map(r -> rule(r, true)).collect(toList()))
                 .otherwise(
                     onEvent(RejectAsUnroutable).to(Rejected)
                         .assembleInput()

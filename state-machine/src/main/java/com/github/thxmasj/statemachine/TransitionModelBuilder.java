@@ -6,7 +6,7 @@ import static java.util.Collections.unmodifiableMap;
 import static java.util.stream.Collectors.joining;
 
 import com.github.thxmasj.statemachine.BasicEventType.Rollback.Data;
-import com.github.thxmasj.statemachine.BuiltinEntities.Choice;
+import com.github.thxmasj.statemachine.BuiltinEntities.Rule;
 import com.github.thxmasj.statemachine.EventTrigger.EventSpec;
 import com.github.thxmasj.statemachine.OutgoingRequestModel.Builder;
 import com.github.thxmasj.statemachine.StateMachine.CircularChange;
@@ -781,7 +781,7 @@ public class TransitionModelBuilder<I, T, O> {
     return builder;
   }
 
-  public TransitionModelBuilder<I, T, O> when(List<Choice<T, ?, ?>> choices) {
+  public TransitionModelBuilder<I, T, O> when(List<Rule<T, ?, ?>> choices) {
     var builder = this;
     for (var choice : choices) {
       builder = builder.when(choice);
@@ -789,10 +789,10 @@ public class TransitionModelBuilder<I, T, O> {
     return builder;
   }
 
-  public <I1, O1> TransitionModelBuilder<I, T, O> when(Choice<T, I1, O1> choice) {
-    return when(choice.condition().and(choice.adapter().andThen(Validation::isValid)::apply)).then(
+  public <I1, O1> TransitionModelBuilder<I, T, O> when(Rule<T, I1, O1> choice) {
+    return when(choice.predicate().and(choice.adapter().andThen(Validated::isValid)::apply)).then(
         choice.then(),
-        choice.adapter().andThen(Validation::valid)
+        choice.adapter().andThen(Validated::valid)
     );
   }
 

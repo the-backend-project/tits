@@ -1,11 +1,11 @@
 package com.github.thxmasj.statemachine;
 
-import com.github.thxmasj.statemachine.Validation.Invalid;
-import com.github.thxmasj.statemachine.Validation.Valid;
+import com.github.thxmasj.statemachine.Validated.Invalid;
+import com.github.thxmasj.statemachine.Validated.Valid;
 
-public sealed interface Validation<T> permits Valid, Invalid {
+public sealed interface Validated<T> permits Valid, Invalid {
 
-  record Valid<T>(T value) implements Validation<T> {
+  record Valid<T>(T value) implements Validated<T> {
 
     @Override
     public T valid() {
@@ -28,7 +28,7 @@ public sealed interface Validation<T> permits Valid, Invalid {
     }
   }
 
-  record Invalid<T>(String reason) implements Validation<T> {
+  record Invalid<T>(String reason) implements Validated<T> {
 
     @Override
     public T valid() {

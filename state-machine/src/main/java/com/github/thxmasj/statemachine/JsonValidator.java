@@ -5,8 +5,8 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectReader;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import com.github.thxmasj.statemachine.Validation.Invalid;
-import com.github.thxmasj.statemachine.Validation.Valid;
+import com.github.thxmasj.statemachine.Validated.Invalid;
+import com.github.thxmasj.statemachine.Validated.Valid;
 
 public class JsonValidator<T> {
 
@@ -20,7 +20,7 @@ public class JsonValidator<T> {
         .readerFor(type);
   }
 
-  public Validation<T> validate(String data) {
+  public Validated<T> validate(String data) {
     try {
       return new Valid<>(objectReader.readValue(data));
     } catch (Exception e) {
