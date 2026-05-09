@@ -1,6 +1,7 @@
 package com.github.thxmasj.statemachine;
 
 import com.github.thxmasj.statemachine.BasicEventType.Rollback.Data;
+import java.util.Objects;
 import java.util.UUID;
 
 public class BasicEventType<I, O> implements EventType<I, O> {
@@ -50,6 +51,18 @@ public class BasicEventType<I, O> implements EventType<I, O> {
   @Override
   public UUID id() {
     return id;
+  }
+
+  @Override
+  public boolean equals(Object o) {
+    if (!(o instanceof BasicEventType<?, ?> that))
+      return false;
+    return Objects.equals(id, that.id);
+  }
+
+  @Override
+  public int hashCode() {
+    return Objects.hashCode(id);
   }
 
   @Override

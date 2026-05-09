@@ -23,7 +23,6 @@ import static com.github.thxmasj.statemachine.Tuples.tuple;
 import static com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Method.DELETE;
 import static com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Method.POST;
 import static com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Method.PUT;
-import static java.util.Objects.requireNonNull;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -32,13 +31,18 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.thxmasj.statemachine.BasicEventType.Rollback.Data;
-import com.github.thxmasj.statemachine.BuiltinEntities.HttpRequestRouter;
+import com.github.thxmasj.statemachine.BuiltinEntities.RequestParser.ParsedRequest;
+import com.github.thxmasj.statemachine.EntitySelector.ById;
 import com.github.thxmasj.statemachine.EventTrigger.EventSpec;
 import com.github.thxmasj.statemachine.EventType.DataType;
 import com.github.thxmasj.statemachine.IncomingResponseValidator.Result;
 import com.github.thxmasj.statemachine.IncomingResponseValidator.Result.Status;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;
+import com.github.thxmasj.statemachine.Validated.Invalid;
+import com.github.thxmasj.statemachine.Validated.Valid;
+import com.github.thxmasj.statemachine.http.HttpRequestRouter.HttpRequestRoute;
+import com.github.thxmasj.statemachine.http.HttpRequestRouter.HttpRequestRoute.ContentRoute;
 import com.github.thxmasj.statemachine.http.NettyHttpClient;
 import com.github.thxmasj.statemachine.http.NettyHttpClientBuilder;
 import com.github.thxmasj.statemachine.message.http.HttpMessageParser;
@@ -55,6 +59,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Random;
 import java.util.UUID;
@@ -108,22 +113,22 @@ public class RequestReplyTest {
             onEvent(SwitchOff).to(Off).output(),
             onEvent(Cancel).toSelf()
                 .assemble(c -> tuple(c.input(), c.log().entityId()))
-                .trigger(CompleteRequest).with(d -> tuple("Cancelled", d.t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                .trigger(CompleteRequest).with(d -> tuple("Cancelled", d.t2())).on(RequestDispatching).identifiedBy(_ -> entityIdFromSession())
                 .output(d -> d.t1().t1()),
             onEvent(ZeroProcessing).toSelf()
                 .assemble(c -> tuple(c.input(), c.log().entityId()))
-                .trigger(CompleteRequest).with(d -> tuple("Complete", d.t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                .trigger(CompleteRequest).with(d -> tuple("Complete", d.t2())).on(RequestDispatching).identifiedBy(_ -> entityIdFromSession())
                 .output(d -> d.t1().t1())
         ),
         Off, List.of(
             onEvent(InternalProcessing).to(On)
                 .assemble(c -> c.log().entityId())
                 .trigger(new ProcessRequest(0)).with(_ -> null).to(DeviceListener).guaranteed()
-                .trigger(CompleteRequest).with(d -> tuple("Light is on! " + random.nextLong(), d)).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                .trigger(CompleteRequest).with(d -> tuple("Light is on! " + random.nextLong(), d)).on(RequestDispatching).identifiedBy(_ -> entityIdFromSession())
                 .output(),
             onEvent(ComplexInternalProcessing).to(Processing)
                 .assemble(d -> d)
-                .trigger(ComplexInternalProcessingDone).on(Lamp).identifiedBy(entityIdFromSession())
+                .trigger(ComplexInternalProcessingDone).on(Lamp).identifiedBy(_ -> entityIdFromSession())
                 .output(),
             onEvent(ExternalProcessing).to(Processing)
                 .assembleInput()
@@ -170,11 +175,11 @@ public class RequestReplyTest {
             onEvent(Rollback).toSelf().assembleInput().output(d -> d),
             onEvent(ComplexInternalProcessingDone).to(On)
                 .assemble((_, log) -> log.entityId())
-                .trigger(CompleteRequest).with(d -> tuple("Phew! Light is switched on! " + random.nextLong(), d)).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                .trigger(CompleteRequest).with(d -> tuple("Phew! Light is switched on! " + random.nextLong(), d)).on(RequestDispatching).identifiedBy(_ -> entityIdFromSession())
                 .output(),
             onEvent(ExternalProcessingDone).to(On)
                 .assemble((_, log) -> log.entityId())
-                .trigger(CompleteRequest).with(d -> tuple("Light is externally switched on! " + random.nextLong(), d)).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                .trigger(CompleteRequest).with(d -> tuple("Light is externally switched on! " + random.nextLong(), d)).on(RequestDispatching).identifiedBy(_ -> entityIdFromSession())
                 .output()
         ),
         Unreachable, List.of(
@@ -315,121 +320,173 @@ public class RequestReplyTest {
     return new SimpleImmutableEntry<>(key, value);
   }
 
-  static List<HttpRequestRouter<?, ?>> routers = List.of(
-    new HttpRequestRouter<>(
-        m -> m.requestLine().matches("PUT .*/zero/.*"),
-        false,
-        BasicEventType.of("ZeroProcessRequest", UUID.fromString("c5eb5fb3-8742-49e6-b8a2-351afc44304c"), new DataType<>(new TypeReference<>() {}, null), Void.class),
-        ZeroProcessing,
-        Lamp,
-        entityId(d -> UUID.fromString(requireNonNull(from(d.request().requestLine(), "PUT .*/zero/(.*)", 1)))),
-        null,
-        (request, _) -> ZeroProcessing.id() + "/" + requireNonNull(from(request.requestLine(), "PUT .*/zero/(.*)", 1)),
-        _ -> new Zero("Hey!")
-    ),
-    new HttpRequestRouter<>(
-        m -> m.requestLine().matches("PUT .*/handledunknown/.*"),
-        false,
-        BasicEventType.of("HandledUnknownId", UUID.fromString("cae56547-1999-49d4-ab34-b846942f6526"), new DataType<>(null), Void.class),
-        InternalProcessing,
-        Lamp,
-        entityId(UUID.randomUUID()), // Unknown id
-        null,
-        null,
-        _ -> null
-    ),
-    new HttpRequestRouter<>(
-        m -> m.requestLine().matches("PUT .*/handledreject/.*"),
-        false,
-        BasicEventType.of("HandledReject", UUID.fromString("bd065522-30b4-4495-8f22-a0576d798cc7"), new DataType<>(null), Void.class),
-        EventThatIsAlwaysRejected,
-        Lamp,
-        newEntityId(),
-        null,
-        null,
-        _ -> null
-    ),
-    new HttpRequestRouter<>(
-        m -> m.requestLine().matches("PUT .*/internal/.*"),
-        false,
-        BasicEventType.of("InternalProcessRequest", UUID.fromString("74b6a36a-135f-4cef-bb78-4e6279bd337b"), new DataType<>(null), Void.class),
-        InternalProcessing,
-        Lamp,
-        newEntityId(),
-        null,
-        (request, _) -> from(request.requestLine(), "PUT .*/internal/(.*)", 1),
-        _ -> null
-    ),
-    new HttpRequestRouter<>(
-        m -> m.requestLine().matches("PUT .*/complexinternal/.*"),
-        false,
-        BasicEventType.of("ComplexInternalProcessRequest", UUID.fromString("baafef75-8d74-4984-967e-cbd3215ec1de"), new DataType<>(null), Void.class),
-        ComplexInternalProcessing,
-        Lamp,
-        newEntityId(),
-        null,
-        (request, _) -> from(request.requestLine(), "PUT .*/complexinternal/(.*)", 1),
-        _ -> null
-    ),
-    new HttpRequestRouter<>(
-        m -> m.requestLine().matches("PUT .*/external/.*"),
-        false,
-        BasicEventType.of("ExternalProcessRequest", UUID.fromString("ec71b8fd-d1bd-4ebb-b993-0a62f69d21e5"), new DataType<>(null), Void.class),
-        ExternalProcessing,
-        Lamp,
-        newEntityId(),
-        null,
-        (request, _) -> from(request.requestLine(), "PUT .*/external/(.*)", 1),
-        _ -> null
-    ),
-    new HttpRequestRouter<>(
-        m -> m.requestLine().matches("PUT .*/long-external/.*"),
-        false,
-        BasicEventType.of("LongExternalProcessRequest", UUID.fromString("0b4397d3-c3cc-4950-8513-18e9522b18c5"), new DataType<>(null), Void.class),
-        LongExternalProcessing,
-        Lamp,
-        newEntityId(),
-        null,
-        null,
-        _ -> null
-    ),
-    new HttpRequestRouter<>(
-        m -> m.requestLine().matches("PUT .*/rejected/.*"),
-        false,
-        BasicEventType.of("RequestWhichIsRejected", UUID.fromString("fb0c25f5-e361-44be-b8fe-0632749849ff"), new DataType<>(null), Void.class),
-        EventThatIsAlwaysRejected,
-        Lamp,
-        newEntityId(),
-        null,
-        (request, _) -> from(request.requestLine(), "PUT .*/rejected/(.*)", 1),
-        _ -> null
-    ),
-    new HttpRequestRouter<>(
-        m -> m.requestLine().matches("DELETE .*/internal/.*"),
-        false,
-        BasicEventType.of("CancelRequest", UUID.fromString("86de7919-4e2f-406b-8d72-568bae6cbf32"), new DataType<>(null), Void.class),
-        Rollback,
-        Lamp,
-        entityId(d -> UUID.fromString(requireNonNull(from(d.request().requestLine(), "DELETE .*/internal/(.*)", 1)))),
-        null,
-        null,
-        _ -> new Data(0, "Cancel")
-    )
-  );
+  private static <T> Function<ParsedRequest<T>, Validated<EntitySelector<ParsedRequest<T>>>> parseEntityId(
+      String requestLinePattern,
+      int captureGroup
+  ) {
+    return d -> {
+      String s = from(d.request().requestLine(), requestLinePattern, captureGroup);
+      if (s == null) return new Invalid<>("Unable to extract entity id from request line");
+      try {
+        return new Valid<>(entityId(UUID.fromString(s)));
+      } catch (IllegalArgumentException e) {
+        return new Invalid<>("Entity id is not a valid UUID");
+      }
+    };
+  }
 
-  static List<HttpRequestRouter<?, ?>> rollbackRouters = List.of(
-      new HttpRequestRouter<>(
-          m -> m.requestLine().matches("DELETE .*/lamps/messages/.*"),
-          false,
-          BasicEventType.of("RollbackRequest", UUID.fromString("9c8914f1-60f7-4829-8eaa-c0a60c65d377"), new DataType<>(null), Void.class),
-          Rollback,
-          Lamp,
+  static List<HttpRequestRoute<?, ?>> routes = List.of(
+      new HttpRequestRoute<>(
+          m -> m.requestLine().matches("PUT .*/zero/.*"),
           null,
-          null,
-          (request, _) -> from(request.requestLine(), "DELETE .*/lamps/messages/(.*)", 1),
-          _ -> null
+          List.of(
+              new ContentRoute<>(
+                  Objects::isNull,
+                  "[*]",
+                  null,
+                  false,
+                  ZeroProcessing,
+                  Lamp,
+                  _ -> new Zero("Hey!"),
+                  RequestReplyTest.parseEntityId("PUT .*/zero/(.*)", 1)
+              )
+          )
+      ),
+      new HttpRequestRoute<>(
+          m -> m.requestLine().matches("PUT .*/internal/.*"),
+          m -> new Valid<>(m.body()),
+          List.of(
+              new ContentRoute<>(
+                  _ -> true,
+                  "[*]",
+                  null,
+                  false,
+                  InternalProcessing,
+                  Lamp,
+                  _ -> null,
+                  _ -> new Valid<>(newEntityId())
+              )
+          )
       )
   );
+
+//    new HttpRequestRouter<>(
+//        m -> m.requestLine().matches("PUT .*/internal/.*"),
+//        false,
+//        BasicEventType.of("InternalProcessRequest", UUID.fromString("74b6a36a-135f-4cef-bb78-4e6279bd337b"), new DataType<>(null), Void.class),
+//        InternalProcessing,
+//        Lamp,
+//        newEntityId(),
+//        null,
+//        (request, _) -> from(request.requestLine(), "PUT .*/internal/(.*)", 1),
+//        _ -> null
+//    ),
+
+
+//  static List<HttpRequestRouter<?, ?>> routers = List.of(
+//    new HttpRequestRouter<>(
+//        m -> m.requestLine().matches("PUT .*/zero/.*"),
+//        false,
+//        BasicEventType.of("ZeroProcessRequest", UUID.fromString("c5eb5fb3-8742-49e6-b8a2-351afc44304c"), new DataType<>(new TypeReference<>() {}, null), Void.class),
+//        ZeroProcessing,
+//        Lamp,
+//        entityId(d -> UUID.fromString(requireNonNull(from(d.request().requestLine(), "PUT .*/zero/(.*)", 1)))),
+//        null,
+//        (request, _) -> ZeroProcessing.id() + "/" + requireNonNull(from(request.requestLine(), "PUT .*/zero/(.*)", 1)),
+//        _ -> new Zero("Hey!")
+//    ),
+//    new HttpRequestRouter<>(
+//        m -> m.requestLine().matches("PUT .*/handledunknown/.*"),
+//        false,
+//        BasicEventType.of("HandledUnknownId", UUID.fromString("cae56547-1999-49d4-ab34-b846942f6526"), new DataType<>(null), Void.class),
+//        InternalProcessing,
+//        Lamp,
+//        entityId(UUID.randomUUID()), // Unknown id
+//        null,
+//        null,
+//        _ -> null
+//    ),
+//    new HttpRequestRouter<>(
+//        m -> m.requestLine().matches("PUT .*/handledreject/.*"),
+//        false,
+//        BasicEventType.of("HandledReject", UUID.fromString("bd065522-30b4-4495-8f22-a0576d798cc7"), new DataType<>(null), Void.class),
+//        EventThatIsAlwaysRejected,
+//        Lamp,
+//        newEntityId(),
+//        null,
+//        null,
+//        _ -> null
+//    ),
+//    new HttpRequestRouter<>(
+//        m -> m.requestLine().matches("PUT .*/complexinternal/.*"),
+//        false,
+//        BasicEventType.of("ComplexInternalProcessRequest", UUID.fromString("baafef75-8d74-4984-967e-cbd3215ec1de"), new DataType<>(null), Void.class),
+//        ComplexInternalProcessing,
+//        Lamp,
+//        newEntityId(),
+//        null,
+//        (request, _) -> from(request.requestLine(), "PUT .*/complexinternal/(.*)", 1),
+//        _ -> null
+//    ),
+//    new HttpRequestRouter<>(
+//        m -> m.requestLine().matches("PUT .*/external/.*"),
+//        false,
+//        BasicEventType.of("ExternalProcessRequest", UUID.fromString("ec71b8fd-d1bd-4ebb-b993-0a62f69d21e5"), new DataType<>(null), Void.class),
+//        ExternalProcessing,
+//        Lamp,
+//        newEntityId(),
+//        null,
+//        (request, _) -> from(request.requestLine(), "PUT .*/external/(.*)", 1),
+//        _ -> null
+//    ),
+//    new HttpRequestRouter<>(
+//        m -> m.requestLine().matches("PUT .*/long-external/.*"),
+//        false,
+//        BasicEventType.of("LongExternalProcessRequest", UUID.fromString("0b4397d3-c3cc-4950-8513-18e9522b18c5"), new DataType<>(null), Void.class),
+//        LongExternalProcessing,
+//        Lamp,
+//        newEntityId(),
+//        null,
+//        null,
+//        _ -> null
+//    ),
+//    new HttpRequestRouter<>(
+//        m -> m.requestLine().matches("PUT .*/rejected/.*"),
+//        false,
+//        BasicEventType.of("RequestWhichIsRejected", UUID.fromString("fb0c25f5-e361-44be-b8fe-0632749849ff"), new DataType<>(null), Void.class),
+//        EventThatIsAlwaysRejected,
+//        Lamp,
+//        newEntityId(),
+//        null,
+//        (request, _) -> from(request.requestLine(), "PUT .*/rejected/(.*)", 1),
+//        _ -> null
+//    ),
+//    new HttpRequestRouter<>(
+//        m -> m.requestLine().matches("DELETE .*/internal/.*"),
+//        false,
+//        BasicEventType.of("CancelRequest", UUID.fromString("86de7919-4e2f-406b-8d72-568bae6cbf32"), new DataType<>(null), Void.class),
+//        Rollback,
+//        Lamp,
+//        entityId(d -> UUID.fromString(requireNonNull(from(d.request().requestLine(), "DELETE .*/internal/(.*)", 1)))),
+//        null,
+//        null,
+//        _ -> new Data(0, "Cancel")
+//    )
+//  );
+//
+//  static List<HttpRequestRouter<?, ?>> rollbackRouters = List.of(
+//      new HttpRequestRouter<>(
+//          m -> m.requestLine().matches("DELETE .*/lamps/messages/.*"),
+//          false,
+//          BasicEventType.of("RollbackRequest", UUID.fromString("9c8914f1-60f7-4829-8eaa-c0a60c65d377"), new DataType<>(null), Void.class),
+//          Rollback,
+//          Lamp,
+//          null,
+//          null,
+//          (request, _) -> from(request.requestLine(), "DELETE .*/lamps/messages/(.*)", 1),
+//          _ -> null
+//      )
+//  );
 
 //  static InboxExchange inboxExchange = new InboxExchange() {
 //
@@ -758,8 +815,9 @@ public class RequestReplyTest {
     Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions = new HashMap<>();
     transitions.put(Lamp, lampTransitions());
     //transitions.put(inboxExchange, inboxExchange.transitions());
-    transitions.put(RequestRouting, requestRoutingTransitions(routers, rollbackRouters));
-    transitions.put(RequestDispatching, requestDispatchingTransitions(routers, rollbackRouters, List.of()));
+    //transitions.put(RequestRouting, requestRoutingTransitions(routers, rollbackRouters));
+    transitions.put(RequestRouting, requestRoutingTransitions(routes));
+    transitions.put(RequestDispatching, requestDispatchingTransitions(routes, List.of()));
     //noinspection SwitchStatementWithTooFewBranches
     stateMachine = Init.stateMachine(
         transitions,
@@ -962,7 +1020,7 @@ public class RequestReplyTest {
 
   @Test
   public void formatModel() throws IOException {
-    System.out.println(new PlantUMLFormatter(RequestDispatching, requestDispatchingTransitions(routers, rollbackRouters, List.of()), false).formatToImage(
+    System.out.println(new PlantUMLFormatter(RequestDispatching, requestDispatchingTransitions(routes, List.of()), false).formatToImage(
         "docs/images"));
   }
 
@@ -992,7 +1050,7 @@ public class RequestReplyTest {
     return onRequest(
         new EventTrigger<>(
             new EventSpec<>(RouteRequest, Function.identity()),
-            List.of(newEntityId()),
+            List.of(_ -> newEntityId()),
             RequestRouting,
             false
         ),

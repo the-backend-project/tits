@@ -54,7 +54,7 @@ public class IncomingRequestModelBuilder<T> {
       public IncomingRequestModelBuilder<T> identifiedBy(EntitySelector<T> entitySelector) {
         eventTypeAndData.eventType.builder.eventTrigger = new EventTrigger<>(
             new EventSpec<>(eventTypeAndData.eventType.eventType, eventTypeAndData.dataAdapter),
-            List.of(entitySelector),
+            List.of(_ -> entitySelector),
             entityModel,
             false
         );

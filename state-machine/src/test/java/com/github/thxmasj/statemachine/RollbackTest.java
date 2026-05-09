@@ -84,11 +84,11 @@ public class RollbackTest {
           Pacman, Map.of(
               Stopped, List.of(
                   onEvent(Forward).to(Moving)
-                      .trigger(Increase).on(Speed).identifiedBy(newEntityId())
+                      .trigger(Increase).on(Speed).identifiedBy(_ -> newEntityId())
                       .newIdentifier(SpeedId, d -> d.t2().accepted().event().entityId())
                       .reversible(
                           assemble((log, _) -> log.id(SpeedId))
-                              .trigger(Decrease).on(Speed).identifiedBy(entityId(d -> d))
+                              .trigger(Decrease).on(Speed).identifiedBy(_ -> entityId(d -> d))
                       )
                       .output()
               ),
@@ -97,18 +97,18 @@ public class RollbackTest {
                   onEvent(Right).toSelf().output(),
                   onEvent(Backward).toSelf()
                       .assemble(c -> c.log().id(SpeedId))
-                      .trigger(Decrease).on(Speed).identifiedBy(entityId(d -> d))
+                      .trigger(Decrease).on(Speed).identifiedBy(_ -> entityId(d -> d))
                       .reversible(
                           assemble((log, _) -> log.id(SpeedId))
-                              .trigger(Increase).on(Speed).identifiedBy(entityId(d -> d))
+                              .trigger(Increase).on(Speed).identifiedBy(_ -> entityId(d -> d))
                       )
                       .output(),
                   onEvent(Forward).toSelf()
                       .assemble(c -> c.log().id(SpeedId))
-                      .trigger(Increase).on(Speed).identifiedBy(entityId(d -> d))
+                      .trigger(Increase).on(Speed).identifiedBy(_ -> entityId(d -> d))
                       .reversible(
                           assemble((log, _) -> log.id(SpeedId))
-                              .trigger(Decrease).on(Speed).identifiedBy(entityId(d -> d))
+                              .trigger(Decrease).on(Speed).identifiedBy(_ -> entityId(d -> d))
                       )
                       .output(),
                   onEvent(Stop).to(Stopped).output(),

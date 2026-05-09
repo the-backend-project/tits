@@ -30,17 +30,17 @@ public class EventsByLookupId {
 
   private final DataSource dataSource;
   private final Map<SecondaryIdModel<?>, String> sql;
-  private final BiFunction<EntityId, Row, Event<?>> eventMapper;
+  private final Map<EntityModel, BiFunction<EntityId, Row, Event<?>>> eventMappers;
 
   public EventsByLookupId(
       DataSource dataSource,
       List<EntityModel> entityModels,
       String schemaName,
-      BiFunction<EntityId, Row, Event<?>> eventMapper
+      Map<EntityModel, BiFunction<EntityId, Row, Event<?>>> eventMappers
   ) {
     this.dataSource = dataSource;
     this.sql = new HashMap<>();
-    this.eventMapper = eventMapper;
+    this.eventMappers = eventMappers;
     for (var entityModel : entityModels) {
       var names = new SchemaNames(schemaName, entityModel);
       for (var idModel : entityModel.secondaryIds()) {
@@ -108,7 +108,7 @@ public class EventsByLookupId {
             rs = statement.getResultSet();
             List<Event<?>> events = new ArrayList<>();
             while (rs.next()) {
-              events.add(eventMapper.apply(entityId, new JDBCRow(rs)));
+              events.add(eventMappers.get(entityModel).apply(entityId, new JDBCRow(rs)));
             }
             List<SecondaryId<?>> secondaryIds = new ArrayList<>();
             for (var idModel2 : entityModel.secondaryIds()) {

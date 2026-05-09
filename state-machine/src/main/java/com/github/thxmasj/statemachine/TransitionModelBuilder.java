@@ -6,7 +6,6 @@ import static java.util.Collections.unmodifiableMap;
 import static java.util.stream.Collectors.joining;
 
 import com.github.thxmasj.statemachine.BasicEventType.Rollback.Data;
-import com.github.thxmasj.statemachine.BuiltinEntities.Rule;
 import com.github.thxmasj.statemachine.EventTrigger.EventSpec;
 import com.github.thxmasj.statemachine.OutgoingRequestModel.Builder;
 import com.github.thxmasj.statemachine.StateMachine.CircularChange;
@@ -681,7 +680,7 @@ public class TransitionModelBuilder<I, T, O> {
       }
     }
 
-    public record WithIdentifier<I, T, O, I1, O1>(WithEntity<I, T, O, I1, O1> entity, ArrayList<EntitySelector<T>> entitySelectors) {
+    public record WithIdentifier<I, T, O, I1, O1>(WithEntity<I, T, O, I1, O1> entity, List<Function<T, ? extends EntitySelector<T>>> entitySelectors) {
 
       public <I2, O2> WithEventType<I, Tuple2<T, ProcessResult<O1>>, O, I2, O2> trigger(EventType<I2, O2> eventType) {
         return new WithEventType<>(complete(), eventType);
@@ -731,16 +730,16 @@ public class TransitionModelBuilder<I, T, O> {
         return this.entity.eventTypeAndData.eventType.builder.trigger(completeTrigger());
       }
 
-      public WithIdentifier<I, T, O, I1, O1> identifiedBy(EntitySelector<T> entitySelector) {
-        return new WithIdentifier<>(entity, add(entitySelectors, entitySelector));
+      public WithIdentifier<I, T, O, I1, O1> identifiedBy(Function<T, ? extends EntitySelector<T>> entitySelector) {
+        return new WithIdentifier<>(entity, List.of(entitySelector));
       }
 
     }
 
     public record WithEntity<I, T, O, I1, O1>(WithEventTypeAndData<I, T, O, I1, O1> eventTypeAndData, EntityModel entityModel) {
       @SafeVarargs
-      public final TransitionModelBuilder<I, Tuple2<T, ProcessResult<O1>>, O> identifiedBy(EntitySelector<T>... entitySelector) {
-        return new WithIdentifier<>(this, new ArrayList<>(List.of(entitySelector))).complete();
+      public final TransitionModelBuilder<I, Tuple2<T, ProcessResult<O1>>, O> identifiedBy(Function<T, ? extends EntitySelector<T>>... entitySelector) {
+        return new WithIdentifier<>(this, List.of(entitySelector)).complete();
       }
 //      public final WithIdentifier<I, T, O, I1, O1> identifiedBy(EntitySelector<T>... entitySelector) {
 //        return new WithIdentifier<>(this, new ArrayList<>(List.of(entitySelector)));
@@ -781,19 +780,16 @@ public class TransitionModelBuilder<I, T, O> {
     return builder;
   }
 
-  public TransitionModelBuilder<I, T, O> when(List<Rule<T, ?, ?>> choices) {
+  public <I1> TransitionModelBuilder<I, T, O> choice(List<GuardedTransition<T, I1, ?>> guardedTransitions, Function<T, I1> dataAdapter) {
     var builder = this;
-    for (var choice : choices) {
-      builder = builder.when(choice);
+    for (var guardedTransition : guardedTransitions) {
+      builder = builder.when(guardedTransition, dataAdapter);
     }
     return builder;
   }
 
-  public <I1, O1> TransitionModelBuilder<I, T, O> when(Rule<T, I1, O1> choice) {
-    return when(choice.predicate().and(choice.adapter().andThen(Validated::isValid)::apply)).then(
-        choice.then(),
-        choice.adapter().andThen(Validated::valid)
-    );
+  public <I1, O1> TransitionModelBuilder<I, T, O> when(GuardedTransition<T, I1, O1> guardedTransition, Function<T, I1> dataAdapter) {
+    return when(guardedTransition.guard()).then(guardedTransition.then(), dataAdapter);
   }
 
   public WithFilter<I, T, O> when(Predicate<T> filter) {
@@ -878,7 +874,7 @@ public class TransitionModelBuilder<I, T, O> {
                   log(modelContext, "Alternative " + filter.alternative().model().eventType().name() + " skipped, another alternative already chosen");
                   return Mono.just(c);
                 }
-                log(modelContext, "Alternative " + filter.alternative().model().eventType().name() + ": testing");
+                log(modelContext, "Alternative " + filter.alternative().model().eventType().name() + ": testing with <" + c.stepOutput() + ">");
                 if (!filter.predicate().test(c.stepOutput())) {
                   log(modelContext, "Alternative " + filter.alternative().model().eventType().name() + " not matching");
                   return Mono.just(c);
@@ -1326,7 +1322,7 @@ public class TransitionModelBuilder<I, T, O> {
 //    }
 
     public Mono<OutputChangeContext<O>> calculate(InitialChangeContext<I> initialChangeContext) {
-      log(modelContext, "calculate " + eventType().name() + " on " + initialChangeContext.log().entityModel().name());
+      log(modelContext, "calculate [" + eventType().name() + "] on [" + initialChangeContext.log().entityModel().name() + "]");
       return chain.apply(Mono.just(initialChangeContext));
     }
 

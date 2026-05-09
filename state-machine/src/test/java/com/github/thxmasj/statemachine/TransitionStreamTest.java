@@ -35,7 +35,7 @@ public class TransitionStreamTest {
   @Test
   public void test() {
     onEvent(SwitchOn).to(On)
-        .trigger(SwitchOn).on(Lamp).identifiedBy(entityId(UUID.randomUUID()))
+        .trigger(SwitchOn).on(Lamp).identifiedBy(_ -> entityId(UUID.randomUUID()))
         .output()
     ;
   }

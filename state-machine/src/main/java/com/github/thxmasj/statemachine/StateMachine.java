@@ -13,6 +13,7 @@ import static java.util.Comparator.comparing;
 import static java.util.Objects.requireNonNullElse;
 import static java.util.Optional.ofNullable;
 import static java.util.stream.Collectors.joining;
+import static java.util.stream.Collectors.toList;
 import static java.util.stream.Collectors.toMap;
 
 import com.github.thxmasj.statemachine.BasicEventType.Rollback.Data;
@@ -143,10 +144,19 @@ public class StateMachine {
         .flatMap(m -> m.values().stream())
         .flatMap(Collection::stream)
         .toList();
-    List<EventType<?, ?>> allEventTypes = Stream.concat(
-        allTransitions.stream().flatMap(t -> Mappers.eventTypesFor(t).stream()),
-        BuiltinEventTypes.ALL.stream()
-    ).distinct().toList();
+//    List<EventType<?, ?>> allEventTypes = Stream.concat(
+//        allTransitions.stream().flatMap(t -> Mappers.eventTypesFor(t).stream()),
+//        BuiltinEventTypes.ALL.stream()
+//    ).distinct().toList();
+    Map<EntityModel, List<EventType<?, ?>>> eventTypes = transitions.entrySet().stream()
+        .collect(toMap(
+            Entry::getKey,
+            e -> e.getValue().values().stream()
+                .flatMap(Collection::stream)
+                .flatMap(t -> Mappers.eventTypesFor(t).stream())
+                .distinct()
+                .toList()
+        ));
     this.outgoingRequestCreators = Stream.concat(
             allTransitions.stream().flatMap(t -> t.outgoingRequests().stream()),
             allTransitions.stream()
@@ -176,15 +186,15 @@ public class StateMachine {
     this.clock = clock;
     var jdbcClient = new JDBCClient(dataSource);
     this.changeState = new ChangeState(entityModels, jdbcClient, schemaName, clock);
-    var eventMapper = Mappers.eventMapper(allEventTypes, clock);
-    this.eventsByEntityId = new EventsByEntityId(dataSource, entityModels, schemaName, eventMapper);
-    this.eventsByLookupId = new EventsByLookupId(dataSource, entityModels, schemaName, eventMapper);
+    var eventMappers = eventTypes.entrySet().stream().collect(toMap(Entry::getKey, e -> Mappers.eventMapper(e.getValue(), clock)));
+    this.eventsByEntityId = new EventsByEntityId(dataSource, entityModels, schemaName, eventMappers);
+    this.eventsByLookupId = new EventsByLookupId(dataSource, entityModels, schemaName, eventMappers);
     //this.eventsByMessageId = new EventsByMessageId(dataSource, entityModels, schemaName, eventMapper);
     this.eventsByLastEntity = new EventsByLastEntity(
         dataSource,
         entityModels,
         schemaName,
-        Mappers.eventTypeMapper(allEventTypes),
+        eventTypes.entrySet().stream().collect(toMap(Entry::getKey, e -> Mappers.eventTypeMapper(e.getValue()))),
         clock
     );
     //this.secondaryIdByEntityId = new SecondaryIdByEntityId(dataSource, entityModels, schemaName);
@@ -2106,7 +2116,7 @@ public class StateMachine {
     System.out.println("Finding log for " + eventTrigger.eventSpec().eventType().name() + " on " + eventTrigger.entityModel().name());
     return eventTrigger.createEntity() ?
         Mono.just(emptyEventLog(eventTrigger.entityModel())) :
-        eventLog(eventTrigger.entitySelectors().getFirst(), inputData, eventTrigger.entityModel(), changeContext);
+        eventLog(eventTrigger.entitySelectors().getFirst().apply(inputData), inputData, eventTrigger.entityModel(), changeContext);
   }
 
   private EventLog logFromNestedChanges(EntityId entityId, ChangeContext<?> changeContext) {
@@ -2222,7 +2232,7 @@ public class StateMachine {
   ) {
     I adaptedData = eventTrigger.eventSpec().inputAdapter().apply(data);
     return Mono.deferContextual(ctx -> {
-          EntityId entityId = switch (eventTrigger.entitySelectors().getFirst()) {
+          EntityId entityId = switch (eventTrigger.entitySelectors().getFirst().apply(data)) {
             case EntitySelector.ByIdFromSession<T> _ -> {
               try {
                 yield entityIdFromChangeContext(previous, eventTrigger.entityModel());
@@ -2518,7 +2528,7 @@ public class StateMachine {
                               .filter(change -> change.newEvent() != null && change.storeEvent())
                               .collect(Collectors.groupingBy(
                                   Change::entityId,
-                                  Collectors.toList()
+                                  toList()
                               ))
                               .forEach((entityId, changeList) -> {
                                 changeList.sort(comparing(change -> change.newEvent().eventNumber()));
