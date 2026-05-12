@@ -6,7 +6,6 @@ import static com.github.thxmasj.statemachine.EntitySelector.CreationMode.NeverC
 import com.github.thxmasj.statemachine.EntitySelector.ById;
 import com.github.thxmasj.statemachine.EntitySelector.ByIdFromSession;
 import com.github.thxmasj.statemachine.EntitySelector.ByLastInIdGroup;
-import com.github.thxmasj.statemachine.EntitySelector.ByMessageId;
 import com.github.thxmasj.statemachine.EntitySelector.ByNextInIdGroup;
 import com.github.thxmasj.statemachine.EntitySelector.BySecondaryId;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames;
@@ -14,31 +13,22 @@ import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdMod
 import java.util.UUID;
 import java.util.function.Function;
 
-public sealed class EntitySelector<I> permits ById, ByIdFromSession, ByLastInIdGroup, ByMessageId, ByNextInIdGroup,
-    BySecondaryId {
+public sealed class EntitySelector<I> permits ById, ByIdFromSession, ByLastInIdGroup, ByNextInIdGroup, BySecondaryId {
 
   public static <I> ById<I> entityId(EntityId entityId) {
-    return new ById<>(_ -> entityId, NeverCreate);
+    return new ById<>(entityId, NeverCreate);
   }
 
   public static <I> ById<I> entityId(EntityId entityId, CreationMode creationMode) {
-    return new ById<>(_ -> entityId, creationMode);
+    return new ById<>(entityId, creationMode);
   }
 
   public static <I> ById<I> entityId(UUID entityId) {
-    return new ById<>(_ -> new EntityId.UUID(entityId), NeverCreate);
+    return new ById<>(new EntityId.UUID(entityId), NeverCreate);
   }
 
   public static <I> ById<I> newEntityId() {
-    return new ById<>(_ -> new EntityId.UUID(UUID.randomUUID()), AlwaysCreate);
-  }
-
-  public static <I> ById<I> entityId(Function<I, UUID> entityId) {
-    return new ById<>(entityId.andThen(EntityId.UUID::new), NeverCreate);
-  }
-
-  public static <I> ById<I> entityId(Function<I, UUID> entityId, CreationMode creationMode) {
-    return new ById<>(entityId.andThen(EntityId.UUID::new), creationMode);
+    return new ById<>(new EntityId.UUID(UUID.randomUUID()), AlwaysCreate);
   }
 
   public static <I> ByIdFromSession<I> entityIdFromSession() {
@@ -77,14 +67,6 @@ public sealed class EntitySelector<I> permits ById, ByIdFromSession, ByLastInIdG
     return new ByNextInIdGroup<>(model, creationMode);
   }
 
-  public static <I> ByMessageId<I> messageId(Function<I, String> dataAdapter) {
-    return new ByMessageId<>(dataAdapter, NeverCreate);
-  }
-
-  public static <I> ByMessageId<I> messageId(Function<I, String> dataAdapter,  CreationMode creationMode) {
-    return new ByMessageId<>(dataAdapter, creationMode);
-  }
-
   public enum CreationMode{AlwaysCreate, CreateIfNotExists, NeverCreate}
 
   private final CreationMode creationMode;
@@ -105,15 +87,20 @@ public sealed class EntitySelector<I> permits ById, ByIdFromSession, ByLastInIdG
 
   public static final class ById<I> extends EntitySelector<I> {
 
-    private final Function<I, EntityId> entityId;
+    private final EntityId entityId;
 
-    public ById(Function<I, EntityId> entityId, CreationMode creationMode) {
+    public ById(EntityId entityId, CreationMode creationMode) {
       super(creationMode, null);
       this.entityId = entityId;
     }
 
-    public Function<I, EntityId> id() {
+    public EntityId id() {
       return entityId;
+    }
+
+    @Override
+    public String toString() {
+      return getClass().getSimpleName() + "(" + entityId + ", " + creationMode().name() + ")";
     }
 
   }
@@ -158,6 +145,12 @@ public sealed class EntitySelector<I> permits ById, ByIdFromSession, ByLastInIdG
     public Function<I, T> id() {
       return id;
     }
+
+    @Override
+    public String toString() {
+      return getClass().getSimpleName() + "(" + model().name() + ", " + creationMode().name() + ")";
+    }
+
 
   }
 
@@ -204,21 +197,6 @@ public sealed class EntitySelector<I> permits ById, ByIdFromSession, ByLastInIdG
     public SecondaryIdModel<T> model() {
       return model;
     }
-  }
-
-  public static final class ByMessageId<I> extends EntitySelector<I> {
-
-    private final Function<I, String> messageId;
-
-    public ByMessageId(Function<I, String> messageId, CreationMode creationMode) {
-      super(creationMode, null);
-      this.messageId = messageId;
-    }
-
-    public Function<I, String> messageId() {
-      return messageId;
-    }
-
   }
 
 }

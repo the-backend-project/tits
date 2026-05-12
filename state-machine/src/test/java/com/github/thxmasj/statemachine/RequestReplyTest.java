@@ -4,7 +4,6 @@ import static com.github.thxmasj.statemachine.BuiltinEntities.CompleteRequest;
 import static com.github.thxmasj.statemachine.BuiltinEntities.Models.RequestDispatching;
 import static com.github.thxmasj.statemachine.BuiltinEntities.Models.RequestRouting;
 import static com.github.thxmasj.statemachine.BuiltinEntities.RouteRequest;
-import static com.github.thxmasj.statemachine.BuiltinEntities.from;
 import static com.github.thxmasj.statemachine.BuiltinEntities.requestDispatchingTransitions;
 import static com.github.thxmasj.statemachine.BuiltinEntities.requestRoutingTransitions;
 import static com.github.thxmasj.statemachine.BuiltinEventTypes.Rollback;
@@ -20,6 +19,9 @@ import static com.github.thxmasj.statemachine.TransitionStreamTest.Entities.Lamp
 import static com.github.thxmasj.statemachine.TransitionStreamTest.States.Off;
 import static com.github.thxmasj.statemachine.TransitionStreamTest.States.On;
 import static com.github.thxmasj.statemachine.Tuples.tuple;
+import static com.github.thxmasj.statemachine.http.HttpRequestRouter.HttpRequestRoute.ContentRoute.anyContent;
+import static com.github.thxmasj.statemachine.http.HttpRequestRouter.HttpRequestRoute.ContentRoute.parseEntityId;
+import static com.github.thxmasj.statemachine.http.HttpRequestRouter.HttpRequestRoute.ContentRoute.parseMessageId;
 import static com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Method.DELETE;
 import static com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Method.POST;
 import static com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Method.PUT;
@@ -32,14 +34,12 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.thxmasj.statemachine.BasicEventType.Rollback.Data;
 import com.github.thxmasj.statemachine.BuiltinEntities.RequestParser.ParsedRequest;
-import com.github.thxmasj.statemachine.EntitySelector.ById;
 import com.github.thxmasj.statemachine.EventTrigger.EventSpec;
 import com.github.thxmasj.statemachine.EventType.DataType;
 import com.github.thxmasj.statemachine.IncomingResponseValidator.Result;
 import com.github.thxmasj.statemachine.IncomingResponseValidator.Result.Status;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;
-import com.github.thxmasj.statemachine.Validated.Invalid;
 import com.github.thxmasj.statemachine.Validated.Valid;
 import com.github.thxmasj.statemachine.http.HttpRequestRouter.HttpRequestRoute;
 import com.github.thxmasj.statemachine.http.HttpRequestRouter.HttpRequestRoute.ContentRoute;
@@ -59,7 +59,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Random;
 import java.util.UUID;
@@ -320,67 +319,104 @@ public class RequestReplyTest {
     return new SimpleImmutableEntry<>(key, value);
   }
 
-  private static <T> Function<ParsedRequest<T>, Validated<EntitySelector<ParsedRequest<T>>>> parseEntityId(
-      String requestLinePattern,
-      int captureGroup
-  ) {
-    return d -> {
-      String s = from(d.request().requestLine(), requestLinePattern, captureGroup);
-      if (s == null) return new Invalid<>("Unable to extract entity id from request line");
-      try {
-        return new Valid<>(entityId(UUID.fromString(s)));
-      } catch (IllegalArgumentException e) {
-        return new Invalid<>("Entity id is not a valid UUID");
-      }
-    };
-  }
+//  private static <T> Function<ParsedRequest<T>, Validated<EntitySelector<ParsedRequest<T>>>> parseEntityId(
+//      String requestLinePattern,
+//      int captureGroup
+//  ) {
+//    return d -> {
+//      String s = from(d.request().requestLine(), requestLinePattern, captureGroup);
+//      if (s == null) return new Invalid<>("Unable to extract entity id from request line");
+//      try {
+//        return new Valid<>(entityId(UUID.fromString(s)));
+//      } catch (IllegalArgumentException e) {
+//        return new Invalid<>("Entity id is not a valid UUID");
+//      }
+//    };
+//  }
 
   static List<HttpRequestRoute<?, ?>> routes = List.of(
       new HttpRequestRoute<>(
           m -> m.requestLine().matches("PUT .*/zero/.*"),
-          null,
-          List.of(
-              new ContentRoute<>(
-                  Objects::isNull,
-                  "[*]",
-                  null,
-                  false,
-                  ZeroProcessing,
-                  Lamp,
-                  _ -> new Zero("Hey!"),
-                  RequestReplyTest.parseEntityId("PUT .*/zero/(.*)", 1)
-              )
-          )
+          m -> new Valid<>(m.body()),
+          List.of(anyContent(null, false, UUID.fromString("7e2c5175-a65d-4795-a285-b0d75e704f5a"), ZeroProcessing, Lamp, _ -> new Zero("Hey!"), parseEntityId("PUT .*/zero/(.*)", 1)))
       ),
       new HttpRequestRoute<>(
           m -> m.requestLine().matches("PUT .*/internal/.*"),
           m -> new Valid<>(m.body()),
-          List.of(
-              new ContentRoute<>(
-                  _ -> true,
-                  "[*]",
-                  null,
-                  false,
-                  InternalProcessing,
-                  Lamp,
-                  _ -> null,
-                  _ -> new Valid<>(newEntityId())
-              )
-          )
+          List.of(anyContent(parseMessageId("PUT .*/internal/(.*)", 1), false, UUID.fromString("3afa1f14-d4e3-49c4-b6ad-05a733f0b22d"), InternalProcessing, Lamp, _ -> null, _ -> new Valid<>(newEntityId())))
+      ),
+      new HttpRequestRoute<>(
+          m -> m.requestLine().matches("PUT .*/handledunknown/.*"),
+          m -> new Valid<>(m.body()),
+          List.of(anyContent(null, false, UUID.fromString("b411fd45-6c87-43aa-a511-df930d654ec7"), InternalProcessing, Lamp, _ -> null, _ -> new Valid<>(entityId(UUID.randomUUID())))) // Unknown id
+      ),
+      new HttpRequestRoute<>(
+          m -> m.requestLine().matches("PUT .*/handledreject/.*"),
+          m -> new Valid<>(m.body()),
+          List.of(anyContent(null, false, UUID.fromString("00f910e2-8c22-4403-835d-15e112ac3080"), EventThatIsAlwaysRejected, Lamp, _ -> null, _ -> new Valid<>(newEntityId())))
+      ),
+      new HttpRequestRoute<>(
+          m -> m.requestLine().matches("PUT .*/complexinternal/.*"),
+          m -> new Valid<>(m.body()),
+          List.of(anyContent(parseMessageId("PUT .*/complexinternal/(.*)", 1), false, UUID.fromString("84164954-ad85-4b44-9de6-079bf4805df7"), ComplexInternalProcessing, Lamp, _ -> null, _ -> new Valid<>(newEntityId())))
+      ),
+      new HttpRequestRoute<>(
+          m -> m.requestLine().matches("PUT .*/external/.*"),
+          m -> new Valid<>(m.body()),
+          List.of(anyContent(parseMessageId("PUT .*/external/(.*)", 1), false, UUID.fromString("415cfd95-6feb-4106-8d47-fcf41ddcb3d1"), ExternalProcessing, Lamp, _ -> null, _ -> new Valid<>(newEntityId())))
+      ),
+      new HttpRequestRoute<>(
+          m -> m.requestLine().matches("PUT .*/long-external/.*"),
+          m -> new Valid<>(m.body()),
+          List.of(anyContent(null, false, UUID.fromString("721fedb2-e715-4c4d-a8fb-e2cdb16f86e5"), LongExternalProcessing, Lamp, _ -> null, _ -> new Valid<>(newEntityId())))
+      ),
+      new HttpRequestRoute<>(
+          m -> m.requestLine().matches("PUT .*/rejected/.*"),
+          m -> new Valid<>(m.body()),
+          List.of(anyContent(parseMessageId("PUT .*/rejected/(.*)", 1), false, UUID.fromString("e58f3910-0b01-4f8b-bbf3-c7fde4980197"), EventThatIsAlwaysRejected, Lamp, _ -> null, _ -> new Valid<>(newEntityId())))
+      ),
+      new HttpRequestRoute<>(
+          m -> m.requestLine().matches("DELETE .*/internal/.*"),
+          _ -> new Valid<>(null),
+          List.of(anyContent(
+              null,
+              false,
+              UUID.fromString("f5ef4720-c6bc-4686-be8b-85eeb0fdc372"),
+              Rollback,
+              Lamp,
+              _ -> new Data(0, "Cancel"),
+              parseEntityId("DELETE .*/internal/(.*)", 1)
+          ))
+      ),
+      new HttpRequestRoute<>(
+          m -> m.requestLine().matches("DELETE .*/lamps/messages/.*"),
+          _ -> new Valid<>(null),
+          List.of(anyContent(
+              parseMessageId("DELETE .*/lamps/messages/(.*)", 1),
+              false,
+              UUID.fromString("56829b3a-78ce-40e4-9006-a6c4d3b6dc23"),
+              Rollback,
+              Lamp,
+              _ -> null,
+              null
+          ))
       )
   );
 
-//    new HttpRequestRouter<>(
-//        m -> m.requestLine().matches("PUT .*/internal/.*"),
-//        false,
-//        BasicEventType.of("InternalProcessRequest", UUID.fromString("74b6a36a-135f-4cef-bb78-4e6279bd337b"), new DataType<>(null), Void.class),
-//        InternalProcessing,
-//        Lamp,
-//        newEntityId(),
-//        null,
-//        (request, _) -> from(request.requestLine(), "PUT .*/internal/(.*)", 1),
-//        _ -> null
-//    ),
+//
+//  static List<HttpRequestRouter<?, ?>> rollbackRouters = List.of(
+//      new HttpRequestRouter<>(
+//          m -> m.requestLine().matches("DELETE .*/lamps/messages/.*"),
+//          false,
+//          BasicEventType.of("RollbackRequest", UUID.fromString("9c8914f1-60f7-4829-8eaa-c0a60c65d377"), new DataType<>(null), Void.class),
+//          Rollback,
+//          Lamp,
+//          null,
+//          null,
+//          (request, _) -> from(request.requestLine(), "DELETE .*/lamps/messages/(.*)", 1),
+//          _ -> null
+//      )
+//  );
 
 
 //  static List<HttpRequestRouter<?, ?>> routers = List.of(
@@ -394,6 +430,17 @@ public class RequestReplyTest {
 //        null,
 //        (request, _) -> ZeroProcessing.id() + "/" + requireNonNull(from(request.requestLine(), "PUT .*/zero/(.*)", 1)),
 //        _ -> new Zero("Hey!")
+//    ),
+//    new HttpRequestRouter<>(
+//        m -> m.requestLine().matches("PUT .*/internal/.*"),
+//        false,
+//        BasicEventType.of("InternalProcessRequest", UUID.fromString("74b6a36a-135f-4cef-bb78-4e6279bd337b"), new DataType<>(null), Void.class),
+//        InternalProcessing,
+//        Lamp,
+//        newEntityId(),
+//        null,
+//        (request, _) -> from(request.requestLine(), "PUT .*/internal/(.*)", 1),
+//        _ -> null
 //    ),
 //    new HttpRequestRouter<>(
 //        m -> m.requestLine().matches("PUT .*/handledunknown/.*"),
@@ -473,20 +520,11 @@ public class RequestReplyTest {
 //        _ -> new Data(0, "Cancel")
 //    )
 //  );
-//
-//  static List<HttpRequestRouter<?, ?>> rollbackRouters = List.of(
-//      new HttpRequestRouter<>(
-//          m -> m.requestLine().matches("DELETE .*/lamps/messages/.*"),
-//          false,
-//          BasicEventType.of("RollbackRequest", UUID.fromString("9c8914f1-60f7-4829-8eaa-c0a60c65d377"), new DataType<>(null), Void.class),
-//          Rollback,
-//          Lamp,
-//          null,
-//          null,
-//          (request, _) -> from(request.requestLine(), "DELETE .*/lamps/messages/(.*)", 1),
-//          _ -> null
-//      )
-//  );
+
+
+
+
+
 
 //  static InboxExchange inboxExchange = new InboxExchange() {
 //

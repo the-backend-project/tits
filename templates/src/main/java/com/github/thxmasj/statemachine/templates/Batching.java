@@ -39,7 +39,7 @@ public class Batching {
       return Map.of(
           Begin, List.of(
             onEvent(CreateItem).to(Begin)
-              .trigger(AddToBatch).on(Batch).identifiedBy(entityId(UUID.randomUUID()))
+              .trigger(AddToBatch).on(Batch).identifiedBy(_ -> entityId(UUID.randomUUID()))
               //.trigger(new Created()).with(_ -> "Item created")
               .output()
           )

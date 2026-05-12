@@ -88,7 +88,7 @@ public class RollbackTest {
                       .newIdentifier(SpeedId, d -> d.t2().accepted().event().entityId())
                       .reversible(
                           assemble((log, _) -> log.id(SpeedId))
-                              .trigger(Decrease).on(Speed).identifiedBy(_ -> entityId(d -> d))
+                              .trigger(Decrease).on(Speed).identifiedBy(EntitySelector::entityId)
                       )
                       .output()
               ),
@@ -97,18 +97,18 @@ public class RollbackTest {
                   onEvent(Right).toSelf().output(),
                   onEvent(Backward).toSelf()
                       .assemble(c -> c.log().id(SpeedId))
-                      .trigger(Decrease).on(Speed).identifiedBy(_ -> entityId(d -> d))
+                      .trigger(Decrease).on(Speed).identifiedBy(EntitySelector::entityId)
                       .reversible(
                           assemble((log, _) -> log.id(SpeedId))
-                              .trigger(Increase).on(Speed).identifiedBy(_ -> entityId(d -> d))
+                              .trigger(Increase).on(Speed).identifiedBy(EntitySelector::entityId)
                       )
                       .output(),
                   onEvent(Forward).toSelf()
                       .assemble(c -> c.log().id(SpeedId))
-                      .trigger(Increase).on(Speed).identifiedBy(_ -> entityId(d -> d))
+                      .trigger(Increase).on(Speed).identifiedBy(EntitySelector::entityId)
                       .reversible(
                           assemble((log, _) -> log.id(SpeedId))
-                              .trigger(Decrease).on(Speed).identifiedBy(_ -> entityId(d -> d))
+                              .trigger(Decrease).on(Speed).identifiedBy(EntitySelector::entityId)
                       )
                       .output(),
                   onEvent(Stop).to(Stopped).output(),
@@ -147,7 +147,7 @@ public class RollbackTest {
                         new Data(-1, "test")
                     )
                     .next()
-                    .zipWhen(rollbackEvent -> eventListener.onStatus(entityId(_ -> rollbackEvent.entityId()), Pacman))
+                    .zipWhen(rollbackEvent -> eventListener.onStatus(entityId(rollbackEvent.entityId()), Pacman))
             )
         )
         .expectNextMatches(t -> t.getT1().type() == Rollback && t.getT1().eventNumber() == 2 && t.getT2() == Stopped)

@@ -477,7 +477,7 @@ public class BuiltinEntities {
         Completed, routes.stream()
             .flatMap(r -> r.contentRoutes().stream())
             .filter(route -> route.isRollback())
-            .map(r -> triggerRollbackTransition(r, RejectedRollbackFromCompleted))
+            .map(route -> triggerRollbackTransition(route, RejectedRollbackFromCompleted))
             .collect(toList()),
         RollingBack, List.of(customResponse(completeRequest, States.RolledBack)),
         Rejected, List.of(

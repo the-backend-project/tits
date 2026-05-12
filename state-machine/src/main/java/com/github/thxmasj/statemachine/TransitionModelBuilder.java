@@ -3,6 +3,7 @@ package com.github.thxmasj.statemachine;
 import static com.github.thxmasj.statemachine.Tuples.tuple;
 import static java.util.Collections.unmodifiableList;
 import static java.util.Collections.unmodifiableMap;
+import static java.util.Optional.ofNullable;
 import static java.util.stream.Collectors.joining;
 
 import com.github.thxmasj.statemachine.BasicEventType.Rollback.Data;
@@ -152,7 +153,7 @@ public class TransitionModelBuilder<I, T, O> {
     ) implements ChangeContext<I>, TransitionContext<I> {
       @Override public I stepOutput() {return input;}
       @Override public String toString() {
-        return "Initial " + log.entityModel().name() + "/" + log.entityId().value() + "/" + from.name() + ": " + transitionModel;
+        return "Initial " + log.entityModel().name() + "/" + log.entityId().value() + "/" + from.name() + ": " + transitionModel + " with " + ofNullable(input).map(i -> i.getClass().getSimpleName()).orElse("-");
       }
       public <T> IdentityResult<T> identityResult(SecondaryId<T> id) {
         return (IdentityResult<T>)identityResults.stream().filter(r -> r.id().equals(id)).findFirst().orElse(null);
@@ -737,6 +738,7 @@ public class TransitionModelBuilder<I, T, O> {
     }
 
     public record WithEntity<I, T, O, I1, O1>(WithEventTypeAndData<I, T, O, I1, O1> eventTypeAndData, EntityModel entityModel) {
+
       @SafeVarargs
       public final TransitionModelBuilder<I, Tuple2<T, ProcessResult<O1>>, O> identifiedBy(Function<T, ? extends EntitySelector<T>>... entitySelector) {
         return new WithIdentifier<>(this, List.of(entitySelector)).complete();

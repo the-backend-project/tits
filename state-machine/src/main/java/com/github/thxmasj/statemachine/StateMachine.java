@@ -153,7 +153,10 @@ public class StateMachine {
             Entry::getKey,
             e -> e.getValue().values().stream()
                 .flatMap(Collection::stream)
-                .flatMap(t -> Mappers.eventTypesFor(t).stream())
+                .flatMap(t -> Stream.concat(
+                    Mappers.eventTypesFor(t).stream(),
+                    BuiltinEventTypes.ALL.stream()
+                ))
                 .distinct()
                 .toList()
         ));
@@ -2146,9 +2149,7 @@ public class StateMachine {
       EntityModel entityModel,
       @Nullable ChangeContext<?> changeContext
   ) {
-    System.out.println(
-        "Finding event log for " + entityModel.name() + " with selector type " + entitySelector.getClass()
-            .getSimpleName() + " (" + entitySelector.creationMode().name() + ")");
+    System.out.println("Finding event log for " + entityModel.name() + " with selector " + entitySelector);
     return switch (entitySelector) {
       case EntitySelector.ByIdFromSession<I> _ -> Mono.deferContextual(ctx ->
               Mono.just(entityIdFromChangeContext(changeContext, entityModel))
@@ -2163,14 +2164,14 @@ public class StateMachine {
                   )
       );
       case EntitySelector.ById<I> s -> {
-        EntityId entityId = s.id().apply(inputData);
+        EntityId entityId = s.id();
         yield switch (s.creationMode()) {
           case NeverCreate -> Mono.justOrEmpty(logFromNestedChanges(entityId, changeContext))
               .switchIfEmpty(eventsByEntityId.execute(entityModel, entityId));
           case CreateIfNotExists -> Mono.justOrEmpty(logFromNestedChanges(entityId, changeContext))
               .switchIfEmpty(eventsByEntityId.execute(entityModel, entityId))
               .onErrorResume(UnknownEntity.class, _ -> Mono.just(emptyEventLog(entityModel, entityId)));
-          case AlwaysCreate -> Mono.just(emptyEventLog(entityModel, s.id().apply(inputData)));
+          case AlwaysCreate -> Mono.just(emptyEventLog(entityModel, s.id()));
         };
       }
       case EntitySelector.BySecondaryId<I, ?> selector -> switch (selector.creationMode()) {
@@ -2242,7 +2243,7 @@ public class StateMachine {
                     ctx.stream().map(x -> x.toString()).collect(joining("\n")));
               }
             }
-            case EntitySelector.ById<T> s -> s.id().apply(data);
+            case EntitySelector.ById<T> s -> s.id();
             default -> null;
           };
           if (!skipCircularCheck && ctx.hasKey(eventTrigger.entityModel())) {

@@ -9,6 +9,7 @@ import static com.github.thxmasj.statemachine.BuiltinEntities.RouteRequest;
 import static com.github.thxmasj.statemachine.BuiltinEntities.States.Rejected;
 import static com.github.thxmasj.statemachine.BuiltinEntities.States.Routed;
 import static com.github.thxmasj.statemachine.EntitySelector.CreationMode.CreateIfNotExists;
+import static com.github.thxmasj.statemachine.EntitySelector.entityId;
 import static com.github.thxmasj.statemachine.EntitySelector.entityIdFromSession;
 import static com.github.thxmasj.statemachine.EntitySelector.newEntityId;
 import static com.github.thxmasj.statemachine.EntitySelector.secondaryId;
@@ -27,13 +28,17 @@ import com.github.thxmasj.statemachine.GuardedTransition;
 import com.github.thxmasj.statemachine.TransitionModelBuilder;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;
 import com.github.thxmasj.statemachine.Validated;
+import com.github.thxmasj.statemachine.Validated.Invalid;
 import com.github.thxmasj.statemachine.Validated.Valid;
 import com.github.thxmasj.statemachine.http.HttpRequestRouter.HttpRequestRoute.ContentRoute;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import java.util.List;
+import java.util.UUID;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class HttpRequestRouter {
 
@@ -51,6 +56,7 @@ public class HttpRequestRouter {
         String predicateName,
         BiFunction<HttpRequestMessage, T, Validated<String>> messageIdParser,
         boolean authorize,
+        UUID dispatchingEventTypeId,
         EventType<U, ?> processEventType,
         EntityModel processType,
         Function<ParsedRequest<T>, U> processInput,
@@ -58,15 +64,68 @@ public class HttpRequestRouter {
     ) {
       public EventType<ParsedRequest<T>, Void> dispatchingEventType() {
         return BasicEventType.of(
-            processEventType.name(),
-            processEventType.id(),
+            "Dispatch: " + processEventType.name(),
+            dispatchingEventTypeId,
             new DataType<>(new TypeReference<>() {}, HttpRequestMessage.class, Object.class),
             Void.class
         );
       }
       public boolean isRollback() {
-        return processEventType instanceof BasicEventType.Rollback;
+        // TODO
+        return processEventType instanceof BasicEventType.Rollback && processSelector == null;
       }
+
+      public static <T> Function<ParsedRequest<T>, Validated<EntitySelector<ParsedRequest<T>>>> parseEntityId(
+          String requestLinePattern,
+          int captureGroup
+      ) {
+        return (ParsedRequest<T> d) -> {
+          Matcher matcher = Pattern.compile(requestLinePattern).matcher(d.request().requestLine());
+          String s = matcher.find() ? matcher.group(captureGroup) : null;
+          if (s == null) return new Invalid<>("Unable to extract entity id from request line");
+          try {
+            return new Valid<>(entityId(UUID.fromString(s)));
+          } catch (IllegalArgumentException e) {
+            return new Invalid<>("Entity id is not a valid UUID");
+          }
+        };
+      }
+
+      public static <T> BiFunction<HttpRequestMessage, T, Validated<String>> parseMessageId(
+          String requestLinePattern,
+          int captureGroup
+      ) {
+        return (HttpRequestMessage request, T _) -> {
+          Matcher matcher = Pattern.compile(requestLinePattern).matcher(request.requestLine());
+          String s = matcher.find() ? matcher.group(captureGroup) : null;
+          if (s == null) return new Invalid<>("Unable to extract message id from request line");
+          return new Valid<>(s);
+        };
+      }
+
+      public static <T, U> ContentRoute<T, U> anyContent(
+          BiFunction<HttpRequestMessage, T, Validated<String>> messageIdParser,
+          boolean authorize,
+          UUID dispatchingEventTypeId,
+          EventType<U, ?> processEventType,
+          EntityModel processType,
+          Function<ParsedRequest<T>, U> processInput,
+          Function<ParsedRequest<T>, Validated<EntitySelector<ParsedRequest<T>>>> processSelector
+      ) {
+        return new ContentRoute<>(
+            _ -> true,
+            "[*]",
+            messageIdParser,
+            authorize,
+            dispatchingEventTypeId,
+            processEventType,
+            processType,
+            processInput,
+            processSelector
+        );
+      }
+
+
     }
   }
 
@@ -116,7 +175,8 @@ public class HttpRequestRouter {
   private static <T, U> GuardedTransition<Tuple2<HttpRequestMessage, Validated<T>>, Tuple2<HttpRequestMessage, T>, Void> contentRouteTransition(ContentRoute<T, U> contentRoute) {
     EventType<Tuple2<HttpRequestMessage, T>, Void> contentRoutingEvent = BasicEventType.of(
         contentRoute.predicateName(),
-        contentRoute.processEventType().id(),
+        //contentRoute.processEventType().id(),
+        contentRoute.dispatchingEventTypeId,
         new DataType<>(new TypeReference<>() {}, HttpRequestMessage.class, Object.class),
         Void.class
     );
