@@ -5,15 +5,27 @@ import com.github.thxmasj.statemachine.Validated.Valid;
 
 public sealed interface Validated<T> permits Valid, Invalid {
 
+  static <T> Validated<T> validElse(T value, String invalidReason) {
+    return value != null ? new Valid<>(value) : new Invalid<>(invalidReason);
+  }
+
+  static <T> Validated<T> valid(T value) {
+    return new Valid<>(value);
+  }
+
+  static <T> Validated<T> invalid(String reason) {
+    return new Invalid<>(reason);
+  }
+
   record Valid<T>(T value) implements Validated<T> {
 
     @Override
-    public T valid() {
+    public T validValue() {
       return value;
     }
 
     @Override
-    public String invalid() {
+    public String invalidReason() {
       throw new IllegalStateException("Not invalid");
     }
 
@@ -31,12 +43,12 @@ public sealed interface Validated<T> permits Valid, Invalid {
   record Invalid<T>(String reason) implements Validated<T> {
 
     @Override
-    public T valid() {
+    public T validValue() {
       throw new IllegalStateException(reason);
     }
 
     @Override
-    public String invalid() {
+    public String invalidReason() {
       return reason;
     }
 
@@ -52,9 +64,9 @@ public sealed interface Validated<T> permits Valid, Invalid {
     }
   }
 
-  T valid();
+  T validValue();
 
-  String invalid();
+  String invalidReason();
 
   boolean isValid();
 

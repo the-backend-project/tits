@@ -84,7 +84,7 @@ public class RollbackTest {
           Pacman, Map.of(
               Stopped, List.of(
                   onEvent(Forward).to(Moving)
-                      .trigger(Increase).on(Speed).identifiedBy(_ -> newEntityId())
+                      .trigger(Increase).on(Speed).identifiedBy(newEntityId())
                       .newIdentifier(SpeedId, d -> d.t2().accepted().event().entityId())
                       .reversible(
                           assemble((log, _) -> log.id(SpeedId))

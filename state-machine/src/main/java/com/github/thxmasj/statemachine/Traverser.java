@@ -1,12 +1,11 @@
 package com.github.thxmasj.statemachine;
 
-import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.rollbackOn;
+import static com.github.thxmasj.statemachine.TransitionModelBuilder.statusOn;
 import static com.github.thxmasj.statemachine.Tuples.tuple;
 import static java.util.Collections.unmodifiableList;
 import static java.util.stream.Collectors.joining;
 
-import com.github.thxmasj.statemachine.BasicEventType.Rollback;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;
 import java.util.ArrayList;
@@ -59,9 +58,13 @@ public class Traverser {
     var availableTransitions = transitions.get(currentState);
     if (availableTransitions == null) throw new IllegalStateException("No available transitions for current state " + currentState + " on " + eventLog.entityModel().name());
     var t = findTransition(eventType, availableTransitions);
+    if (t != null && eventType == BuiltinEventTypes.Rollback)
+      System.out.println("Using custom rollback transition for entity " + eventLog.entityModel().name() + ": " + t + "\nAll transitions:\n" + transitions.values().stream().flatMap(List::stream).map(Object::toString).collect(joining("\n")));
     if (t == null && eventType == BuiltinEventTypes.Rollback && eventType instanceof BasicEventType.Rollback rollback)
       //t = onEvent(rollback).toSelf().assembleInput().output(d -> d);
       t = rollbackOn(rollback);
+    else if (t == null && eventType == BuiltinEventTypes.Status)
+      t = statusOn();
     return tuple(currentState, t);
   }
 

@@ -19,13 +19,13 @@ public class EventTrigger<T, I, O> {
   ) {}
 
   private final EventSpec<T, I, O> eventSpec;
-  private final List<Function<T, ? extends EntitySelector<T>>> entitySelectors;
+  private final List<Function<T, ? extends EntitySelector>> entitySelectors;
   private final EntityModel entityModel;
   private final boolean createEntity;
 
   public EventTrigger(
       EventSpec<T, I, O> eventSpec,
-      List<Function<T, ? extends EntitySelector<T>>> entitySelectors,
+      List<Function<T, ? extends EntitySelector>> entitySelectors,
       EntityModel entityModel,
       boolean createEntity
   ) {
@@ -40,7 +40,7 @@ public class EventTrigger<T, I, O> {
   }
 
   public static <I, O> EventTrigger<I, I, O> trigger(EventType<I, O> eventType, EntityModel entityModel) {
-    return new EventTrigger<>(new EventSpec<>(eventType, d -> d), List.of(_ -> newEntityId()), entityModel, false);
+    return new EventTrigger<>(new EventSpec<>(eventType, d -> d), List.of(newEntityId()), entityModel, false);
   }
 
   public static <I, O> EventTrigger<I, I, O> trigger(EventType<I, O> eventType, EntityModel entityModel, UUID entityId) {
@@ -48,7 +48,7 @@ public class EventTrigger<T, I, O> {
   }
 
   public static <I, O, ID> EventTrigger<I, I, O> trigger(EventType<I, O> eventType, EntityModel entityModel, SecondaryIdModel<ID> idModel, ID idValue) {
-    return new EventTrigger<>(new EventSpec<>(eventType, d -> d), List.of(_ -> secondaryId(idModel, _ -> idValue)), entityModel, false);
+    return new EventTrigger<>(new EventSpec<>(eventType, d -> d), List.of(_ -> secondaryId(idModel, idValue)), entityModel, false);
   }
 
   public EventSpec<T, I, O> eventSpec() {
@@ -59,14 +59,14 @@ public class EventTrigger<T, I, O> {
     return new EventTrigger<>(eventSpec, replaceFallbackSelector(), entityModel(), createEntity());
   }
 
-  private List<Function<T, ? extends EntitySelector<T>>> replaceFallbackSelector() {
+  private List<Function<T, ? extends EntitySelector>> replaceFallbackSelector() {
     return Stream.concat(
         Stream.of(entitySelectors.getFirst().andThen(EntitySelector::fallback)),
         entitySelectors.subList(1, entitySelectors.size()).stream()
     ).collect(toList());
   }
 
-  public List<Function<T, ? extends EntitySelector<T>>> entitySelectors() {
+  public List<Function<T, ? extends EntitySelector>> entitySelectors() {
     return entitySelectors;
   }
 

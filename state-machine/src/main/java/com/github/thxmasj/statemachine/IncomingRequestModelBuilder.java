@@ -48,10 +48,10 @@ public class IncomingRequestModelBuilder<T> {
       }
     }
 
-    public record WithIdentifier<T, I1, O1>(WithEntity<T, I1, O1> entity, ArrayList<EntitySelector<T>> entitySelectors) {}
+    public record WithIdentifier<T, I1, O1>(WithEntity<T, I1, O1> entity, ArrayList<EntitySelector> entitySelectors) {}
 
     public record WithEntity<T, I1, O1>(WithEventTypeAndData<T, I1, O1> eventTypeAndData, EntityModel entityModel) {
-      public IncomingRequestModelBuilder<T> identifiedBy(EntitySelector<T> entitySelector) {
+      public IncomingRequestModelBuilder<T> identifiedBy(EntitySelector entitySelector) {
         eventTypeAndData.eventType.builder.eventTrigger = new EventTrigger<>(
             new EventSpec<>(eventTypeAndData.eventType.eventType, eventTypeAndData.dataAdapter),
             List.of(_ -> entitySelector),

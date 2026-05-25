@@ -2,24 +2,23 @@ package com.github.thxmasj.statemachine;
 
 import static com.github.thxmasj.statemachine.BuiltinEntities.CompleteRequest;
 import static com.github.thxmasj.statemachine.BuiltinEntities.Models.RequestDispatching;
-import static com.github.thxmasj.statemachine.BuiltinEntities.Models.RequestRouting;
-import static com.github.thxmasj.statemachine.BuiltinEntities.RouteRequest;
+import static com.github.thxmasj.statemachine.BuiltinEntities.inboxTrigger;
 import static com.github.thxmasj.statemachine.BuiltinEntities.requestDispatchingTransitions;
-import static com.github.thxmasj.statemachine.BuiltinEntities.requestRoutingTransitions;
 import static com.github.thxmasj.statemachine.BuiltinEventTypes.Rollback;
 import static com.github.thxmasj.statemachine.EntitySelector.entityId;
 import static com.github.thxmasj.statemachine.EntitySelector.entityIdFromSession;
-import static com.github.thxmasj.statemachine.EntitySelector.newEntityId;
 import static com.github.thxmasj.statemachine.EventTriggerTest.States.Processing;
 import static com.github.thxmasj.statemachine.EventTriggerTest.States.Unreachable;
-import static com.github.thxmasj.statemachine.RequestReplyTest.Queues.DeviceListener;
+import static com.github.thxmasj.statemachine.HttpInboxTest.Queues.DeviceListener;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.assemble;
 import static com.github.thxmasj.statemachine.TransitionStreamTest.Entities.Lamp;
 import static com.github.thxmasj.statemachine.TransitionStreamTest.States.Off;
 import static com.github.thxmasj.statemachine.TransitionStreamTest.States.On;
 import static com.github.thxmasj.statemachine.Tuples.tuple;
+import static com.github.thxmasj.statemachine.Validated.valid;
 import static com.github.thxmasj.statemachine.http.HttpRequestRouter.HttpRequestRoute.ContentRoute.anyContent;
+import static com.github.thxmasj.statemachine.http.HttpRequestRouter.HttpRequestRoute.ContentRoute.newEntity;
 import static com.github.thxmasj.statemachine.http.HttpRequestRouter.HttpRequestRoute.ContentRoute.parseEntityId;
 import static com.github.thxmasj.statemachine.http.HttpRequestRouter.HttpRequestRoute.ContentRoute.parseMessageId;
 import static com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Method.DELETE;
@@ -34,7 +33,6 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.thxmasj.statemachine.BasicEventType.Rollback.Data;
 import com.github.thxmasj.statemachine.BuiltinEntities.RequestParser.ParsedRequest;
-import com.github.thxmasj.statemachine.EventTrigger.EventSpec;
 import com.github.thxmasj.statemachine.EventType.DataType;
 import com.github.thxmasj.statemachine.IncomingResponseValidator.Result;
 import com.github.thxmasj.statemachine.IncomingResponseValidator.Result.Status;
@@ -42,7 +40,6 @@ import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;
 import com.github.thxmasj.statemachine.Validated.Valid;
 import com.github.thxmasj.statemachine.http.HttpRequestRouter.HttpRequestRoute;
-import com.github.thxmasj.statemachine.http.HttpRequestRouter.HttpRequestRoute.ContentRoute;
 import com.github.thxmasj.statemachine.http.NettyHttpClient;
 import com.github.thxmasj.statemachine.http.NettyHttpClientBuilder;
 import com.github.thxmasj.statemachine.message.http.HttpMessageParser;
@@ -51,24 +48,20 @@ import com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Method;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
-import java.net.InetSocketAddress;
 import java.net.URI;
 import java.time.Duration;
 import java.util.AbstractMap.SimpleImmutableEntry;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.Optional;
 import java.util.Random;
 import java.util.UUID;
-import java.util.function.Function;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
 
-public class RequestReplyTest {
+public class HttpInboxTest {
 
   private static final long PROCESSING_TIMEOUT = 2000;
   private static final long LONG_EXTERNAL_PROCESSING = PROCESSING_TIMEOUT + 1000;
@@ -78,11 +71,8 @@ public class RequestReplyTest {
     Off,
     Processing {
       @Override
-      public Optional<Timeout> timeout() {
-        return Optional.of(new Timeout(
-            Duration.ofMillis(PROCESSING_TIMEOUT),
-            new InputEvent<>(Rollback, new Data(-1, "Processing timed out after " + PROCESSING_TIMEOUT + " ms"))
-        ));
+      public Timeout timeout() {
+        return rollbackAfter(Duration.ofMillis(PROCESSING_TIMEOUT));
       }
     },
     Unreachable
@@ -112,22 +102,22 @@ public class RequestReplyTest {
             onEvent(SwitchOff).to(Off).output(),
             onEvent(Cancel).toSelf()
                 .assemble(c -> tuple(c.input(), c.log().entityId()))
-                .trigger(CompleteRequest).with(d -> tuple("Cancelled", d.t2())).on(RequestDispatching).identifiedBy(_ -> entityIdFromSession())
+                .trigger(CompleteRequest).with(d -> tuple("Cancelled", d.t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t1()),
             onEvent(ZeroProcessing).toSelf()
                 .assemble(c -> tuple(c.input(), c.log().entityId()))
-                .trigger(CompleteRequest).with(d -> tuple("Complete", d.t2())).on(RequestDispatching).identifiedBy(_ -> entityIdFromSession())
+                .trigger(CompleteRequest).with(d -> tuple("Complete", d.t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t1())
         ),
         Off, List.of(
             onEvent(InternalProcessing).to(On)
                 .assemble(c -> c.log().entityId())
                 .trigger(new ProcessRequest(0)).with(_ -> null).to(DeviceListener).guaranteed()
-                .trigger(CompleteRequest).with(d -> tuple("Light is on! " + random.nextLong(), d)).on(RequestDispatching).identifiedBy(_ -> entityIdFromSession())
+                .trigger(CompleteRequest).with(d -> tuple("Light is on! " + random.nextLong(), d)).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(),
             onEvent(ComplexInternalProcessing).to(Processing)
                 .assemble(d -> d)
-                .trigger(ComplexInternalProcessingDone).on(Lamp).identifiedBy(_ -> entityIdFromSession())
+                .trigger(ComplexInternalProcessingDone).on(Lamp).identifiedBy(entityIdFromSession())
                 .output(),
             onEvent(ExternalProcessing).to(Processing)
                 .assembleInput()
@@ -174,11 +164,11 @@ public class RequestReplyTest {
             onEvent(Rollback).toSelf().assembleInput().output(d -> d),
             onEvent(ComplexInternalProcessingDone).to(On)
                 .assemble((_, log) -> log.entityId())
-                .trigger(CompleteRequest).with(d -> tuple("Phew! Light is switched on! " + random.nextLong(), d)).on(RequestDispatching).identifiedBy(_ -> entityIdFromSession())
+                .trigger(CompleteRequest).with(d -> tuple("Phew! Light is switched on! " + random.nextLong(), d)).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(),
             onEvent(ExternalProcessingDone).to(On)
                 .assemble((_, log) -> log.entityId())
-                .trigger(CompleteRequest).with(d -> tuple("Light is externally switched on! " + random.nextLong(), d)).on(RequestDispatching).identifiedBy(_ -> entityIdFromSession())
+                .trigger(CompleteRequest).with(d -> tuple("Light is externally switched on! " + random.nextLong(), d)).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output()
         ),
         Unreachable, List.of(
@@ -186,65 +176,6 @@ public class RequestReplyTest {
         )
     );
   }
-
-//  static RequestType InternalProcessRequest = new RequestType(
-//      "InternalProcessRequest",
-//      UUID.fromString("5085d340-1856-43fc-914b-810654efd12b")
-//  );
-//  static RequestType ZeroProcessRequest = new RequestType(
-//      "ZeroProcessRequest",
-//      UUID.fromString("28d292b3-bd62-4d46-a86e-073bfdd84963")
-//  );
-//  static RequestType HandledUnknownId = new RequestType(
-//      "HandledUnknownId",
-//      UUID.fromString("4c69054a-55f2-4f2c-ba2a-a3323b034204")
-//  );
-//  static RequestType HandledReject = new RequestType(
-//      "HandledReject",
-//      UUID.fromString("7f0fe26c-1796-43e1-ac36-d005a05d239a")
-//  );
-//  static RequestType KnownProcessRequest = new RequestType(
-//      "KnownProcessRequest",
-//      UUID.fromString("039456c0-d646-48ff-b1a5-c64ea70024a4")
-//  );
-//  static RequestType ComplexInternalProcessRequest = new RequestType(
-//      "ComplexInternalProcessRequest",
-//      UUID.fromString("144247d4-6ae1-4b6e-9fea-965847421928")
-//  );
-//  static RequestType ExternalProcessRequest = new RequestType(
-//      "ExternalProcessRequest",
-//      UUID.fromString("a0c01f4b-31b0-444a-b77b-03e6baf5c967")
-//  );
-//  static RequestType LongExternalProcessRequest = new RequestType(
-//      "LongExternalProcessRequest",
-//      UUID.fromString("429a97a0-a5cc-4580-a535-f4b7bf7097a3")
-//  );
-//  static RequestType RequestWhichIsRejected = new RequestType(
-//      "RequestWhichIsRejected",
-//      UUID.fromString("fe4cbf76-d654-499f-8be2-98c44adb93e1")
-//  );
-//  static RequestType CancelRequest = new RequestType(
-//      "CancelRequest",
-//      UUID.fromString("4419cf8f-7508-41ca-8baf-74ebab08f57c")
-//  );
-//  static EventType<Tuple2<EntityId, String>, Void> InternalProcessResponse = BasicEventType.of(
-//      "InternalProcessResponse",
-//      UUID.fromString("20234808-de8c-404d-8795-7a7854676166"),
-//      new DataType<>(new TypeReference<Tuple2<EntityId, String>>() {}, EntityId.class, String.class),
-//      Void.class
-//  );
-//  static EventType<String, Void> ComplexInternalProcessResponse = BasicEventType.of(
-//      "ComplexInternalProcessResponse",
-//      UUID.fromString("b7450893-f036-4647-9a1b-accbd19fa7c2"),
-//      String.class,
-//      Void.class
-//  );
-//  static EventType<String, Void> ExternalProcessResponse = BasicEventType.of(
-//      "ExternalProcessResponse",
-//      UUID.fromString("b75ca624-010e-43ab-ae38-19f62289f4ea"),
-//      String.class,
-//      Void.class
-//  );
 
   record InternalProcess(String a, int b) {}
 
@@ -334,50 +265,50 @@ public class RequestReplyTest {
 //    };
 //  }
 
-  static List<HttpRequestRoute<?, ?>> routes = List.of(
+  static List<HttpRequestRoute<?>> routes = List.of(
       new HttpRequestRoute<>(
           m -> m.requestLine().matches("PUT .*/zero/.*"),
-          m -> new Valid<>(m.body()),
-          List.of(anyContent(null, false, UUID.fromString("7e2c5175-a65d-4795-a285-b0d75e704f5a"), ZeroProcessing, Lamp, _ -> new Zero("Hey!"), parseEntityId("PUT .*/zero/(.*)", 1)))
+          m -> valid(m.body()),
+          List.of(anyContent(null, false, UUID.fromString("7e2c5175-a65d-4795-a285-b0d75e704f5a"), ZeroProcessing, Lamp, (ParsedRequest<String> _) -> new Zero("Hey!"), parseEntityId("PUT .*/zero/(.*)", 1)))
       ),
       new HttpRequestRoute<>(
           m -> m.requestLine().matches("PUT .*/internal/.*"),
-          m -> new Valid<>(m.body()),
-          List.of(anyContent(parseMessageId("PUT .*/internal/(.*)", 1), false, UUID.fromString("3afa1f14-d4e3-49c4-b6ad-05a733f0b22d"), InternalProcessing, Lamp, _ -> null, _ -> new Valid<>(newEntityId())))
+          m -> valid(m.body()),
+          List.of(anyContent(parseMessageId("PUT .*/internal/(.*)", 1), false, UUID.fromString("3afa1f14-d4e3-49c4-b6ad-05a733f0b22d"), InternalProcessing, Lamp, (ParsedRequest<String> _) -> null, newEntity()))
       ),
       new HttpRequestRoute<>(
           m -> m.requestLine().matches("PUT .*/handledunknown/.*"),
-          m -> new Valid<>(m.body()),
-          List.of(anyContent(null, false, UUID.fromString("b411fd45-6c87-43aa-a511-df930d654ec7"), InternalProcessing, Lamp, _ -> null, _ -> new Valid<>(entityId(UUID.randomUUID())))) // Unknown id
+          m -> valid(m.body()),
+          List.of(anyContent(null, false, UUID.fromString("b411fd45-6c87-43aa-a511-df930d654ec7"), InternalProcessing, Lamp, (ParsedRequest<String> _) -> null, (_, _) -> new Valid<>(entityId(UUID.randomUUID())))) // Unknown id
       ),
       new HttpRequestRoute<>(
           m -> m.requestLine().matches("PUT .*/handledreject/.*"),
-          m -> new Valid<>(m.body()),
-          List.of(anyContent(null, false, UUID.fromString("00f910e2-8c22-4403-835d-15e112ac3080"), EventThatIsAlwaysRejected, Lamp, _ -> null, _ -> new Valid<>(newEntityId())))
+          m -> valid(m.body()),
+          List.of(anyContent(null, false, UUID.fromString("00f910e2-8c22-4403-835d-15e112ac3080"), EventThatIsAlwaysRejected, Lamp, (ParsedRequest<String> _) -> null, newEntity()))
       ),
       new HttpRequestRoute<>(
           m -> m.requestLine().matches("PUT .*/complexinternal/.*"),
-          m -> new Valid<>(m.body()),
-          List.of(anyContent(parseMessageId("PUT .*/complexinternal/(.*)", 1), false, UUID.fromString("84164954-ad85-4b44-9de6-079bf4805df7"), ComplexInternalProcessing, Lamp, _ -> null, _ -> new Valid<>(newEntityId())))
+          m -> valid(m.body()),
+          List.of(anyContent(parseMessageId("PUT .*/complexinternal/(.*)", 1), false, UUID.fromString("84164954-ad85-4b44-9de6-079bf4805df7"), ComplexInternalProcessing, Lamp, (ParsedRequest<String> _) -> null, newEntity()))
       ),
       new HttpRequestRoute<>(
           m -> m.requestLine().matches("PUT .*/external/.*"),
-          m -> new Valid<>(m.body()),
-          List.of(anyContent(parseMessageId("PUT .*/external/(.*)", 1), false, UUID.fromString("415cfd95-6feb-4106-8d47-fcf41ddcb3d1"), ExternalProcessing, Lamp, _ -> null, _ -> new Valid<>(newEntityId())))
+          m -> valid(m.body()),
+          List.of(anyContent(parseMessageId("PUT .*/external/(.*)", 1), false, UUID.fromString("415cfd95-6feb-4106-8d47-fcf41ddcb3d1"), ExternalProcessing, Lamp, (ParsedRequest<String> _) -> null, newEntity()))
       ),
       new HttpRequestRoute<>(
           m -> m.requestLine().matches("PUT .*/long-external/.*"),
-          m -> new Valid<>(m.body()),
-          List.of(anyContent(null, false, UUID.fromString("721fedb2-e715-4c4d-a8fb-e2cdb16f86e5"), LongExternalProcessing, Lamp, _ -> null, _ -> new Valid<>(newEntityId())))
+          m -> valid(m.body()),
+          List.of(anyContent(null, false, UUID.fromString("721fedb2-e715-4c4d-a8fb-e2cdb16f86e5"), LongExternalProcessing, Lamp, (ParsedRequest<String> _) -> null, newEntity()))
       ),
       new HttpRequestRoute<>(
           m -> m.requestLine().matches("PUT .*/rejected/.*"),
-          m -> new Valid<>(m.body()),
-          List.of(anyContent(parseMessageId("PUT .*/rejected/(.*)", 1), false, UUID.fromString("e58f3910-0b01-4f8b-bbf3-c7fde4980197"), EventThatIsAlwaysRejected, Lamp, _ -> null, _ -> new Valid<>(newEntityId())))
+          m -> valid(m.body()),
+          List.of(anyContent(parseMessageId("PUT .*/rejected/(.*)", 1), false, UUID.fromString("e58f3910-0b01-4f8b-bbf3-c7fde4980197"), EventThatIsAlwaysRejected, Lamp, (ParsedRequest<String> _) -> null, newEntity()))
       ),
       new HttpRequestRoute<>(
           m -> m.requestLine().matches("DELETE .*/internal/.*"),
-          _ -> new Valid<>(null),
+          _ -> valid(null),
           List.of(anyContent(
               null,
               false,
@@ -390,7 +321,7 @@ public class RequestReplyTest {
       ),
       new HttpRequestRoute<>(
           m -> m.requestLine().matches("DELETE .*/lamps/messages/.*"),
-          _ -> new Valid<>(null),
+          _ -> valid(null),
           List.of(anyContent(
               parseMessageId("DELETE .*/lamps/messages/(.*)", 1),
               false,
@@ -818,70 +749,19 @@ public class RequestReplyTest {
 
   @BeforeAll
   public static void setUp() throws IOException {
-    server = HttpServer.create(new InetSocketAddress(0), 1);
-    server.createContext(
-        "/process/",
-        exchange -> {
-          long processTime = Long.parseLong(exchange.getRequestURI().getPath().substring("/process/".length()));
-          if (processTime > 0) {
-            System.out.println("External service: Processing for " + processTime + " ms...");
-            try {
-              Thread.sleep(processTime);
-            } catch (InterruptedException e) {
-              throw new RuntimeException(e);
-            }
-          }
-          exchange.sendResponseHeaders(200, 0);
-          exchange.getResponseBody().close();
-          exchange.close();
-        }
-    );
-    server.createContext(
-        "/long-process",
-        exchange -> {
-          try {
-            Thread.sleep(10000);
-          } catch (InterruptedException e) {
-            throw new RuntimeException(e);
-          }
-          exchange.sendResponseHeaders(200, 0);
-          exchange.getResponseBody().close();
-          exchange.close();
-        }
-    );
-    server.start();
-    Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions = new HashMap<>();
-    transitions.put(Lamp, lampTransitions());
-    //transitions.put(inboxExchange, inboxExchange.transitions());
-    //transitions.put(RequestRouting, requestRoutingTransitions(routers, rollbackRouters));
-    transitions.put(RequestRouting, requestRoutingTransitions(routes));
-    transitions.put(RequestDispatching, requestDispatchingTransitions(routes, List.of()));
-    //noinspection SwitchStatementWithTooFewBranches
+    server = Init.httpServer();
+    Init.addDelayContext(server, "/long-process", Duration.ofSeconds(10));
+    Init.addDelayContext(server, "/process", uri -> Duration.ofMillis(Long.parseLong(uri.getPath().substring("/process/".length()))));
     stateMachine = Init.stateMachine(
-        transitions,
+        Lamp,
+        lampTransitions(),
+        routes,
         queue -> switch (queue) {
           case DeviceListener -> new NettyHttpClient(new NettyHttpClientBuilder().build());
-          default -> null;
+          default -> throw new IllegalStateException("Unexpected value: " + queue);
         }
     );
   }
-
-//  @Override
-//  protected List<TransitionModel<?, ?>> responseTransitions() {
-//    return List.of(
-//        onEvent(InternalProcessResponse).to(Responded)
-//            .assemble(c -> tuple(c.input(), c.timestamp(), c.correlationId()))
-//            .when(_ -> true).then(
-//                onEvent(Response).to(Responded).assembleInput().output(d -> d),
-//                d -> createResponseMessage(new Created(), d.t1().t1(), d.t3(), d.t2(), d.t1().t2())
-//            )
-//            .output(),
-//        //onResponseEvent(InternalProcessResponse, new Created()),
-//        onResponseEvent(ComplexInternalProcessResponse, new Created()),
-//        onResponseEvent(ExternalProcessResponse, new Created())
-//    );
-//  }
-
 
   @Test
   public void whenInternalProcessRequestThenInternalProcessResponse() throws JsonProcessingException {
@@ -1085,15 +965,7 @@ public class RequestReplyTest {
   }
 
   private Event<?> onRequest(Method method, URI uri, String body) {
-    return onRequest(
-        new EventTrigger<>(
-            new EventSpec<>(RouteRequest, Function.identity()),
-            List.of(_ -> newEntityId()),
-            RequestRouting,
-            false
-        ),
-        new HttpRequestMessage(method, uri, Map.of(), body)
-    );
+    return onRequest(inboxTrigger, new HttpRequestMessage(method, uri, Map.of(), body));
   }
 
   private Event<?> onRollbackRequest(String messageId) {

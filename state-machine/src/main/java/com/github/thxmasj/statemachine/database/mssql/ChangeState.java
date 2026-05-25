@@ -7,9 +7,7 @@ import static java.util.stream.IntStream.range;
 import com.github.thxmasj.statemachine.EntityId;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.Event;
-import com.github.thxmasj.statemachine.EventLog;
 import com.github.thxmasj.statemachine.SecondaryId;
-import com.github.thxmasj.statemachine.State;
 import com.github.thxmasj.statemachine.StateMachine.ProcessResult;
 import com.github.thxmasj.statemachine.database.ChangeRaced;
 import com.github.thxmasj.statemachine.database.Client;
@@ -18,11 +16,10 @@ import com.github.thxmasj.statemachine.database.Client.Query.Builder;
 import com.github.thxmasj.statemachine.database.Client.UniqueIndexConstraintViolation;
 import com.github.thxmasj.statemachine.database.EventAlreadyExists;
 import com.github.thxmasj.statemachine.database.SecondaryIdAlreadyExists;
-import com.github.thxmasj.statemachine.database.mssql.SchemaNames.Column;
-import com.github.thxmasj.statemachine.message.Message;
 import com.github.thxmasj.statemachine.message.Message.IncomingResponse;
 import com.github.thxmasj.statemachine.message.Message.OutgoingRequest;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -47,7 +44,7 @@ public class ChangeState {
 
   private void bind(Builder spec, ZonedDateTime timestamp, String correlationId, Change change) {
     Event<?> event = change.newEvent();
-    ZonedDateTime deadline = change.deadline();
+    ZonedDateTime deadline = change.timeout() != null ? timestamp.plus(change.timeout()) : null;
     if (change.entityId() != null)
       spec.bind("entityId", change.entityId().value());
     spec.bind("entityModelId", change.entityModel().id());
@@ -124,7 +121,7 @@ public class ChangeState {
 
     IncomingResponse incomingResponse();
 
-    ZonedDateTime deadline();
+    Duration timeout();
 
     static Change fromAcceptedEvent(ProcessResult.Accepted<?> acceptedEvent) {
       return new Change() {
@@ -164,15 +161,15 @@ public class ChangeState {
         }
 
         @Override
-        public ZonedDateTime deadline() {
-          return null;
+        public Duration timeout() {
+          return acceptedEvent.timeout();
         }
 
         @Override
         public String toString() {
           return entityModel().name() + ":" +
-              entityId().value() + ":" +
-              newEvent().typeName() + ":" +
+              entityId().value() + ":ev:[" +
+              newEvent().typeName() + "]:" +
               newEvent().eventNumber();
         }
 
@@ -217,8 +214,16 @@ public class ChangeState {
         }
 
         @Override
-        public ZonedDateTime deadline() {
+        public Duration timeout() {
           return null;
+        }
+
+        @Override
+        public String toString() {
+          return entityModel().name() + ":" +
+              entityId().value() + ":id:" +
+              id.model().name() + ":" +
+              id.data();
         }
       };
     }
@@ -261,8 +266,16 @@ public class ChangeState {
         }
 
         @Override
-        public ZonedDateTime deadline() {
+        public Duration timeout() {
           return null;
+        }
+
+        @Override
+        public String toString() {
+          return entityModel().name() + ":" +
+              entityId().value() + ":rq:" +
+              outgoingRequest.queue().name() + ":" +
+              outgoingRequest.message().requestLine();
         }
 
       };
@@ -306,10 +319,17 @@ public class ChangeState {
         }
 
         @Override
-        public ZonedDateTime deadline() {
+        public Duration timeout() {
           return null;
         }
 
+        @Override
+        public String toString() {
+          return entityModel().name() + ":" +
+              entityId().value() + ":rs:" +
+              incomingResponse.queue().name() + ":" +
+              incomingResponse.message().statusLine();
+        }
       };
     }
 
@@ -333,7 +353,7 @@ public class ChangeState {
             changes.get(i).newSecondaryIds(),
             changes.get(i).outgoingRequests(),
             changes.get(i).incomingResponse(),
-            changes.get(i).deadline() != null
+            changes.get(i).timeout() != null
         )).collect(joining("\n")) +
             """
             INSERT INTO @QueueElementToProcess (ChangeIndex, MessageIndex, RequestId, ElementId)

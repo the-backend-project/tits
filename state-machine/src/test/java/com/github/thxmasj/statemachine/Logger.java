@@ -96,6 +96,7 @@ public class Logger implements Listener {
 
   @Override
   public void processNextDeadlineFailed(Throwable t) {
+    t.printStackTrace();
     log("Process next deadline failed: " + t.toString());
   }
 

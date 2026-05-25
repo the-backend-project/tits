@@ -13,6 +13,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Stream;
 import net.sourceforge.plantuml.FileFormat;
@@ -162,7 +163,7 @@ public class PlantUMLFormatter {
         """,
         state.name(),
         Stream.of(
-            state.timeout().map(timeout -> "timeout: " + timeout.event().eventType().name() + " after " + timeout.duration().toString()).orElse("")
+            Optional.ofNullable(state.timeout() == State.NEVER_TIMEOUT ? null : state.timeout()).map(timeout -> "timeout: " + timeout.event().eventType().name() + " after " + timeout.duration().toString()).orElse("")
         ).filter(not(String::isEmpty)).collect(joining("\\n"))
     );
   }

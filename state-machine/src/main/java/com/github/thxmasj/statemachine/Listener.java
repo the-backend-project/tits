@@ -38,7 +38,7 @@ public interface Listener {
 
     record Change(
         Entity entity,
-        ZonedDateTime timeout,
+        Duration timeout,
         Event event,
         List<String> secondaryIds,
         //List<String> incomingRequests,

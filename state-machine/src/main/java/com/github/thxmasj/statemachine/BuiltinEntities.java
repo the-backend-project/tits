@@ -10,19 +10,26 @@ import static com.github.thxmasj.statemachine.BuiltinEntities.States.RejectedRol
 import static com.github.thxmasj.statemachine.BuiltinEntities.States.RejectedRollbackFromDispatched;
 import static com.github.thxmasj.statemachine.BuiltinEntities.States.RollingBack;
 import static com.github.thxmasj.statemachine.BuiltinEventTypes.Rollback;
+import static com.github.thxmasj.statemachine.EntitySelector.CreationMode.AlwaysCreate;
 import static com.github.thxmasj.statemachine.EntitySelector.entityId;
 import static com.github.thxmasj.statemachine.EntitySelector.entityIdFromSession;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
 import static com.github.thxmasj.statemachine.Tuples.tuple;
 import static com.github.thxmasj.statemachine.http.HttpRequestRouter.initialTransitionFor;
 import static java.util.Optional.ofNullable;
+import static java.util.stream.Collectors.joining;
 import static java.util.stream.Collectors.toList;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.github.thxmasj.statemachine.BasicEventType.Rollback.Data;
 import com.github.thxmasj.statemachine.BuiltinEntities.RequestParser.ParsedRequest;
+import com.github.thxmasj.statemachine.EntitySelector.ById;
+import com.github.thxmasj.statemachine.EventTrigger.EventSpec;
 import com.github.thxmasj.statemachine.EventType.DataType;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
@@ -41,6 +48,9 @@ import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.HttpResponseCreator;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import com.github.thxmasj.statemachine.message.http.UnprocessableEntity;
+import jakarta.validation.Validation;
+import jakarta.validation.Validator;
+import org.hibernate.validator.messageinterpolation.ParameterMessageInterpolator;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.ZonedDateTime;
@@ -48,7 +58,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -197,33 +206,34 @@ public class BuiltinEntities {
         HttpRequestMessage request,
         T body,
         MessageId messageId,
-        ParsedAuthorizationClaims.Valid authorizationClaims
+        ParsedAuthorizationClaims.Valid authorizationClaims,
+        EntitySelector processSelector
     ) {}
 
-    public static <T> Validated<ParsedRequest<T>> parseRequest(
-        HttpRequestMessage request,
-        Function<HttpRequestMessage, Validated<T>> bodyParser,
-        BiFunction<HttpRequestMessage, T, String> messageIdParser,
-        boolean authorize
-    ) {
-      T body = null;
-      if (bodyParser != null) {
-        Validated<T> validatedBody = bodyParser.apply(request);
-        if (validatedBody.isInvalid())
-          return new Invalid<>(validatedBody.invalid());
-        body = validatedBody.valid();
-      }
-      ParsedAuthorizationClaims authorizationClaims = null;
-      if (authorize) {
-        authorizationClaims = ParsedAuthorizationClaims.claimsFromBearerToken(request);
-        if (authorizationClaims.isInvalid()) return new Invalid<>(authorizationClaims.invalid().error());
-      }
-      MessageId messageId = messageIdParser != null ? new MessageId(
-          authorize ? authorizationClaims.valid().subject() : "N/A",
-          messageIdParser.apply(request, body)
-      ) : null;
-      return new Valid<>(new ParsedRequest<>(request, body, messageId, authorize ? authorizationClaims.valid() : null));
-    }
+//    public static <T> Validated<ParsedRequest<T>> parseRequest(
+//        HttpRequestMessage request,
+//        Function<HttpRequestMessage, Validated<T>> bodyParser,
+//        BiFunction<HttpRequestMessage, T, String> messageIdParser,
+//        boolean authorize
+//    ) {
+//      T body = null;
+//      if (bodyParser != null) {
+//        Validated<T> validatedBody = bodyParser.apply(request);
+//        if (validatedBody.isInvalid())
+//          return new Invalid<>(validatedBody.invalid());
+//        body = validatedBody.valid();
+//      }
+//      ParsedAuthorizationClaims authorizationClaims = null;
+//      if (authorize) {
+//        authorizationClaims = ParsedAuthorizationClaims.claimsFromBearerToken(request);
+//        if (authorizationClaims.isInvalid()) return new Invalid<>(authorizationClaims.invalid().error());
+//      }
+//      MessageId messageId = messageIdParser != null ? new MessageId(
+//          authorize ? authorizationClaims.valid().subject() : "N/A",
+//          messageIdParser.apply(request, body)
+//      ) : null;
+//      return new Valid<>(new ParsedRequest<>(request, body, messageId, authorize ? authorizationClaims.valid() : null));
+//    }
   }
 
 //  public record HttpRequestRouter<T, U>(
@@ -240,7 +250,16 @@ public class BuiltinEntities {
 //      Function<ParsedRequest<T>, U> processInput
 //  ) {}
 
-  private static final ObjectMapper objectMapper = new ObjectMapper();
+  private static final ObjectMapper objectMapper = new ObjectMapper()
+      .registerModule(new JavaTimeModule())
+      .configure(DeserializationFeature.ADJUST_DATES_TO_CONTEXT_TIME_ZONE, false)
+      .setSerializationInclusion(JsonInclude.Include.NON_NULL);
+
+  private static final Validator jsonValidator = Validation.byDefaultProvider()
+      .configure()
+      .messageInterpolator(new ParameterMessageInterpolator())
+      .buildValidatorFactory()
+      .getValidator();
 
   public static <T> Function<HttpRequestMessage, Validated<T>> jsonParser(Class<T> bodyType) {
       return request -> {
@@ -248,7 +267,13 @@ public class BuiltinEntities {
           return new Valid<>(null);
         } else {
           try {
-            return new Valid<>(objectMapper.readValue(request.body(), bodyType));
+            T value = objectMapper.readValue(request.body(), bodyType);
+            var violations = jsonValidator.validate(value);
+            return violations.isEmpty() ?
+                new Valid<>(value) :
+                new Invalid<>(violations.stream()
+                    .map(v -> v == null ? "n/a" : v.getPropertyPath() + ": " + v.getMessage())
+                    .collect(joining(", ")));
           } catch (JsonProcessingException e) {
             return new Invalid<>("Failed to parse body with " + bodyType.getName() + ": " + e.getMessage());
           }
@@ -270,8 +295,16 @@ public class BuiltinEntities {
 //    );
 //  }
 
+  public static EventTrigger<HttpRequestMessage, HttpRequestMessage, ?> inboxTrigger = new EventTrigger<>(
+      new EventSpec<>(RouteRequest, Function.identity()),
+      List.of(_ -> new ById(new EntityId.UUID(UUID.randomUUID()), AlwaysCreate)),
+      RequestRouting,
+      false
+  );
+
+
   public static Map<State, List<TransitionModel<?, ?>>> requestRoutingTransitions(
-      List<HttpRequestRoute<?, ?>> routes
+      List<HttpRequestRoute<?>> routes
   ) {
     return Map.of(
         Begin, List.of(
@@ -316,7 +349,10 @@ public class BuiltinEntities {
 
   private static <T, U> TransitionModel<?, ?> triggerProcessTransition(ContentRoute<T, U> route) {
     return onEvent(route.dispatchingEventType()).to(Dispatched)
-        .assemble((input, log) -> tuple(input, log.entityId()))
+        .assemble((input, log) -> tuple(
+            input,
+            log.entityId()
+        ))
         .newIdentifier(MessageId, d -> ofNullable(d.t1().messageId()).orElse(new MessageId("N/A", route.dispatchingEventType().id() + "/" + d.t2().value())))
 /*
                   .whenDuplicate(
@@ -337,14 +373,14 @@ public class BuiltinEntities {
                     c.correlationId(),
                     c.timestamp()
                 ))
-                .trigger(CompleteRejectedRequest).with(d -> unprocessableEntity(d.t1(), d.t2(), d.t4(), d.t5())).on(RequestDispatching).identifiedBy(_ -> entityIdFromSession())
+                .trigger(CompleteRejectedRequest).with(d -> unprocessableEntity(d.t1(), d.t2(), d.t4(), d.t5())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t3()),
             d -> tuple("Rolled back", d.t2().rejected().log().entityId(), d.t1().t1().request())
         )
         .when(d -> d.t2().isRejected() && d.t1().t1().request().message().equals(d.t2().rejected().log().one(HttpRequestMessage.class).message())).then(
             onEvent(RejectDuplicateRequest).to(Rejected)
                 .assembleInput()
-                .trigger(CompleteDuplicatedRequest).with(Tuple2::t2).on(RequestDispatching).identifiedBy(_ -> entityIdFromSession())
+                .trigger(CompleteDuplicatedRequest).with(Tuple2::t2).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t1()),
             d -> tuple(d.t1().t1().request(), d.t2().rejected().log().one(HttpResponseMessage.class))
         )
@@ -357,36 +393,50 @@ public class BuiltinEntities {
                     c.correlationId(),
                     c.timestamp()
                 ))
-                .trigger(CompleteRejectedRequest).with(d -> badRequest(d.t1(), d.t2(), d.t4(), d.t5())).on(RequestDispatching).identifiedBy(_ -> entityIdFromSession())
+                .trigger(CompleteRejectedRequest).with(d -> badRequest(d.t1(), d.t2(), d.t4(), d.t5())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t3()),
             d -> tuple("Conflict", d.t2().rejected().log().entityId(), d.t1().t1().request())
         )
         .otherwise(
             onEvent(route.dispatchingEventType()).to(Dispatched)
                 .assembleInput()
-                .trigger(route.processEventType()).with(route.processInput()).on(route.processType()).identifiedBy(route.processSelector().andThen(Validated::valid))
+                .trigger(route.processEventType()).with(route.processInput()).on(route.processType()).identifiedBy(d -> d.processSelector())
                 .when(d -> d.t2().isRejected()).then(
                   onEvent(RejectRequest).to(Rejected)
                       .assembleInput()
-                      .trigger(CompleteRequest).with(d -> tuple(d.t1(), d.t2())).on(RequestDispatching).identifiedBy(_ -> entityIdFromSession())
+                      .trigger(CompleteRequest).with(d -> tuple(d.t1(), d.t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                       .output(d -> d.t1().t3()),
                   d -> tuple(d.t2().rejected().exception().getMessage(), d.t2().rejected().exception().entityId(), d.t1().request())
                 )
                 .when(d -> d.t2().isUnknownId()).then(
                     onEvent(RejectRequest).to(Rejected)
                         .assemble(c -> c)
-                        .trigger(CompleteRejectedRequest).with(d -> badRequest("No such entity", d.log().entityId(), d.correlationId(), d.timestamp())).on(RequestDispatching).identifiedBy(_ -> entityIdFromSession())
+                        .trigger(CompleteRejectedRequest).with(d -> badRequest("No such entity", d.log().entityId(), d.correlationId(), d.timestamp())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                         .output(d -> d.t1().input().t3()),
                     d -> tuple(d.t2().unknownId().exception().getMessage(), null, d.t1().request())
                 )
                 .when(_ -> route.processEventType() instanceof BasicEventType.Rollback).then(
                     onEvent(AcceptRequest).to(States.Dispatched)
                         .assemble((input, log) -> tuple(input.t1(), input.t2(), log.entityId()))
-                        .trigger(CompleteRequest).with(d -> tuple("Cancelled", d.t3())).on(RequestDispatching).identifiedBy(_ -> entityIdFromSession())
+                        .trigger(CompleteRequest).with(d -> tuple("Cancelled", d.t3())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                         .output(d -> d.t1().t1().request()),
                     d -> tuple(d.t1(), new EventReference(d.t2().accepted().event().entityId(), d.t2().accepted().event().eventNumber()))
                 )
-                .otherwise(
+                .when(d -> d.t2().isAccepted()).then(
+                    onEvent(AcceptRequest).to(States.Dispatched)
+                        .assemble((input, log) -> tuple(input.t1(), input.t2(), log.entityId()))
+                        .newIdentifier(EventReference, Tuple3::t2)
+                        .output(d -> d.t1().t1().request()),
+                    d -> tuple(d.t1(), new EventReference(d.t2().accepted().event().entityId(), d.t2().accepted().event().eventNumber()))
+                )
+                .when(d -> d.t2().isCompleted()).then(
+                    onEvent(AcceptRequest).to(States.Dispatched)
+                        .assemble((input, log) -> tuple(input.t1(), input.t2(), log.entityId()))
+                        .newIdentifier(EventReference, Tuple3::t2)
+                        .output(d -> d.t1().t1().request()),
+                    d -> tuple(d.t1(), new EventReference(d.t2().completed().entityId().value(), d.t2().completed().eventNumber()))
+                ).otherwise(
+                    // TODO: How to handle unknown process result? ("should never happen")
                     onEvent(AcceptRequest).to(States.Dispatched)
                         .assemble((input, log) -> tuple(input.t1(), input.t2(), log.entityId()))
                         .newIdentifier(EventReference, Tuple3::t2)
@@ -404,7 +454,7 @@ public class BuiltinEntities {
         .when(d -> d.t2().isRejected()).then(
             onEvent(RejectRequest).to(rejectedState)
                 .assembleInput()
-                .trigger(CompleteRequest).with(d -> tuple(d.t1(), d.t2())).on(RequestDispatching).identifiedBy(_ -> entityIdFromSession())
+                .trigger(CompleteRequest).with(d -> tuple(d.t1(), d.t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t3()),
             d -> tuple(d.t2().rejected().exception().getMessage(), d.t2().rejected().exception().entityId(), d.t1().t1().request)
         )
@@ -416,7 +466,7 @@ public class BuiltinEntities {
 //                    .map(m -> new MessageId(m.clientId(), "R" + m.value()))
 //                    .orElse(new MessageId("N/A", router.dispatchingEventType.id() + "/" + d.t3().value()))
 //                )
-                .trigger(CompleteRequest).with(d -> tuple(d.t1(), d.t3())).on(RequestDispatching).identifiedBy(_ -> entityIdFromSession())
+                .trigger(CompleteRequest).with(d -> tuple(d.t1(), d.t3())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t2().request()),
             d -> tuple(
                 "Rolled back", // to event number " + d.t2().accepted().event().getUnmarshalledData().toNumber(),
@@ -427,7 +477,7 @@ public class BuiltinEntities {
   }
 
   public static Map<State, List<TransitionModel<?, ?>>> requestDispatchingTransitions(
-      List<HttpRequestRoute<?, ?>> routes,
+      List<HttpRequestRoute<?>> routes,
       List<CustomResponse<?>> customResponses
   ) {
     return Map.of(
@@ -450,7 +500,7 @@ public class BuiltinEntities {
                                 .trigger(CompleteRequest)
                                 .with(d -> tuple(d.t1().t1(), d.t1().t3()))
                                 .on(RequestDispatching)
-                                .identifiedBy(_ -> entityIdFromSession())
+                                .identifiedBy(entityIdFromSession())
                                 .output(d -> d.t1().t1().t2().request()),
                             d -> tuple(
                                 "Nothing to roll back",
@@ -498,14 +548,14 @@ public class BuiltinEntities {
   private static <I> TransitionModel<?, ?> customResponse(CustomResponse<I> customResponse) {
     return onEvent(customResponse.event()).to(Completed)
         .assemble(customResponse.messageCreator())
-        .trigger(Respond).with(d -> d).on(RequestRouting).identifiedBy(_ -> entityIdFromSession())
+        .trigger(Respond).with(d -> d).on(RequestRouting).identifiedBy(entityIdFromSession())
         .output(Tuple2::t1);
   }
 
   private static <I> TransitionModel<?, ?> customResponse(CustomResponse<I> customResponse, State target) {
     return onEvent(customResponse.event()).to(target)
         .assemble(customResponse.messageCreator())
-        .trigger(Respond).with(d -> d).on(RequestRouting).identifiedBy(_ -> entityIdFromSession())
+        .trigger(Respond).with(d -> d).on(RequestRouting).identifiedBy(entityIdFromSession())
         .output(Tuple2::t1);
   }
 

@@ -1,7 +1,7 @@
 package com.github.thxmasj.statemachine;
 
 import static com.github.thxmasj.statemachine.EntitySelector.entityId;
-import static com.github.thxmasj.statemachine.RequestReplyTest.States.On;
+import static com.github.thxmasj.statemachine.HttpInboxTest.States.On;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
 import static com.github.thxmasj.statemachine.TransitionStreamTest.Entities.Lamp;
 import static com.github.thxmasj.statemachine.TransitionStreamTest.States.Off;

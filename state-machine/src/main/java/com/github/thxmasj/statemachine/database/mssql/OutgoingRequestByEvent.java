@@ -27,6 +27,7 @@ public class OutgoingRequestByEvent {
   }
 
   public Mono<HttpRequestMessage> execute(EntityId entityId, int eventNumber, OutboxQueue queue) {
+    System.out.println("Searching for OutboxRequest with for entity/event " + entityId.value() + "/" + eventNumber + " in queue " + queue.name() + " (id=" + queue.id() + ")");
     return Mono.fromCallable(() -> {
       try (
           var connection = dataSource.getConnection();

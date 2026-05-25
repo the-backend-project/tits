@@ -87,7 +87,7 @@ public abstract class SettlementTransitions {
                 .output(Function.identity()),
             onEvent(CutOffRequest).to(ProcessingSettlement)
                 .assemble((input, log) -> tuple(input, log.id(BatchNumber), log.id(AcquirerBatchNumber), log.entityId()))
-                .trigger(Get).on(Aggregate.Merchant).identifiedBy(secondaryId(MerchantId, d -> d.t1().merchantId()))
+                .trigger(Get).on(Aggregate.Merchant).identifiedBy(d -> secondaryId(MerchantId, d.t1().merchantId()))
                 .trigger(reconciliation()).with(d -> tuple(d.t1().t2(), d.t1().t3(), d.t2().accepted().event().getUnmarshalledData()))
                 .to(Acquirer).guaranteed().responseValidator(validateSettlementResponse())
                 .trigger(SettlementEvent.Open).with(d -> d.t1().t3().next()).on(Settlement).identifiedBy(newEntityId())
