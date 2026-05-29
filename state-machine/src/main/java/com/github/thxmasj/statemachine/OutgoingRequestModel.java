@@ -7,7 +7,7 @@ import reactor.core.publisher.Mono;
 
 public record OutgoingRequestModel<T, U>(
     Function<T, U> dataAdapter,
-    Class<? extends OutgoingRequestCreator<U>> creatorType,
+    //Class<? extends OutgoingRequestCreator<U>> creatorType,
     OutgoingRequestCreator<U> creator,
     OutboxQueue queue,
     boolean guaranteed,
@@ -100,13 +100,13 @@ public record OutgoingRequestModel<T, U>(
     }
 
     public OutgoingRequestModel<T, U> build() {
-      if (creator == null && creatorType == null)
-        throw new IllegalArgumentException("Creator (type) not specified");
-      if (creator != null && creatorType != null)
-        throw new IllegalArgumentException("Both creator and creator type specified");
+//      if (creator == null && creatorType == null)
+//        throw new IllegalArgumentException("Creator (type) not specified");
+//      if (creator != null && creatorType != null)
+//        throw new IllegalArgumentException("Both creator and creator type specified");
       return new OutgoingRequestModel<>(
           dataAdapter,
-          creatorType,
+//          creatorType,
           creator,
           queue,
           guaranteed,

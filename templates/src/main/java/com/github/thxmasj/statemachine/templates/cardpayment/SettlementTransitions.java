@@ -52,6 +52,7 @@ public abstract class SettlementTransitions {
   public Map<State, List<TransitionModel<?, ?>>> transitions() {
     return Map.of(
         Begin, List.of(
+            // TODO: GetBatchNumber cannot be ReadOnly as it triggers a transition
             onEvent(GetBatchNumber).to(Open)
                 .assembleInput()
                 .newIdentifier(AcquirerBatchNumber, d -> d)
@@ -67,24 +68,12 @@ public abstract class SettlementTransitions {
                 .output()
         ),
         Open, List.of(
-            onEvent(GetBatchNumber).toSelf()
-                .assemble(c -> c.log().id(BatchNumber))
-                .output(d -> d),
-            onEvent(GetAcquirerBatchNumber).toSelf()
-                .assemble(d -> d.log().id(AcquirerBatchNumber))
-                .output(d -> d),
-            onEvent(MerchantCredit).toSelf()
-                .assemble((input, _) -> input)
-                .output(Function.identity()),
-            onEvent(MerchantDebit).toSelf()
-                .assemble((input, _) -> input)
-                .output(Function.identity()),
-            onEvent(MerchantCreditReversed).toSelf()
-                .assemble((input, _) -> input)
-                .output(Function.identity()),
-            onEvent(MerchantDebitReversed).toSelf()
-                .assemble((input, _) -> input)
-                .output(Function.identity()),
+            onEvent(GetBatchNumber).toSelf().assemble(c -> c.log().id(BatchNumber)).output(d -> d),
+            onEvent(GetAcquirerBatchNumber).toSelf().assemble(d -> d.log().id(AcquirerBatchNumber)).output(d -> d),
+            onEvent(MerchantCredit).toSelf().assemble((input, _) -> input).output(Function.identity()),
+            onEvent(MerchantDebit).toSelf().assemble((input, _) -> input).output(Function.identity()),
+            onEvent(MerchantCreditReversed).toSelf().assemble((input, _) -> input).output(Function.identity()),
+            onEvent(MerchantDebitReversed).toSelf().assemble((input, _) -> input).output(Function.identity()),
             onEvent(CutOffRequest).to(ProcessingSettlement)
                 .assemble((input, log) -> tuple(input, log.id(BatchNumber), log.id(AcquirerBatchNumber), log.entityId()))
                 .trigger(Get).on(Aggregate.Merchant).identifiedBy(d -> secondaryId(MerchantId, d.t1().merchantId()))
@@ -107,8 +96,7 @@ public abstract class SettlementTransitions {
                     input.reconciliationValues(),
                     input
                 ))
-                .when(d -> d.t2().equals(d.t3()))
-                .then(
+                .when(d -> d.t2().equals(d.t3())).then(
                     onEvent(InBalance).to(Reconciled)
                         .assemble((input, log) -> tuple(
                             log.one(CutOffRequest),
@@ -120,9 +108,7 @@ public abstract class SettlementTransitions {
                         .output(),
                     Tuple4::t4
                 )
-                .when(d -> !d.t2().equals(d.t3()))
-                .then(onEvent(OutOfBalance).to(Error).output(), d -> null)
-                .output(),
+                .otherwise(onEvent(OutOfBalance).to(Error).output(), _ -> null),
             onEvent(Timeout).to(Error).output()
         ),
         Reconciled, List.of(),

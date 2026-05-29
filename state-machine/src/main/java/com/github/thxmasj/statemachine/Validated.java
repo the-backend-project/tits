@@ -2,6 +2,7 @@ package com.github.thxmasj.statemachine;
 
 import com.github.thxmasj.statemachine.Validated.Invalid;
 import com.github.thxmasj.statemachine.Validated.Valid;
+import java.util.function.Predicate;
 
 public sealed interface Validated<T> permits Valid, Invalid {
 
@@ -71,5 +72,10 @@ public sealed interface Validated<T> permits Valid, Invalid {
   boolean isValid();
 
   boolean isInvalid();
+
+  default Validated<T> and(Predicate<T> predicate, String invalidReason) {
+    if (isInvalid()) return this;
+    return predicate.test(validValue()) ? this : invalid(invalidReason);
+  }
 
 }

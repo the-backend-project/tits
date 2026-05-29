@@ -20,7 +20,7 @@ import static java.util.Optional.ofNullable;
 import static java.util.stream.Collectors.joining;
 import static java.util.stream.Collectors.toList;
 
-import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.DeserializationFeature;
@@ -29,8 +29,10 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.github.thxmasj.statemachine.BasicEventType.Rollback.Data;
 import com.github.thxmasj.statemachine.BuiltinEntities.RequestParser.ParsedRequest;
 import com.github.thxmasj.statemachine.EntitySelector.ById;
+import com.github.thxmasj.statemachine.EntitySelector.BySecondaryId;
 import com.github.thxmasj.statemachine.EventTrigger.EventSpec;
 import com.github.thxmasj.statemachine.EventType.DataType;
+import com.github.thxmasj.statemachine.OutgoingRequestCreator.Context;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;
@@ -41,32 +43,54 @@ import com.github.thxmasj.statemachine.database.mssql.SchemaNames.Column;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
 import com.github.thxmasj.statemachine.http.HttpRequestRouter.HttpRequestRoute;
 import com.github.thxmasj.statemachine.http.HttpRequestRouter.HttpRequestRoute.ContentRoute;
-import com.github.thxmasj.statemachine.http.ParsedAuthorizationClaims;
 import com.github.thxmasj.statemachine.message.http.BadRequest;
 import com.github.thxmasj.statemachine.message.http.Created;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.HttpResponseCreator;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import com.github.thxmasj.statemachine.message.http.UnprocessableEntity;
+import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
-import org.hibernate.validator.messageinterpolation.ParameterMessageInterpolator;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.hibernate.validator.messageinterpolation.ParameterMessageInterpolator;
 
 public class BuiltinEntities {
 
   public static SecondaryIdModel<MessageId> MessageId = new SecondaryIdModel<>() {
     @Override
     public String name() {return "MessageId";}
+
+    @Override
+    public List<Column> columns() {
+      return List.of(
+          new Column("ClientId", "VARCHAR(100)", id -> ((MessageId) id).clientId()),
+          new Column("Value", "VARCHAR(100)", id -> ((MessageId) id).value())
+      );
+    }
+
+    @Override
+    public SecondaryId<MessageId> map(ResultSet resultSet) {
+      try {
+        return new SecondaryId<>(this, new MessageId(resultSet.getString("ClientId"), resultSet.getString("Value")));
+      } catch (SQLException e) {
+        throw new RuntimeException(e);
+      }
+    }
+  };
+  public static SecondaryIdModel<MessageId> RollbackMessageId = new SecondaryIdModel<>() {
+    @Override
+    public String name() {return "RollbackMessageId";}
 
     @Override
     public List<Column> columns() {
@@ -119,7 +143,7 @@ public class BuiltinEntities {
       private final static UUID id = UUID.fromString("9711bee2-b42b-45ba-8d5e-7f891995a9c9");
       @Override public UUID id() {return id;}
       @Override public State initialState() {return Begin;}
-      @Override public List<SecondaryIdModel<?>> secondaryIds() {return List.of(MessageId, EventReference);}
+      @Override public List<SecondaryIdModel<?>> secondaryIds() {return List.of(MessageId, RollbackMessageId, EventReference);}
     },
     RequestRouting {
       private final static UUID id = UUID.fromString("20755705-fc81-4228-a1a7-5e13d6e3c153");
@@ -206,7 +230,7 @@ public class BuiltinEntities {
         HttpRequestMessage request,
         T body,
         MessageId messageId,
-        ParsedAuthorizationClaims.Valid authorizationClaims,
+        String authorizedSubject,
         EntitySelector processSelector
     ) {}
 
@@ -253,7 +277,7 @@ public class BuiltinEntities {
   private static final ObjectMapper objectMapper = new ObjectMapper()
       .registerModule(new JavaTimeModule())
       .configure(DeserializationFeature.ADJUST_DATES_TO_CONTEXT_TIME_ZONE, false)
-      .setSerializationInclusion(JsonInclude.Include.NON_NULL);
+      .setSerializationInclusion(Include.NON_NULL);
 
   private static final Validator jsonValidator = Validation.byDefaultProvider()
       .configure()
@@ -262,13 +286,17 @@ public class BuiltinEntities {
       .getValidator();
 
   public static <T> Function<HttpRequestMessage, Validated<T>> jsonParser(Class<T> bodyType) {
+    return jsonParser(bodyType, true);
+  }
+
+  public static <T> Function<HttpRequestMessage, Validated<T>> jsonParser(Class<T> bodyType, boolean validate) {
       return request -> {
         if (bodyType == Void.class) {
           return new Valid<>(null);
         } else {
           try {
             T value = objectMapper.readValue(request.body(), bodyType);
-            var violations = jsonValidator.validate(value);
+            Set<ConstraintViolation<T>> violations = validate ? jsonValidator.validate(value) : Set.of();
             return violations.isEmpty() ?
                 new Valid<>(value) :
                 new Invalid<>(violations.stream()
@@ -338,32 +366,31 @@ public class BuiltinEntities {
 //                .assemble(c -> c)
 //                .output(d -> createResponseMessage(new SeeOther(), d.log().entityId(), d.correlationId(), d.timestamp(), d.input()))
         ),
-        States.Rejected, List.of(
+        Rejected, List.of(
             onEvent(RespondBadRequest).to(Completed)
                 .assemble(c -> c)
                 .output(d -> badRequest(d.input(), d.log().entityId(), d.correlationId(), d.timestamp()))
         ),
-        States.Completed, List.of()
+        Completed, List.of()
     );
   }
 
   private static <T, U> TransitionModel<?, ?> triggerProcessTransition(ContentRoute<T, U> route) {
     return onEvent(route.dispatchingEventType()).to(Dispatched)
-        .assemble((input, log) -> tuple(
+        .assemble((input, _) -> tuple(
             input,
-            log.entityId()
+            ofNullable(input.messageId()).orElse(new MessageId(
+                    "N/A",
+                    switch (input.processSelector()) {
+                      case ById s -> s.id().value().toString();
+                      case BySecondaryId<?> s -> s.value().toString();
+                      // TODO: ByIdFromSession, ByLastInIdGroup, ByNextInIdGroup not handled
+                      default -> throw new IllegalStateException("Process selector type not handled: " + input.processSelector().getClass().getName());
+                    }
+                )
+            )
         ))
-        .newIdentifier(MessageId, d -> ofNullable(d.t1().messageId()).orElse(new MessageId("N/A", route.dispatchingEventType().id() + "/" + d.t2().value())))
-/*
-                  .whenDuplicate(
-                      MessageId,
-                      (input, log) -> input.message().equals(log.one(HttpRequestMessage.class).message()),
-                      duplicatedRequest()
-                  )
-                  .whenDuplicate(MessageId, (_, log) -> log.oneIfExists(RollbackResponse).isPresent(), invalidDuplicatedRequest("Rolled back"))
-                  .whenDuplicate(MessageId, (_, _) -> true, invalidDuplicatedRequest("Conflict"))
-
- */
+        .newIdentifier(MessageId, Tuple2::t2)
         .when(d -> d.t2().isRejected() && d.t2().rejected().log().oneIfExists(AcceptRollbackRequest).isPresent()).then(
             onEvent(RejectRequest).to(Rejected)
                 .assemble(c -> tuple(
@@ -377,7 +404,7 @@ public class BuiltinEntities {
                 .output(d -> d.t1().t3()),
             d -> tuple("Rolled back", d.t2().rejected().log().entityId(), d.t1().t1().request())
         )
-        .when(d -> d.t2().isRejected() && d.t1().t1().request().message().equals(d.t2().rejected().log().one(HttpRequestMessage.class).message())).then(
+        .when(d -> d.t2().isRejected() && d.t1().t1().request().message().equals(route.normalizer().apply(d.t2().rejected().log().one(HttpRequestMessage.class)).message())).then(
             onEvent(RejectDuplicateRequest).to(Rejected)
                 .assembleInput()
                 .trigger(CompleteDuplicatedRequest).with(Tuple2::t2).on(RequestDispatching).identifiedBy(entityIdFromSession())
@@ -416,28 +443,28 @@ public class BuiltinEntities {
                     d -> tuple(d.t2().unknownId().exception().getMessage(), null, d.t1().request())
                 )
                 .when(_ -> route.processEventType() instanceof BasicEventType.Rollback).then(
-                    onEvent(AcceptRequest).to(States.Dispatched)
+                    onEvent(AcceptRequest).to(Dispatched)
                         .assemble((input, log) -> tuple(input.t1(), input.t2(), log.entityId()))
                         .trigger(CompleteRequest).with(d -> tuple("Cancelled", d.t3())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                         .output(d -> d.t1().t1().request()),
                     d -> tuple(d.t1(), new EventReference(d.t2().accepted().event().entityId(), d.t2().accepted().event().eventNumber()))
                 )
                 .when(d -> d.t2().isAccepted()).then(
-                    onEvent(AcceptRequest).to(States.Dispatched)
+                    onEvent(AcceptRequest).to(Dispatched)
                         .assemble((input, log) -> tuple(input.t1(), input.t2(), log.entityId()))
                         .newIdentifier(EventReference, Tuple3::t2)
                         .output(d -> d.t1().t1().request()),
                     d -> tuple(d.t1(), new EventReference(d.t2().accepted().event().entityId(), d.t2().accepted().event().eventNumber()))
                 )
                 .when(d -> d.t2().isCompleted()).then(
-                    onEvent(AcceptRequest).to(States.Dispatched)
+                    onEvent(AcceptRequest).to(Dispatched)
                         .assemble((input, log) -> tuple(input.t1(), input.t2(), log.entityId()))
                         .newIdentifier(EventReference, Tuple3::t2)
                         .output(d -> d.t1().t1().request()),
                     d -> tuple(d.t1(), new EventReference(d.t2().completed().entityId().value(), d.t2().completed().eventNumber()))
                 ).otherwise(
                     // TODO: How to handle unknown process result? ("should never happen")
-                    onEvent(AcceptRequest).to(States.Dispatched)
+                    onEvent(AcceptRequest).to(Dispatched)
                         .assemble((input, log) -> tuple(input.t1(), input.t2(), log.entityId()))
                         .newIdentifier(EventReference, Tuple3::t2)
                         .output(d -> d.t1().t1().request()),
@@ -460,14 +487,16 @@ public class BuiltinEntities {
         )
         .when(d -> d.t2().isAccepted()).then(
             onEvent(AcceptRollbackRequest).to(RollingBack)
-                .assemble((input, log) -> tuple(input.t1(), input.t2(), log.entityId()))
+                .assemble((input, log) -> tuple(
+                    input.t1(),
+                    input.t2(),
+                    log.entityId()
+                ))
 // Can only have one secondary id of a certain type per entity (type maps to table, entity id is PK)
-//                .newIdentifier(MessageId, d -> ofNullable(d.t2().messageId())
-//                    .map(m -> new MessageId(m.clientId(), "R" + m.value()))
-//                    .orElse(new MessageId("N/A", router.dispatchingEventType.id() + "/" + d.t3().value()))
-//                )
-                .trigger(CompleteRequest).with(d -> tuple(d.t1(), d.t3())).on(RequestDispatching).identifiedBy(entityIdFromSession())
-                .output(d -> d.t1().t2().request()),
+// RollbackMessageId? Then we can also avoid the "R" hack.
+                .newIdentifier(RollbackMessageId, d -> new MessageId(d.t2().messageId().clientId(), d.t2().messageId().value()))
+                .trigger(CompleteRequest).with(d -> tuple(d.t1().t1(), d.t1().t3())).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                .output(d -> d.t1().t1().t2().request()),
             d -> tuple(
                 "Rolled back", // to event number " + d.t2().accepted().event().getUnmarshalledData().toNumber(),
                 d.t1().t1()
@@ -936,7 +965,7 @@ public class BuiltinEntities {
       String data
   ) {
     return responseCreator.create(
-        data, new OutgoingRequestCreator.Context() {
+        data, new Context() {
           @Override
           public EntityId entityId() {
             return entityId;

@@ -1,6 +1,7 @@
 package com.github.thxmasj.statemachine.templates.cardpayment;
 
 import com.github.thxmasj.statemachine.BasicEventType;
+import com.github.thxmasj.statemachine.BasicEventType.ReadOnly;
 import com.github.thxmasj.statemachine.EventType;
 import java.util.UUID;
 
@@ -27,7 +28,7 @@ public interface SettlementEvent {
   EventType<Long, Long> MerchantDebitReversed =
       BasicEventType.of("MerchantDebitReversed", UUID.fromString("9b51bf01-bdaa-4284-a853-bdceab8d8c04"), Long.class);
   EventType<MerchantId, AcquirerBatchNumber> GetAcquirerBatchNumber =
-      BasicEventType.of("GetAcquirerBatchNumber", UUID.fromString("01700fc1-fa15-4142-a673-ba0e9a2768b6"), MerchantId.class, AcquirerBatchNumber.class);
+      new ReadOnly<>("GetAcquirerBatchNumber", UUID.fromString("01700fc1-fa15-4142-a673-ba0e9a2768b6"), MerchantId.class, AcquirerBatchNumber.class);
   EventType<AcquirerBatchNumber, BatchNumber> GetBatchNumber =
       BasicEventType.of("GetBatchNumber", UUID.fromString("ad4a9ec8-d0e6-44ce-bef3-d2bd20709005"), AcquirerBatchNumber.class, BatchNumber.class);
 

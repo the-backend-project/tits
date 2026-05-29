@@ -141,7 +141,7 @@ public class PlantUMLFormatter {
   private String outgoingRequest(OutgoingRequestModel<?, ?> spec, boolean reverse) {
     return String.format(
         "<color:" + (reverse ? "red" : "blue") + ">%s %s %s</color>",
-        spec.creatorType() != null ? spec.creatorType().getSimpleName() :
+//        spec.creatorType() != null ? spec.creatorType().getSimpleName() :
             spec.creator().name(),
         spec.guaranteed() ? "&#8658;" : "&#8594;",
         spec.queue()

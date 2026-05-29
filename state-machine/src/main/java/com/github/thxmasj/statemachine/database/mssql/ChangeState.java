@@ -4,6 +4,8 @@ import static com.github.thxmasj.statemachine.Tuples.tuple;
 import static java.util.stream.Collectors.joining;
 import static java.util.stream.IntStream.range;
 
+import com.github.thxmasj.statemachine.BasicEventType;
+import com.github.thxmasj.statemachine.BasicEventType.ReadOnly;
 import com.github.thxmasj.statemachine.EntityId;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.Event;
@@ -170,7 +172,8 @@ public class ChangeState {
           return entityModel().name() + ":" +
               entityId().value() + ":ev:[" +
               newEvent().typeName() + "]:" +
-              newEvent().eventNumber();
+              newEvent().eventNumber() +
+              (newEvent().type() instanceof BasicEventType.ReadOnly<?,?> ? " (read-only)" : "");
         }
 
       };

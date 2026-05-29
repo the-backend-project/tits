@@ -11,7 +11,6 @@ import static com.github.thxmasj.statemachine.BuiltinEntities.States.Routed;
 import static com.github.thxmasj.statemachine.EntitySelector.CreationMode.AlwaysCreate;
 import static com.github.thxmasj.statemachine.EntitySelector.CreationMode.CreateIfNotExists;
 import static com.github.thxmasj.statemachine.EntitySelector.CreationMode.NeverCreate;
-import static com.github.thxmasj.statemachine.EntitySelector.entityId;
 import static com.github.thxmasj.statemachine.EntitySelector.entityIdFromSession;
 import static com.github.thxmasj.statemachine.EntitySelector.secondaryId;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
@@ -38,6 +37,8 @@ import com.github.thxmasj.statemachine.Validated.Invalid;
 import com.github.thxmasj.statemachine.Validated.Valid;
 import com.github.thxmasj.statemachine.http.HttpRequestRouter.HttpRequestRoute.ContentRoute;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
+import com.nimbusds.jwt.SignedJWT;
+import java.text.ParseException;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.BiFunction;
@@ -63,12 +64,13 @@ public class HttpRequestRouter {
         Predicate<T> predicate,
         String predicateName,
         BiFunction<HttpRequestMessage, T, Validated<String>> messageIdParser,
-        boolean authorize,
+        BiFunction<HttpRequestMessage, T, Validated<String>> authorizer,
         UUID dispatchingEventTypeId,
         EventType<U, ?> processEventType,
         EntityModel processType,
         Function<ParsedRequest<T>, U> processInput,
-        BiFunction<HttpRequestMessage, T, ? extends Validated<? extends EntitySelector>> processSelector
+        BiFunction<HttpRequestMessage, T, ? extends Validated<? extends EntitySelector>> processSelector,
+        Function<HttpRequestMessage, HttpRequestMessage> normalizer
     ) {
       public EventType<ParsedRequest<T>, Void> dispatchingEventType() {
         return BasicEventType.of(
@@ -163,7 +165,7 @@ public class HttpRequestRouter {
 
       public static <T, U> ContentRoute<T, U> anyContent(
           BiFunction<HttpRequestMessage, T, Validated<String>> messageIdParser,
-          boolean authorize,
+          BiFunction<HttpRequestMessage, T, Validated<String>> authorizer,
           UUID dispatchingEventTypeId,
           EventType<U, ?> processEventType,
           EntityModel processType,
@@ -174,17 +176,35 @@ public class HttpRequestRouter {
             _ -> true,
             "[*]",
             messageIdParser,
-            authorize,
+            authorizer,
             dispatchingEventTypeId,
             processEventType,
             processType,
             processInput,
-            processSelector
+            processSelector,
+            Function.identity()
         );
       }
 
 
     }
+  }
+
+  public static Validated<String> authorize(HttpRequestMessage httpRequest) {
+    String v = httpRequest.headerValue("Authorization");
+    if (v == null)
+      return invalid("Authorization header missing");
+    if (!v.startsWith("Bearer "))
+      return invalid("Authorization token is not of type Bearer");
+    String token = v.substring("Bearer ".length());
+    String subject;
+    try {
+      SignedJWT jws = SignedJWT.parse(token);
+      subject = jws.getJWTClaimsSet().getSubject();
+    } catch (ParseException e) {
+      return invalid("Bearer token is invalid");
+    }
+    return valid(subject);
   }
 
   public static TransitionModelBuilder.TransitionModel<?, ?> initialTransitionFor(List<HttpRequestRoute<?>> routes) {
@@ -245,7 +265,7 @@ public class HttpRequestRouter {
                 d.input().t1(),
                 d.input().t2(),
                 contentRoute.messageIdParser() != null ? contentRoute.messageIdParser().apply(d.input().t1(), d.input().t2()) : null,
-                contentRoute.authorize() ? ParsedAuthorizationClaims.claimsFromBearerToken(d.input().t1()) : null,
+                contentRoute.authorizer() != null ? contentRoute.authorizer().apply(d.input().t1(), d.input().t2()) : null,
                 contentRoute.processSelector() != null ? contentRoute.processSelector().apply(d.input().t1(), d.input().t2()) : null
             ))
             .when(d -> d.t3() != null && d.t3().isInvalid()).then(
@@ -260,7 +280,7 @@ public class HttpRequestRouter {
                     .assembleInput()
                     .trigger(RespondBadRequest).with(d -> d).on(RequestRouting).identifiedBy(entityIdFromSession())
                     .output(),
-                d -> "Unable to parse Authorization header: " + d.t4().invalid()
+                d -> d.t4().invalidReason()
             )
             .when(d -> d.t5() != null && d.t5().isInvalid()).then(
                 onEvent(RejectAsUnroutable).to(Rejected)
@@ -280,13 +300,13 @@ public class HttpRequestRouter {
                     )
                     .output(),
                d -> {
-                  String clientId = d.t4() != null ? d.t4().valid().subject() : "N/A";
+                  String clientId = d.t4() != null ? d.t4().validValue() : "N/A";
                   String messageId = d.t3() != null ? d.t3().validValue() : null;
                 return new ParsedRequest<>(
                     d.t1(),
                     d.t2(),
                     messageId != null ? new MessageId(clientId, messageId) : null,
-                    d.t4() != null ? d.t4().valid() : null,
+                    d.t4() != null ? d.t4().validValue() : null,
                     d.t5() != null ? d.t5().validValue() : null
                 );
               }

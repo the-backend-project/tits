@@ -269,49 +269,49 @@ public class HttpInboxTest {
       new HttpRequestRoute<>(
           m -> m.requestLine().matches("PUT .*/zero/.*"),
           m -> valid(m.body()),
-          List.of(anyContent(null, false, UUID.fromString("7e2c5175-a65d-4795-a285-b0d75e704f5a"), ZeroProcessing, Lamp, (ParsedRequest<String> _) -> new Zero("Hey!"), parseEntityId("PUT .*/zero/(.*)", 1)))
+          List.of(anyContent(null, null, UUID.fromString("7e2c5175-a65d-4795-a285-b0d75e704f5a"), ZeroProcessing, Lamp, (ParsedRequest<String> _) -> new Zero("Hey!"), parseEntityId("PUT .*/zero/(.*)", 1)))
       ),
       new HttpRequestRoute<>(
           m -> m.requestLine().matches("PUT .*/internal/.*"),
           m -> valid(m.body()),
-          List.of(anyContent(parseMessageId("PUT .*/internal/(.*)", 1), false, UUID.fromString("3afa1f14-d4e3-49c4-b6ad-05a733f0b22d"), InternalProcessing, Lamp, (ParsedRequest<String> _) -> null, newEntity()))
+          List.of(anyContent(parseMessageId("PUT .*/internal/(.*)", 1), null, UUID.fromString("3afa1f14-d4e3-49c4-b6ad-05a733f0b22d"), InternalProcessing, Lamp, (ParsedRequest<String> _) -> null, newEntity()))
       ),
       new HttpRequestRoute<>(
           m -> m.requestLine().matches("PUT .*/handledunknown/.*"),
           m -> valid(m.body()),
-          List.of(anyContent(null, false, UUID.fromString("b411fd45-6c87-43aa-a511-df930d654ec7"), InternalProcessing, Lamp, (ParsedRequest<String> _) -> null, (_, _) -> new Valid<>(entityId(UUID.randomUUID())))) // Unknown id
+          List.of(anyContent(null, null, UUID.fromString("b411fd45-6c87-43aa-a511-df930d654ec7"), InternalProcessing, Lamp, (ParsedRequest<String> _) -> null, (_, _) -> new Valid<>(entityId(UUID.randomUUID())))) // Unknown id
       ),
       new HttpRequestRoute<>(
           m -> m.requestLine().matches("PUT .*/handledreject/.*"),
           m -> valid(m.body()),
-          List.of(anyContent(null, false, UUID.fromString("00f910e2-8c22-4403-835d-15e112ac3080"), EventThatIsAlwaysRejected, Lamp, (ParsedRequest<String> _) -> null, newEntity()))
+          List.of(anyContent(null, null, UUID.fromString("00f910e2-8c22-4403-835d-15e112ac3080"), EventThatIsAlwaysRejected, Lamp, (ParsedRequest<String> _) -> null, newEntity()))
       ),
       new HttpRequestRoute<>(
           m -> m.requestLine().matches("PUT .*/complexinternal/.*"),
           m -> valid(m.body()),
-          List.of(anyContent(parseMessageId("PUT .*/complexinternal/(.*)", 1), false, UUID.fromString("84164954-ad85-4b44-9de6-079bf4805df7"), ComplexInternalProcessing, Lamp, (ParsedRequest<String> _) -> null, newEntity()))
+          List.of(anyContent(parseMessageId("PUT .*/complexinternal/(.*)", 1), null, UUID.fromString("84164954-ad85-4b44-9de6-079bf4805df7"), ComplexInternalProcessing, Lamp, (ParsedRequest<String> _) -> null, newEntity()))
       ),
       new HttpRequestRoute<>(
           m -> m.requestLine().matches("PUT .*/external/.*"),
           m -> valid(m.body()),
-          List.of(anyContent(parseMessageId("PUT .*/external/(.*)", 1), false, UUID.fromString("415cfd95-6feb-4106-8d47-fcf41ddcb3d1"), ExternalProcessing, Lamp, (ParsedRequest<String> _) -> null, newEntity()))
+          List.of(anyContent(parseMessageId("PUT .*/external/(.*)", 1), null, UUID.fromString("415cfd95-6feb-4106-8d47-fcf41ddcb3d1"), ExternalProcessing, Lamp, (ParsedRequest<String> _) -> null, newEntity()))
       ),
       new HttpRequestRoute<>(
           m -> m.requestLine().matches("PUT .*/long-external/.*"),
           m -> valid(m.body()),
-          List.of(anyContent(null, false, UUID.fromString("721fedb2-e715-4c4d-a8fb-e2cdb16f86e5"), LongExternalProcessing, Lamp, (ParsedRequest<String> _) -> null, newEntity()))
+          List.of(anyContent(null, null, UUID.fromString("721fedb2-e715-4c4d-a8fb-e2cdb16f86e5"), LongExternalProcessing, Lamp, (ParsedRequest<String> _) -> null, newEntity()))
       ),
       new HttpRequestRoute<>(
           m -> m.requestLine().matches("PUT .*/rejected/.*"),
           m -> valid(m.body()),
-          List.of(anyContent(parseMessageId("PUT .*/rejected/(.*)", 1), false, UUID.fromString("e58f3910-0b01-4f8b-bbf3-c7fde4980197"), EventThatIsAlwaysRejected, Lamp, (ParsedRequest<String> _) -> null, newEntity()))
+          List.of(anyContent(parseMessageId("PUT .*/rejected/(.*)", 1), null, UUID.fromString("e58f3910-0b01-4f8b-bbf3-c7fde4980197"), EventThatIsAlwaysRejected, Lamp, (ParsedRequest<String> _) -> null, newEntity()))
       ),
       new HttpRequestRoute<>(
           m -> m.requestLine().matches("DELETE .*/internal/.*"),
           _ -> valid(null),
           List.of(anyContent(
               null,
-              false,
+              null,
               UUID.fromString("f5ef4720-c6bc-4686-be8b-85eeb0fdc372"),
               Rollback,
               Lamp,
@@ -324,7 +324,7 @@ public class HttpInboxTest {
           _ -> valid(null),
           List.of(anyContent(
               parseMessageId("DELETE .*/lamps/messages/(.*)", 1),
-              false,
+              null,
               UUID.fromString("56829b3a-78ce-40e4-9006-a6c4d3b6dc23"),
               Rollback,
               Lamp,

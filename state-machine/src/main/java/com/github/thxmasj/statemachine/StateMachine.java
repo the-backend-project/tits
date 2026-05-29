@@ -13,6 +13,7 @@ import static java.util.Comparator.comparing;
 import static java.util.Objects.requireNonNullElse;
 import static java.util.Optional.ofNullable;
 import static java.util.stream.Collectors.joining;
+import static java.util.stream.Collectors.toCollection;
 import static java.util.stream.Collectors.toList;
 import static java.util.stream.Collectors.toMap;
 
@@ -161,26 +162,15 @@ public class StateMachine {
                 .distinct()
                 .toList()
         ));
-    this.outgoingRequestCreators = Stream.concat(
-            allTransitions.stream().flatMap(t -> t.outgoingRequests().stream()),
-            allTransitions.stream()
-                .filter(t -> t.reverseModel() != null)
-                .map(TransitionModel::reverseModel)
-                .flatMap(t -> t.outgoingRequests().stream())
-        )
-//            entityModels.stream()
-//                    .flatMap(e -> e.transitions().values().stream().flatMap(Collection::stream))
-//                    .flatMap(t -> t.outgoingRequests().stream()),
-//                entityModels.stream()
-//                    .flatMap(e -> e.transitions().values().stream().flatMap(Collection::stream))
-//                    .filter(t -> t.reverseModel() != null)
-//                    .map(TransitionModel::reverseModel)
-//                    .flatMap(t -> t.outgoingRequests().stream())
-//            )
-        .filter(r -> r.creator() != null)
-        .map(OutgoingRequestModel::creator)
-        .distinct()
-        .collect(toMap(OutgoingRequestCreator::id, nc -> nc));
+    this.outgoingRequestCreators =
+        allTransitions.stream()
+            .flatMap(t -> unnest(t).stream())
+            .flatMap(t -> t.outgoingRequests().stream())
+            .filter(r -> r.creator() != null)
+            .map(OutgoingRequestModel::creator)
+            .distinct()
+            .collect(toMap(OutgoingRequestCreator::id, nc -> nc));
+    System.out.println("Outgoing request creators: " + outgoingRequestCreators);
     this.delayer = delayer != null ? delayer : _ -> Mono.empty();
     this.beanRegistry = beanRegistry;
     if (schemaDataSource != null) {
@@ -239,6 +229,14 @@ public class StateMachine {
       }
     }
     System.out.println("Initialized " + getClass().getName() + " on database schema " + schemaName);
+  }
+
+  private static List<TransitionModel<?, ?>> unnest(TransitionModel<?, ?> model) {
+    return Stream.concat(
+            model.reverseModel() != null ? Stream.of(model, model.reverseModel()) : Stream.of(model),
+            model.filters().stream().flatMap(f -> unnest(f.alternative().model()).stream())
+        )
+        .toList();
   }
 
   private EventLog emptyEventLog(EntityModel entityModel) {
@@ -307,7 +305,6 @@ public class StateMachine {
    * Resolve a state that has reached its deadline, as indicated by its timeout value.
    */
   public Mono<ResolverStatus> resolveState() {
-    System.out.println("resolveState()");
     var backoff = new DelaySpecification(ofSeconds(10), ofMinutes(10), ofHours(5), 1.5);
     return nextDeadline.execute(backoff)
         .doOnNext(d -> System.out.println("Next deadline: " + d))
@@ -633,11 +630,12 @@ public class StateMachine {
       HttpResponseMessage responseMessage,
       IncomingResponseValidator<?> validator,
       EntityId entityId,
-      int currentEventNumber
+      int currentEventNumber,
+      int startOfSessionEventNumber
   ) {
     return validator.execute(
         entityId,
-        new IncomingResponseContext<>(currentEventNumber),
+        new IncomingResponseContext<>(currentEventNumber, startOfSessionEventNumber),
         requestMessage,
         new Input.IncomingResponse(
             responseMessage,
@@ -688,8 +686,12 @@ public class StateMachine {
   private static class IncomingResponseContext<DATA_TYPE> implements Context<DATA_TYPE> {
 
     private final int currentEventNumber;
+    private final int startOfSessionEventNumber;
 
-    private IncomingResponseContext(int currentEventNumber) {this.currentEventNumber = currentEventNumber;}
+    private IncomingResponseContext(int currentEventNumber, int startOfSessionEventNumber) {
+      this.currentEventNumber = currentEventNumber;
+      this.startOfSessionEventNumber = startOfSessionEventNumber;
+    }
 
     @Override
     public InputEvent<String> requestUndelivered(String cause) {
@@ -710,7 +712,7 @@ public class StateMachine {
     public InputEvent<Data> rollback(String cause) {
       return new InputEvent<>(
           Rollback, new Data(
-          currentEventNumber - 2, // To the event before the request (current is response)
+          startOfSessionEventNumber - 1,
           cause
       )
       );
@@ -2533,12 +2535,6 @@ public class StateMachine {
     List<Change> changes = changes(changeContext);
     //    System.out.println("storeChanges " + unfilteredChanges.stream().map(c -> c.newEvent() != null ? c.eventLog().entityModel().name() + "/" + c.newEvent().typeName() : "N/A").collect(Collectors.joining(", ")));
     System.out.println("Changes to store:\n" + changes.stream().map(c -> "  |" + c.toString()).collect(joining("\n")));
-//    List<Change> storableChanges = changes.stream()
-    // TODO: Changes for ReadOnly events which have side effects must still be stored. Do we need ReadOnly events
-    //       when Status doesn't use event anymore.
-    //.filter(change -> change.newEvent() == null || !(change.newEvent().type() instanceof BasicEventType.ReadOnly))
-//        .toList();
-//    if (changes.isEmpty()) return Mono.just(ProcessResult.accepted());
     return Mono.just("") //correlationId()
         // TODO: Not really handling multiple changes at once
 //        .delayUntil(c -> changes.getLast().newEvent() == null ?
@@ -2554,7 +2550,7 @@ public class StateMachine {
                     timestamp,
                     correlationId,
                     changes.stream()
-                        //.filter(c -> c.newEvent() == null || !(c.newEvent().type() instanceof BasicEventType.ReadOnly))
+                        .filter(c -> c.newEvent() == null || !(c.newEvent().type() instanceof BasicEventType.ReadOnly))
                         .toList()
                 )
                 .collectList()
@@ -2662,6 +2658,7 @@ public class StateMachine {
 
   private Mono<ForwardStatus> doForward(@Nullable ChangeContext<?> requestChangeContext, OutboxElement queueElement, int maxRetryAttempts, Duration retryInterval) {
     OutgoingRequestCreator<?> c = outgoingRequestCreators.get(queueElement.creatorId());
+    System.out.println("doForward hasCreator(" + queueElement.creatorId() + ")=" + (c != null) + " attempt " + queueElement.attempt() + ": " + queueElement.data().requestLine() + "\n" + queueElement.data().body());
     Mono<HttpRequestMessage> requestMessage = c != null && queueElement.attempt() > 1 ?
         c.repeatedReactive(queueElement.data()) :
         Mono.just(queueElement.data());
@@ -2683,7 +2680,10 @@ public class StateMachine {
                     responseMessage,
                     responseValidator,
                     queueElement.entityId(),
-                    eventLog.lastEventNumber() + 1
+                    eventLog.lastEventNumber() + 1,
+                    requestChangeContext != null ?
+                        requestChangeContext.initialChangeContext().eventNumber() - 1 :
+                        eventLog.lastEventNumber() // TODO: Rollback won't happen if there's no session (ie. guaranteed delivery)
                 ).map(output -> new ResponseValidationResult(output, responseMessageOnQueue));
               })
               .flatMap(validationOutput -> validationOutput.validationResult().status() == Status.TransientError ?
@@ -2790,8 +2790,8 @@ public class StateMachine {
               if (!model.queue().equals(queue))
                 return false;
               OutgoingRequestCreator<?> c = model.creator();
-              if (c == null)
-                c = beanRegistry.getBean(model.creatorType());
+//              if (c == null)
+//                c = beanRegistry.getBean(model.creatorType());
               return c.id().equals(requestModelId);
             }
         )
@@ -2990,8 +2990,9 @@ public class StateMachine {
       OutgoingRequestModel<P, U> model,
       String correlationId
   ) {
-    OutgoingRequestCreator<U> creator = model.creatorType() != null ?
-        beanRegistry.getBean(model.creatorType()) :
+    OutgoingRequestCreator<U> creator =
+//        model.creatorType() != null ?
+//        beanRegistry.getBean(model.creatorType()) :
         model.creator();
     System.out.println(
         "createOutgoingRequest (" + (reverse ? "<reverse>" : "") + ") for event number " + eventNumber + " on "

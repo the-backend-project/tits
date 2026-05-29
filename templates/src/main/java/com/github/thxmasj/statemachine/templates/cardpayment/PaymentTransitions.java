@@ -13,6 +13,7 @@ import static com.github.thxmasj.statemachine.EntitySelector.secondaryId;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel.mergeModels;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.assemble;
+import static com.github.thxmasj.statemachine.TransitionModelBuilder.rollbackOn;
 import static com.github.thxmasj.statemachine.Tuples.tuple;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Aggregate.Settlement;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Identifiers.AcquirerBatchNumber;
@@ -383,8 +384,7 @@ public abstract class PaymentTransitions {
                     .assemble((input, log) -> tuple(log.one(ValidPaymentRequest).t1(), log.one(ValidPaymentRequest).t2(), input))
                     .trigger(GetBatchNumber).with(d -> new AcquirerBatchNumber(d.t1().merchantId(), d.t3().batchNumber())).on(Settlement)
                         .identifiedBy(
-                            d -> secondaryId(AcquirerBatchNumber, new AcquirerBatchNumber(d.t1().merchantId(), d.t3().batchNumber()), CreateIfNotExists),
-                            d -> lastInIdGroup(BatchNumber, d.t1().merchantId())
+                            d -> secondaryId(AcquirerBatchNumber, new AcquirerBatchNumber(d.t1().merchantId(), d.t3().batchNumber()), CreateIfNotExists)
                         )
                     .trigger(MerchantCredit).with(d -> d.t1().t1().amount().requested()).on(Settlement)
                         .identifiedBy(d -> entityId(d.t2().accepted().event().entityId()))
@@ -436,6 +436,7 @@ public abstract class PaymentTransitions {
 //                    .assemble((input, log) -> tuple(input, log.entityId()))
 //                    .trigger(CompleteRequest).with(d -> tuple("", d.t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
 //                    .output(d -> d.t1().t1()),
+                rollbackOn(Cancel),
 //                onEvent(Cancel).toSelf()
 //                    .assemble((input, log) -> tuple(input, log.entityId()))
 //                    .trigger(CompleteRequest).with(d -> tuple("", d.t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())

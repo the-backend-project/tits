@@ -151,7 +151,7 @@ public class TransitionModelBuilder<I, T, O> {
     ) implements ChangeContext<I>, TransitionContext<I> {
       @Override public I stepOutput() {return input;}
       @Override public String toString() {
-        return "Initial " + log.entityModel().name() + "/" + log.entityId().value() + "/" + from.name() + ": " + transitionModel + " with " + ofNullable(input).map(i -> i.getClass().getSimpleName()).orElse("-");
+        return "Initial " + log.entityModel().name() + "/" + log.entityId().value() + "/" + eventNumber + "/" + from.name() + ": " + transitionModel + " with " + ofNullable(input).map(i -> i.getClass().getSimpleName()).orElse("-");
       }
       public <T> IdentityResult<T> identityResult(SecondaryId<T> id) {
         return (IdentityResult<T>)identityResults.stream().filter(r -> r.id().equals(id)).findFirst().orElse(null);
@@ -268,7 +268,7 @@ public class TransitionModelBuilder<I, T, O> {
         return previous.stepOutput();
       }
       @Override public String toString() {
-        return "OutgoingRequest";
+        return "OutgoingRequest: on " + outgoingRequest.queue().name() + " (" + outgoingRequest.message().requestLine() + ")";
       }
 
     }
@@ -930,8 +930,17 @@ public class TransitionModelBuilder<I, T, O> {
   public static <T> TransitionModelBuilder<Data, T, Data> assembleReactive(BiFunction<EventLog, EventType<Data, Data>, Mono<T>> assembler) {
     return new TransitionModelBuilder<>(
         new ModelContext<>(true /* !! */, null, BuiltinEventTypes.Rollback, List.of(), List.of(), List.of(), List.of(), null, null, List.of()),
-        initialChangeContext -> initialChangeContext.flatMap(i -> assembler.apply(i.log(), BuiltinEventTypes.Rollback)
-            .map(assembled -> new AssembledChangeContext<>(i, assembled))
+        initialChangeContext -> initialChangeContext.flatMap(
+            i -> {
+              // TODO
+              EventType<Data, Data> rollbackEventType = (EventType<Data, Data>)i.transitionModel().eventType();
+              if (i.previous() != null && i.previous() instanceof ChangeContext.InitialChangeContext<?> pi)
+                rollbackEventType = (EventType<Data, Data>)pi.transitionModel().eventType();
+              return assembler.apply(
+                  i.log(),
+                  rollbackEventType
+              ).map(assembled -> new AssembledChangeContext<>(i, assembled));
+            }
         )
     );
   }
