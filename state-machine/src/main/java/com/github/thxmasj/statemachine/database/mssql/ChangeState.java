@@ -718,17 +718,20 @@ public class ChangeState {
         } catch (Exception e) {
           return new EventAlreadyExists(pkViolation.duplicateKey());
         }
-
+      } else {
+        // Assume id table
+        return changes.stream()
+            .filter(change -> !change.newSecondaryIds().isEmpty())
+            .filter(change -> pkViolation.tableName().equals(new SchemaNames(schema, change.entityModel()).idTableName(change.newSecondaryIds().getFirst().model())))
+            .map(change -> new RuntimeException(String.format(
+                "There's already a secondary id of type %s for entity %s/%s",
+                change.newSecondaryIds().getFirst().model().name(),
+                change.entityModel().name(),
+                change.entityId()
+            )))
+            .findFirst()
+            .orElseThrow();
       }
-      return changes.stream()
-          .map(change ->
-              change.entityModel().secondaryIds().stream()
-                  .map(id -> new SchemaNames(schema, change.entityModel()).idTableName(id))
-                  .filter(idTableName -> pkViolation.tableName().equals(idTableName))
-                  .map(idTableName -> new ChangeRaced(change, idTableName))
-                  .findFirst().orElseThrow()
-          )
-          .findFirst().orElseThrow();
     };
   }
 

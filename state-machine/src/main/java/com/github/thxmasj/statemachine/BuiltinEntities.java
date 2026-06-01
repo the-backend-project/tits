@@ -8,6 +8,7 @@ import static com.github.thxmasj.statemachine.BuiltinEntities.States.Dispatched;
 import static com.github.thxmasj.statemachine.BuiltinEntities.States.Rejected;
 import static com.github.thxmasj.statemachine.BuiltinEntities.States.RejectedRollbackFromCompleted;
 import static com.github.thxmasj.statemachine.BuiltinEntities.States.RejectedRollbackFromDispatched;
+import static com.github.thxmasj.statemachine.BuiltinEntities.States.RolledBack;
 import static com.github.thxmasj.statemachine.BuiltinEntities.States.RollingBack;
 import static com.github.thxmasj.statemachine.BuiltinEventTypes.Rollback;
 import static com.github.thxmasj.statemachine.EntitySelector.CreationMode.AlwaysCreate;
@@ -180,6 +181,12 @@ public class BuiltinEntities {
   public static EventType<Tuple2<String, EntityId>, HttpResponseMessage> CompleteRequest = BasicEventType.of(
       "Complete request",
       UUID.fromString("fa608cc7-9a2b-42ec-ab83-5207ab3978a0"),
+      new DataType<>(new TypeReference<>() {}, String.class, EntityId.class),
+      HttpResponseMessage.class
+  );
+  public static EventType<Tuple2<String, EntityId>, HttpResponseMessage> CompleteRollbackRequest = BasicEventType.of(
+      "Complete rollback request",
+      UUID.fromString("57fd7951-b922-42ff-99ed-6752f1d23024"),
       new DataType<>(new TypeReference<>() {}, String.class, EntityId.class),
       HttpResponseMessage.class
   );
@@ -481,7 +488,7 @@ public class BuiltinEntities {
         .when(d -> d.t2().isRejected()).then(
             onEvent(RejectRequest).to(rejectedState)
                 .assembleInput()
-                .trigger(CompleteRequest).with(d -> tuple(d.t1(), d.t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                .trigger(CompleteRollbackRequest).with(d -> tuple(d.t1(), d.t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t3()),
             d -> tuple(d.t2().rejected().exception().getMessage(), d.t2().rejected().exception().entityId(), d.t1().t1().request)
         )
@@ -495,7 +502,7 @@ public class BuiltinEntities {
 // Can only have one secondary id of a certain type per entity (type maps to table, entity id is PK)
 // RollbackMessageId? Then we can also avoid the "R" hack.
                 .newIdentifier(RollbackMessageId, d -> new MessageId(d.t2().messageId().clientId(), d.t2().messageId().value()))
-                .trigger(CompleteRequest).with(d -> tuple(d.t1().t1(), d.t1().t3())).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                .trigger(CompleteRollbackRequest).with(d -> tuple(d.t1().t1(), d.t1().t3())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t1().t2().request()),
             d -> tuple(
                 "Rolled back", // to event number " + d.t2().accepted().event().getUnmarshalledData().toNumber(),
@@ -558,14 +565,52 @@ public class BuiltinEntities {
             .filter(route -> route.isRollback())
             .map(route -> triggerRollbackTransition(route, RejectedRollbackFromCompleted))
             .collect(toList()),
-        RollingBack, List.of(customResponse(completeRequest, States.RolledBack)),
+        RollingBack, List.of(
+            customResponse(new CustomResponse<>(CompleteRollbackRequest, c -> createResponseMessage(new Created(), c.input().t2(), c.correlationId(), c.timestamp(), c.input().t1())), RolledBack),
+            customResponse(new CustomResponse<>(CompleteDuplicatedRequest, TransitionContext::input), RolledBack)
+        ),
         Rejected, List.of(
             customResponse(rejectRequest),
             customResponse(completeRejectedRequest),
             customResponse(new CustomResponse<>(CompleteDuplicatedRequest, TransitionContext::input))
         ),
         RejectedRollbackFromCompleted, List.of(customResponse(rejectRequest)),
-        RejectedRollbackFromDispatched, List.of(customResponse(rejectRequest, Dispatched))
+        RejectedRollbackFromDispatched, List.of(customResponse(rejectRequest, Dispatched)),
+        RolledBack,
+        // For handling rollback repeats properly
+        routes.stream()
+            .flatMap(r -> r.contentRoutes().stream())
+            .filter(route -> route.isRollback())
+            .map(route ->
+                onEvent(route.dispatchingEventType()).to(RollingBack)
+                    .assemble(c -> tuple(c.input(), c.log().one(AcceptRollbackRequest), c.log().one(CompleteRollbackRequest), c.log().entityId()))
+                    .when(d -> {
+                      boolean isEq = d.t1().request().message().equals(route.normalizer().apply(d.t2()).message());
+                      if (!isEq) {
+                        System.out.printf("NOT EQUAL ROLLBACK REPEAT:\nOriginal:\n%s\nRepeat:%s\n", d.t1().request().message(), route.normalizer().apply(d.t2()).message());
+                      }
+                      return isEq;
+                    }).then(
+                        onEvent(RejectDuplicateRequest).to(RollingBack)
+                            .assembleInput()
+                            .trigger(CompleteDuplicatedRequest).with(Tuple2::t2).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                            .output(d -> d.t1().t1()),
+                        d -> tuple(d.t1().request(), d.t3())
+                    )
+                    .otherwise(
+                        onEvent(RejectRequest).to(Rejected)
+                            .assemble(c -> tuple(
+                                c.input().t1(), // reason
+                                c.input().t2(), // original entity id
+                                c.input().t3(), // request
+                                c.correlationId(),
+                                c.timestamp()
+                            ))
+                            .trigger(CompleteRejectedRequest).with(d -> badRequest(d.t1(), d.t2(), d.t4(), d.t5())).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                            .output(d -> d.t1().t3()),
+                        d -> tuple("Conflict", d.t4(), d.t1().request())
+                    )
+            ).collect(toList())
     );
   }
 
