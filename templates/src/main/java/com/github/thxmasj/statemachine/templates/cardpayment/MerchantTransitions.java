@@ -33,12 +33,12 @@ public class MerchantTransitions {
     return Map.of(
         Begin, List.of(
             onEvent(Create).to(Active)
-                .assemble(c -> tuple(c.input(), c.log().entityId()))
+                .assemble(c -> tuple(c.input(), c.eventReference()))
                 .newIdentifier(MerchantId, d -> d.t1().id())
                 .trigger(CompleteRequest).with(d -> tuple("", d.t1().t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t1().t1()),
             onEvent(BuiltinEventTypes.SecondaryIdAlreadyExists).toSelf()
-                .assemble(c -> tuple(c.input().t2(), c.log().entityId()))
+                .assemble(c -> tuple(c.input().t2(), c.eventReference()))
                 .trigger(CompleteInvalidRequest).with(d -> tuple(d.t1().data().toString(), d.t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output()
         ),

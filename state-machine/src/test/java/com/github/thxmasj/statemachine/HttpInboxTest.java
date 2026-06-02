@@ -36,6 +36,7 @@ import com.github.thxmasj.statemachine.BuiltinEntities.RequestParser.ParsedReque
 import com.github.thxmasj.statemachine.EventType.DataType;
 import com.github.thxmasj.statemachine.IncomingResponseValidator.Result;
 import com.github.thxmasj.statemachine.IncomingResponseValidator.Result.Status;
+import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;
 import com.github.thxmasj.statemachine.Validated.Valid;
@@ -101,17 +102,17 @@ public class HttpInboxTest {
             onEvent(InternalProcessing).to(Off).assembleInput().output(d -> d),
             onEvent(SwitchOff).to(Off).output(),
             onEvent(Cancel).toSelf()
-                .assemble(c -> tuple(c.input(), c.log().entityId()))
+                .assemble(c -> tuple(c.input(), c.eventReference()))
                 .trigger(CompleteRequest).with(d -> tuple("Cancelled", d.t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t1()),
             onEvent(ZeroProcessing).toSelf()
-                .assemble(c -> tuple(c.input(), c.log().entityId()))
+                .assemble(c -> tuple(c.input(), c.eventReference()))
                 .trigger(CompleteRequest).with(d -> tuple("Complete", d.t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t1())
         ),
         Off, List.of(
             onEvent(InternalProcessing).to(On)
-                .assemble(c -> c.log().entityId())
+                .assemble(TransitionContext::eventReference)
                 .trigger(new ProcessRequest(0)).with(_ -> null).to(DeviceListener).guaranteed()
                 .trigger(CompleteRequest).with(d -> tuple("Light is on! " + random.nextLong(), d)).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(),
@@ -163,11 +164,11 @@ public class HttpInboxTest {
         Processing, List.of(
             onEvent(Rollback).toSelf().assembleInput().output(d -> d),
             onEvent(ComplexInternalProcessingDone).to(On)
-                .assemble((_, log) -> log.entityId())
+                .assemble(TransitionContext::eventReference)
                 .trigger(CompleteRequest).with(d -> tuple("Phew! Light is switched on! " + random.nextLong(), d)).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(),
             onEvent(ExternalProcessingDone).to(On)
-                .assemble((_, log) -> log.entityId())
+                .assemble(TransitionContext::eventReference)
                 .trigger(CompleteRequest).with(d -> tuple("Light is externally switched on! " + random.nextLong(), d)).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output()
         ),

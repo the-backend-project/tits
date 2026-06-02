@@ -1,6 +1,6 @@
 package com.github.thxmasj.statemachine.templates.cardpayment;
 
-import com.github.thxmasj.statemachine.EntityId;
+import com.github.thxmasj.statemachine.BuiltinEntities.EventReference;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthenticationResult;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Authorisation;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.PaymentToken;
@@ -17,6 +17,6 @@ public class RefundRequestDataCreator {
       long alreadyCapturedAmount,
       long alreadyRefundedAmount,
       String simulation,
-      EntityId entityId
+      EventReference eventReference
   ) {}
 }

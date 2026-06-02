@@ -64,7 +64,7 @@ public class HttpResponseCreator implements OutgoingResponseCreator<String> {
     map.put("title", reasonPhrase);
     map.put("status", statusCode);
     map.put("detail", detail);
-    map.put("entityId", entityId.value());
+    if (entityId != null) map.put("entityId", entityId.value());
     map.put("timestamp", timestamp);
     return map;
   }

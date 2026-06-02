@@ -50,6 +50,7 @@ import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.HttpResponseCreator;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import com.github.thxmasj.statemachine.message.http.UnprocessableEntity;
+import jakarta.annotation.Nullable;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
@@ -110,33 +111,6 @@ public class BuiltinEntities {
       }
     }
   };
-  public static SecondaryIdModel<EventReference> EventReference = new SecondaryIdModel<>() {
-    @Override
-    public String name() {return "EventReference";}
-
-    @Override
-    public List<Column> columns() {
-      return List.of(
-          new Column("Entity", "UNIQUEIDENTIFIER", id -> ((EventReference) id).entityId()),
-          new Column("EventNumber", "SMALLINT", id -> ((EventReference) id).eventNumber())
-      );
-    }
-
-    @Override
-    public SecondaryId<EventReference> map(ResultSet resultSet) {
-      try {
-        return new SecondaryId<>(
-            this,
-            new EventReference(
-                UUID.fromString(resultSet.getString("Entity")),
-                resultSet.getInt("EventNumber")
-            )
-        );
-      } catch (SQLException e) {
-        throw new RuntimeException(e);
-      }
-    }
-  };
 
   public enum States implements State {Begin, Routed, Completed, Rejected, RollingBack, RolledBack, Dispatched, RejectedRollbackFromCompleted, RejectedRollbackFromDispatched}
   public enum Models implements EntityModel {
@@ -144,7 +118,7 @@ public class BuiltinEntities {
       private final static UUID id = UUID.fromString("9711bee2-b42b-45ba-8d5e-7f891995a9c9");
       @Override public UUID id() {return id;}
       @Override public State initialState() {return Begin;}
-      @Override public List<SecondaryIdModel<?>> secondaryIds() {return List.of(MessageId, RollbackMessageId, EventReference);}
+      @Override public List<SecondaryIdModel<?>> secondaryIds() {return List.of(MessageId, RollbackMessageId);}
     },
     RequestRouting {
       private final static UUID id = UUID.fromString("20755705-fc81-4228-a1a7-5e13d6e3c153");
@@ -166,29 +140,27 @@ public class BuiltinEntities {
       new DataType<>(new TypeReference<>() {}, HttpRequestMessage.class, HttpResponseMessage.class),
       HttpRequestMessage.class
   );
-  public static EventType<Tuple2<ParsedRequest<?>, EventReference>, HttpRequestMessage> AcceptRequest = BasicEventType.of(
+  public static EventType<Tuple2<ParsedRequest<?>, EventReference>, Tuple2<HttpRequestMessage, EventReference>> AcceptRequest = BasicEventType.of(
       "Accept request",
       UUID.fromString("9615c3fb-4f15-47f5-b5d3-6149a6164d70"),
       new DataType<>(new TypeReference<>() {}, ParsedRequest.class, EventReference.class),
-      HttpRequestMessage.class
+      new DataType<>(new TypeReference<>() {}, HttpRequestMessage.class, EventReference.class)
   );
-  public static EventType<Tuple2<String, ParsedRequest<?>>, HttpRequestMessage> AcceptRollbackRequest = BasicEventType.of(
+  public static EventType<Tuple3<String, ParsedRequest<?>, EventReference>, HttpRequestMessage> AcceptRollbackRequest = BasicEventType.of(
       "Accept rollback request",
       UUID.fromString("abd02d03-8bdc-4bea-9135-214f31489965"),
-      new DataType<>(new TypeReference<>() {}, String.class, ParsedRequest.class),
+      new DataType<>(new TypeReference<>() {}, String.class, ParsedRequest.class, EventReference.class),
       HttpRequestMessage.class
   );
-  public static EventType<Tuple2<String, EntityId>, HttpResponseMessage> CompleteRequest = BasicEventType.of(
+  public static ResponseEventType<Tuple2<String, EventReference>> CompleteRequest = new ResponseEventType<>(
       "Complete request",
       UUID.fromString("fa608cc7-9a2b-42ec-ab83-5207ab3978a0"),
-      new DataType<>(new TypeReference<>() {}, String.class, EntityId.class),
-      HttpResponseMessage.class
+      new DataType<>(new TypeReference<>() {}, String.class, EventReference.class)
   );
-  public static EventType<Tuple2<String, EntityId>, HttpResponseMessage> CompleteRollbackRequest = BasicEventType.of(
+  public static ResponseEventType<Tuple2<String, EventReference>> CompleteRollbackRequest = new ResponseEventType<>(
       "Complete rollback request",
       UUID.fromString("57fd7951-b922-42ff-99ed-6752f1d23024"),
-      new DataType<>(new TypeReference<>() {}, String.class, EntityId.class),
-      HttpResponseMessage.class
+      new DataType<>(new TypeReference<>() {}, String.class, EntityId.class)
   );
   public static EventType<HttpResponseMessage, HttpResponseMessage> CompleteDuplicatedRequest = BasicEventType.of(
       "Complete duplicated request",
@@ -196,11 +168,10 @@ public class BuiltinEntities {
       HttpResponseMessage.class,
       HttpResponseMessage.class
   );
-  public static EventType<Tuple2<String, EntityId>, HttpResponseMessage> CompleteInvalidRequest = BasicEventType.of(
+  public static ResponseEventType<Tuple2<String, EventReference>> CompleteInvalidRequest = new ResponseEventType<>(
       "Complete invalid request",
       UUID.fromString("6bc64696-3b9e-4897-b9d0-de3abf567685"),
-      new DataType<>(new TypeReference<>() {}, String.class, EntityId.class),
-      HttpResponseMessage.class
+      new DataType<>(new TypeReference<>() {}, String.class, EventReference.class)
   );
   public static EventType<HttpResponseMessage, HttpResponseMessage> CompleteRejectedRequest = BasicEventType.of(
       "Complete rejected request",
@@ -215,21 +186,7 @@ public class BuiltinEntities {
       HttpResponseMessage.class,
       HttpResponseMessage.class
   );
-  public static EventType<Tuple2<String, EntityId>, HttpResponseMessage> RespondCreated = BasicEventType.of(
-      "RespondCreated",
-      UUID.fromString("809591b7-4b4a-4ed6-ba8d-e17814204c8b"),
-      new DataType<>(new TypeReference<>() {}, String.class, EntityId.class),
-      HttpResponseMessage.class
-  );
-  public static EventType<Tuple2<String, EntityId>, HttpResponseMessage> RespondOk = BasicEventType.of(
-      "RespondOk",
-      UUID.fromString("0c4df594-d32b-4ff5-adbd-9e6d2a180b42"),
-      new DataType<>(new TypeReference<>() {}, String.class, EntityId.class),
-      HttpResponseMessage.class
-  );
-  public static EventType<String, HttpResponseMessage> RespondUnprocessableContent = BasicEventType.of("RespondUnprocessableContent", UUID.fromString("3ee039d0-c912-4058-9380-6b70e0921470"), String.class, HttpResponseMessage.class);
   public static EventType<String, HttpResponseMessage> RespondBadRequest = BasicEventType.of("RespondBadRequest", UUID.fromString("a8225270-6a22-4f1f-ae17-5b5519d46df1"), String.class, HttpResponseMessage.class);
-  public static EventType<String, HttpResponseMessage> RespondSeeOther = BasicEventType.of("RespondSeeOther", UUID.fromString("89e26f64-575f-466d-bb71-bd82ad574126"), String.class, HttpResponseMessage.class);
 
   public static class RequestParser {
 
@@ -376,7 +333,7 @@ public class BuiltinEntities {
         Rejected, List.of(
             onEvent(RespondBadRequest).to(Completed)
                 .assemble(c -> c)
-                .output(d -> badRequest(d.input(), d.log().entityId(), d.correlationId(), d.timestamp()))
+                .output(d -> badRequest(d.input(), d.correlationId(), d.timestamp()))
         ),
         Completed, List.of()
     );
@@ -407,16 +364,19 @@ public class BuiltinEntities {
                     c.correlationId(),
                     c.timestamp()
                 ))
-                .trigger(CompleteRejectedRequest).with(d -> unprocessableEntity(d.t1(), d.t2(), d.t4(), d.t5())).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                .trigger(CompleteRejectedRequest).with(d -> unprocessableEntity(d.t1(), d.t4(), d.t5())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t3()),
             d -> tuple("Rolled back", d.t2().rejected().log().entityId(), d.t1().t1().request())
         )
-        .when(d -> d.t2().isRejected() && d.t1().t1().request().message().equals(route.normalizer().apply(d.t2().rejected().log().one(HttpRequestMessage.class)).message())).then(
+        .when(d -> d.t2().isRejected() && d.t1().t1().request().message().equals(route.normalizer().apply(d.t2().rejected().log().one(AcceptRequest).t1()).message())).then(
             onEvent(RejectDuplicateRequest).to(Rejected)
                 .assembleInput()
                 .trigger(CompleteDuplicatedRequest).with(Tuple2::t2).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t1()),
-            d -> tuple(d.t1().t1().request(), d.t2().rejected().log().one(HttpResponseMessage.class))
+            d -> tuple(
+                d.t1().t1().request(),
+                d.t2().rejected().log().one(ResponseEventType.Data.class).response()
+            )
         )
         .when(d -> d.t2().isRejected()).then(
             onEvent(RejectRequest).to(Rejected)
@@ -427,54 +387,60 @@ public class BuiltinEntities {
                     c.correlationId(),
                     c.timestamp()
                 ))
-                .trigger(CompleteRejectedRequest).with(d -> badRequest(d.t1(), d.t2(), d.t4(), d.t5())).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                .trigger(CompleteRejectedRequest).with(d -> badRequest(d.t1(), d.t4(), d.t5())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t3()),
             d -> tuple("Conflict", d.t2().rejected().log().entityId(), d.t1().t1().request())
         )
         .otherwise(
             onEvent(route.dispatchingEventType()).to(Dispatched)
                 .assembleInput()
-                .trigger(route.processEventType()).with(route.processInput()).on(route.processType()).identifiedBy(d -> d.processSelector())
+                .trigger(route.processEventType()).with(route.processInput()).on(route.processType()).identifiedBy(ParsedRequest::processSelector)
                 .when(d -> d.t2().isRejected()).then(
                   onEvent(RejectRequest).to(Rejected)
                       .assembleInput()
-                      .trigger(CompleteRequest).with(d -> tuple(d.t1(), d.t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                      .trigger(CompleteRequest)
+                      .with(d -> tuple(d.t1(), new EventReference(d.t2().value(), 0))) // TODO
+                      .on(RequestDispatching)
+                      .identifiedBy(entityIdFromSession())
                       .output(d -> d.t1().t3()),
                   d -> tuple(d.t2().rejected().exception().getMessage(), d.t2().rejected().exception().entityId(), d.t1().request())
                 )
                 .when(d -> d.t2().isUnknownId()).then(
                     onEvent(RejectRequest).to(Rejected)
                         .assemble(c -> c)
-                        .trigger(CompleteRejectedRequest).with(d -> badRequest("No such entity", d.log().entityId(), d.correlationId(), d.timestamp())).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                        .trigger(CompleteRejectedRequest).with(d -> badRequest("No such entity", d.correlationId(), d.timestamp())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                         .output(d -> d.t1().input().t3()),
                     d -> tuple(d.t2().unknownId().exception().getMessage(), null, d.t1().request())
                 )
                 .when(_ -> route.processEventType() instanceof BasicEventType.Rollback).then(
                     onEvent(AcceptRequest).to(Dispatched)
                         .assemble((input, log) -> tuple(input.t1(), input.t2(), log.entityId()))
-                        .trigger(CompleteRequest).with(d -> tuple("Cancelled", d.t3())).on(RequestDispatching).identifiedBy(entityIdFromSession())
-                        .output(d -> d.t1().t1().request()),
+                        .trigger(CompleteRequest).with(d -> tuple("Cancelled", d.t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                        .output(d -> tuple(d.t1().t1().request(), d.t1().t2())),
                     d -> tuple(d.t1(), new EventReference(d.t2().accepted().event().entityId(), d.t2().accepted().event().eventNumber()))
                 )
                 .when(d -> d.t2().isAccepted()).then(
                     onEvent(AcceptRequest).to(Dispatched)
                         .assemble((input, log) -> tuple(input.t1(), input.t2(), log.entityId()))
-                        .newIdentifier(EventReference, Tuple3::t2)
-                        .output(d -> d.t1().t1().request()),
+                        //.newIdentifier(EventReference, Tuple3::t2)
+                        //.output(d -> tuple(d.t1().t1().request(), d.t1().t2())),
+                        .output(d -> tuple(d.t1().request(), d.t2())),
                     d -> tuple(d.t1(), new EventReference(d.t2().accepted().event().entityId(), d.t2().accepted().event().eventNumber()))
                 )
                 .when(d -> d.t2().isCompleted()).then(
                     onEvent(AcceptRequest).to(Dispatched)
                         .assemble((input, log) -> tuple(input.t1(), input.t2(), log.entityId()))
-                        .newIdentifier(EventReference, Tuple3::t2)
-                        .output(d -> d.t1().t1().request()),
+                        //.newIdentifier(EventReference, Tuple3::t2)
+                        //.output(d -> tuple(d.t1().t1().request(), d.t1().t2())),
+                        .output(d -> tuple(d.t1().request(), d.t2())),
                     d -> tuple(d.t1(), new EventReference(d.t2().completed().entityId().value(), d.t2().completed().eventNumber()))
                 ).otherwise(
                     // TODO: How to handle unknown process result? ("should never happen")
                     onEvent(AcceptRequest).to(Dispatched)
                         .assemble((input, log) -> tuple(input.t1(), input.t2(), log.entityId()))
-                        .newIdentifier(EventReference, Tuple3::t2)
-                        .output(d -> d.t1().t1().request()),
+                        //.newIdentifier(EventReference, Tuple3::t2)
+                        //.output(d -> tuple(d.t1().t1().request(), d.t1().t2())),
+                        .output(d -> tuple(d.t1().request(), d.t2())),
                     d -> tuple(d.t1(), new EventReference(d.t2().accepted().event().entityId(), d.t2().accepted().event().eventNumber()))
                 ),
             d -> d.t1().t1()
@@ -483,12 +449,12 @@ public class BuiltinEntities {
 
   private static <T, U> TransitionModel<?, ?> triggerRollbackTransition(ContentRoute<T, U> route, State rejectedState) {
     return onEvent(route.dispatchingEventType()).to(RollingBack)
-        .assemble((input, log) -> tuple(input, log.entityId(), log.id(EventReference)))
+        .assemble((input, log) -> tuple(input, log.entityId(), log.one(AcceptRequest).t2()))
         .trigger(Rollback).with(d -> new Data(d.t3().eventNumber() - 1, "HttpInbox")).on(route.processType()).identifiedBy(d -> entityId(d.t3().entityId()))
         .when(d -> d.t2().isRejected()).then(
             onEvent(RejectRequest).to(rejectedState)
                 .assembleInput()
-                .trigger(CompleteRollbackRequest).with(d -> tuple(d.t1(), d.t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                .trigger(CompleteRollbackRequest).with(d -> tuple(d.t1(), new EventReference(d.t2().value(), 0))).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t3()),
             d -> tuple(d.t2().rejected().exception().getMessage(), d.t2().rejected().exception().entityId(), d.t1().t1().request)
         )
@@ -497,16 +463,15 @@ public class BuiltinEntities {
                 .assemble((input, log) -> tuple(
                     input.t1(),
                     input.t2(),
-                    log.entityId()
+                    input.t3()
                 ))
-// Can only have one secondary id of a certain type per entity (type maps to table, entity id is PK)
-// RollbackMessageId? Then we can also avoid the "R" hack.
                 .newIdentifier(RollbackMessageId, d -> new MessageId(d.t2().messageId().clientId(), d.t2().messageId().value()))
                 .trigger(CompleteRollbackRequest).with(d -> tuple(d.t1().t1(), d.t1().t3())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t1().t2().request()),
             d -> tuple(
                 "Rolled back", // to event number " + d.t2().accepted().event().getUnmarshalledData().toNumber(),
-                d.t1().t1()
+                d.t1().t1(),
+                new EventReference(d.t2().accepted().event().entityId(), d.t2().accepted().event().eventNumber())
             )
         )
         .output();
@@ -521,66 +486,91 @@ public class BuiltinEntities {
             routes.stream()
                 .flatMap(r -> r.contentRoutes().stream())
                 .filter(route -> !route.isRollback())
-                .map(route -> triggerProcessTransition(route))
+                .map(BuiltinEntities::triggerProcessTransition)
                 .collect(toList()),
             routes.stream()
                 .flatMap(r -> r.contentRoutes().stream())
-                .filter(route -> route.isRollback())
+                .filter(ContentRoute::isRollback)
                 .map(route ->
                     onEvent(route.dispatchingEventType()).to(RollingBack)
                         .assemble(c -> tuple(c.input(), c.log().entityId()))
                         .otherwise(
                             onEvent(AcceptRollbackRequest).to(RollingBack)
-                                .assemble((input, log) -> tuple(input.t1(), input.t2(), log.entityId()))
+                                .assembleInput()
                                 .newIdentifier(MessageId, d -> d.t2().messageId())
-                                .trigger(CompleteRequest)
+                                .trigger(CompleteRollbackRequest)
                                 .with(d -> tuple(d.t1().t1(), d.t1().t3()))
                                 .on(RequestDispatching)
                                 .identifiedBy(entityIdFromSession())
                                 .output(d -> d.t1().t1().t2().request()),
-                            d -> tuple(
-                                "Nothing to roll back",
-                                d.t1()
-                            )
+                            d -> tuple("Nothing to roll back", d.t1(), null) // TODO: EventReference is null
                         )
                 ).collect(toList())
         ),
         Dispatched, join(
             customResponses.stream().map(BuiltinEntities::customResponse).collect(toList()),
             List.of(
-                customResponse(completeRequest),
-                customResponse(new CustomResponse<>(
-                    CompleteInvalidRequest,
-                    c -> createResponseMessage(new BadRequest(), c.input().t2(), c.correlationId(), c.timestamp(), c.input().t1())
-                ))
+                onEvent(CompleteRequest).to(Completed)
+                    .assemble(c -> new ResponseEventType.Data(createResponseMessage(new Created(), c.input().t2(), c.correlationId(), c.timestamp(), c.input().t1()), c.input().t2()))
+                    .trigger(Respond).with(ResponseEventType.Data::response).on(RequestRouting).identifiedBy(entityIdFromSession())
+                    .output(Tuple2::t1),
+                onEvent(CompleteInvalidRequest).to(Completed)
+                    .assemble(c -> new ResponseEventType.Data(createResponseMessage(new BadRequest(), c.input().t2(), c.correlationId(), c.timestamp(), c.input().t1()), c.input().t2()))
+                    .trigger(Respond).with(ResponseEventType.Data::response).on(RequestRouting).identifiedBy(entityIdFromSession())
+                    .output(Tuple2::t1)
             ),
             routes.stream()
                 .flatMap(r -> r.contentRoutes().stream())
-                .filter(route -> route.isRollback())
+                .filter(ContentRoute::isRollback)
                 .map(r -> triggerRollbackTransition(r, RejectedRollbackFromDispatched))
                 .collect(toList())
         ),
         Completed, routes.stream()
             .flatMap(r -> r.contentRoutes().stream())
-            .filter(route -> route.isRollback())
+            .filter(ContentRoute::isRollback)
             .map(route -> triggerRollbackTransition(route, RejectedRollbackFromCompleted))
             .collect(toList()),
         RollingBack, List.of(
-            customResponse(new CustomResponse<>(CompleteRollbackRequest, c -> createResponseMessage(new Created(), c.input().t2(), c.correlationId(), c.timestamp(), c.input().t1())), RolledBack),
-            customResponse(new CustomResponse<>(CompleteDuplicatedRequest, TransitionContext::input), RolledBack)
+            onEvent(CompleteRollbackRequest).to(RolledBack)
+                .assemble(c -> new ResponseEventType.Data(createResponseMessage(new Created(), c.input().t2(), c.correlationId(), c.timestamp(), c.input().t1()), c.input().t2()))
+                .trigger(Respond).with(ResponseEventType.Data::response).on(RequestRouting).identifiedBy(entityIdFromSession())
+                .output(Tuple2::t1),
+            onEvent(CompleteDuplicatedRequest).to(RolledBack)
+                .assemble(TransitionContext::input)
+                .trigger(Respond).with(d -> d).on(RequestRouting).identifiedBy(entityIdFromSession())
+                .output(Tuple2::t1)
         ),
         Rejected, List.of(
-            customResponse(rejectRequest),
-            customResponse(completeRejectedRequest),
-            customResponse(new CustomResponse<>(CompleteDuplicatedRequest, TransitionContext::input))
+            onEvent(CompleteRequest).to(Completed)
+                .assemble(c -> new ResponseEventType.Data(createResponseMessage(new UnprocessableEntity(), c.input().t2(), c.correlationId(), c.timestamp(), c.input().t1()), c.input().t2()))
+                .trigger(Respond).with(ResponseEventType.Data::response).on(RequestRouting).identifiedBy(entityIdFromSession())
+                .output(Tuple2::t1),
+            onEvent(CompleteRejectedRequest).to(Completed)
+                .assembleInput()
+                .trigger(Respond).with(d -> d).on(RequestRouting).identifiedBy(entityIdFromSession())
+                .output(Tuple2::t1),
+            onEvent(CompleteDuplicatedRequest).to(Completed)
+                .assemble(TransitionContext::input)
+                .trigger(Respond).with(d -> d).on(RequestRouting).identifiedBy(entityIdFromSession())
+                .output(Tuple2::t1)
         ),
-        RejectedRollbackFromCompleted, List.of(customResponse(rejectRequest)),
-        RejectedRollbackFromDispatched, List.of(customResponse(rejectRequest, Dispatched)),
+        RejectedRollbackFromCompleted, List.of(
+            onEvent(CompleteRequest).to(Completed)
+                .assemble(c -> new ResponseEventType.Data(createResponseMessage(new UnprocessableEntity(), c.input().t2(), c.correlationId(), c.timestamp(), c.input().t1()), c.input().t2()))
+                .trigger(Respond).with(ResponseEventType.Data::response).on(RequestRouting).identifiedBy(entityIdFromSession())
+                .output(Tuple2::t1)
+        ),
+        RejectedRollbackFromDispatched, List.of(
+            onEvent(CompleteRequest).to(Dispatched)
+                .assemble(c -> new ResponseEventType.Data(createResponseMessage(new UnprocessableEntity(), c.input().t2(), c.correlationId(), c.timestamp(), c.input().t1()), c.input().t2()))
+                .trigger(Respond).with(ResponseEventType.Data::response).on(RequestRouting).identifiedBy(entityIdFromSession())
+                .output(Tuple2::t1)
+        ),
         RolledBack,
         // For handling rollback repeats properly
         routes.stream()
             .flatMap(r -> r.contentRoutes().stream())
-            .filter(route -> route.isRollback())
+            .filter(ContentRoute::isRollback)
             .map(route ->
                 onEvent(route.dispatchingEventType()).to(RollingBack)
                     .assemble(c -> tuple(c.input(), c.log().one(AcceptRollbackRequest), c.log().one(CompleteRollbackRequest), c.log().entityId()))
@@ -588,6 +578,8 @@ public class BuiltinEntities {
                       boolean isEq = d.t1().request().message().equals(route.normalizer().apply(d.t2()).message());
                       if (!isEq) {
                         System.out.printf("NOT EQUAL ROLLBACK REPEAT:\nOriginal:\n%s\nRepeat:%s\n", d.t1().request().message(), route.normalizer().apply(d.t2()).message());
+                      } else {
+                        System.out.println("EQUAL ROLLBACK REPEAT");
                       }
                       return isEq;
                     }).then(
@@ -595,7 +587,7 @@ public class BuiltinEntities {
                             .assembleInput()
                             .trigger(CompleteDuplicatedRequest).with(Tuple2::t2).on(RequestDispatching).identifiedBy(entityIdFromSession())
                             .output(d -> d.t1().t1()),
-                        d -> tuple(d.t1().request(), d.t3())
+                        d -> tuple(d.t1().request(), d.t3().response())
                     )
                     .otherwise(
                         onEvent(RejectRequest).to(Rejected)
@@ -606,7 +598,7 @@ public class BuiltinEntities {
                                 c.correlationId(),
                                 c.timestamp()
                             ))
-                            .trigger(CompleteRejectedRequest).with(d -> badRequest(d.t1(), d.t2(), d.t4(), d.t5())).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                            .trigger(CompleteRejectedRequest).with(d -> badRequest(d.t1(), d.t4(), d.t5())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                             .output(d -> d.t1().t3()),
                         d -> tuple("Conflict", d.t4(), d.t1().request())
                     )
@@ -615,38 +607,57 @@ public class BuiltinEntities {
   }
 
   public record CustomResponse<I>(
-      EventType<I, HttpResponseMessage> event,
+      ResponseEventType<I> event,
       Function<TransitionContext<I>, HttpResponseMessage> messageCreator
   ) {}
 
+  public static class ResponseEventType<I> implements EventType<I, ResponseEventType.Data> {
+
+    public record Data(HttpResponseMessage response, EventReference processReference) {}
+    private final String name;
+    private final UUID id;
+    private final DataType<I> inputDataType;
+    private final DataType<Data> outputDataType = new DataType<>(Data.class);
+
+    public ResponseEventType(String name, UUID id, DataType<I> inputDataType) {
+      this.name = name;
+      this.id = id;
+      this.inputDataType = inputDataType;
+    }
+
+    public ResponseEventType(String name, UUID id, Class<I> inputDataType) {
+      this.name = name;
+      this.id = id;
+      this.inputDataType = new DataType<>(inputDataType);
+    }
+
+    @Override
+    public String name() {
+      return name;
+    }
+
+    @Override
+    public UUID id() {
+      return id;
+    }
+
+    @Override
+    public DataType<I> inputDataType() {
+      return inputDataType;
+    }
+
+    @Override
+    public DataType<Data> outputDataType() {
+      return outputDataType;
+    }
+  }
+
   private static <I> TransitionModel<?, ?> customResponse(CustomResponse<I> customResponse) {
     return onEvent(customResponse.event()).to(Completed)
-        .assemble(customResponse.messageCreator())
-        .trigger(Respond).with(d -> d).on(RequestRouting).identifiedBy(entityIdFromSession())
+        .assemble(c -> new ResponseEventType.Data(customResponse.messageCreator().apply(c), c.eventReference()))
+        .trigger(Respond).with(ResponseEventType.Data::response).on(RequestRouting).identifiedBy(entityIdFromSession())
         .output(Tuple2::t1);
   }
-
-  private static <I> TransitionModel<?, ?> customResponse(CustomResponse<I> customResponse, State target) {
-    return onEvent(customResponse.event()).to(target)
-        .assemble(customResponse.messageCreator())
-        .trigger(Respond).with(d -> d).on(RequestRouting).identifiedBy(entityIdFromSession())
-        .output(Tuple2::t1);
-  }
-
-  private static final CustomResponse<?> completeRequest = new CustomResponse<>(
-      CompleteRequest,
-      c -> createResponseMessage(new Created(), c.input().t2(), c.correlationId(), c.timestamp(), c.input().t1())
-  );
-
-  private static final CustomResponse<?> completeRejectedRequest = new CustomResponse<>(
-      CompleteRejectedRequest,
-      TransitionContext::input
-  );
-
-  private static final CustomResponse<?> rejectRequest = new CustomResponse<>(
-      CompleteRequest,
-      c -> createResponseMessage(new UnprocessableEntity(), c.input().t2(), c.correlationId(), c.timestamp(), c.input().t1())
-  );
 
   //  public abstract static class InboxExchange implements EntityModel {
 //
@@ -986,25 +997,32 @@ public class BuiltinEntities {
 
   private static HttpResponseMessage badRequest(
       String detail,
-      EntityId entityId,
       String correlationId,
       ZonedDateTime timestamp
   ) {
-    return createResponseMessage(new BadRequest(), entityId, correlationId, timestamp, detail);
+    return createResponseMessage(new BadRequest(), null, correlationId, timestamp, detail);
   }
 
   private static HttpResponseMessage unprocessableEntity(
       String detail,
-      EntityId entityId,
       String correlationId,
       ZonedDateTime timestamp
   ) {
-    return createResponseMessage(new UnprocessableEntity(), entityId, correlationId, timestamp, detail);
+    return createResponseMessage(new UnprocessableEntity(), null, correlationId, timestamp, detail);
+  }
+
+  public static HttpResponseMessage createImmediateResponseMessage(
+      HttpResponseCreator responseCreator,
+      String correlationId,
+      ZonedDateTime timestamp,
+      String data
+  ) {
+    return createResponseMessage(responseCreator, null, correlationId, timestamp, data);
   }
 
   public static HttpResponseMessage createResponseMessage(
       HttpResponseCreator responseCreator,
-      EntityId entityId,
+      @Nullable EventReference eventReference,
       String correlationId,
       ZonedDateTime timestamp,
       String data
@@ -1013,7 +1031,7 @@ public class BuiltinEntities {
         data, new Context() {
           @Override
           public EntityId entityId() {
-            return entityId;
+            return eventReference != null ? new EntityId.UUID(eventReference.entityId()) : null;
           }
 
           @Override

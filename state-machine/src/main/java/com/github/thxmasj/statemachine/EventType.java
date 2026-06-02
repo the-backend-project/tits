@@ -59,8 +59,11 @@ public interface EventType<I, O> {
       return clazz;
     }
 
+//    public String name() {
+//      return clazz != null ? (clazz == Void.class ? "-" : clazz.getSimpleName()) : name;
+//    }
     public String name() {
-      return clazz != null ? (clazz == Void.class ? "-" : clazz.getSimpleName()) : name;
+      return name;
     }
 
     public TypeReference<T> typeReference() {

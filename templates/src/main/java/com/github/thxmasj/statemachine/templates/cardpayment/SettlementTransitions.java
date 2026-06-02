@@ -75,7 +75,7 @@ public abstract class SettlementTransitions {
             onEvent(MerchantCreditReversed).toSelf().assemble((input, _) -> input).output(Function.identity()),
             onEvent(MerchantDebitReversed).toSelf().assemble((input, _) -> input).output(Function.identity()),
             onEvent(CutOffRequest).to(ProcessingSettlement)
-                .assemble((input, log) -> tuple(input, log.id(BatchNumber), log.id(AcquirerBatchNumber), log.entityId()))
+                .assemble(c -> tuple(c.input(), c.log().id(BatchNumber), c.log().id(AcquirerBatchNumber), c.eventReference()))
                 .trigger(Get).on(Aggregate.Merchant).identifiedBy(d -> secondaryId(MerchantId, d.t1().merchantId()))
                 .trigger(reconciliation()).with(d -> tuple(d.t1().t2(), d.t1().t3(), d.t2().accepted().event().getUnmarshalledData()))
                 .to(Acquirer).guaranteed().responseValidator(validateSettlementResponse())

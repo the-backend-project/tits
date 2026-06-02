@@ -6,6 +6,7 @@ import static java.util.Collections.unmodifiableMap;
 import static java.util.Optional.ofNullable;
 
 import com.github.thxmasj.statemachine.BasicEventType.Rollback.Data;
+import com.github.thxmasj.statemachine.BuiltinEntities.EventReference;
 import com.github.thxmasj.statemachine.EventTrigger.EventSpec;
 import com.github.thxmasj.statemachine.OutgoingRequestModel.Builder;
 import com.github.thxmasj.statemachine.StateMachine.CircularChange;
@@ -80,6 +81,10 @@ public class TransitionModelBuilder<I, T, O> {
     String correlationId();
     EventLog log();
     I input();
+    default EventReference eventReference() {
+      return new EventReference(log().entityId().value(), log().lastEventNumber() + 1);
+    }
+
   }
 
   public sealed interface ChangeContext<T> {

@@ -1,16 +1,15 @@
 package com.github.thxmasj.statemachine;
 
+import static com.github.thxmasj.statemachine.Event.join;
+import static java.util.Collections.unmodifiableList;
+import static java.util.stream.Collectors.joining;
+
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Optional;
-import java.util.UUID;
 import java.util.stream.Stream;
-
-import static com.github.thxmasj.statemachine.Event.join;
-import static java.util.Collections.unmodifiableList;
-import static java.util.stream.Collectors.joining;
 
 public record EventLog(
     EntityModel entityModel,
@@ -25,7 +24,7 @@ public record EventLog(
 
   public <T> T one(Class<T> dataType) {
     return effectiveEvents().stream()
-        .filter(e -> e.type().outputDataType().value().equals(dataType))
+        .filter(e -> dataType.equals(e.type().outputDataType().value()))
         .map(e -> (T)e.getUnmarshalledData())
         .filter(e -> e != null)
         .findFirst()
@@ -44,7 +43,7 @@ public record EventLog(
   public <T> T last(Class<T> dataType) {
     System.out.println("Trying to find data from last event having data of type " + dataType.getSimpleName());
     T result = effectiveEvents().reversed().stream()
-        .filter(e -> e.type().outputDataType().value().equals(dataType))
+        .filter(e -> dataType.equals(e.type().outputDataType().value()))
         .map(e -> cast(dataType, e.getUnmarshalledData()))
         .findFirst()
         .orElseThrow(() -> new NoSuchElementException("last(" + dataType.getSimpleName() + ")"));
