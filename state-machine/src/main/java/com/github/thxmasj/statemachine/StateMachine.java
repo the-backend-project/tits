@@ -541,11 +541,7 @@ public class StateMachine {
     return eventLog(eventTrigger, input, null)
         .flatMapMany(log ->
                 onEvent(correlationId, eventTrigger.eventSpec().eventType(), adaptedInput, log, null, null, List.of())
-                    .contextWrite(ctx -> {
-                      System.out.println("Putting " + log.entityModel().name() + " on context");
-                          return ctx.put("RS/" + log.entityId().value(), responseSink);
-                        }
-                    )
+                    .contextWrite(ctx -> ctx.put("RS/" + log.entityId().value(), responseSink))
                     .thenMany(responseSink.asFlux())
                     .doOnNext(e -> System.out.println("onEvent output: " + e.type().name() + " (#" + e.eventNumber() + ")"))
                     .retryWhen(RetrySpec.fixedDelay(3, Duration.ofMillis(500))
@@ -1066,13 +1062,7 @@ public class StateMachine {
                                 changeList.sort(comparing(change -> change.newEvent().eventNumber()));
                                 ctx.<Many<Event<?>>>getOrEmpty("RS/" + entityId.value())
                                     .map(responseSink -> {
-                                      System.out.println("Sending events to response sink for changes:\n" + changeList.stream()
-                                          .map(Object::toString)
-                                          .collect(joining("\n")));
                                       changeList.forEach(change -> responseSink.tryEmitNext(change.newEvent()).orThrow());
-                                      System.out.println("Sent events to response sink for changes:\n" + changeList.stream()
-                                          .map(Object::toString)
-                                          .collect(joining("\n")));
                                       return responseSink;
                                     });
                               });

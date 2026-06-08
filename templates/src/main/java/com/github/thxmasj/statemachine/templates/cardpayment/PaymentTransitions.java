@@ -360,7 +360,6 @@ public abstract class PaymentTransitions {
                 onEvent(PreauthorisationApproved).to(Preauthorised)
                     .assemble(((input, log) -> tuple(log.one(ValidPaymentRequest).t1(), log.one(ValidPaymentRequest).t2(), input)))
                     .trigger(approvedPreauthorisation()).with(d -> d).to(Queues.Merchant).guaranteed()
-                    .schedule(AuthorisationExpired, Duration.ofDays(7))
                     .output(Tuple3::t3),
                 onEvent(RequestUndelivered).to(AuthorisationFailed)
                     .assemble((_, log) -> tuple(
@@ -380,7 +379,6 @@ public abstract class PaymentTransitions {
                         .identifiedBy(d -> entityId(d.t2().accepted().event().entityId()))
                     .trigger(approvedAuthorisation()).with(d -> tuple(d.t1().t1().t1(), d.t1().t1().t2(), d.t1().t2().accepted().event().getUnmarshalledData(), d.t1().t1().t3())).to(
                         Queues.Merchant).guaranteed()
-                    .schedule(AuthorisationExpired, Duration.ofDays(7))
                     .reversible(
                         assemble((log, _) -> log.one(ValidPaymentRequest).t1())
                             .trigger(MerchantCreditReversed).with(d -> d.amount().requested()).on(Settlement)
