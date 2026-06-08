@@ -2,7 +2,6 @@ package com.github.thxmasj.statemachine.templates.cardpayment;
 
 import static com.github.thxmasj.statemachine.templates.cardpayment.Aggregate.Merchant;
 
-import com.github.thxmasj.statemachine.BeanRegistry;
 import com.github.thxmasj.statemachine.StateMachine;
 import com.github.thxmasj.statemachine.database.Client.Config;
 import com.github.thxmasj.statemachine.database.jdbc.DataSourceBuilder;
@@ -21,14 +20,7 @@ public class MerchantTest {
   @BeforeAll
   public static void setup() {
     stateMachine = new StateMachine(
-        null,
         _ -> Mono.empty(),
-        new BeanRegistry() {
-          @Override
-          public <T> T getBean(Class<T> type) {
-            return null;
-          }
-        },
         Map.of(
             Merchant, new MerchantTransitions().transitions()
 //            ,

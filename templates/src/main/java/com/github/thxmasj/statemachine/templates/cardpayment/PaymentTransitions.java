@@ -157,10 +157,6 @@ public abstract class PaymentTransitions {
   public Map<State, List<TransitionModel<?, ?>>> transitions() {
     return mergeModels(Map.of(
             Begin, List.of(
-//                onEvent(RollbackRequest).toSelf()
-//                    .assemble((input, log) -> tuple(input, log.entityId()))
-//                    .trigger(CompleteRequest).with(Tuple2::t2).on(RequestDispatching).identifiedBy(entityIdFromSession())
-//                    .output(d -> d.t1().t1()),
                 onEvent(PaymentRequest).to(ProcessingAuthentication)
                     .assemble(c -> tuple(
                         c.input().t1(),
@@ -261,10 +257,6 @@ public abstract class PaymentTransitions {
                     .on(RequestDispatching)
                     .identifiedBy(entityIdFromSession())
                     .output(),
-//                onEvent(RollbackRequest).toSelf()
-//                    .assemble((input, log) -> tuple(input, log.entityId()))
-//                    .trigger(CompleteRequest).with(Tuple2::t2).on(RequestDispatching).identifiedBy(entityIdFromSession())
-//                    .output(d -> d.t1().t1()),
                 onEvent(PaymentEvent.Authorisation).to(ProcessingAuthorisation)
                     .assemble((input, log) -> tuple(log.one(ValidPaymentRequest), input))
                     .when(d -> d.t1().t1().capture()).then(
@@ -370,11 +362,6 @@ public abstract class PaymentTransitions {
                     .trigger(approvedPreauthorisation()).with(d -> d).to(Queues.Merchant).guaranteed()
                     .schedule(AuthorisationExpired, Duration.ofDays(7))
                     .output(Tuple3::t3),
-//                onEvent(Rollback).toSelf().assembleInput().output(d -> d),
-//                onEvent(RollbackRequest).toSelf()
-//                    .assemble((input, log) -> tuple(input, log.entityId()))
-//                    .trigger(CompleteRequest).with(d -> tuple("", d.t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
-//                    .output(d -> d.t1().t1()),
                 onEvent(RequestUndelivered).to(AuthorisationFailed)
                     .assemble((_, log) -> tuple(
                         log.one(ValidPaymentRequest).t1(),
@@ -391,7 +378,6 @@ public abstract class PaymentTransitions {
                         )
                     .trigger(MerchantCredit).with(d -> d.t1().t1().amount().requested()).on(Settlement)
                         .identifiedBy(d -> entityId(d.t2().accepted().event().entityId()))
-                    //Tuple4<PaymentEvent.Authorisation, PaymentEvent.Merchant, BatchNumber, AcquirerResponse>
                     .trigger(approvedAuthorisation()).with(d -> tuple(d.t1().t1().t1(), d.t1().t1().t2(), d.t1().t2().accepted().event().getUnmarshalledData(), d.t1().t1().t3())).to(
                         Queues.Merchant).guaranteed()
                     .schedule(AuthorisationExpired, Duration.ofDays(7))
@@ -402,16 +388,6 @@ public abstract class PaymentTransitions {
 
                     )
                     .output(d -> d.t1().t1().t3()),
-//                .reverse(new BaseReversalBuildingBlock()
-//                .trigger(
-//                    SettlementEvent.MerchantCreditReversed,
-//                    t -> t.t2().one(PaymentRequest).t1().amount().requested()
-//                ).onEntity(settlement)
-//                .identifiedByLastInGroup(
-//                    BatchNumber,
-//                    (_, log) -> log.one(ValidPaymentRequest).t1().merchantId(),
-//                    NeverCreate
-//                )),
                 onEvent(AcquirerDeclined).to(AuthorisationFailed)
                     .assemble((input, log) -> tuple(log.one(ValidPaymentRequest).t1(), log.one(ValidPaymentRequest).t2(), input))
                     .trigger(declinedAuthorisation()).with(d -> d).to(Queues.Merchant).guaranteed()
@@ -433,25 +409,11 @@ public abstract class PaymentTransitions {
                     .output(d -> d.t1().t1().t3())
             ),
             Preauthorised, List.of(
-//                onEvent(Rollback).toSelf().assembleInput().output(d -> d),
                 onEvent(AuthorisationExpired).to(Expired).output(),
-//                onEvent(RollbackRequest).toSelf()
-//                    .assemble((input, log) -> tuple(input, log.entityId()))
-//                    .trigger(CompleteRequest).with(d -> tuple("", d.t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
-//                    .output(d -> d.t1().t1()),
                 rollbackOn(Cancel),
-//                onEvent(Cancel).toSelf()
-//                    .assemble((input, log) -> tuple(input, log.entityId()))
-//                    .trigger(CompleteRequest).with(d -> tuple("", d.t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
-//                    .output(d -> d.t1().t1()),
                 captureRequestTransition()
             ),
             Authorised, List.of(
-//                onEvent(Rollback).toSelf().assembleInput().output(d -> d),
-//                onEvent(RollbackRequest).toSelf()
-//                    .assemble((input, log) -> tuple(input, log.entityId()))
-//                    .trigger(CompleteRequest).with(d -> tuple("", d.t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
-//                    .output(d -> d.t1().t1()),
                 onEvent(AuthorisationExpired).to(ExpiredAfterCapture).output(),
                 captureRequestTransition()
             ),
@@ -587,7 +549,6 @@ public abstract class PaymentTransitions {
                         .reversible(
                             assemble((log, rollbackType) -> {
                               var paymentData = log.one(ValidPaymentRequest);
-//                              Refund refundData = log.last(RefundRequest);
                               Refund refundData = log.last(ValidRefundRequest);
                               AcquirerResponse acquirerResponse = log.lastIfExists(RefundApproved).orElse(null);
                               return new RefundReversalData(
@@ -628,11 +589,6 @@ public abstract class PaymentTransitions {
         ),
         processingState,
         List.of(
-//            onEvent(Rollback).toSelf().assembleInput().output(d -> d),
-//            onEvent(RollbackRequest).toSelf()
-//                .assemble((input, log) -> tuple(input, log.entityId()))
-//                .trigger(CompleteRequest).with(d -> tuple("", d.t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
-//                .output(d -> d.t1().t1()),
             onEvent(RequestUndelivered).to(anchor)
                 .assemble((_, log) -> log.one(ValidPaymentRequest))
                 .trigger(failedRefund()).with(d -> d).to(Queues.Merchant).guaranteed()

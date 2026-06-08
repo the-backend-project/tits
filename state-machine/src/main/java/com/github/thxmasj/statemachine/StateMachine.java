@@ -57,7 +57,6 @@ import com.github.thxmasj.statemachine.database.mssql.OutgoingRequestByEvent;
 import com.github.thxmasj.statemachine.database.mssql.ProcessBackedOff;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
 import com.github.thxmasj.statemachine.http.HttpClient;
-import com.github.thxmasj.statemachine.http.RequestMapper;
 import com.github.thxmasj.statemachine.message.Message;
 import com.github.thxmasj.statemachine.message.Message.IncomingResponse;
 import com.github.thxmasj.statemachine.message.Message.OutgoingRequest;
@@ -109,9 +108,7 @@ public class StateMachine {
   private final Map<EntityModel, Traverser> traversers;
 
   public StateMachine(
-      RequestMapper requestMapper,
       Function<List<String>, Mono<Void>> delayer,
-      BeanRegistry beanRegistry,
       Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions,
       DataSource dataSource,
       DataSource schemaDataSource,
@@ -530,31 +527,23 @@ public class StateMachine {
   }
 
   public <O> Flux<Event<?>> onEvent(String correlationId, EventTrigger<Void, Void, O> eventTrigger) {
-    return onEvent(correlationId, eventTrigger, null, null);
+    return onEvent(correlationId, eventTrigger, null);
   }
 
   public <I, O> Flux<Event<?>> onEvent(EventTrigger<I, I, O> eventTrigger, I input) {
-    return onEvent(UUID.randomUUID().toString(), eventTrigger, input, null);
+    return onEvent(UUID.randomUUID().toString(), eventTrigger, input);
   }
 
   public <T, I, O> Flux<Event<?>> onEvent(String correlationId, EventTrigger<T, I, O> eventTrigger, T input) {
-    return onEvent(correlationId, eventTrigger, input, null);
-  }
-
-  private <T, I, O> Flux<Event<?>> onEvent(String correlationId, EventTrigger<T, I, O> eventTrigger, T input, ChangeContext<?> stage1) {
     System.out.println("onEvent " + correlationId + " " + eventTrigger.eventSpec().eventType().name());
     I adaptedInput = eventTrigger.eventSpec().inputAdapter().apply(input);
     Many<Event<?>> responseSink = Sinks.many().unicast().onBackpressureBuffer();
     return eventLog(eventTrigger, input, null)
         .flatMapMany(log ->
-                onEvent(correlationId, eventTrigger.eventSpec().eventType(), adaptedInput, log, null, stage1, List.of())
+                onEvent(correlationId, eventTrigger.eventSpec().eventType(), adaptedInput, log, null, null, List.of())
                     .contextWrite(ctx -> {
                       System.out.println("Putting " + log.entityModel().name() + " on context");
-                          return ctx
-                              //.put("RS/" + (tuple.t1().lastEventNumber() + 2) + "/" + tuple.t1().entityId().value(), responseSink)
-                              .put("RS/" + log.entityId().value(), responseSink)
-                              //.put(log.entityModel(), log.entityId())
-                              ;
+                          return ctx.put("RS/" + log.entityId().value(), responseSink);
                         }
                     )
                     .thenMany(responseSink.asFlux())
@@ -842,7 +831,6 @@ public class StateMachine {
             case EntitySelector.ByIdFromSession _ -> {
               try {
                 yield entityIdFromChangeContext(previous, eventTrigger.entityModel());
-                //yield ctx.get(eventTrigger.entityModel());
               } catch (NoSuchElementException e) {
                 throw new RuntimeException(e.getMessage() + "\nFound in Reactor context:\n" +
                     ctx.stream().map(x -> x.toString()).collect(joining("\n")));

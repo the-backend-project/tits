@@ -16,8 +16,6 @@ import java.util.UUID;
 import java.util.function.Function;
 import javax.sql.DataSource;
 import com.github.thxmasj.statemachine.http.HttpRequestRouter.HttpRequestRoute;
-import com.github.thxmasj.statemachine.http.NettyHttpClient;
-import com.github.thxmasj.statemachine.http.NettyHttpClientBuilder;
 import com.sun.net.httpserver.HttpContext;
 import com.sun.net.httpserver.HttpServer;
 import reactor.core.publisher.Mono;
@@ -26,7 +24,6 @@ import static com.github.thxmasj.statemachine.BuiltinEntities.Models.RequestDisp
 import static com.github.thxmasj.statemachine.BuiltinEntities.Models.RequestRouting;
 import static com.github.thxmasj.statemachine.BuiltinEntities.requestDispatchingTransitions;
 import static com.github.thxmasj.statemachine.BuiltinEntities.requestRoutingTransitions;
-import static com.github.thxmasj.statemachine.HttpInboxTest.Queues.DeviceListener;
 
 public class Init {
 
@@ -51,15 +48,8 @@ public class Init {
       Function<OutboxQueue, HttpClient> outbox
   ) {
     return new StateMachine(
-        null,
         _ -> Mono.empty(),
-        new BeanRegistry() {
-          @Override
-          public <T> T getBean(Class<T> type) {
-            return null;
-          }
-        },
-        transitions,
+            transitions,
         dataSource,
         migrationDataSource,
         UUID.randomUUID().toString(),
