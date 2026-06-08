@@ -5,13 +5,11 @@ import static java.util.stream.Collectors.joining;
 import static java.util.stream.IntStream.range;
 
 import com.github.thxmasj.statemachine.BasicEventType;
-import com.github.thxmasj.statemachine.BasicEventType.ReadOnly;
 import com.github.thxmasj.statemachine.EntityId;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.Event;
 import com.github.thxmasj.statemachine.SecondaryId;
 import com.github.thxmasj.statemachine.StateMachine.ProcessResult;
-import com.github.thxmasj.statemachine.database.ChangeRaced;
 import com.github.thxmasj.statemachine.database.Client;
 import com.github.thxmasj.statemachine.database.Client.PrimaryKeyConstraintViolation;
 import com.github.thxmasj.statemachine.database.Client.Query.Builder;
@@ -276,8 +274,11 @@ public class ChangeState {
         @Override
         public String toString() {
           return entityModel().name() + ":" +
-              entityId().value() + ":rq:" +
-              outgoingRequest.queue().name() + ":" +
+              entityId().value() + ":rq:[" +
+              outgoingRequest.queue().name() + "]:" +
+              "id=" + outgoingRequest.id() + ":" +
+              outgoingRequest.eventNumber() + ":" +
+              "guaranteed=" + outgoingRequest.guaranteed() + ":" +
               outgoingRequest.message().requestLine();
         }
 
@@ -329,8 +330,11 @@ public class ChangeState {
         @Override
         public String toString() {
           return entityModel().name() + ":" +
-              entityId().value() + ":rs:" +
-              incomingResponse.queue().name() + ":" +
+              entityId().value() + ":rs:[" +
+              incomingResponse.queue().name() + "]:" +
+              "id=" + incomingResponse.requestId() + ":" +
+              incomingResponse.eventNumber() + ":" +
+              "guaranteed=" + incomingResponse.guaranteed() + ":" +
               incomingResponse.message().statusLine();
         }
       };

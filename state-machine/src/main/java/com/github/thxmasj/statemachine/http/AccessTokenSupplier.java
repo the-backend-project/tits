@@ -11,7 +11,6 @@ import java.net.URI;
 import java.net.URLEncoder;
 import java.time.Clock;
 import java.time.Duration;
-import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
@@ -21,7 +20,6 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
@@ -97,7 +95,7 @@ public class AccessTokenSupplier implements Supplier<String> {
     long t0 = System.currentTimeMillis();
     try {
       if (!readyLatch.await(10, TimeUnit.SECONDS))
-        throw new AccessFailed("No access token available");
+        throw new AccessFailed("No access token available from " + url);
     } catch (InterruptedException e) {
       throw new AccessFailed(
           "Interrupted while waiting for access token after %d ms (from: %s)"
@@ -112,6 +110,7 @@ public class AccessTokenSupplier implements Supplier<String> {
   }
 
   private void onError(Throwable throwable) {
+    System.out.println("AccessTokenSupplier.onError: URL " + url + ": " + throwable.getMessage());
     scheduleFetch(Duration.ofSeconds(5));
   }
 

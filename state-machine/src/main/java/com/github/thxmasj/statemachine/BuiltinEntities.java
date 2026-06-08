@@ -30,10 +30,13 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.github.thxmasj.statemachine.BasicEventType.Rollback.Data;
 import com.github.thxmasj.statemachine.BuiltinEntities.RequestParser.ParsedRequest;
 import com.github.thxmasj.statemachine.EntitySelector.ById;
+import com.github.thxmasj.statemachine.EntitySelector.ByIdFromSession;
 import com.github.thxmasj.statemachine.EntitySelector.BySecondaryId;
 import com.github.thxmasj.statemachine.EventTrigger.EventSpec;
 import com.github.thxmasj.statemachine.EventType.DataType;
 import com.github.thxmasj.statemachine.OutgoingRequestCreator.Context;
+import com.github.thxmasj.statemachine.StateMachine.ProcessResult;
+import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Pending;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;
@@ -345,10 +348,11 @@ public class BuiltinEntities {
             input,
             ofNullable(input.messageId()).orElse(new MessageId(
                     "N/A",
-                    switch (input.processSelector()) {
+                    route.processEventType().id() + "/" + switch (input.processSelector()) {
                       case ById s -> s.id().value().toString();
                       case BySecondaryId<?> s -> s.value().toString();
-                      // TODO: ByIdFromSession, ByLastInIdGroup, ByNextInIdGroup not handled
+                      case ByIdFromSession _ -> UUID.randomUUID().toString(); // TODO: Use id from session for route.processType().
+                      // TODO: ByLastInIdGroup, ByNextInIdGroup not handled
                       default -> throw new IllegalStateException("Process selector type not handled: " + input.processSelector().getClass().getName());
                     }
                 )
@@ -434,7 +438,15 @@ public class BuiltinEntities {
                         //.output(d -> tuple(d.t1().t1().request(), d.t1().t2())),
                         .output(d -> tuple(d.t1().request(), d.t2())),
                     d -> tuple(d.t1(), new EventReference(d.t2().completed().entityId().value(), d.t2().completed().eventNumber()))
-                ).otherwise(
+                )
+                .when(d -> d.t2() instanceof ProcessResult.Pending<?, ?, ?> p && p.exception().entityModel().equals(RequestRouting)).then(
+                    // TODO: Can immediate reply in router be handled like this?
+                    onEvent(AcceptRequest).to(Dispatched)
+                        .assemble((input, log) -> tuple(input.t1(), input.t2(), log.entityId()))
+                        .output(d -> tuple(d.t1().request(), d.t2())),
+                    d -> tuple(d.t1(), new EventReference(d.t2().pending().exception().entityId().value(), 0 /* eventNumber not used in transition anyways */))
+                )
+                .otherwise(
                     // TODO: How to handle unknown process result? ("should never happen")
                     onEvent(AcceptRequest).to(Dispatched)
                         .assemble((input, log) -> tuple(input.t1(), input.t2(), log.entityId()))
@@ -449,8 +461,8 @@ public class BuiltinEntities {
 
   private static <T, U> TransitionModel<?, ?> triggerRollbackTransition(ContentRoute<T, U> route, State rejectedState) {
     return onEvent(route.dispatchingEventType()).to(RollingBack)
-        .assemble((input, log) -> tuple(input, log.entityId(), log.one(AcceptRequest).t2()))
-        .trigger(Rollback).with(d -> new Data(d.t3().eventNumber() - 1, "HttpInbox")).on(route.processType()).identifiedBy(d -> entityId(d.t3().entityId()))
+        .assemble((input, log) -> tuple(input, log.entityId(), log.one(AcceptRequest).t2(), log.one(ResponseEventType.Data.class).processReference()))
+        .trigger(Rollback).with(d -> new Data(d.t3().eventNumber() - 1, d.t4().eventNumber(), "HTTP request")).on(route.processType()).identifiedBy(d -> entityId(d.t3().entityId()))
         .when(d -> d.t2().isRejected()).then(
             onEvent(RejectRequest).to(rejectedState)
                 .assembleInput()
@@ -460,11 +472,7 @@ public class BuiltinEntities {
         )
         .when(d -> d.t2().isAccepted()).then(
             onEvent(AcceptRollbackRequest).to(RollingBack)
-                .assemble((input, log) -> tuple(
-                    input.t1(),
-                    input.t2(),
-                    input.t3()
-                ))
+                .assembleInput()
                 .newIdentifier(RollbackMessageId, d -> new MessageId(d.t2().messageId().clientId(), d.t2().messageId().value()))
                 .trigger(CompleteRollbackRequest).with(d -> tuple(d.t1().t1(), d.t1().t3())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t1().t2().request()),
@@ -555,13 +563,13 @@ public class BuiltinEntities {
                 .output(Tuple2::t1)
         ),
         RejectedRollbackFromCompleted, List.of(
-            onEvent(CompleteRequest).to(Completed)
+            onEvent(CompleteRollbackRequest).to(Completed)
                 .assemble(c -> new ResponseEventType.Data(createResponseMessage(new UnprocessableEntity(), c.input().t2(), c.correlationId(), c.timestamp(), c.input().t1()), c.input().t2()))
                 .trigger(Respond).with(ResponseEventType.Data::response).on(RequestRouting).identifiedBy(entityIdFromSession())
                 .output(Tuple2::t1)
         ),
         RejectedRollbackFromDispatched, List.of(
-            onEvent(CompleteRequest).to(Dispatched)
+            onEvent(CompleteRollbackRequest).to(Dispatched)
                 .assemble(c -> new ResponseEventType.Data(createResponseMessage(new UnprocessableEntity(), c.input().t2(), c.correlationId(), c.timestamp(), c.input().t1()), c.input().t2()))
                 .trigger(Respond).with(ResponseEventType.Data::response).on(RequestRouting).identifiedBy(entityIdFromSession())
                 .output(Tuple2::t1)

@@ -163,7 +163,7 @@ public class PlantUMLFormatter {
         """,
         state.name(),
         Stream.of(
-            Optional.ofNullable(state.timeout() == State.NEVER_TIMEOUT ? null : state.timeout()).map(timeout -> "timeout: " + timeout.event().eventType().name() + " after " + timeout.duration().toString()).orElse("")
+            Optional.ofNullable(state.timeout() == State.NEVER_TIMEOUT ? null : state.timeout()).map(timeout -> "timeout: " + timeout.eventType().name() + " after " + timeout.duration().toString()).orElse("")
         ).filter(not(String::isEmpty)).collect(joining("\\n"))
     );
   }

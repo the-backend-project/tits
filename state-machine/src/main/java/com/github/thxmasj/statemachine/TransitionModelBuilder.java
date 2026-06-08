@@ -109,6 +109,18 @@ public class TransitionModelBuilder<I, T, O> {
       throw new IllegalStateException("No initial context");
     }
 
+    default InitialChangeContext<?> initialChangeContext(EntityModel entityModel) {
+      InitialChangeContext<?> candidate = null;
+      for (ChangeContext<?> c = this; c != null; c = c.previous()) {
+        if (c instanceof ChangeContext.InitialChangeContext<?> i && i.log().entityModel().equals(entityModel)) {
+          if (i.stage1() != null) return i.stage1().initialChangeContext(entityModel);
+          candidate = i;
+        }
+      }
+      if (candidate != null) return candidate;
+      throw new IllegalStateException("No initial context for entity model " + entityModel.name());
+    }
+
     default boolean isChoiceTransition() {
       ChangeContext<?> changeContext = this;
       while (changeContext != null) {
@@ -156,7 +168,7 @@ public class TransitionModelBuilder<I, T, O> {
     ) implements ChangeContext<I>, TransitionContext<I> {
       @Override public I stepOutput() {return input;}
       @Override public String toString() {
-        return "Initial " + log.entityModel().name() + "/" + log.entityId().value() + "/" + eventNumber + "/" + from.name() + ": " + transitionModel + " with " + ofNullable(input).map(i -> i.getClass().getSimpleName()).orElse("-");
+        return "Initial " + log.entityModel().name() + "/" + log.entityId().value() + "/" + eventNumber + "/" + from.name() + "(stage1=" + (stage1 != null) + "): " + transitionModel + " with " + ofNullable(input).map(i -> i.getClass().getSimpleName()).orElse("-");
       }
       public <T> IdentityResult<T> identityResult(SecondaryId<T> id) {
         return (IdentityResult<T>)identityResults.stream().filter(r -> r.id().equals(id)).findFirst().orElse(null);
@@ -346,14 +358,32 @@ public class TransitionModelBuilder<I, T, O> {
     return new TransitionModel<>(
         new ModelContext<>(false, null, eventType, List.of(), List.of(), List.of(), List.of(), null, null, List.of()),
         initialChangeContext -> initialChangeContext.flatMap(i -> {
-          System.out.println("Validating rollback (" + eventType.name() + "), initial change context: " + i);
+          System.out.println("Validating rollback (" + eventType.name() + "), data [" + i.stepOutput() + "] initial change context: " + i);
+          //int rollbackFrom = i.stepOutput().fromNumber();
           int rollbackTo = i.stepOutput().toNumber();
-          if (rollbackTo < 0) {
-            rollbackTo = i.log().lastEventNumber() + rollbackTo; // add negative
-          }
           int actualRollbackTo = rollbackTo;
-          if (actualRollbackTo >= i.log().lastEventNumber() || actualRollbackTo < 0) {
-            System.out.println("Rejecting rollback (rollbackTo=" + rollbackTo + "): " + actualRollbackTo + " >= " + i.log().lastEventNumber() + " || " + actualRollbackTo + " < 0");
+          if (rollbackTo < 0) {
+            actualRollbackTo = i.log().lastEventNumber() + rollbackTo; // add negative
+          }
+          System.out.println("Rolling back events:\n" + i.log().events().subList(actualRollbackTo, i.log().events().size()).stream().map(e -> "#" + e.eventNumber() + "[" + e.type().name() + "]").collect(Collectors.joining("\n")));
+          if (
+            // Rollback to future event
+              actualRollbackTo >= i.log().lastEventNumber()
+                  // Rollback to before start
+                  || actualRollbackTo < 0
+                  // Rollback more than one request
+                  || i.log().events().subList(actualRollbackTo, i.log().events().size()).stream().filter(e -> e.type() instanceof RequestEventType<?,?>).count() > 1
+                  // Rollback from an event which is not the last
+                  //|| rollbackFrom != i.log().lastEventNumber()
+          ) {
+
+            System.out.println(
+                "Rejecting rollback (rollbackTo=" + rollbackTo + /*", rollbackFrom=" + rollbackFrom +*/ "): " +
+                actualRollbackTo + " >= " + i.log().lastEventNumber() +
+                " || " + actualRollbackTo + " < 0 " +
+                " || " + i.log().events().subList(actualRollbackTo, i.log().events().size()).stream().filter(e -> e.type() instanceof RequestEventType<?,?>).count() + " > 1"
+                /*+ rollbackFrom + " != " +  i.log().lastEventNumber()*/
+            );
             return Mono.just(new OutputChangeContext<>(
                 i,
                 ProcessResult.rejected(
@@ -370,7 +400,7 @@ public class TransitionModelBuilder<I, T, O> {
           }
           EventLog log = i.log();
           var effectiveEvents = log.effectiveEvents();
-          List<Event<?>> eventsToRollback = effectiveEvents.subList(rollbackTo, effectiveEvents.size());
+          List<Event<?>> eventsToRollback = effectiveEvents.subList(actualRollbackTo, effectiveEvents.size());
           Traverser traverser = i.stateMachine.traverser(log.entityModel());
           Mono<ChangeContext<?>> currentContext = Mono.just(i);
           for (var event : eventsToRollback.reversed()) {
@@ -896,15 +926,15 @@ public class TransitionModelBuilder<I, T, O> {
           this.builder.builderFunction.andThen(changeContext -> changeContext
               .flatMap(c -> {
                 if (c instanceof ChoiceChangeContext) {
-                  log(modelContext, "Alternative " + filter.alternative().model().eventType().name() + " skipped, another alternative already chosen");
+//                  log(modelContext, "Alternative " + filter.alternative().model().eventType().name() + " skipped, another alternative already chosen");
                   return Mono.just(c);
                 }
 //                log(modelContext, "Alternative " + filter.alternative().model().eventType().name() + ": testing with <" + c.stepOutput() + ">");
                 if (!filter.predicate().test(c.stepOutput())) {
-                  log(modelContext, "Alternative " + filter.alternative().model().eventType().name() + " not matching");
+//                  log(modelContext, "Alternative " + filter.alternative().model().eventType().name() + " not matching");
                   return Mono.just(c);
                 }
-                log(modelContext, "using alternative: " + filter.alternative().model().eventType().name());
+//                log(modelContext, "using alternative: " + filter.alternative().model().eventType().name());
                 return filter.alternative().model().calculate(
                         new InitialChangeContext<>(
                             null,
@@ -1006,14 +1036,15 @@ public class TransitionModelBuilder<I, T, O> {
             modelContext.rejectModel,
             modelContext.duplicateModels
         ),
-        builderFunction.andThen(changeContext -> changeContext.flatMap(c -> c.initialChangeContext()
-            .timestamp().isAfter(c.initialChangeContext().log().effectiveEvents().getLast().timestamp().plus(deadline)) ?
-            c.initialChangeContext().stateMachine().calculateChange(
-                eventType,
-                c.initialChangeContext().log(),
-                c.initialChangeContext().timestamp(),
-                c.initialChangeContext().correlationId()
-            ).map(output -> new ScheduledChangeContext<>(output, c)) : Mono.just(c)))
+        builderFunction
+//            .andThen(changeContext -> changeContext.flatMap(c -> c.initialChangeContext()
+//            .timestamp().isAfter(c.initialChangeContext().log().effectiveEvents().getLast().timestamp().plus(deadline)) ?
+//            c.initialChangeContext().stateMachine().calculateChange(
+//                eventType,
+//                c.initialChangeContext().log(),
+//                c.initialChangeContext().timestamp(),
+//                c.initialChangeContext().correlationId()
+//            ).map(output -> new ScheduledChangeContext<>(output, c)) : Mono.just(c)))
     );
   }
 
@@ -1258,7 +1289,7 @@ public class TransitionModelBuilder<I, T, O> {
     );
   }
 
-  public static class TransitionModel<I, O> /*extends TransitionModelBuilder<I, O, O> */{
+  public static class TransitionModel<I, O> {
 
     private final ModelContext<I, O> modelContext;
     private final Function<Mono<InitialChangeContext<I>>, Mono<OutputChangeContext<O>>> chain;

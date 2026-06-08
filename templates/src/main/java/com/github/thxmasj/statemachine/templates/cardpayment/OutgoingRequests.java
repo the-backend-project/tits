@@ -45,7 +45,7 @@ public class OutgoingRequests {
     default UUID id() {return UUID.fromString("b9f4230d-1a55-4453-a9e7-7a6079985171");}
     default String name() {return "RolledBackPreauthorisationRequest";}
   }
-  public interface RolledBackAuthorisationRequest extends OutgoingRequestCreator<Tuple2<AuthorisationReversalData, AcquirerBatchNumber>> {
+  public interface RolledBackAuthorisationRequest extends OutgoingRequestCreator<Tuple2<AuthorisationReversalData, BatchNumber>> {
     default UUID id() {return UUID.fromString("86293a8d-03e8-4e89-9857-8d44bc31afac");}
     default String name() {return "RolledBackAuthorisationRequest";}
   }

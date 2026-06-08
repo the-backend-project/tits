@@ -316,7 +316,7 @@ public class HttpInboxTest {
               UUID.fromString("f5ef4720-c6bc-4686-be8b-85eeb0fdc372"),
               Rollback,
               Lamp,
-              _ -> new Data(0, "Cancel"),
+              _ -> new Data(0, Integer.MAX_VALUE, "Cancel"),
               parseEntityId("DELETE .*/internal/(.*)", 1)
           ))
       ),

@@ -57,7 +57,7 @@ public class EventLogTest {
     List<Event<?>> events = List.of(
         new Event<>(randomUUID(), 1, new BasicEventType.DataLess("Test1", randomUUID()), Clock.systemUTC()),
         new Event<>(randomUUID(), 2, new BasicEventType.DataLess("Test2", randomUUID()), Clock.systemUTC()),
-        new Event<>(randomUUID(), 3, BuiltinEventTypes.Rollback, Clock.systemUTC(), new Data(0, "testing"))
+        new Event<>(randomUUID(), 3, BuiltinEventTypes.Rollback, Clock.systemUTC(), new Data(0, 2, "testing"))
         //new Event.Rollback(3, 0, "testing", Clock.systemUTC())
     );
     EventLog log = new EventLog(null, null, List.of(), events);

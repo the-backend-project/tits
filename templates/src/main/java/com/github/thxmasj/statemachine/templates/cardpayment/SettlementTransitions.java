@@ -84,6 +84,7 @@ public abstract class SettlementTransitions {
                 .output(d -> d.t1().t1().t1().t1())
         ),
         ProcessingSettlement, List.of(
+            onEvent(GetBatchNumber).toSelf().assemble(c -> c.log().id(BatchNumber)).output(d -> d),
             // For previous batch to stay open for ongoing capture exchanges when cut-off is performed
             onEvent(MerchantCredit).toSelf().assemble((input, _) -> input).output(Function.identity()),
             onEvent(MerchantDebit).toSelf().assemble((input, _) -> input).output(Function.identity()),

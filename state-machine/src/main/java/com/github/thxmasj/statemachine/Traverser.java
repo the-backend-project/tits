@@ -20,25 +20,23 @@ public class Traverser {
 
   public State currentState(EventLog eventLog) {
     var effectiveEvents = eventLog.effectiveEvents();
-    System.out.printf(
-        """
-        Traverser.currentState:
-        Effective events: %s
-        Actual events:    %s
-        """,
-        effectiveEvents.stream().map(Event::typeName).collect(joining(", ")),
-        eventLog.events().stream().map(Event::typeName).collect(joining(", "))
-    );
+//    System.out.printf(
+//        """
+//        Traverser.currentState:
+//        Effective events: %s
+//        Actual events:    %s
+//        """,
+//        effectiveEvents.stream().map(Event::typeName).collect(joining(", ")),
+//        eventLog.events().stream().map(Event::typeName).collect(joining(", "))
+//    );
     State currentState = eventLog.entityModel().initialState();
     if (effectiveEvents.isEmpty()) {
       return currentState;
     }
-    var availableTransitions = transitions.get(currentState);
     TransitionModel<?, ?> lastTransition;
     for (var loggedEvent : effectiveEvents.stream().map(Event::type).toList()) {
-      lastTransition = findTransitionForLoggedEvent(loggedEvent, availableTransitions);
+      lastTransition = findTransitionForLoggedEvent(loggedEvent, currentState);
       currentState = targetState(currentState, lastTransition);
-      availableTransitions = transitions.get(currentState);
     }
     return currentState;
   }
@@ -57,7 +55,7 @@ public class Traverser {
     var currentState = currentState(eventLog);
     var availableTransitions = transitions.get(currentState);
     if (availableTransitions == null) throw new IllegalStateException("No available transitions for current state " + currentState + " on " + eventLog.entityModel().name());
-    var t = findTransition(eventType, availableTransitions);
+    var t = findTransitionForTriggeredEvent(eventType, availableTransitions);
     if (t != null && eventType == BuiltinEventTypes.Rollback)
       System.out.println("Using custom rollback transition for entity " + eventLog.entityModel().name() + ": " + t + "\nAll transitions:\n" + transitions.values().stream().flatMap(List::stream).map(Object::toString).collect(joining("\n")));
     if (t == null && eventType == BuiltinEventTypes.Rollback && eventType instanceof BasicEventType.Rollback rollback)
@@ -85,7 +83,7 @@ public class Traverser {
     State state = eventLog.entityModel().initialState();
     for (var event : events) {
       if (event.eventNumber() == eventNumber) {
-        return findTransitionForLoggedEvent(event.type(), transitions.get(state));
+        return findTransitionForLoggedEvent(event.type(), state);
       }
       state = targetStateForLoggedEvent(state, event.type());
     }
@@ -93,8 +91,7 @@ public class Traverser {
   }
 
   private TransitionModel<?, ?> modelForLoggedEvent(State currentState, EventType<?, ?> eventType) {
-    var availableTransitions = transitions.get(currentState);
-    return findTransitionForLoggedEvent(eventType, availableTransitions);
+    return findTransitionForLoggedEvent(eventType, currentState);
   }
 
   private State targetStateForLoggedEvent(State currentState, EventType<?, ?> eventType) {
@@ -102,7 +99,7 @@ public class Traverser {
   }
 
 
-  private TransitionModel<?, ?> findTransition(EventType<?, ?> eventType, List<TransitionModel<?, ?>> transitions) {
+  private TransitionModel<?, ?> findTransitionForTriggeredEvent(EventType<?, ?> eventType, List<TransitionModel<?, ?>> transitions) {
     for (var transition : transitions) {
       if (transition.eventType().equals(eventType)) {
         return transition;
@@ -111,19 +108,19 @@ public class Traverser {
     return null;
   }
 
-  private TransitionModel<?, ?> findTransitionForLoggedEvent(
-      EventType<?, ?> eventType,
-      List<TransitionModel<?, ?>> transitions
-  ) {
-    for (var transition : transitions) {
+  private TransitionModel<?, ?> findTransitionForLoggedEvent(EventType<?, ?> eventType, State fromState) {
+    for (var transition : transitions.get(fromState)) {
       for (var leafTransition : leaves(transition)) {
         if (leafTransition.eventType().equals(eventType)) {
           return leafTransition;
         }
       }
     }
+    // TODO: Avoid dynamic creation
+    if (eventType == BuiltinEventTypes.Rollback && eventType instanceof BasicEventType.Rollback rollback)
+      return rollbackOn(rollback);
     throw new IllegalStateException(
-        "No transition found for logged event " + eventType.name() + " (available: " + transitions.stream()
+        "No transition found for logged event " + eventType.name() + " from " + fromState.name() + " (available: " + transitions.get(fromState).stream()
             .flatMap(t -> leaves(t).stream())
             .map(t -> t.eventType().name())
             .collect(joining(", ")) + ")");

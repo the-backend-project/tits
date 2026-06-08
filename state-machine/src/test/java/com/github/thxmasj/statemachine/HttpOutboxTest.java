@@ -106,7 +106,7 @@ public class HttpOutboxTest {
         States.Begin, List.of(
             onEvent(requestEvent).to(States.WaitingForResponse).trigger(request("/empty-response"))
                 .with(d -> d).to(otherService)
-                .responseValidator(validator(Status.PermanentError, new InputEvent<>(Rollback, new Data(-1, "Malformed response"))))
+                .responseValidator(validator(Status.PermanentError, new InputEvent<>(Rollback, new Data(-1, 1, "Malformed response"))))
                 .output()
         ),
         States.WaitingForResponse, List.of(onEvent(responseEvent).to(States.Done).output())
@@ -126,7 +126,7 @@ public class HttpOutboxTest {
         States.Begin, List.of(
             onEvent(requestEvent).to(States.WaitingForResponse).trigger(request("/empty-response"))
                 .with(d -> d).to(otherService)
-                .responseValidator(validator(Status.PermanentError, new InputEvent<>(Rollback, new Data(-1, "Malformed response"))))
+                .responseValidator(validator(Status.PermanentError, new InputEvent<>(Rollback, new Data(-1, 1, "Malformed response"))))
                 .reversible(
                     assemble((_, _) -> "Hello, world!")
                         .trigger(BuiltinEventTypes.Status).on(model).identifiedBy(newEntityId())

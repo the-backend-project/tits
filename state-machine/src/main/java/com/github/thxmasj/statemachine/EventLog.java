@@ -109,6 +109,10 @@ public record EventLog(
     return all(eventType).size();
   }
 
+  public List<Event<?>> subLog(int fromEventNumber) {
+    return events.stream().filter(e -> e.eventNumber() >= fromEventNumber).toList();
+  }
+
   /**
    * Effective events, ignoring events that were rolled back.
    */

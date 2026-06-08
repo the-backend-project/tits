@@ -82,6 +82,7 @@ public class BasicEventType<I, O> implements EventType<I, O> {
 
     public record Data(
         int toNumber,
+        int fromNumber,
         String reason
     ) {}
   }

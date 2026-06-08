@@ -142,10 +142,7 @@ public class RollbackTest {
   public void rollbackOfOneEvent() {
     StepVerifier
         .create(eventListener.onEvent(trigger(Forward, Pacman))
-            .flatMap(forwardEvent -> eventListener.onEvent(
-                        trigger(Rollback, Pacman, forwardEvent.entityId()),
-                        new Data(-1, "test")
-                    )
+            .flatMap(forwardEvent -> eventListener.onEvent(trigger(Rollback, Pacman, forwardEvent.entityId()), new Data(-1, 1, "test"))
                     .next()
                     .zipWhen(rollbackEvent -> eventListener.onStatus(entityId(rollbackEvent.entityId()), Pacman))
             )
@@ -159,7 +156,7 @@ public class RollbackTest {
     StepVerifier
         .create(eventListener.onEvent(trigger(Forward, Pacman))
             .flatMap(forwardEvent -> eventListener.onEvent(trigger(Forward, Pacman, forwardEvent.entityId())))
-            .flatMap(backwardEvent -> eventListener.onEvent(trigger(Rollback, Pacman, backwardEvent.entityId()), new Data(-2, "test")))
+            .flatMap(backwardEvent -> eventListener.onEvent(trigger(Rollback, Pacman, backwardEvent.entityId()), new Data(-2, 2, "test")))
             .next()
             .zipWhen(rollbackEvent -> eventListener.onStatus(entityId(rollbackEvent.entityId()), Pacman))
         )
@@ -171,10 +168,7 @@ public class RollbackTest {
   public void rollbackOfTwoEventsWhenThereIsOnlyOne() {
     StepVerifier.create(
             eventListener.onEvent(trigger(Forward, Pacman))
-                .flatMap(output -> eventListener.onEvent(
-                    trigger(Rollback, Pacman, output.entityId()),
-                    new Data(-2, "test")
-                ))
+                .flatMap(output -> eventListener.onEvent(trigger(Rollback, Pacman, output.entityId()), new Data(-2, 1, "test")))
         )
         .expectErrorMessage("Rollback on Pacman not allowed for Moving: Can't rollback to event number -1")
         .verify();
@@ -184,10 +178,7 @@ public class RollbackTest {
   public void rollbackToAFutureEvent() {
     StepVerifier.create(
             eventListener.onEvent(trigger(Forward, Pacman))
-                .flatMap(output -> eventListener.onEvent(
-                    trigger(Rollback, Pacman, output.entityId()),
-                    new Data(2, "test")
-                ))
+                .flatMap(output -> eventListener.onEvent(trigger(Rollback, Pacman, output.entityId()), new Data(2, 1, "test")))
         )
         .expectErrorMessage("Rollback on Pacman not allowed for Moving: Can't rollback to event number 2")
         .verify();
