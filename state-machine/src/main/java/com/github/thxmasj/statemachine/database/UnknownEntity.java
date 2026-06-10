@@ -32,4 +32,8 @@ public class UnknownEntity extends RuntimeException {
     return id;
   }
 
+  public EntityModel entityModel() {
+    return entityModel;
+  }
+
 }

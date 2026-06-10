@@ -11,7 +11,12 @@ import com.github.thxmasj.statemachine.OutgoingRequestModel.Builder;
 import com.github.thxmasj.statemachine.StateMachine.CircularChange;
 import com.github.thxmasj.statemachine.StateMachine.IdentityResult;
 import com.github.thxmasj.statemachine.StateMachine.ProcessResult;
+import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Accepted;
+import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Completed;
 import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Entity;
+import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Pending;
+import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Rejected;
+import com.github.thxmasj.statemachine.StateMachine.ProcessResult.UnknownId;
 import com.github.thxmasj.statemachine.StateMachine.RejectedEvent;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.AssembledChangeContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.ChoiceChangeContext;
@@ -283,7 +288,13 @@ public class TransitionModelBuilder<I, T, O> {
         ProcessResult<T> stepOutput
     ) implements ChangeContext<ProcessResult<T>> {
       @Override public String toString() {
-        return "Output:" + (stepOutput.isAccepted() ? ((stepOutput.accepted().event().type() != null ? stepOutput.accepted().event().type().name() : "N/A") +  ":" + stepOutput.accepted().event().eventNumber()) : stepOutput.getClass().getSimpleName());
+        return "Output:" + switch (stepOutput) {
+          case Accepted<?> a -> "Accepted:" + a.entityModel().name() + "/" + a.event().entityId() + "/" + a.event().typeName() + "/" + a.event().eventNumber();
+          case Rejected<?> r -> "Rejected:" + r.exception().entityModel().name() + "/" + r.exception().entityId().value() + r.eventType().name() + ":" + r.exception().getMessage();
+          case Completed<?> c -> "Completed:" + c.entityModel().name() + "/" + c.entityId().value() + "/-/" + c.eventNumber();
+          case UnknownId<?> u -> "UnknownId:type=" + u.exception().secondaryId().model() + "/ev=" + u.eventType().name();
+          case Pending<?, ?, ?> p -> "Pending:" + p.exception().entityModel() + "/" + p.exception().entityId().value() + ":" + p.exception().getMessage();
+        };
       }
 
     }
@@ -963,12 +974,12 @@ public class TransitionModelBuilder<I, T, O> {
                         ))
                     )
                 .map(output -> new TriggerChangeContext<>(output, c))
-                .contextWrite(ctx -> {
-                  EventLog eventLog = c.initialChangeContext().log();
-                  if (modelContext.eventType() == null) return ctx;
-                  System.out.println("Session entity id for " + eventLog.entityModel().name() + ": " + eventLog.entityId().value());
-                  return ctx.put(eventLog.entityModel(), eventLog.entityId());
-                })
+//                .contextWrite(ctx -> {
+//                  EventLog eventLog = c.initialChangeContext().log();
+//                  if (modelContext.eventType() == null) return ctx;
+//                  System.out.println("Session entity id for " + eventLog.entityModel().name() + ": " + eventLog.entityId().value());
+//                  return ctx.put(eventLog.entityModel(), eventLog.entityId());
+//                })
             );
     var eventTriggers = join(modelContext.triggers, eventTrigger);
     return new TransitionModelBuilder<>(
