@@ -715,19 +715,6 @@ public class StateMachine {
         eventLog(eventTrigger.entitySelectors().getFirst().apply(inputData), eventTrigger.entityModel(), changeContext);
   }
 
-  private EventLog logFromNestedChanges(EntityId entityId, ChangeContext<?> changeContext) {
-    System.out.println("Finding log from change context for entity id " + entityId.value() + ":\n" + chainToString(changeContext));
-    for (var c = changeContext; c != null; c = c.previous()) {
-      if (c instanceof OutputChangeContext<?>(TransitionModelBuilder.ChangeContext<?> previous, ProcessResult<?> stepOutput)
-          && stepOutput instanceof Accepted<?>(Event<?> event, _, _)
-          && event.entityId().equals(entityId.value())
-          && !(previous instanceof ChoiceChangeContext)) {
-        return c.initialChangeContext().log().withNewEvent(event);
-      }
-    }
-    return null;
-  }
-
   private <I> Mono<EventLog> eventLog(
       EntitySelector entitySelector,
       EntityModel entityModel,
@@ -736,9 +723,9 @@ public class StateMachine {
     System.out.println("Finding event log for " + entityModel.name() + " with selector " + entitySelector);
     return switch (entitySelector) {
       case EntitySelector.ByIdFromSession _ -> {
-        EntityId id = entityIdFromChangeContext(changeContext, entityModel);
-        if (id == null) throw new IllegalStateException("Entity model " + entityModel.name() + " not in session");
-        EventLog log = logFromNestedChanges(id, changeContext);
+        EventLog log = logFromChangeContext(changeContext, entityModel);
+        EntityId id = log.entityId();
+        log = logFromNestedChanges(id, changeContext);
         if (log == null) yield eventLogByEntityId(entityModel, id);
         else yield Mono.just(log);
       }
@@ -780,10 +767,10 @@ public class StateMachine {
     return new SecondaryId<>(selector.model(), selector.value());
   }
 
-  private EntityId entityIdFromChangeContext(ChangeContext<?> context, EntityModel entityModel) {
+  private EventLog logFromChangeContext(ChangeContext<?> context, EntityModel entityModel) {
     for (var c = context; c != null; c = c.previous()) {
       if (c instanceof ChangeContext.InitialChangeContext<?> i && i.log().entityModel().equals(entityModel)) {
-        return i.log().entityId();
+        return i.log();
       }
     }
     InitialChangeContext<?> initial = null;
@@ -792,10 +779,23 @@ public class StateMachine {
     }
     for (var c = initial.stage1(); c != null; c = c.previous()) {
       if (c instanceof ChangeContext.InitialChangeContext<?> i && i.log().entityModel().equals(entityModel)) {
-        return i.log().entityId();
+        return i.log();
       }
     }
     throw new NoSuchElementException(entityModel.name() + " not found in change context");
+  }
+
+  private EventLog logFromNestedChanges(EntityId entityId, ChangeContext<?> changeContext) {
+    System.out.println("Finding log from change context for entity id " + entityId.value() + ":\n" + chainToString(changeContext));
+    for (var c = changeContext; c != null; c = c.previous()) {
+      if (c instanceof OutputChangeContext<?>(TransitionModelBuilder.ChangeContext<?> previous, ProcessResult<?> stepOutput)
+          && stepOutput instanceof Accepted<?>(Event<?> event, _, _)
+          && event.entityId().equals(entityId.value())
+          && !(previous instanceof ChoiceChangeContext)) {
+        return c.initialChangeContext().log().withNewEvent(event);
+      }
+    }
+    return null;
   }
 
   private void checkCircular(ChangeContext<?> tail, EntityModel entityModel, EntityId entityId, InputEvent<?> inputEvent) {
@@ -821,7 +821,7 @@ public class StateMachine {
           EntityId entityId = switch (eventTrigger.entitySelectors().getFirst().apply(data)) {
             case ByIdFromSession _ -> {
               try {
-                yield entityIdFromChangeContext(tail, eventTrigger.entityModel());
+                yield logFromChangeContext(tail, eventTrigger.entityModel()).entityId();
               } catch (NoSuchElementException e) {
                 throw new RuntimeException(e.getMessage() + "\nFound in Reactor context:\n" +
                     ctx.stream().map(x -> x.toString()).collect(joining("\n")));
