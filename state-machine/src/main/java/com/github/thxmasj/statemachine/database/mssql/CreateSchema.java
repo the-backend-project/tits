@@ -4,7 +4,9 @@ import static java.util.stream.Collectors.joining;
 
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.database.Client;
+import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
 import java.nio.charset.StandardCharsets;
+import java.util.Comparator;
 import java.util.List;
 import java.util.zip.CRC32;
 import reactor.core.publisher.Mono;
@@ -17,7 +19,7 @@ public class CreateSchema {
   private final String role;
 
   public CreateSchema(List<EntityModel> entityModels, String schemaName, String role) {
-    this.entityModels = entityModels;
+    this.entityModels = entityModels.stream().sorted(Comparator.comparing(EntityModel::id)).toList();
     this.schema = schemaName;
     this.role = role;
   }
@@ -38,8 +40,8 @@ public class CreateSchema {
 
   private String coreSql() {
     StringBuilder sql = new StringBuilder();
-    for (var entityType : entityModels) {
-      sql.append(sqlForEntity(entityType));
+    for (var entityModel : entityModels) {
+      sql.append(sqlForEntity(entityModel));
     }
     return sql.toString();
   }
@@ -56,8 +58,6 @@ public class CreateSchema {
             EntityId    UNIQUEIDENTIFIER   NOT NULL,
             EventNumber SMALLINT           NOT NULL,
             Type        UNIQUEIDENTIFIER   NOT NULL,
-            MessageId   VARCHAR(100),
-            ClientId    VARCHAR(100),
             Data        VARCHAR(MAX),
             Timestamp   DATETIME2          NOT NULL,
             CONSTRAINT [pkEvent] PRIMARY KEY (EntityId, EventNumber)
@@ -77,35 +77,6 @@ public class CreateSchema {
         GRANT INSERT, DELETE, SELECT, UPDATE ON [{schema}].[Timeout] TO [{role}];
         CREATE UNIQUE INDEX ixEntityId ON [{schema}].[Timeout] (EntityId);
         CREATE INDEX ixDeadline ON [{schema}].[Timeout] (Deadline);
-
-        CREATE TABLE [{schema}].[InboxRequest]
-        (
-            Id                   UNIQUEIDENTIFIER NOT NULL,
-            EntityId             UNIQUEIDENTIFIER NOT NULL,
-            EventNumber          SMALLINT         NOT NULL,
-            Timestamp            DATETIME2        NOT NULL,
-            MessageId            VARCHAR(100),
-            ClientId             VARCHAR(100)     NOT NULL,
-            Digest               BINARY(32),
-            Data                 VARCHAR(MAX)     NOT NULL,
-            CONSTRAINT [pkInboxRequest] PRIMARY KEY (Id),
-            CONSTRAINT [fkInboxRequest_Event_EntityId_EventNumber] FOREIGN KEY (EntityId, EventNumber) references [{schema}].[Event] (EntityId, EventNumber)
-        );
-        GRANT INSERT, SELECT ON [{schema}].[InboxRequest] TO [{role}];
-        CREATE UNIQUE INDEX ixMessageId_ClientId ON [{schema}].[InboxRequest] (MessageId, ClientId)
-            WHERE [MessageId] IS NOT NULL AND [ClientId] IS NOT NULL;
-
-        CREATE TABLE [{schema}].[InboxResponse]
-        (
-            EntityId             UNIQUEIDENTIFIER NOT NULL,
-            EventNumber          SMALLINT         NOT NULL,
-            Timestamp            DATETIME2        NOT NULL,
-            Data                 VARCHAR(MAX)     NOT NULL,
-            RequestId            UNIQUEIDENTIFIER NOT NULL,
-            CONSTRAINT [pkInboxResponse] PRIMARY KEY (EntityId, EventNumber),
-            CONSTRAINT [fkInboxResponse_InboxRequest_RequestId] FOREIGN KEY (RequestId) references [{schema}].[InboxRequest] (Id)
-        );
-        GRANT INSERT, SELECT ON [{schema}].[InboxResponse] TO [{role}];
 
         CREATE TABLE [{schema}].[OutboxRequest]
         (
@@ -192,7 +163,7 @@ public class CreateSchema {
     var names = new SchemaNames(schema, entityModel);
     var q = names.qualifiedNames();
     String sql = "";
-        for (var secondaryId : entityModel.secondaryIds()) {
+        for (SecondaryIdModel<?> secondaryId : entityModel.secondaryIds()) {
           String tableName = entity + "_" + secondaryId.name();
           String qualifiedTableName = q.idTable(secondaryId);
           sql +=
@@ -228,7 +199,7 @@ public class CreateSchema {
         )
         .flatMap(checksum -> checksum == checksum() ?
             Mono.just(0) :
-            Mono.error(new RuntimeException("Checksum mismatch on schema " + schema))
+            Mono.error(new RuntimeException("Checksum mismatch on schema " + schema + ". Used following clear text: " + coreSql()))
         )
         .switchIfEmpty(
             databaseClient.sql("CREATE SCHEMA [" + schema + "]").name("CreateSchema0").update()

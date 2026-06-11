@@ -4,12 +4,9 @@ import com.github.thxmasj.statemachine.IncomingResponseValidator;
 import com.github.thxmasj.statemachine.templates.cardpayment.OutgoingRequests.Authentication;
 import com.github.thxmasj.statemachine.templates.cardpayment.OutgoingRequests.Authorisation;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthenticationResult;
+import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.PaymentToken;
 
-public class DummyPayment extends AbstractPayment{
-
-  public DummyPayment(AbstractSettlement settlement) {
-    super(settlement);
-  }
+public class DummyPaymentTransitions extends PaymentTransitions{
 
   @Override
   protected Authentication authentication() {
@@ -158,6 +155,11 @@ public class DummyPayment extends AbstractPayment{
 
   @Override
   protected IncomingResponseValidator<AcquirerResponse> validateRefundReversalResponse() {
+    return null;
+  }
+
+  @Override
+  protected PaymentToken paymentToken(String encryptedAuthenticationData) {
     return null;
   }
 

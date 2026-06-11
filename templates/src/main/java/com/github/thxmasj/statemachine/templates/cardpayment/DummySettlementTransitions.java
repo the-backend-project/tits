@@ -4,7 +4,7 @@ import com.github.thxmasj.statemachine.IncomingResponseValidator;
 import com.github.thxmasj.statemachine.templates.cardpayment.OutgoingRequests.ApprovedCutOff;
 import com.github.thxmasj.statemachine.templates.cardpayment.OutgoingRequests.Reconciliation;
 
-public class DummySettlement extends AbstractSettlement {
+public class DummySettlementTransitions extends SettlementTransitions {
 
   @Override
   protected IncomingResponseValidator<AcquirerResponse> validateSettlementResponse() {

@@ -5,6 +5,6 @@ import com.github.thxmasj.statemachine.IncomingRequestModelBuilder;
 
 public interface RequestMapper {
 
-  IncomingRequestModelBuilder<?> incomingRequest(HttpRequestMessage message);
+  IncomingRequestModelBuilder incomingRequest(HttpRequestMessage message);
 
 }

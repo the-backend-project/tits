@@ -15,11 +15,11 @@ public record SchemaNames(
     return String.format("ix%s", String.join("_", columns.stream().map(Column::name).toList()));
   }
 
-  public String idTableName(SecondaryIdModel idModel) {
+  public String idTableName(SecondaryIdModel<?> idModel) {
     return model.name() + "_" + idModel.name();
   }
 
-  public String idTablePrimaryKeyName(SecondaryIdModel idModel) {
+  public String idTablePrimaryKeyName(SecondaryIdModel<?> idModel) {
     return String.format("pk%s", idTableName(idModel));
   }
 
@@ -35,7 +35,7 @@ public record SchemaNames(
         this.entityModel = entityModel;
     }
 
-    public String idTable(SecondaryIdModel secondaryId) {
+    public String idTable(SecondaryIdModel<?> secondaryId) {
       return qualifiedName(entityModel.idTableName(secondaryId));
     }
 
@@ -44,23 +44,23 @@ public record SchemaNames(
     }
   }
 
-  public interface SecondaryIdModel {
+  public interface SecondaryIdModel<T> {
     String name();
     List<Column> columns();
-    SecondaryId map(ResultSet resultSet);
+    SecondaryId<T> map(ResultSet resultSet);
     default boolean isSerial() {
       return false;
     }
-    default Group group() {
+    default Group<T> group() {
       return null;
     }
-    interface Group {
+    interface Group<T> {
       List<Column> groupColumns();
       List<ColumnOrder> groupOrdering();
-      boolean isInitial(Object value);
-      SecondaryId initial(Object group);
-      SecondaryId next(SecondaryId current);
-      Object group(Object value);
+      boolean isInitial(T value);
+      SecondaryId<T> initial(Object group);
+      SecondaryId<T> next(SecondaryId<T> current);
+      Object group(T value);
     }
   }
 

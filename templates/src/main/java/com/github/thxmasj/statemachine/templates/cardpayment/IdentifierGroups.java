@@ -9,8 +9,8 @@ import com.github.thxmasj.statemachine.database.mssql.SchemaNames.ColumnOrder;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
 import java.util.List;
 
-public enum IdentifierGroups implements SecondaryIdModel.Group {
-  Batch {
+public interface IdentifierGroups {
+  SecondaryIdModel.Group<BatchNumber> Batch = new SecondaryIdModel.Group<>() {
     @Override
     public List<Column> groupColumns() {
       return List.of(
@@ -26,27 +26,27 @@ public enum IdentifierGroups implements SecondaryIdModel.Group {
     }
 
     @Override
-    public boolean isInitial(Object value) {
-      return value instanceof BatchNumber sid && sid.number() == 1;
+    public boolean isInitial(BatchNumber value) {
+      return value.number() == 1;
     }
 
     @Override
-    public SecondaryId initial(Object group) {
-      return new SecondaryId(BatchNumber, new BatchNumber((String)group, 1L));
+    public SecondaryId<BatchNumber> initial(Object group) {
+      return new SecondaryId<>(BatchNumber, new BatchNumber((String)group, 1L));
     }
 
     @Override
-    public SecondaryId next(SecondaryId current) {
-      var currentIdValue = (BatchNumber)current.data();
-      return new SecondaryId(BatchNumber, new BatchNumber(currentIdValue.merchantId(), currentIdValue.number() + 1));
+    public SecondaryId<BatchNumber> next(SecondaryId<BatchNumber> current) {
+      return new SecondaryId<>(BatchNumber, new BatchNumber(current.data().merchantId(), current.data().number() + 1));
     }
 
     @Override
-    public Object group(Object value) {
-      return value instanceof BatchNumber sid ? sid.merchantId() : null;
+    public Object group(BatchNumber value) {
+      return value.merchantId();
     }
-  },
-  AcquirerBatch {
+  };
+
+  SecondaryIdModel.Group<AcquirerBatchNumber> AcquirerBatch =  new SecondaryIdModel.Group<>() {
     @Override
     public List<Column> groupColumns() {
       return List.of(
@@ -62,24 +62,23 @@ public enum IdentifierGroups implements SecondaryIdModel.Group {
     }
 
     @Override
-    public boolean isInitial(Object value) {
+    public boolean isInitial(AcquirerBatchNumber value) {
       return false;
     }
 
     @Override
-    public SecondaryId initial(Object group) {
-      return new SecondaryId(AcquirerBatchNumber, new AcquirerBatchNumber((String)group, 1));
+    public SecondaryId<AcquirerBatchNumber> initial(Object group) {
+      return new SecondaryId<>(AcquirerBatchNumber, new AcquirerBatchNumber((String)group, 1));
     }
 
     @Override
-    public SecondaryId next(SecondaryId current) {
-      var currentIdValue = (AcquirerBatchNumber)current.data();
-      return new SecondaryId(current.model(), new AcquirerBatchNumber(currentIdValue.merchantId(), currentIdValue.number() + 1));
+    public SecondaryId<AcquirerBatchNumber> next(SecondaryId<AcquirerBatchNumber> current) {
+      return new SecondaryId<>(current.model(), new AcquirerBatchNumber(current.data().merchantId(), current.data().number() + 1));
     }
 
     @Override
-    public Object group(Object value) {
-      return value instanceof AcquirerBatchNumber v ? v.merchantId() : null;
+    public Object group(AcquirerBatchNumber value) {
+      return value.merchantId();
     }
-  }
+  };
 }

@@ -8,4 +8,10 @@ public interface OutboxQueue {
 
   UUID id();
 
+  record Impl(String name, UUID id) implements OutboxQueue {}
+
+  static OutboxQueue of(String name, UUID id) {
+    return new Impl(name, id);
+  }
+
 }

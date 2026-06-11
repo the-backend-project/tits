@@ -1,6 +1,9 @@
 package com.github.thxmasj.statemachine;
 
+import com.github.thxmasj.statemachine.EventTrigger.EventSpec;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -8,34 +11,73 @@ import java.util.regex.Pattern;
 import static java.util.Objects.requireNonNull;
 
 @SuppressWarnings("unused")
-public class IncomingRequestModelBuilder<DATA_TYPE> {
+public class IncomingRequestModelBuilder<T> {
 
   private boolean matches;
   private String messageId;
   private boolean derivedMessageId;
   private String clientId;
   private String correlationId;
-  private EventTriggerBuilder<DATA_TYPE, ?> eventTrigger;
-  private Class<? extends IncomingRequestValidator<DATA_TYPE>> validatorClass;
-  private IncomingRequestValidator<DATA_TYPE> validator;
+  private EventTrigger<T, ?, ?> eventTrigger;
+  private Class<? extends IncomingRequestValidator<T>> validatorClass;
+  private IncomingRequestValidator<T> validator;
   private byte[] digest;
 
-  public IncomingRequestModelBuilder<DATA_TYPE> matches(boolean matches) {
+  public static <T> IncomingRequestModelBuilder<T> validator(Class<? extends IncomingRequestValidator<T>> validator) {
+    return new IncomingRequestModelBuilder<T>().withValidator(validator);
+  }
+
+  public static <T>IncomingRequestModelBuilder<T> validator(IncomingRequestValidator<T> validator) {
+    return new IncomingRequestModelBuilder<T>().withValidator(validator);
+  }
+
+  public IncomingRequestModelBuilder<T> matches(boolean matches) {
     this.matches = matches;
     return this;
   }
 
-  public IncomingRequestModelBuilder<DATA_TYPE> trigger(EventTriggerBuilder<DATA_TYPE, ?> eventTrigger) {
-    this.eventTrigger = eventTrigger;
-    return this;
+  public <I, O> WithEventType<T, I, O> trigger(EventType<I, O> eventType) {
+    return new WithEventType<>(this, eventType);
   }
 
-  public IncomingRequestModelBuilder<DATA_TYPE> messageId(String messageId) {
+  public record WithEventType<T, I1, O1>(IncomingRequestModelBuilder<T> builder, EventType<I1, O1> eventType) {
+
+    public record WithEventTypeAndData<T, I1, O1>(WithEventType<T, I1, O1> eventType, Function<T, I1> dataAdapter) {
+      public WithEntity<T, I1, O1> on(EntityModel entityModel) {
+        return new WithEntity<>(this, entityModel);
+      }
+    }
+
+    public record WithIdentifier<T, I1, O1>(WithEntity<T, I1, O1> entity, ArrayList<EntitySelector> entitySelectors) {}
+
+    public record WithEntity<T, I1, O1>(WithEventTypeAndData<T, I1, O1> eventTypeAndData, EntityModel entityModel) {
+      public IncomingRequestModelBuilder<T> identifiedBy(EntitySelector entitySelector) {
+        eventTypeAndData.eventType.builder.eventTrigger = new EventTrigger<>(
+            new EventSpec<>(eventTypeAndData.eventType.eventType, eventTypeAndData.dataAdapter),
+            List.of(_ -> entitySelector),
+            entityModel,
+            false
+        );
+        return eventTypeAndData.eventType.builder;
+      }
+    }
+
+    public WithEventTypeAndData<T, I1, O1> with(Function<T, I1> dataAdapter) {
+      return new WithEventTypeAndData<>(this, dataAdapter);
+    }
+
+    public WithEntity<T, I1, O1> on(EntityModel entityModel) {
+      return new WithEntity<>(new WithEventTypeAndData<>(this, _ -> null), entityModel);
+    }
+
+  }
+
+  public IncomingRequestModelBuilder<T> messageId(String messageId) {
     this.messageId = requireNonNull(messageId, "messageId");
     return this;
   }
 
-  public IncomingRequestModelBuilder<DATA_TYPE> derivedMessageId() {
+  public IncomingRequestModelBuilder<T> derivedMessageId() {
     this.derivedMessageId = true;
     return this;
   }
@@ -58,32 +100,32 @@ public class IncomingRequestModelBuilder<DATA_TYPE> {
     return matcher.find() ? idBuilder.apply(matcher) : null;
   }
 
-  public IncomingRequestModelBuilder<DATA_TYPE> clientId(String clientId) {
+  public IncomingRequestModelBuilder<T> clientId(String clientId) {
     this.clientId = clientId;
     return this;
   }
 
-  public IncomingRequestModelBuilder<DATA_TYPE> correlationId(String correlationId) {
+  public IncomingRequestModelBuilder<T> correlationId(String correlationId) {
     this.correlationId = correlationId;
     return this;
   }
 
-  public IncomingRequestModelBuilder<DATA_TYPE> validator(Class<? extends IncomingRequestValidator<DATA_TYPE>> validatorClass) {
+  private IncomingRequestModelBuilder<T> withValidator(Class<? extends IncomingRequestValidator<T>> validatorClass) {
     this.validatorClass = validatorClass;
     return this;
   }
 
-  public IncomingRequestModelBuilder<DATA_TYPE> validator(IncomingRequestValidator<DATA_TYPE> validator) {
+  private IncomingRequestModelBuilder<T> withValidator(IncomingRequestValidator<T> validator) {
     this.validator = validator;
     return this;
   }
 
-  public IncomingRequestModelBuilder<DATA_TYPE> digest(byte[] digest) {
+  public IncomingRequestModelBuilder<T> digest(byte[] digest) {
     this.digest = digest;
     return this;
   }
 
-  public IncomingRequestModel<DATA_TYPE> build() {
+  public IncomingRequestModel<T, ?, ?> build() {
     if (eventTrigger == null)
       throw new IllegalArgumentException("eventTrigger not set");
     if (clientId == null)

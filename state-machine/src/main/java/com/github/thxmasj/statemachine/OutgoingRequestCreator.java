@@ -1,13 +1,9 @@
 package com.github.thxmasj.statemachine;
 
-import com.github.thxmasj.statemachine.StateMachine.ProcessResult;
-import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Entity;
-import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
-import reactor.core.publisher.Mono;
 import java.time.ZonedDateTime;
-import java.util.List;
 import java.util.UUID;
+import reactor.core.publisher.Mono;
 
 public interface OutgoingRequestCreator<T> {
 
@@ -45,15 +41,57 @@ public interface OutgoingRequestCreator<T> {
     EntityId entityId();
     String correlationId();
     ZonedDateTime timestamp();
-    List<Entity> nestedEntities();
-    Entity nestedEntity(String entityName);
-    SecondaryId secondaryId(String entityName, SecondaryIdModel idModel);
-    ProcessResult processResult(EntityModel entityType, EntityId entityId);
-    <T> Event<T> processedEvent(EventType<?, T> eventType);
   }
 
   interface ReversalContext extends Context {
     HttpRequestMessage originalRequest();
+  }
+
+  static Context context(
+      EntityId entityId,
+      String correlationId,
+      ZonedDateTime timestamp
+  ) {
+    return new Context() {
+      @Override
+      public EntityId entityId() {
+        return entityId;
+      }
+      @Override
+      public String correlationId() {
+        return correlationId;
+      }
+      @Override
+      public ZonedDateTime timestamp() {
+        return timestamp;
+      }
+    };
+  }
+
+  static ReversalContext reversalContext(
+      HttpRequestMessage originalRequest,
+      EntityId entityId,
+      String correlationId,
+      ZonedDateTime timestamp
+  ) {
+    return new ReversalContext() {
+      @Override
+      public HttpRequestMessage originalRequest() {
+        return originalRequest;
+      }
+      @Override
+      public EntityId entityId() {
+        return entityId;
+      }
+      @Override
+      public String correlationId() {
+        return correlationId;
+      }
+      @Override
+      public ZonedDateTime timestamp() {
+        return timestamp;
+      }
+    };
   }
 
 }

@@ -7,35 +7,24 @@ import com.github.thxmasj.statemachine.SecondaryId;
 public class UnknownEntity extends RuntimeException {
 
   private final EntityModel entityModel;
-  private final SecondaryId secondaryId;
+  private final SecondaryId<?> secondaryId;
   private final EntityId id;
-  private final String messageId;
 
-  public UnknownEntity(SecondaryId id) {
-    super("Unknown entity: " + id);
+  public UnknownEntity(EntityModel entityModel, SecondaryId<?> id) {
+    super(String.format("Unknown entity: %s/%s=%s", entityModel.name(), id.model().name(), id.data()));
     this.secondaryId = id;
-    this.entityModel = null;
+    this.entityModel = entityModel;
     this.id = null;
-    this.messageId = null;
   }
 
-  public UnknownEntity(EntityModel entityModel, EntityId id, String sql) {
-    super("Unknown entity: " + entityModel.name() + "[id=" + id + "]", new RuntimeException(sql));
+  public UnknownEntity(EntityModel entityModel, EntityId id) {
+    super(String.format("Unknown entity: %s/id=%s", entityModel.name(), id.value()));
     this.entityModel = entityModel;
     this.secondaryId = null;
     this.id = id;
-    this.messageId = null;
   }
 
-  public UnknownEntity(String messageId) {
-    super("No entity found with an incoming request " + messageId);
-    this.secondaryId = null;
-    this.entityModel = null;
-    this.id = null;
-    this.messageId = messageId;
-  }
-
-  public SecondaryId secondaryId() {
+  public SecondaryId<?> secondaryId() {
     return secondaryId;
   }
 
@@ -43,8 +32,8 @@ public class UnknownEntity extends RuntimeException {
     return id;
   }
 
-  public String messageId() {
-    return messageId;
+  public EntityModel entityModel() {
+    return entityModel;
   }
 
 }

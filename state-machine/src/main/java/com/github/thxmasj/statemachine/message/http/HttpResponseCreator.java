@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.ObjectWriter;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.github.thxmasj.statemachine.EntityId;
+import com.github.thxmasj.statemachine.OutgoingRequestCreator.Context;
 import com.github.thxmasj.statemachine.OutgoingResponseCreator;
 import java.time.ZonedDateTime;
 import java.util.LinkedHashMap;
@@ -32,7 +33,7 @@ public class HttpResponseCreator implements OutgoingResponseCreator<String> {
   @Override
   public HttpResponseMessage create(
       String data,
-      ResponseContext context
+      Context context
   ) {
     return new HttpResponseMessage(
         statusCode,
@@ -63,7 +64,7 @@ public class HttpResponseCreator implements OutgoingResponseCreator<String> {
     map.put("title", reasonPhrase);
     map.put("status", statusCode);
     map.put("detail", detail);
-    map.put("entityId", entityId.value());
+    if (entityId != null) map.put("entityId", entityId.value());
     map.put("timestamp", timestamp);
     return map;
   }

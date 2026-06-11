@@ -4,10 +4,21 @@ import static java.util.stream.Collectors.joining;
 import static java.util.stream.Collectors.toMap;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.DeserializationContext;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializerProvider;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.deser.std.StdDeserializer;
+import com.fasterxml.jackson.databind.ser.std.StdSerializer;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Deserializer;
+import com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Serializer;
+import java.io.IOException;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
@@ -16,6 +27,8 @@ import java.util.Map.Entry;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+@JsonSerialize(using = Serializer.class)
+@JsonDeserialize(using = Deserializer.class)
 public class HttpRequestMessage {
 
   private final Method method;
@@ -51,6 +64,31 @@ public class HttpRequestMessage {
       .configure(DeserializationFeature.ADJUST_DATES_TO_CONTEXT_TIME_ZONE, false)
       .setSerializationInclusion(JsonInclude.Include.NON_NULL);
 
+  public static class Serializer extends StdSerializer<HttpRequestMessage> {
+
+    public Serializer() {
+      super(HttpRequestMessage.class);
+    }
+
+    @Override
+    public void serialize(HttpRequestMessage value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
+      gen.writeString(value.message());
+    }
+  }
+
+  public static class Deserializer extends StdDeserializer<HttpRequestMessage> {
+
+    public Deserializer() {
+      super(HttpRequestMessage.class);
+    }
+
+    @Override
+    public HttpRequestMessage deserialize(JsonParser p, DeserializationContext ctxt)
+        throws IOException {
+      return HttpMessageParser.parseRequest(p.getValueAsString());
+    }
+  }
+
   public HttpRequestMessage(Method method, URI uri) {
     this(method, uri, Map.of());
   }
@@ -64,19 +102,16 @@ public class HttpRequestMessage {
     this.uri = uri;
     this.headers = headers;
     this.body = body;
-    this.message = String.format(
-        """
-        %s %s
-        %s
-        %s
-        """,
-        method,
-        uri.toString(),
-        headers.entrySet().stream()
-            .map(entry -> entry.getKey() + ":" + entry.getValue())
-            .collect(joining("\n")),
-        (body == null ? "" : "\n" + body)
-    );
+    var m = String.format("%s %s", method, uri.toString());
+    if (!headers.isEmpty()) {
+      m = m + "\n" + headers.entrySet().stream()
+          .map(entry -> entry.getKey() + ":" + entry.getValue())
+          .collect(joining("\n"));
+    }
+    if (body != null) {
+      m = m + "\n\n" + body;
+    }
+    this.message = m;
   }
 
   public String requestLine() {

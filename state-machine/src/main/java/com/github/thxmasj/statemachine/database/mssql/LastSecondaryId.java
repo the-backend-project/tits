@@ -3,9 +3,9 @@ package com.github.thxmasj.statemachine.database.mssql;
 import static java.util.stream.Collectors.joining;
 
 import com.github.thxmasj.statemachine.EntityModel;
+import com.github.thxmasj.statemachine.SecondaryId;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.Column;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
-import com.github.thxmasj.statemachine.SecondaryId;
 import java.sql.ResultSet;
 import java.util.HashMap;
 import java.util.List;
@@ -16,7 +16,7 @@ import reactor.core.publisher.Mono;
 public class LastSecondaryId {
 
   private final DataSource dataSource;
-  private final Map<SecondaryIdModel, String> sql = new HashMap<>();
+  private final Map<SecondaryIdModel<?>, String> sql = new HashMap<>();
 
   public LastSecondaryId(
       DataSource dataSource,
@@ -61,7 +61,7 @@ public class LastSecondaryId {
     }
   }
 
-  public Mono<SecondaryId> execute(SecondaryIdModel idModel, Object entityGroup) {
+  public <T> Mono<SecondaryId<T>> execute(SecondaryIdModel<T> idModel, Object entityGroup) {
     String sqlToPrepare = sql.get(idModel);
     if (sqlToPrepare == null) throw new IllegalArgumentException(String.format("Model %s for secondary id unknown", idModel.name()));
     return Mono.fromCallable(() -> {

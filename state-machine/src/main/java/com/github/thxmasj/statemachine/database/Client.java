@@ -149,39 +149,49 @@ public interface Client {
   class PrimaryKeyConstraintViolation extends DataIntegrityViolation {
 
     private final String constraintName;
+    private final String duplicateKey;
 
     public PrimaryKeyConstraintViolation(
         String queryName,
         EntityModel model,
+        String duplicateKey,
         String tableName,
         String constraintName,
         Throwable cause
     ) {
       super(queryName, model, tableName, "Primary key constraint " + constraintName + " on table " + tableName + " violated ", cause);
       this.constraintName = constraintName;
+      this.duplicateKey = duplicateKey;
     }
 
     public PrimaryKeyConstraintViolation(String queryName, EntityModel model, String tableName) {
-      this(queryName, model, tableName, null, null);
+      this(queryName, model, null, tableName, null, null);
     }
 
     public String constraintName() {
       return constraintName;
+    }
+
+    public String duplicateKey() {
+      return duplicateKey;
     }
   }
 
   class UniqueIndexConstraintViolation extends DataIntegrityViolation {
 
     private final String indexName;
+    private final String duplicateKey;
 
     public UniqueIndexConstraintViolation(
         String queryName,
         EntityModel model,
+        String duplicateKey,
         String tableName,
         String indexName,
         Throwable cause
     ) {
       super(queryName, model, tableName, cause);
+      this.duplicateKey = duplicateKey;
       this.indexName = indexName;
     }
 
@@ -189,6 +199,9 @@ public interface Client {
       return indexName;
     }
 
+    public String duplicateKey() {
+      return duplicateKey;
+    }
   }
 
   class MssqlException extends RuntimeException {

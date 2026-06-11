@@ -38,6 +38,7 @@ public class OutboxWorker {
   }
 
   public Flux<ForwardStatus> doForward() {
+    System.out.println("doForward() on " + queue.name());
     var now = LocalDateTime.now(clock);
     return processBackedOff.execute(now, queue)
         .doOnNext(e -> listener.forwardingAttempt(

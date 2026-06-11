@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
@@ -31,26 +32,26 @@ public class IncomingRequestJsonValidator<INPUT_TYPE, OUTPUT_TYPE>
 
   @Override
   public final Mono<Result> execute(
-      EntityId entityId,
       Context<OUTPUT_TYPE> context,
-      Input.IncomingRequest request
+      String clientId,
+      HttpRequestMessage request
   ) {
     INPUT_TYPE jsonBody;
     try {
-      jsonBody = objectMapper.readerFor(inputType).readValue(request.httpMessage().body());
+      jsonBody = objectMapper.readerFor(inputType).readValue(request.body());
     } catch (JsonProcessingException e) {
       return Mono.just(context.invalidRequest(e.getMessage()));
     }
     var violations = jsonValidator.validate(jsonBody);
     if (!violations.isEmpty())
       return Mono.just(context.invalidRequest(new ConstraintViolationException(violations).getMessage()));
-    return execute(entityId, context, request, jsonBody);
+    return execute(context, clientId, request, jsonBody);
   }
 
   public Mono<Result> execute(
-      EntityId entityId,
       Context<OUTPUT_TYPE> context,
-      Input.IncomingRequest request,
+      String clientId,
+      HttpRequestMessage request,
       INPUT_TYPE jsonBody
   ) {
     return Mono.just(context.validRequest());
@@ -60,9 +61,9 @@ public class IncomingRequestJsonValidator<INPUT_TYPE, OUTPUT_TYPE>
     return new IncomingRequestJsonValidator<>(type) {
       @Override
       public Mono<Result> execute(
-          EntityId entityId,
           Context<T> context,
-          Input.IncomingRequest request,
+          String clientId,
+          HttpRequestMessage request,
           T jsonBody
       ) {
         return Mono.just(context.validRequest(jsonBody));

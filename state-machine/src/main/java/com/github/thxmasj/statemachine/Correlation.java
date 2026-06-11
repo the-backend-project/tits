@@ -17,11 +17,15 @@ public class Correlation {
   public static Mono<String> correlationId() {
     return Mono.deferContextual(Mono::just)
         .map(ctx -> ctx.<String>get(CORRELATION_ID))
-        .contextWrite(ctx -> ctx.hasKey(CORRELATION_ID) ? ctx : ctx.put(CORRELATION_ID, UUID.randomUUID().toString()));
+        .contextWrite(ctx -> ctx.hasKey(CORRELATION_ID) ? ctx : ctx.put(CORRELATION_ID, "N/A-xxx"));// + UUID.randomUUID().toString()));
   }
 
   public static ContextView contextOf(@NonNull String correlationId, Sinks.One<HttpResponseMessage> responseSink, UUID requestId) {
     return Context.of(CORRELATION_ID, correlationId, RESPONSE_SINK, responseSink, REQUEST_ID, requestId);
+  }
+
+  public static ContextView contextOf(Sinks.One<HttpResponseMessage> responseSink, UUID requestId) {
+    return Context.of(RESPONSE_SINK, responseSink, REQUEST_ID, requestId);
   }
 
   public static ContextView contextOf(@NonNull String correlationId) {
@@ -42,6 +46,10 @@ public class Correlation {
 
   public static Sinks.One<HttpResponseMessage> responseSink(ContextView context) {
     return context.get(RESPONSE_SINK);
+  }
+
+  public static Sinks.One<Event<?>> responseSink(ContextView context, EntityId entityId) {
+    return context.getOrEmpty(REQUEST_ID).filter(requestId -> requestId.equals(entityId)).isPresent() ? context.get(RESPONSE_SINK) : null;
   }
 
   public static boolean hasResponseSink(ContextView context) {

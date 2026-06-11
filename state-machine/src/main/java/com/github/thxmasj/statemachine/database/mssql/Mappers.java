@@ -2,60 +2,66 @@ package com.github.thxmasj.statemachine.database.mssql;
 
 import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
+import static java.util.stream.Collectors.toMap;
 
-import com.github.thxmasj.statemachine.BuiltinEventTypes;
 import com.github.thxmasj.statemachine.EntityId;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.Event;
 import com.github.thxmasj.statemachine.EventType;
 import com.github.thxmasj.statemachine.OutboxElement;
 import com.github.thxmasj.statemachine.OutboxQueue;
-import com.github.thxmasj.statemachine.TransitionModel;
+import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.statemachine.database.MappingFailure;
 import com.github.thxmasj.statemachine.database.Row;
 import com.github.thxmasj.statemachine.message.http.HttpMessageParser;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZonedDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.function.BiFunction;
 import java.util.function.Function;
-import java.util.stream.Stream;
 
 public class Mappers {
 
-  static EventType<?, ?> eventType(
-      EntityModel entityModel,
-      UUID typeId
-  ) {
-    return Stream.concat(
-            entityModel.transitions().stream().map(TransitionModel::eventType),
-            BuiltinEventTypes.ALL.stream()
-        )
-        .filter(type -> typeId.equals(type.id()))
-        .findFirst().orElseThrow(() -> new MappingFailure("No event type has id " + typeId));
+  public static List<EventType<?, ?>> eventTypesFor(TransitionModel<?, ?> transition) {
+    ArrayList<EventType<?, ?>> eventTypes = new ArrayList<>();
+    eventTypes.add(transition.eventType());
+    transition.filters().stream().map(f -> f.alternative().model()).map(Mappers::eventTypesFor).forEach(eventTypes::addAll);
+    return Collections.unmodifiableList(eventTypes);
   }
 
-  static  Function<Row, Event<?>> eventMapper(
-        EntityModel entityModel,
+  public static Function<UUID, EventType<?, ?>> eventTypeMapper(List<EventType<?, ?>> eventTypes) {
+    Map<UUID, EventType<?, ?>> idToEventType = eventTypes.stream().collect(toMap(EventType::id, e -> e));
+    return idToEventType::get;
+  }
+
+  public static BiFunction<EntityId, Row, Event<?>> eventMapper(
+        List<EventType<?, ?>> eventTypes,
         Clock clock
-    ) {
-        return (row) -> {
-            try {
-                return new Event<>(
-                        value(row, "EventNumber", Integer.class),
-                        eventType(entityModel, row.get("Type", UUID.class)),
-                        value(row, "Timestamp", LocalDateTime.class),
-                        clock,
-                        nullableString(row, "MessageId"),
-                        nullableString(row, "ClientId"),
-                        nullableString(row, "Data")
-                );
-            } catch (Exception e) {
-                throw new MappingFailure(e);
-            }
-        };
-    }
+  ) {
+    var eventTypeMapper = Mappers.eventTypeMapper(eventTypes);
+    return (entityId, row) -> {
+      UUID eventTypeId = row.get("Type", UUID.class);
+      EventType<?, ?> eventType = eventTypeMapper.apply(eventTypeId);
+      if (eventType == null) throw new MappingFailure(format("No event type for type id %s", eventTypeId));
+      try {
+        return new Event<>(
+            entityId.value(),
+            value(row, "EventNumber", Integer.class),
+            eventType,
+            value(row, "Timestamp", LocalDateTime.class),
+            clock,
+            nullableString(row, "Data")
+        );
+      } catch (Exception e) {
+        throw new MappingFailure(e);
+      }
+    };
+  }
 
   static  Function<Row, OutboxElement> queueElementMapper(
       List<EntityModel> entityModels,

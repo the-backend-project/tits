@@ -98,14 +98,14 @@ public class JDBCClient implements Client {
       case SQLServerException e when e.getSQLServerError().getErrorNumber() == 2627 -> {
         Matcher primaryKeyViolationMatcher = primaryKeyViolationPattern.matcher(e.getMessage());
         if (primaryKeyViolationMatcher.matches())
-          yield new PrimaryKeyConstraintViolation(queryName, null, primaryKeyViolationMatcher.group(3), primaryKeyViolationMatcher.group(1), e);
+          yield new PrimaryKeyConstraintViolation(queryName, null, primaryKeyViolationMatcher.group(4), primaryKeyViolationMatcher.group(3), primaryKeyViolationMatcher.group(1), e);
         else
           yield new DataIntegrityViolation(queryName, null, "N/A", errorMessage(e.getMessage(), queryName, sql, parameters), e);
       }
       case SQLServerException f when f.getSQLServerError().getErrorNumber() == 2601 -> {
         Matcher duplicateKeyRowMatcher = duplicateKeyRowPattern.matcher(f.getMessage());
         if (duplicateKeyRowMatcher.matches())
-          yield new UniqueIndexConstraintViolation(queryName, null, duplicateKeyRowMatcher.group(2), duplicateKeyRowMatcher.group(3), f);
+          yield new UniqueIndexConstraintViolation(queryName, null, duplicateKeyRowMatcher.group(4), duplicateKeyRowMatcher.group(2), duplicateKeyRowMatcher.group(3), f);
         else
           yield new DataIntegrityViolation(queryName, null, "N/A", errorMessage(f.getMessage(), queryName, sql, parameters), f);
       }
@@ -118,7 +118,7 @@ public class JDBCClient implements Client {
   }
 
   private static final Pattern duplicateKeyRowPattern = Pattern.compile(
-      "Cannot insert duplicate key row in object '(.*)\\.(.*)' with unique index '(.*)'. The duplicate key value is \\((.*), (.*)\\).");
+      "Cannot insert duplicate key row in object '(.*)\\.(.*)' with unique index '(.*)'. The duplicate key value is \\((.*)\\).");
   private static final Pattern primaryKeyViolationPattern = Pattern.compile(
       "Violation of PRIMARY KEY constraint '(.*)'. Cannot insert duplicate key in object '(.*)\\.(.*)'. The duplicate key value is \\((.*)\\).");
 
