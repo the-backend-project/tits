@@ -10,9 +10,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 public class TraversableState {
   private final State state;
@@ -69,18 +67,6 @@ public class TraversableState {
         forwardTransitions.put(
             filter.alternative().model(),
             create(node, filter.alternative().model(), transitions, initialState, visitedStates)
-        );
-      }
-      if (transition.rejectModel() != null) {
-        forwardTransitions.put(
-            transition.rejectModel(),
-            create(node, transition.rejectModel(), transitions, initialState, visitedStates)
-        );
-      }
-      for (var duplicateModel : transition.duplicateModels()) {
-        forwardTransitions.put(
-            duplicateModel,
-            create(node, duplicateModel, transitions, initialState, visitedStates)
         );
       }
     }

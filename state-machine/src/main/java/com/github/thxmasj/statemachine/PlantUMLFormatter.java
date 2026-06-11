@@ -23,8 +23,9 @@ import net.sourceforge.plantuml.SourceStringReader;
 public class PlantUMLFormatter {
 
   private final static String STATE_BEGIN = "Begin"; // A bit bad to hard code the "Begin" name, as it is by convention only.
-  private final TraversableState beginState;
   private final EntityModel model;
+  private final Traverser traverser;
+  Map<State, List<TransitionModel<?, ?>>> transitions;
   private final boolean hideBuiltin;
 
   public PlantUMLFormatter(EntityModel model, Map<State, List<TransitionModel<?, ?>>> transitions) {
@@ -34,7 +35,8 @@ public class PlantUMLFormatter {
   public PlantUMLFormatter(EntityModel model, Map<State, List<TransitionModel<?, ?>>> transitions, boolean hideBuiltin) {
     this.model = model;
     this.hideBuiltin = hideBuiltin;
-    this.beginState = TraversableState.create(model, transitions);
+    this.traverser = new Traverser(transitions);
+    this.transitions = transitions;
   }
 
   public File formatToFile(String directory) throws IOException {
@@ -65,26 +67,35 @@ public class PlantUMLFormatter {
       !pragma svginteractive true
       
       %s
+      %s
       
       %s
   
       @enduml
       """,
-      states(beginState, new HashSet<>()),
-      transitions(beginState, new HashSet<>())
+      // States
+      transitions.keySet().stream().map(this::state).collect(joining("\n"))
+      // Choices
+//      transitions.values().stream().flatMap(List::stream).flatMap(t -> unnest(t).stream()).filter(t -> !t.filters().isEmpty()).map(choiceTransition -> choiceTransition.
+      // Transitions
+//      transitions(model.initialState(), new HashSet<>());
     );
   }
 
-  private String choiceName(TraversableState state, TransitionModel<?, ?> transition) {
-    return state.state().name() + "_" + transition.eventType().name();
+  private static List<TransitionModel<?, ?>> unnest(TransitionModel<?, ?> model) {
+    return model.filters().stream().flatMap(f -> unnest(f.alternative().model()).stream()).toList();
   }
 
-  private String states(TraversableState state, Set<State> visited) {
-    if (visited.contains(state.state())) return "";
-    visited.add(state.state());
+  private String choiceName(State state, TransitionModel<?, ?> transition) {
+    return state.name() + "_" + transition.eventType().name();
+  }
+
+  private String states(State state, Set<State> visited) {
+    if (visited.contains(state)) return "";
+    visited.add(state);
 //    StringBuilder s = new StringBuilder(state.state().isChoice() ? conditionalState(state.state()) : state(state.state()));
-    StringBuilder s = new StringBuilder(state(state.state()));
-    for (var t : state.forwardTransitions()) {
+    StringBuilder s = new StringBuilder(state(state));
+    for (var t : transitions.get(state)) {
       if (!t.filters().isEmpty())
         s.append(String.format(
             """
@@ -93,38 +104,38 @@ public class PlantUMLFormatter {
             choiceName(state, t)
         ));
     }
-    for (TraversableState targetState : state.targetStates()) {
-      s.append(states(targetState, visited));
-    }
+//    for (TraversableState targetState : state.targetStates()) {
+//      s.append(states(targetState, visited));
+//    }
     return s.toString();
   }
 
-  private String transitions(TraversableState state, Set<State> visited) {
-    if (visited.contains(state.state())) return "";
-    visited.add(state.state());
+  private String transitions(State state, Set<State> visited) {
+    if (visited.contains(state)) return "";
+    visited.add(state);
     StringBuilder s = new StringBuilder();
-    for (TransitionModel<?, ?> transition : state.forwardTransitions()) {
+    for (TransitionModel<?, ?> transition : transitions.get(state)) {
       if (hideBuiltin && BuiltinEventTypes.ALL.contains(transition.eventType())) continue;
-      var targetState = state.forward(transition.eventType());
+      var targetState = traverser.targetState(state, transition);
       if (!transition.filters().isEmpty()) {
         String choiceName = choiceName(state, transition);
-        s.append(String.format("%s --> %s: %s\n", state.state().name(), choiceName, transition.eventType().name()));
+        s.append(String.format("%s --> %s: %s\n", state.name(), choiceName, transition.eventType().name()));
         for (var filter : transition.filters()) {
           s.append(transition(choiceName, targetState, filter.alternative().model().eventType(), transition));
         }
       } else {
-        s.append(transition(state.state().name(), targetState, transition.eventType(), transition));
+        s.append(transition(state.name(), targetState, transition.eventType(), transition));
       }
       s.append(transitions(targetState, visited));
     }
     return s.toString();
   }
 
-  private String transition(String source, TraversableState targetState, EventType<?, ?> eventType, TransitionModel<?, ?> transition) {
+  private String transition(String source, State targetState, EventType<?, ?> eventType, TransitionModel<?, ?> transition) {
     return String.format(
         "%s --> %s: %s\n",
         /*state.state().name().equals(STATE_BEGIN) ? "[*]" :*/ source,
-        targetState.state().name(),
+        targetState.name(),
         Stream.of(
             String.format("%s", eventType.name()),
             "I:" + eventType.inputDataType().name() + "/" + "O:" + eventType.outputDataType().name(),

@@ -273,7 +273,6 @@ public class StateMachine {
 //                    }
                     // This is a bug.
                     // - Rejection should not happen unless model is wrong. TODO: sanitize
-                    // - Repeated and DuplicateId should only happen with incoming requests (which this is not).
                     case ProcessResult<?> r -> Mono.error(new IllegalStateException(
                         "Unexpected result for state resolving: " + r.getClass().getSimpleName()));
                   }

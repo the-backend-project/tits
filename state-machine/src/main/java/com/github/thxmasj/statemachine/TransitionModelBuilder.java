@@ -30,14 +30,12 @@ import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.Reje
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.TriggerChangeContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.UnknownIdChangeContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.WithFilter.Alternative;
-import com.github.thxmasj.statemachine.TransitionModelBuilder.WithToState.DuplicateModel;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;
 import com.github.thxmasj.statemachine.Tuples.Tuple4;
 import com.github.thxmasj.statemachine.database.UnknownEntity;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
 import com.github.thxmasj.statemachine.message.Message.IncomingResponse;
 import com.github.thxmasj.statemachine.message.Message.OutgoingRequest;
-import jakarta.validation.constraints.NotNull;
 import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
@@ -63,10 +61,7 @@ public class TransitionModelBuilder<I, T, O> {
       List<EventTrigger<?, ?, ?>> triggers,
       List<OutgoingRequestModel<?, ?>> outgoingRequests,
       List<Filter<?, ?, ?>> filters,
-      List<ScheduledEvent<?, ?>> scheduledEvents,
-      TransitionModel<Data, Data> reverseModel,
-      TransitionModel<Tuple4<I, EntityModel, EventType<?, ?>, String>, O> rejectModel,
-      List<DuplicateModel<I, O>> duplicateModels
+      TransitionModel<Data, Data> reverseModel
   ) {
 
     public String description() {
@@ -336,7 +331,7 @@ public class TransitionModelBuilder<I, T, O> {
 
   public static TransitionModel<Void, State> statusOn() {
     return new TransitionModel<>(
-        new ModelContext<>(false, null, BuiltinEventTypes.Status, List.of(), List.of(), List.of(), List.of(), null, null, List.of()),
+        new ModelContext<>(false, null, BuiltinEventTypes.Status, List.of(), List.of(), List.of(), null),
         initialChangeContext -> initialChangeContext.flatMap(i -> Mono.just(new OutputChangeContext<>(
             i,
             ProcessResult.accepted(
@@ -353,9 +348,9 @@ public class TransitionModelBuilder<I, T, O> {
     );
   }
 
-  public static TransitionModel<Data, Data> rollbackOn(@NotNull EventType<Data, Data> eventType) {
+  public static TransitionModel<Data, Data> rollbackOn(EventType<Data, Data> eventType) {
     return new TransitionModel<>(
-        new ModelContext<>(false, null, eventType, List.of(), List.of(), List.of(), List.of(), null, null, List.of()),
+        new ModelContext<>(false, null, eventType, List.of(), List.of(), List.of(), null),
         initialChangeContext -> initialChangeContext.flatMap(i -> {
           System.out.println("Validating rollback (" + eventType.name() + "), data [" + i.stepOutput() + "] initial change context: " + i);
           //int rollbackFrom = i.stepOutput().fromNumber();
@@ -456,7 +451,7 @@ public class TransitionModelBuilder<I, T, O> {
     }
 
     public WithToState<I, O> to(State toState) {
-      return new WithToState<>(new ModelContext<>(false, toState, eventType, List.of(), List.of(), List.of(), List.of(), null, null, List.of()));
+      return new WithToState<>(new ModelContext<>(false, toState, eventType, List.of(), List.of(), List.of(), null));
     }
 
     public WithToState<I, O> toSelf() {
@@ -472,27 +467,6 @@ public class TransitionModelBuilder<I, T, O> {
     public WithToState(ModelContext<I, O> modelContext) {
       this.modelContext = modelContext;
     }
-
-    public WithToState<I, O> whenReject(TransitionModel<Tuple4<I, EntityModel, EventType<?, ?>, String>, O> rejectModel) {
-      return new WithToState<>(new ModelContext<>(
-          modelContext.reversal,
-          modelContext.to,
-          modelContext.eventType,
-          modelContext.triggers,
-          modelContext.outgoingRequests,
-          modelContext.filters,
-          modelContext.scheduledEvents,
-          modelContext.reverseModel,
-          rejectModel,
-          modelContext.duplicateModels
-      ));
-    }
-
-    record DuplicateModel<I, O>(
-        SecondaryIdModel<?> idModel,
-        BiFunction<I, EventLog, Boolean> filter,
-        TransitionModel<Tuple2<I, EventLog>, O> transitionModel
-    ) {}
 
     public <T> TransitionModelBuilder<I, T, O> assemble(BiFunction<I, EventLog, T> assembler) {
       return new TransitionModelBuilder<>(
@@ -828,10 +802,7 @@ public class TransitionModelBuilder<I, T, O> {
           this.builder.modelContext.triggers,
           this.builder.modelContext.outgoingRequests,
           join(this.builder.modelContext.filters, filter),
-          this.builder.modelContext.scheduledEvents,
-          this.builder.modelContext.reverseModel,
-          this.builder.modelContext.rejectModel,
-          this.builder.modelContext.duplicateModels
+          this.builder.modelContext.reverseModel
       );
       return new TransitionModelBuilder<>(
           modelContext,
@@ -872,7 +843,7 @@ public class TransitionModelBuilder<I, T, O> {
 
   public static <T> TransitionModelBuilder<Data, T, Data> assembleReactive(BiFunction<EventLog, EventType<Data, Data>, Mono<T>> assembler) {
     return new TransitionModelBuilder<>(
-        new ModelContext<>(true /* !! */, null, BuiltinEventTypes.Rollback, List.of(), List.of(), List.of(), List.of(), null, null, List.of()),
+        new ModelContext<>(true /* !! */, null, BuiltinEventTypes.Rollback, List.of(), List.of(), List.of(), null),
         initialChangeContext -> initialChangeContext.flatMap(
             i -> {
               // TODO
@@ -939,10 +910,7 @@ public class TransitionModelBuilder<I, T, O> {
             modelContext.triggers,
             modelContext.outgoingRequests,
             modelContext.filters,
-            modelContext.scheduledEvents,
-            reverseModel.complete(),
-            modelContext.rejectModel,
-            modelContext.duplicateModels
+            reverseModel.complete()
         ),
         builderFunction
     );
@@ -990,10 +958,7 @@ public class TransitionModelBuilder<I, T, O> {
             eventTriggers,
             modelContext.outgoingRequests,
             modelContext.filters,
-            modelContext.scheduledEvents,
-            modelContext.reverseModel,
-            modelContext.rejectModel,
-            modelContext.duplicateModels
+            modelContext.reverseModel
         ),
         builderFunction.andThen(f)
     );
@@ -1040,10 +1005,7 @@ public class TransitionModelBuilder<I, T, O> {
             modelContext.triggers,
             join(modelContext.outgoingRequests, requestModel),
             modelContext.filters,
-            modelContext.scheduledEvents,
-            modelContext.reverseModel,
-            modelContext.rejectModel,
-            modelContext.duplicateModels
+            modelContext.reverseModel
         ),
         builderFunction.andThen(f)
     );
@@ -1143,11 +1105,7 @@ public class TransitionModelBuilder<I, T, O> {
     }
 
     public TransitionModel<Tuple4<I, EntityModel, EventType<?, ?>, String>, O> rejectModel() {
-      return modelContext.rejectModel();
-    }
-
-    public List<TransitionModel<Tuple2<I, EventLog>, O>> duplicateModels() {
-      return modelContext.duplicateModels().stream().map(DuplicateModel::transitionModel).toList();
+      return null;
     }
 
     public Mono<OutputChangeContext<O>> calculate(InitialChangeContext<I> initialChangeContext) {

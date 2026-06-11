@@ -128,13 +128,11 @@ public class Traverser {
 
   private List<TransitionModel<?, ?>> leaves(TransitionModel<?, ?> transition) {
     ArrayList<TransitionModel<?, ?>> leaves = new ArrayList<>();
-    if (transition.filters().isEmpty() && transition.duplicateModels().isEmpty() && transition.rejectModel() == null) {
+    if (transition.filters().isEmpty()) {
       // transition is a leaf
       leaves.add(transition);
     } else {
       transition.filters().stream().map(f -> f.alternative().model()).forEach(alternativeModel -> leaves.addAll(leaves(alternativeModel)));
-      transition.duplicateModels().forEach(duplicateModel -> leaves.addAll(leaves(duplicateModel)));
-      if (transition.rejectModel() != null) leaves.add(transition.rejectModel());
     }
     return unmodifiableList(leaves);
   }

@@ -30,8 +30,6 @@ public class Mappers {
   public static List<EventType<?, ?>> eventTypesFor(TransitionModel<?, ?> transition) {
     ArrayList<EventType<?, ?>> eventTypes = new ArrayList<>();
     eventTypes.add(transition.eventType());
-    if (transition.rejectModel() != null) eventTypes.addAll(eventTypesFor(transition.rejectModel()));
-    transition.duplicateModels().stream().map(Mappers::eventTypesFor).forEach(eventTypes::addAll);
     transition.filters().stream().map(f -> f.alternative().model()).map(Mappers::eventTypesFor).forEach(eventTypes::addAll);
     return Collections.unmodifiableList(eventTypes);
   }
