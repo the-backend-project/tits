@@ -1,6 +1,5 @@
 package com.github.thxmasj.statemachine.templates.cardpayment;
 
-import static com.github.thxmasj.statemachine.BuiltinEntities.CompleteInvalidRequest;
 import static com.github.thxmasj.statemachine.BuiltinEntities.CompleteRequest;
 import static com.github.thxmasj.statemachine.BuiltinEntities.Models.RequestDispatching;
 import static com.github.thxmasj.statemachine.EntitySelector.entityIdFromSession;
@@ -19,7 +18,6 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.MerchantStat
 import static com.github.thxmasj.statemachine.templates.cardpayment.MerchantState.Suspended;
 import static java.util.Optional.ofNullable;
 
-import com.github.thxmasj.statemachine.BuiltinEventTypes;
 import com.github.thxmasj.statemachine.State;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
@@ -37,11 +35,7 @@ public class MerchantTransitions {
                 .assemble(c -> tuple(c.input(), c.eventReference()))
                 .newIdentifier(MerchantId, d -> d.t1().id())
                 .trigger(CompleteRequest).with(d -> tuple("", d.t1().t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
-                .output(d -> d.t1().t1().t1()),
-            onEvent(BuiltinEventTypes.SecondaryIdAlreadyExists).toSelf()
-                .assemble(c -> tuple(c.input().t2(), c.eventReference()))
-                .trigger(CompleteInvalidRequest).with(d -> tuple(d.t1().data().toString(), d.t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
-                .output()
+                .output(d -> d.t1().t1().t1())
         ),
         Active, List.of(
             onEvent(Suspend).to(Suspended)

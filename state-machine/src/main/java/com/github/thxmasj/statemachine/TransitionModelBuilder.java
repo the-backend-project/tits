@@ -324,11 +324,6 @@ public class TransitionModelBuilder<I, T, O> {
 
   }
 
-  private static <T> ArrayList<T> add(ArrayList<T> list, T element) {
-    list.add(element);
-    return list;
-  }
-
   public static TransitionModel<Void, State> statusOn() {
     return new TransitionModel<>(
         new ModelContext<>(false, null, BuiltinEventTypes.Status, List.of(), List.of(), List.of(), null),
