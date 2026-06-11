@@ -17,11 +17,6 @@ public interface BuiltinEventTypes {
     InconsistentState = of("InconsistentState", UUID.fromString("7d4792e3-35b4-471f-9619-cac7051fa45c"), String.class),
     InvalidResponse = of("InvalidResponse", UUID.fromString("450679ab-bc60-46cb-bb97-d171c34c2750"), String.class);
   EventType<String, Void>
-    // Incoming request is valid but not allowed for the entity's current state.
-    //RejectedRequest = of("RejectedRequest", UUID.fromString("21318498-78a3-4f81-97dc-07bb1467c455"), String.class, Void.class),
-    // Incoming request is not according to incoming requests model.
-    //InvalidRequest = of("InvalidRequest", UUID.fromString("23d52456-e8b7-4409-aa9d-0998ef903471"), String.class, Void.class),
-    // Outgoing request not delivered (f.ex. connection failure)
     RequestUndelivered = of("RequestUndelivered", UUID.fromString("98ef4100-34e8-426b-9fb8-539626821537"), String.class, Void.class);
   EventType<Rollback.Data, Rollback.Data>
     Rollback = new Rollback("Rollback", UUID.fromString("58aa1e1f-e75d-40ba-9e87-ca7fc42e491d"));
@@ -34,8 +29,6 @@ public interface BuiltinEventTypes {
       SecondaryIdAlreadyExists = of("SecondaryIdAlreadyExists", UUID.fromString("d94ce75c-cb6a-41cd-a652-a210e6de1516"), new DataType<>(new TypeReference<>() {}, Change.class, SecondaryId.class, EventLog.class), Void.class);
 
   List<EventType<?, ?>> ALL = List.of(
-      //InvalidRequest,
-      //RejectedRequest,
       FailedRequest,
       RequestUndelivered,
       InvalidResponse,
