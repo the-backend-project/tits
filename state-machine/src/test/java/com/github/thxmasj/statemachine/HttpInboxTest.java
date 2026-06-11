@@ -29,16 +29,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.thxmasj.statemachine.BasicEventType.Rollback.Data;
 import com.github.thxmasj.statemachine.BuiltinEntities.RequestParser.ParsedRequest;
-import com.github.thxmasj.statemachine.EventType.DataType;
 import com.github.thxmasj.statemachine.IncomingResponseValidator.Result;
 import com.github.thxmasj.statemachine.IncomingResponseValidator.Result.Status;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
-import com.github.thxmasj.statemachine.Tuples.Tuple2;
 import com.github.thxmasj.statemachine.Validated.Valid;
 import com.github.thxmasj.statemachine.http.HttpRequestRouter.HttpRequestRoute;
 import com.github.thxmasj.statemachine.http.NettyHttpClient;
@@ -180,27 +177,6 @@ public class HttpInboxTest {
 
   record InternalProcess(String a, int b) {}
 
-  static EventType<Tuple2<HttpRequestMessage, InternalProcess>, HttpRequestMessage> ValidInternalProcessRequest = BasicEventType.of(
-      "ValidInternalProcessRequest",
-      UUID.fromString("46b0211e-f583-49b3-a6e7-8d13742e0260"),
-      new DataType<>(
-          new TypeReference<Tuple2<HttpRequestMessage, InternalProcess>>() {},
-          HttpRequestMessage.class,
-          InternalProcess.class
-      ),
-      new DataType<>(HttpRequestMessage.class)
-  );
-  static EventType<Tuple2<HttpRequestMessage, String>, HttpRequestMessage> InvalidInternalProcessRequest = BasicEventType.of(
-      "InvalidInternalProcessRequest",
-      UUID.fromString("6f00b6ba-b0e5-46a6-ad85-64eec4891b69"),
-      new DataType<>(
-          new TypeReference<Tuple2<HttpRequestMessage, String>>() {},
-          HttpRequestMessage.class,
-          String.class
-      ),
-      new DataType<>(HttpRequestMessage.class)
-  );
-
   public record Zero(String value) {}
 
   static EventType<Zero, Zero>
@@ -250,21 +226,6 @@ public class HttpInboxTest {
   static <K, V> Entry<K, V> entry(K key, V value) {
     return new SimpleImmutableEntry<>(key, value);
   }
-
-//  private static <T> Function<ParsedRequest<T>, Validated<EntitySelector<ParsedRequest<T>>>> parseEntityId(
-//      String requestLinePattern,
-//      int captureGroup
-//  ) {
-//    return d -> {
-//      String s = from(d.request().requestLine(), requestLinePattern, captureGroup);
-//      if (s == null) return new Invalid<>("Unable to extract entity id from request line");
-//      try {
-//        return new Valid<>(entityId(UUID.fromString(s)));
-//      } catch (IllegalArgumentException e) {
-//        return new Invalid<>("Entity id is not a valid UUID");
-//      }
-//    };
-//  }
 
   static List<HttpRequestRoute<?>> routes = List.of(
       new HttpRequestRoute<>(
@@ -334,377 +295,6 @@ public class HttpInboxTest {
           ))
       )
   );
-
-//
-//  static List<HttpRequestRouter<?, ?>> rollbackRouters = List.of(
-//      new HttpRequestRouter<>(
-//          m -> m.requestLine().matches("DELETE .*/lamps/messages/.*"),
-//          false,
-//          BasicEventType.of("RollbackRequest", UUID.fromString("9c8914f1-60f7-4829-8eaa-c0a60c65d377"), new DataType<>(null), Void.class),
-//          Rollback,
-//          Lamp,
-//          null,
-//          null,
-//          (request, _) -> from(request.requestLine(), "DELETE .*/lamps/messages/(.*)", 1),
-//          _ -> null
-//      )
-//  );
-
-
-//  static List<HttpRequestRouter<?, ?>> routers = List.of(
-//    new HttpRequestRouter<>(
-//        m -> m.requestLine().matches("PUT .*/zero/.*"),
-//        false,
-//        BasicEventType.of("ZeroProcessRequest", UUID.fromString("c5eb5fb3-8742-49e6-b8a2-351afc44304c"), new DataType<>(new TypeReference<>() {}, null), Void.class),
-//        ZeroProcessing,
-//        Lamp,
-//        entityId(d -> UUID.fromString(requireNonNull(from(d.request().requestLine(), "PUT .*/zero/(.*)", 1)))),
-//        null,
-//        (request, _) -> ZeroProcessing.id() + "/" + requireNonNull(from(request.requestLine(), "PUT .*/zero/(.*)", 1)),
-//        _ -> new Zero("Hey!")
-//    ),
-//    new HttpRequestRouter<>(
-//        m -> m.requestLine().matches("PUT .*/internal/.*"),
-//        false,
-//        BasicEventType.of("InternalProcessRequest", UUID.fromString("74b6a36a-135f-4cef-bb78-4e6279bd337b"), new DataType<>(null), Void.class),
-//        InternalProcessing,
-//        Lamp,
-//        newEntityId(),
-//        null,
-//        (request, _) -> from(request.requestLine(), "PUT .*/internal/(.*)", 1),
-//        _ -> null
-//    ),
-//    new HttpRequestRouter<>(
-//        m -> m.requestLine().matches("PUT .*/handledunknown/.*"),
-//        false,
-//        BasicEventType.of("HandledUnknownId", UUID.fromString("cae56547-1999-49d4-ab34-b846942f6526"), new DataType<>(null), Void.class),
-//        InternalProcessing,
-//        Lamp,
-//        entityId(UUID.randomUUID()), // Unknown id
-//        null,
-//        null,
-//        _ -> null
-//    ),
-//    new HttpRequestRouter<>(
-//        m -> m.requestLine().matches("PUT .*/handledreject/.*"),
-//        false,
-//        BasicEventType.of("HandledReject", UUID.fromString("bd065522-30b4-4495-8f22-a0576d798cc7"), new DataType<>(null), Void.class),
-//        EventThatIsAlwaysRejected,
-//        Lamp,
-//        newEntityId(),
-//        null,
-//        null,
-//        _ -> null
-//    ),
-//    new HttpRequestRouter<>(
-//        m -> m.requestLine().matches("PUT .*/complexinternal/.*"),
-//        false,
-//        BasicEventType.of("ComplexInternalProcessRequest", UUID.fromString("baafef75-8d74-4984-967e-cbd3215ec1de"), new DataType<>(null), Void.class),
-//        ComplexInternalProcessing,
-//        Lamp,
-//        newEntityId(),
-//        null,
-//        (request, _) -> from(request.requestLine(), "PUT .*/complexinternal/(.*)", 1),
-//        _ -> null
-//    ),
-//    new HttpRequestRouter<>(
-//        m -> m.requestLine().matches("PUT .*/external/.*"),
-//        false,
-//        BasicEventType.of("ExternalProcessRequest", UUID.fromString("ec71b8fd-d1bd-4ebb-b993-0a62f69d21e5"), new DataType<>(null), Void.class),
-//        ExternalProcessing,
-//        Lamp,
-//        newEntityId(),
-//        null,
-//        (request, _) -> from(request.requestLine(), "PUT .*/external/(.*)", 1),
-//        _ -> null
-//    ),
-//    new HttpRequestRouter<>(
-//        m -> m.requestLine().matches("PUT .*/long-external/.*"),
-//        false,
-//        BasicEventType.of("LongExternalProcessRequest", UUID.fromString("0b4397d3-c3cc-4950-8513-18e9522b18c5"), new DataType<>(null), Void.class),
-//        LongExternalProcessing,
-//        Lamp,
-//        newEntityId(),
-//        null,
-//        null,
-//        _ -> null
-//    ),
-//    new HttpRequestRouter<>(
-//        m -> m.requestLine().matches("PUT .*/rejected/.*"),
-//        false,
-//        BasicEventType.of("RequestWhichIsRejected", UUID.fromString("fb0c25f5-e361-44be-b8fe-0632749849ff"), new DataType<>(null), Void.class),
-//        EventThatIsAlwaysRejected,
-//        Lamp,
-//        newEntityId(),
-//        null,
-//        (request, _) -> from(request.requestLine(), "PUT .*/rejected/(.*)", 1),
-//        _ -> null
-//    ),
-//    new HttpRequestRouter<>(
-//        m -> m.requestLine().matches("DELETE .*/internal/.*"),
-//        false,
-//        BasicEventType.of("CancelRequest", UUID.fromString("86de7919-4e2f-406b-8d72-568bae6cbf32"), new DataType<>(null), Void.class),
-//        Rollback,
-//        Lamp,
-//        entityId(d -> UUID.fromString(requireNonNull(from(d.request().requestLine(), "DELETE .*/internal/(.*)", 1)))),
-//        null,
-//        null,
-//        _ -> new Data(0, "Cancel")
-//    )
-//  );
-
-
-
-
-
-
-//  static InboxExchange inboxExchange = new InboxExchange() {
-//
-//    @Override
-//    protected Map<Predicate<HttpRequestMessage>, Alternative<HttpRequestMessage, ?, ?>> routes() {
-//      return Map.ofEntries(
-//          entry(
-//              m -> m.requestLine().matches("PUT .*/zero/.*"),
-//              then(onEvent(ZeroProcessRequest).to(Requested)
-//                  .assemble((input, _) -> tuple(
-//                      input,
-//                      UUID.fromString(requireNonNull(from(input.requestLine(), "PUT .*/zero/(.*)", 1)))
-//                  ))
-//                  .newIdentifier(MessageId, d -> new MessageId("x", ZeroProcessRequest.id() + "/" + d.t2().toString()))
-//                  .trigger(ZeroProcessing).with(_ -> new Zero("Hey!")).on(Lamp)
-//                  .identifiedBy(entityId(d -> d.t1().t2()))
-//                  .output(d -> d.t1().t1().t1())
-//              )
-//          ),
-//          entry(
-//              m -> m.requestLine().matches("PUT .*/handledunknown/.*"),
-//              then(onEvent(HandledUnknownId).to(Requested)
-//                  .assembleInput()
-//                  .trigger(InternalProcessing).on(Lamp).identifiedBy(entityId(UUID.randomUUID())) // Unknown id
-//                  .when(d -> d.t2().isUnknownId()).then(
-//                      onEvent(KnownProcessRequest).to(Requested)
-//                          .assemble(d -> d.log().entityId())
-//                          //.trigger(InternalProcessing).on(Lamp).identifiedBy(newEntityId())
-//                          //.trigger(AcceptedRequest).with(Tuple2::t1).on(inboxExchange).identifiedBy(entityIdFromSession())
-//                          .trigger(AcceptedRequest).with(d -> d).on(inboxExchange).identifiedBy(entityIdFromSession())
-//                          .output(),
-//                      Tuple2::t1
-//                  )
-//                  .output()
-//              )
-//          ),
-//          entry(
-//              m -> m.requestLine().matches("PUT .*/handledreject/.*"),
-//              then(onEvent(HandledReject).to(Requested)
-//                  .assembleInput()
-//                  .trigger(EventThatIsAlwaysRejected).on(Lamp).identifiedBy(newEntityId())
-//                  .when(d -> d.t2().isRejected()).then(
-//                      onEvent(InternalProcessRequest).to(Requested)
-//                          .assemble(d -> d.log().entityId())
-//                          //.trigger(InternalProcessing).on(Lamp).identifiedBy(newEntityId())
-//                          //.trigger(AcceptedRequest).with(Tuple2::t1).on(inboxExchange).identifiedBy(entityIdFromSession())
-//                          .trigger(AcceptedRequest).with(d -> d).on(inboxExchange).identifiedBy(entityIdFromSession())
-//                          .output(),
-//                      Tuple2::t1
-//                  )
-//                  .output()
-//              )
-//          ),
-//          entry(
-//              m -> m.requestLine().matches("PUT .*/internal/.*"),
-//              then(onEvent(InternalProcessRequest).to(Requested)
-//                  .assemble((input, log) -> tuple(
-//                      json(input.body(), InternalProcess.class),
-//                      input,
-//                      log.entityId()
-//                  ))
-//                  .when(d -> d.t1().isValid()).then(
-//                      onEvent(ValidInternalProcessRequest).to(Requested)
-//                          .assembleInput()
-//                          .newIdentifier(
-//                              MessageId,
-//                              d -> new MessageId("x", from(d.t1().requestLine(), "PUT .*/internal/(.*)", 1))
-//                          )
-//                          .trigger(InternalProcessing).on(Lamp).identifiedBy(newEntityId())
-//                          .newIdentifier(
-//                              EventReference,
-//                              d -> new EventReference(
-//                                  d.t2().accepted().event().entityId(),
-//                                  d.t2().accepted().event().eventNumber()
-//                              )
-//                          )
-//                          .output(d -> d.t1().t1().t1().t1()),
-//                      d -> tuple(d.t2(), d.t1().value())
-//                  )
-//                  .when(d -> d.t1().isInvalid()).then(
-//                      onEvent(InvalidInternalProcessRequest).to(Requested)
-//                          .assembleInput()
-//                          .trigger(InvalidRequest)
-//                          .with(Tuple2::t2)
-//                          .on(this)
-//                          .identifiedBy(entityIdFromSession())
-//                          .output(d -> d.t1().t1()),
-//                      d -> tuple(d.t2(), "Invalid request")
-//                  )
-//                  .output(Tuple3::t2)
-//              )
-//          ),
-//          entry(
-//              m -> m.requestLine().matches("PUT .*/complexinternal/.*"),
-//              then(onEvent(ComplexInternalProcessRequest).to(Requested)
-//                  .assemble((input, log) -> tuple(input, log.entityId()))
-//                  .newIdentifier(
-//                      MessageId,
-//                      d -> new MessageId("x", from(d.t1().requestLine(), "PUT .*/complexinternal/(.*)", 1))
-//                  )
-//                  .trigger(ComplexInternalProcessing).on(Lamp).identifiedBy(newEntityId())
-//                  .newIdentifier(
-//                      EventReference,
-//                      d -> new EventReference(d.t2().accepted().event().entityId(), d.t2().accepted().event().eventNumber())
-//                  )
-//                  .output(d -> d.t1().t1().t1().t1())
-//              )
-//          ),
-//          entry(
-//              m -> m.requestLine().matches("PUT .*/external/.*"),
-//              then(onEvent(ExternalProcessRequest).to(Requested)
-//                  .assemble((input, log) -> tuple(input, log.entityId()))
-//                  .newIdentifier(
-//                      MessageId,
-//                      d -> new MessageId("x", from(d.t1().requestLine(), "PUT .*/external/(.*)", 1))
-//                  )
-//                  .trigger(ExternalProcessing).on(Lamp).identifiedBy(newEntityId())
-//                  .newIdentifier(
-//                      EventReference,
-//                      d -> new EventReference(d.t2().accepted().event().entityId(), d.t2().accepted().event().eventNumber())
-//                  )
-//                  .output(d -> d.t1().t1().t1().t1())
-//              )
-//          ),
-//          entry(
-//              m -> m.requestLine().matches("PUT .*/long-external/.*"),
-//              then(onEvent(LongExternalProcessRequest).to(Requested)
-//                  .assemble((input, log) -> tuple(input, log.entityId()))
-//                  .newIdentifier(
-//                      MessageId,
-//                      d -> new MessageId("x", from(d.t1().requestLine(), "PUT .*/long-external/(.*)", 1))
-//                  )
-//                  .trigger(LongExternalProcessing).on(Lamp).identifiedBy(newEntityId())
-//                  .newIdentifier(
-//                      EventReference,
-//                      d -> new EventReference(d.t2().accepted().event().entityId(), d.t2().accepted().event().eventNumber())
-//                  )
-//                  .output(d -> d.t1().t1().t1().t1())
-//              )
-//          ),
-//          entry(
-//              m -> m.requestLine().matches("PUT .*/rejected/.*"),
-//              then(onEvent(RequestWhichIsRejected).to(Requested)
-//                      .assemble((input, log) -> tuple(
-//                          input,
-//                          log.entityId(),
-//                          new MessageId("x", from(input.requestLine(), "PUT .*/rejected/(.*)", 1))
-//                      ))
-//                      .trigger(EventThatIsAlwaysRejected)
-//                      .on(Lamp)
-//                      .identifiedBy(newEntityId())
-//                      .when(d -> d.t2().isRejected())
-//                      .then(
-//                          rejectedRequest(),
-//                          d -> tuple(d.t1().t1(), d.t1().t3(), d.t2().rejected().exception().getMessage())
-//                      )
-//                      .when(_ -> true)
-//                      .then(
-//                          onEvent(RequestWhichIsRejected).to(Requested)
-//                              .assemble((input, log) -> tuple(
-//                                  input,
-//                                  log.entityId(),
-//                                  new MessageId("x", from(input.requestLine(), "PUT .*/rejected/(.*)", 1))
-//                              ))
-////                  .newIdentifier(
-////                      EventReference,
-////                      d -> new EventReference(d.t2().accepted().entityId(), d.t2().accepted().event().eventNumber())
-////                  )
-//                              .output(),
-//                          d -> d.t1().t1()
-//                      )
-//                      .output(d -> d.t1().t1())
-//              )
-//          ),
-//          entry(
-//              m -> m.requestLine().matches("PUT .*/oneway/.*"),
-//              then(onEvent(ExternalProcessRequest).to(Requested)
-//                  .assemble((input, log) -> tuple(input, log.entityId()))
-//                  .output(Tuple2::t1)
-//              )
-//          ),
-//          // RollbackRequest arrives before ToggleRequest. Create message id to block ToggleRequest if it comes
-//          entry(
-//              m -> m.requestLine().matches("DELETE .*/lamps/messages/.*"),
-//              then(
-//                  onEvent(RollbackRequest).to(Requested)
-//                      .assembleInput()
-//                      .trigger(RollbackRequest).with(d -> d).on(this)
-//                      .identifiedBy(secondaryId(
-//                          MessageId,
-//                          d -> new MessageId("x", from(d.requestLine(), "DELETE .*/lamps/messages/(.*)", 1)),
-//                          CreateIfNotExists
-//                      ))
-//                      .output()
-//              )
-//          ),
-////          then(initialRollbackRequest(d -> new MessageId(
-////                  "x",
-////                  from(d.requestLine(), "DELETE .*/lamps/messages/(.*)", 1)
-////          )))),
-//          entry(
-//              m -> m.requestLine().matches("DELETE .*/internal/.*"),
-//              then(
-//                  onEvent(CancelRequest).to(Requested)
-//                      .assemble((input, _) -> tuple(
-//                          input,
-//                          UUID.fromString(requireNonNull(from(
-//                              input.requestLine(),
-//                              "DELETE .*/internal/(.*)",
-//                              1
-//                          )))
-//                      ))
-//                      .newIdentifier(MessageId, d -> new MessageId("x", CancelRequest.id() + "/" + d.t2().toString()))
-//                      .trigger(Cancel).with(_ -> new Data(0, "Cancel")).on(Lamp)
-//                      .identifiedBy(entityId(d -> d.t1().t2()))
-//                      .output(d -> d.t1().t1().t1())
-//              )
-//          )
-//      );
-//    }
-
-//    @Override
-//    protected List<TransitionModel<?, ?>> responseTransitions() {
-//      return List.of(
-//          onEvent(InternalProcessResponse).to(Responded)
-//              .assemble(c -> tuple(c.input(), c.timestamp(), c.correlationId()))
-//              .when(_ -> true).then(
-//                  onEvent(Response).to(Responded).assembleInput().output(d -> d),
-//                  d -> createResponseMessage(new Created(), d.t1().t1(), d.t3(), d.t2(), d.t1().t2())
-//              )
-//              .output(),
-//          //onResponseEvent(InternalProcessResponse, new Created()),
-//          onResponseEvent(ComplexInternalProcessResponse, new Created()),
-//          onResponseEvent(ExternalProcessResponse, new Created())
-//      );
-//    }
-//
-//    @Override
-//    protected Predicate<HttpRequestMessage> rollbackPredicate() {
-//      return m -> m.requestLine().matches("DELETE .*/lamps/messages/.*");
-//    }
-//
-//    @Override
-//    protected EntityModel rollbackEntity() {
-//      return Lamp;
-//    }
-//
-//  };
 
   enum Queues implements OutboxQueue {
     DeviceListener {
@@ -853,15 +443,6 @@ public class HttpInboxTest {
     assertEquals("No such entity", ProblemDetail.parse(response.body()).detail());
   }
 
-//  @Test
-//  public void whenRejectHandledThenOkResponse() throws JsonProcessingException {
-//    String messageId = UUID.randomUUID().toString();
-//    Event<?> responseEvent = onRequest(PUT, URI.create("/handledreject/" + messageId), "Hello!");
-//    HttpResponseMessage response = HttpMessageParser.parseResponse(responseEvent.data());
-//    assertEquals(201, response.statusCode());
-//    assertEquals("Created", ProblemDetail.parse(response.body()).detail());
-//  }
-
   @Test
   @Disabled("Sync response (in request/reply session) not possible with reversals triggered by the resolver")
   public void whenLongExternalProcessRequestThenRollback() throws JsonProcessingException {
@@ -971,18 +552,6 @@ public class HttpInboxTest {
 
   private Event<?> onRollbackRequest(String messageId) {
     return onRequest(DELETE, URI.create("/lamps/messages/" + messageId), null);
-//    var responseEvent = onRequest(
-//        new EventTrigger<>(
-//            new EventSpec<>(Request, Function.identity()),
-//            List.of(newEntityId()),
-////            List.of(secondaryId(MessageId, _ -> new MessageId("x", messageId), CreateIfNotExists)),
-//            inboxExchange,
-//            false
-//        ),
-//        new HttpRequestMessage(DELETE, URI.create("/lamps/messages/" + messageId), Map.of())
-//    );
-//    assertEquals(RollbackResponse, responseEvent.type());
-//    return responseEvent;
   }
 
   private Event<?> onRequest(EventTrigger<HttpRequestMessage, ?, ?> eventTrigger, HttpRequestMessage requestMessage) {
