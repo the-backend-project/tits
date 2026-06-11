@@ -1,15 +1,15 @@
 package com.github.thxmasj.statemachine.message;
 
-import com.github.thxmasj.statemachine.*;
-import com.github.thxmasj.statemachine.message.Message.IncomingMessage;
+import com.github.thxmasj.statemachine.EntityId;
+import com.github.thxmasj.statemachine.OutboxQueue;
+import com.github.thxmasj.statemachine.message.Message.IncomingResponse;
 import com.github.thxmasj.statemachine.message.Message.OutgoingRequest;
-import com.github.thxmasj.statemachine.message.Message.OutgoingResponse;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import java.time.Duration;
 import java.util.UUID;
 
-public abstract sealed class Message permits IncomingMessage, OutgoingRequest, OutgoingResponse {
+public abstract sealed class Message permits IncomingResponse, OutgoingRequest {
 
   private final int eventNumber;
 
@@ -19,14 +19,7 @@ public abstract sealed class Message permits IncomingMessage, OutgoingRequest, O
     this.eventNumber = eventNumber;
   }
 
-  public abstract sealed static class IncomingMessage extends Message permits IncomingRequest, IncomingResponse {
-
-    protected IncomingMessage(int eventNumber) {
-      super(eventNumber);
-    }
-  }
-
-  public static final class IncomingResponse extends IncomingMessage {
+  public static final class IncomingResponse extends Message {
 
     private final HttpResponseMessage message;
     private final OutboxQueue queue;
@@ -128,88 +121,6 @@ public abstract sealed class Message permits IncomingMessage, OutgoingRequest, O
 
     public EntityId parentEntity() {
       return parentEntity;
-    }
-
-  }
-
-  public static final class OutgoingResponse extends Message {
-
-    private final UUID requestId;
-    private final HttpResponseMessage message;
-
-    public OutgoingResponse(
-        int eventNumber,
-        HttpResponseMessage message,
-        UUID requestId
-    ) {
-      super(eventNumber);
-      this.requestId = requestId;
-      this.message = message;
-    }
-
-    public UUID requestId() {
-      return requestId;
-    }
-
-    public HttpResponseMessage message() {
-      return message;
-    }
-
-  }
-
-  public static final class IncomingRequest extends IncomingMessage {
-
-    private final UUID id;
-    private final HttpRequestMessage message;
-    private final String messageId;
-    private final String clientId;
-    private final byte[] digest;
-
-    public IncomingRequest(
-        UUID id,
-        int eventNumber,
-        HttpRequestMessage message,
-        String messageId,
-        String clientId,
-        byte[] digest
-    ) {
-      super(eventNumber);
-      this.id = id;
-      this.message = message;
-      this.messageId = messageId;
-      this.clientId = clientId;
-      this.digest = digest;
-    }
-
-    public IncomingRequest withMessageId(String newMessageId) {
-      return new Message.IncomingRequest(
-          id(),
-          eventNumber(),
-          message(),
-          newMessageId,
-          clientId(),
-          digest()
-      );
-    }
-
-    public UUID id() {
-      return id;
-    }
-
-    public HttpRequestMessage message() {
-      return message;
-    }
-
-    public String messageId() {
-      return messageId;
-    }
-
-    public String clientId() {
-      return clientId;
-    }
-
-    public byte[] digest() {
-      return digest;
     }
 
   }

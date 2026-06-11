@@ -3,16 +3,10 @@ package com.github.thxmasj.statemachine;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.datatype.jsr310.JSR310Module;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import com.fasterxml.jackson.datatype.jsr310.deser.InstantDeserializer;
-import com.github.thxmasj.statemachine.database.*;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import java.time.*;
 import java.util.*;
-
-import static java.util.stream.Collectors.*;
 
 public class Logger implements Listener {
 
@@ -22,44 +16,12 @@ public class Logger implements Listener {
     this.entityName = entityName;
   }
 
-  @Override
-  public void clientRequestFailed(String correlationId, EventType<?, ?> eventType, Throwable t) {
-    log(header("N/A", correlationId) + " Request failed: " + t.toString());
-    //noinspection CallToPrintStackTrace
-    t.printStackTrace();
-  }
-
   private void log(String message) {
     System.out.println(message);
   }
 
   private String header(Object entityId, String correlationId) {
     return String.format("[%s %s %s]", entityName, entityId, correlationId);
-  }
-
-  @Override
-  public void rollbackFailed(String correlationId, EntityId entityId, Throwable t) {
-    log(header(entityId, correlationId) + " Rollback failed");
-  }
-
-  @Override
-  public void inconsistentState(
-          String correlationId,
-          EntityId entityId,
-          String details
-  ) {
-    log(header(entityId, correlationId) + " Inconsistent state");
-  }
-
-  @Override
-  public void resolveStateFailed(
-      String correlationId,
-      EntityId entityId,
-      String sourceState,
-      EventType<?, ?> resolveEvent,
-      String details
-  ) {
-    log(header(entityId, correlationId) + " Resolving state " + sourceState + " with " + resolveEvent.name() + " failed: " + details);
   }
 
   @Override
@@ -77,21 +39,6 @@ public class Logger implements Listener {
     } catch (JsonProcessingException e) {
       throw new RuntimeException(e);
     }
-  }
-
-  @Override
-  public void changeFailed(String correlationId, List<Change> changes, Throwable t) {
-    log("[" + correlationId + "] Changes failed with [" + t.toString() + "]\n" + toString(changes));
-  }
-
-  @Override
-  public void repeatedRequest(String correlationId, EntityId entityId, String clientId, String messageId) {
-    log(header(entityId, correlationId) + " Repeated request: clientId=" + clientId + ", messageId=" + messageId);
-  }
-
-  @Override
-  public void changeRaced(String correlationId, List<Change> changes, ChangeRaced cause) {
-    log(header(changes.getLast().entity().id(), correlationId) + " Change raced on table " + cause.tableName() + "\n" + changes.stream().map(Change::toString).collect(joining("\n  ")));
   }
 
   @Override

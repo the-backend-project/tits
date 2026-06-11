@@ -1,6 +1,5 @@
 package com.github.thxmasj.statemachine;
 
-import com.github.thxmasj.statemachine.database.ChangeRaced;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import java.time.Duration;
 import java.time.ZonedDateTime;
@@ -10,39 +9,11 @@ import org.checkerframework.checker.nullness.qual.NonNull;
 
 public interface Listener {
 
-    void clientRequestFailed(
-            String correlationId,
-            EventType<?, ?> requestEvent,
-            Throwable t
-    );
-
-    void rollbackFailed(
-            String correlationId,
-            EntityId entityId,
-            Throwable t
-    );
-
-    void inconsistentState(
-            String correlationId,
-            EntityId entityId,
-            String details
-    );
-
-    void resolveStateFailed(
-        String correlationId,
-        EntityId entityId,
-        String sourceState,
-        EventType<?, ?> resolveEvent,
-        String details
-    );
-
     record Change(
         Entity entity,
         Duration timeout,
         Event event,
         List<String> secondaryIds,
-        //List<String> incomingRequests,
-        //List<String> outgoingResponses,
         List<String> outgoingRequests,
         List<String> incomingResponses
     ) {
@@ -67,17 +38,7 @@ public interface Listener {
         List<Change> changes
     );
 
-    void changeFailed(
-            String correlationId,
-            List<Change> changes,
-            Throwable t
-    );
-
-    void repeatedRequest(String correlationId, EntityId entityId, String clientId, String messageId);
-
-    void changeRaced(String correlationId, List<Change> changes, ChangeRaced cause);
-
-    void processNextDeadlineFailed(Throwable t);
+  void processNextDeadlineFailed(Throwable t);
 
   void forwardingAttempt(
       UUID requestId,
