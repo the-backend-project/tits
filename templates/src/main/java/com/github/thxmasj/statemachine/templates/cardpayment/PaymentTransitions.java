@@ -19,18 +19,15 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.Identifiers.
 import static com.github.thxmasj.statemachine.templates.cardpayment.Identifiers.BatchNumber;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Identifiers.MerchantId;
 import static com.github.thxmasj.statemachine.templates.cardpayment.MerchantEvent.Get;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.ValidCaptureRequest;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.ValidRefundRequest;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AcquirerDeclined;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthenticationFailed;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthorisationApproved;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthorisationExpired;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Cancel;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.CaptureApproved;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.CaptureRequest;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.DeclinedUnauthorisedCapture;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.DeclinedRefund;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.DeclineLateCapture;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.DeclinedRefund;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.DeclinedUnauthorisedCapture;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.IllegalMerchant;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.InsufficientMerchantDetails;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.InvalidAmount;
@@ -45,12 +42,12 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.RefundRequest;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.RollbackRequest;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.UnknownMerchant;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.ValidCaptureRequest;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.ValidPaymentRequest;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.ValidRefundRequest;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.AuthorisationFailed;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.Authorised;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.Begin;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.Expired;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.ExpiredAfterCapture;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.Preauthorised;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.ProcessingAuthentication;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.ProcessingAuthorisation;
@@ -407,19 +404,14 @@ public abstract class PaymentTransitions {
                     .output(d -> d.t1().t1().t3())
             ),
             Preauthorised, List.of(
-                onEvent(AuthorisationExpired).to(Expired).output(),
                 rollbackOn(Cancel),
                 captureRequestTransition()
             ),
             Authorised, List.of(
-                onEvent(AuthorisationExpired).to(ExpiredAfterCapture).output(),
                 captureRequestTransition()
-            ),
-            Expired, List.of(captureRequestedTooLateTransition()),
-            ExpiredAfterCapture, List.of(captureRequestedTooLateTransition())
+            )
         ),
-        refundTransitions(Authorised, 1),
-        refundTransitions(ExpiredAfterCapture, 2)
+        refundTransitions(Authorised, 1)
     );
   }
 
@@ -498,21 +490,6 @@ public abstract class PaymentTransitions {
                 .trigger(CompleteRequest).with(d -> tuple("", d.t1().t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t1().t1().captureData())
         );
-  }
-
-  private TransitionModel<?, ?> captureRequestedTooLateTransition() {
-    return onEvent(CaptureRequest).toSelf()
-        .assemble(c -> tuple(
-            c.log().one(ValidPaymentRequest).t1(),
-            c.log().one(ValidPaymentRequest).t2(),
-            c.log().one(PaymentEvent.Authorisation, Preauthorisation),
-            c.input(),
-            paymentToken(c.log().one(ValidPaymentRequest).t1().authenticationData()),
-            c.eventReference()
-        ))
-        .trigger(captureRequestedTooLate()).with(d -> tuple(d.t1(), d.t2(), d.t3(), d.t4(), d.t5())).to(Acquirer).guaranteed()
-        .trigger(CompleteInvalidRequest).with(d -> tuple("Capture requested too late", d.t6())).on(RequestDispatching).identifiedBy(entityIdFromSession())
-        .output(d -> d.t1().t4());
   }
 
   private Map<State, List<TransitionModel<?, ?>>> refundTransitions(State anchor, int i) {

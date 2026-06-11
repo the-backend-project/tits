@@ -98,7 +98,6 @@ public interface PaymentEvent {
   EventType<AuthenticationResult, Void> InvalidPaymentTokenOwnership = BasicEventType.of("Invalid payment token ownership", UUID.fromString("778511db-70c0-443b-963a-4e614040256f"), AuthenticationResult.class, Void.class);
   EventType<AuthenticationResult, Void> InvalidPaymentTokenStatus = BasicEventType.of("Invalid payment token status", UUID.fromString("0e15a3a7-ee6d-4ddd-9eaa-5d98bf42d635"), AuthenticationResult.class, Void.class);
   EventType<AuthenticationResult, Void> InvalidAuthenticationToken = BasicEventType.of("Invalid authentication token", UUID.fromString("de24bd56-5ad1-4b1e-b567-8eb719c0ff51"), AuthenticationResult.class, Void.class);
-  //EventType<AuthenticationResult, AuthenticationResult> AuthorisationRequest = BasicEventType.of("AuthorisationRequest", UUID.fromString("4391c1cf-1cda-4627-9d9d-fe8b18b8b6cb"), AuthenticationResult.class);
   EventType<AuthenticationResult, AuthenticationResult> Authorisation = BasicEventType.of("Authorization", UUID.fromString("7d36acf7-18b7-409f-bb8f-19a5f73d02c8"), AuthenticationResult.class);
   EventType<AcquirerResponse, AcquirerResponse> AuthorisationApproved = BasicEventType.of("Authorization approved", UUID.fromString("4a3821a0-dbba-448b-8175-c40e4a771df4"), AcquirerResponse.class);
   EventType<AcquirerResponse, AcquirerResponse> AuthorisationAdviceApproved = BasicEventType.of("Authorization advice approved", UUID.fromString("c1fd88f3-2821-4c4d-bee1-52750f10f554"), AcquirerResponse.class);
@@ -111,7 +110,6 @@ public interface PaymentEvent {
   EventType<Refund, Refund> ValidRefundRequest = RequestEventType.of("Valid refund request", UUID.fromString("94513e5a-1ded-4379-9087-16a148903bb5"), Refund.class);
   EventType<Refund, Refund> DeclinedRefund = BasicEventType.of("Declined refund", UUID.fromString("4bcd52bf-8abd-4973-8926-6391570ae29e"), Refund.class);
   EventType<AcquirerResponse, AcquirerResponse> RefundApproved = BasicEventType.of("Refund approved", UUID.fromString("9c7f8d63-9b27-4bf3-8a90-b7bea56a3fbd"), AcquirerResponse.class);
-  EventType<Void, Void> AuthorisationExpired = BasicEventType.of("Authorization expired", UUID.fromString("8c283db8-742e-4667-a370-45bb0fb3f39e"));
   EventType<AcquirerResponse, AcquirerResponse> AcquirerDeclined = BasicEventType.of("Acquirer declined", UUID.fromString("994388bc-73a4-4334-ba16-41d471ee56b1"), AcquirerResponse.class, AcquirerResponse.class);
   EventType<BasicEventType.Rollback.Data, BasicEventType.Rollback.Data> RollbackRequest = new BasicEventType.Rollback("RollbackRequest", UUID.fromString("da2d5fd5-beb7-4497-87f7-479ba7eb2a66"));
   EventType<BasicEventType.Rollback.Data, BasicEventType.Rollback.Data> Cancel = new BasicEventType.Cancel("Cancel", UUID.fromString("d7bb2f14-4680-476e-8395-c972a1037589"));

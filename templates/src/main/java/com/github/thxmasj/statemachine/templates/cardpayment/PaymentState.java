@@ -13,8 +13,6 @@ public enum PaymentState implements State {
   ProcessingCapture,
   Preauthorised,
   Authorised,
-  Expired,
-  ExpiredAfterCapture,
   ProcessingRefund {@Override public Timeout<?> timeout() {return rollbackAfter(ofMillis(6600));}},
   Open,
   ProcessingSettlement {

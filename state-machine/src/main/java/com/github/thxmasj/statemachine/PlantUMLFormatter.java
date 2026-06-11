@@ -15,6 +15,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 import net.sourceforge.plantuml.FileFormat;
 import net.sourceforge.plantuml.FileFormatOption;
@@ -68,45 +69,36 @@ public class PlantUMLFormatter {
       
       %s
       %s
-      
+
       %s
   
       @enduml
       """,
       // States
-      transitions.keySet().stream().map(this::state).collect(joining("\n"))
+      transitions.keySet().stream().map(this::state).collect(joining("\n")),
       // Choices
-//      transitions.values().stream().flatMap(List::stream).flatMap(t -> unnest(t).stream()).filter(t -> !t.filters().isEmpty()).map(choiceTransition -> choiceTransition.
+      choices(model.initialState(), new HashSet<>()),
       // Transitions
-//      transitions(model.initialState(), new HashSet<>());
+      transitions(model.initialState(), new HashSet<>())
     );
   }
 
-  private static List<TransitionModel<?, ?>> unnest(TransitionModel<?, ?> model) {
-    return model.filters().stream().flatMap(f -> unnest(f.alternative().model()).stream()).toList();
-  }
+  AtomicInteger choiceCounter1 = new AtomicInteger();
+  AtomicInteger choiceCounter2 = new AtomicInteger();
 
-  private String choiceName(State state, TransitionModel<?, ?> transition) {
-    return state.name() + "_" + transition.eventType().name();
-  }
-
-  private String states(State state, Set<State> visited) {
+  private String choices(State state, Set<State> visited) {
     if (visited.contains(state)) return "";
     visited.add(state);
-//    StringBuilder s = new StringBuilder(state.state().isChoice() ? conditionalState(state.state()) : state(state.state()));
-    StringBuilder s = new StringBuilder(state(state));
-    for (var t : transitions.get(state)) {
-      if (!t.filters().isEmpty())
-        s.append(String.format(
-            """
-            state %s <<choice>>
-            """,
-            choiceName(state, t)
-        ));
+    StringBuilder s = new StringBuilder();
+    List<TransitionModel<?, ?>> transitionsForState = this.transitions.get(state);
+    if (transitionsForState == null) throw new IllegalStateException(state.name());
+    for (TransitionModel<?, ?> transition : transitionsForState) {
+      var targetState = traverser.targetState(state, transition);
+      if (!transition.filters().isEmpty()) {
+        s.append(String.format("state Choice%d <<choice>>\n",  choiceCounter1.incrementAndGet()));
+      }
+      s.append(choices(targetState, visited));
     }
-//    for (TraversableState targetState : state.targetStates()) {
-//      s.append(states(targetState, visited));
-//    }
     return s.toString();
   }
 
@@ -114,12 +106,14 @@ public class PlantUMLFormatter {
     if (visited.contains(state)) return "";
     visited.add(state);
     StringBuilder s = new StringBuilder();
-    for (TransitionModel<?, ?> transition : transitions.get(state)) {
+    List<TransitionModel<?, ?>> transitionsForState = this.transitions.get(state);
+    if (transitionsForState == null) throw new IllegalStateException(state.name());
+    for (TransitionModel<?, ?> transition : transitionsForState) {
       if (hideBuiltin && BuiltinEventTypes.ALL.contains(transition.eventType())) continue;
       var targetState = traverser.targetState(state, transition);
       if (!transition.filters().isEmpty()) {
-        String choiceName = choiceName(state, transition);
-        s.append(String.format("%s --> %s: %s\n", state.name(), choiceName, transition.eventType().name()));
+        String choiceName = "Choice" + choiceCounter2.incrementAndGet(); //choiceName(state, transition);
+        s.append(String.format("%s -down-> %s: %s\n", state.name(), choiceName, transition.eventType().name()));
         for (var filter : transition.filters()) {
           s.append(transition(choiceName, targetState, filter.alternative().model().eventType(), transition));
         }
