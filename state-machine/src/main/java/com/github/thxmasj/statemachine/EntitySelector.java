@@ -6,14 +6,13 @@ import static com.github.thxmasj.statemachine.EntitySelector.CreationMode.NeverC
 import com.github.thxmasj.statemachine.EntitySelector.ById;
 import com.github.thxmasj.statemachine.EntitySelector.ByIdFromSession;
 import com.github.thxmasj.statemachine.EntitySelector.ByLastInIdGroup;
-import com.github.thxmasj.statemachine.EntitySelector.ByNextInIdGroup;
 import com.github.thxmasj.statemachine.EntitySelector.BySecondaryId;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
 import java.util.UUID;
 import java.util.function.Function;
 
-public sealed class EntitySelector permits ById, ByIdFromSession, ByLastInIdGroup, ByNextInIdGroup, BySecondaryId {
+public sealed class EntitySelector permits ById, ByIdFromSession, ByLastInIdGroup, BySecondaryId {
 
   public static ById entityId(EntityId entityId) {
     return new ById(entityId, NeverCreate);
@@ -65,10 +64,6 @@ public sealed class EntitySelector permits ById, ByIdFromSession, ByLastInIdGrou
 
   public static <I, T> ByLastInIdGroup<T> secondToLastInIdGroup(SecondaryIdModel<T> model, Object value,  CreationMode creationMode) {
     return new ByLastInIdGroup<>(model, value, creationMode, 2);
-  }
-
-  public static <I, T> ByNextInIdGroup<I, T> nextInIdGroup(SecondaryIdModel<T> model, CreationMode creationMode) {
-    return new ByNextInIdGroup<>(model, creationMode);
   }
 
   public enum CreationMode{AlwaysCreate, CreateIfNotExists, NeverCreate}
@@ -186,20 +181,6 @@ public sealed class EntitySelector permits ById, ByIdFromSession, ByLastInIdGrou
 
     public int lastPosition() {
       return lastPostition;
-    }
-  }
-
-  public static final class ByNextInIdGroup<I, T> extends EntitySelector {
-
-    private final SchemaNames.SecondaryIdModel<T> model;
-
-    public ByNextInIdGroup(SchemaNames.SecondaryIdModel<T> model, CreationMode creationMode) {
-      super(creationMode, null);
-      this.model = model;
-    }
-
-    public SecondaryIdModel<T> model() {
-      return model;
     }
   }
 
