@@ -1,8 +1,8 @@
 package com.github.thxmasj.statemachine.templates.cardpayment;
 
-import static com.github.thxmasj.statemachine.BuiltinEntities.CompleteInvalidRequest;
-import static com.github.thxmasj.statemachine.BuiltinEntities.CompleteRequest;
-import static com.github.thxmasj.statemachine.BuiltinEntities.Models.RequestDispatching;
+import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.CompleteInvalidRequest;
+import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.CompleteRequest;
+import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.EntityModels.RequestDispatching;
 import static com.github.thxmasj.statemachine.BuiltinEventTypes.RequestUndelivered;
 import static com.github.thxmasj.statemachine.EntitySelector.CreationMode.CreateIfNotExists;
 import static com.github.thxmasj.statemachine.EntitySelector.entityId;

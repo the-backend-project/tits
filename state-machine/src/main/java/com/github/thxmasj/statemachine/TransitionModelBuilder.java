@@ -5,7 +5,7 @@ import static java.util.Collections.unmodifiableList;
 import static java.util.Optional.ofNullable;
 
 import com.github.thxmasj.statemachine.BasicEventType.Rollback.Data;
-import com.github.thxmasj.statemachine.BuiltinEntities.EventReference;
+import com.github.thxmasj.statemachine.http.inbox.HttpInbox.EventReference;
 import com.github.thxmasj.statemachine.EventTrigger.EventSpec;
 import com.github.thxmasj.statemachine.OutgoingRequestModel.Builder;
 import com.github.thxmasj.statemachine.StateMachine.CircularChange;
@@ -347,14 +347,11 @@ public class TransitionModelBuilder<I, T, O> {
     return new TransitionModel<>(
         new ModelContext<>(false, null, eventType, List.of(), List.of(), List.of(), null),
         initialChangeContext -> initialChangeContext.flatMap(i -> {
-          System.out.println("Validating rollback (" + eventType.name() + "), data [" + i.stepOutput() + "] initial change context: " + i);
-          //int rollbackFrom = i.stepOutput().fromNumber();
           int rollbackTo = i.stepOutput().toNumber();
           int actualRollbackTo = rollbackTo;
           if (rollbackTo < 0) {
             actualRollbackTo = i.log().lastEventNumber() + rollbackTo; // add negative
           }
-          System.out.println("Rolling back events:\n" + i.log().events().subList(actualRollbackTo, i.log().events().size()).stream().map(e -> "#" + e.eventNumber() + "[" + e.type().name() + "]").collect(Collectors.joining("\n")));
           if (
             // Rollback to future event
               actualRollbackTo >= i.log().lastEventNumber()
@@ -365,14 +362,6 @@ public class TransitionModelBuilder<I, T, O> {
                   // Rollback from an event which is not the last
                   //|| rollbackFrom != i.log().lastEventNumber()
           ) {
-
-            System.out.println(
-                "Rejecting rollback (rollbackTo=" + rollbackTo + /*", rollbackFrom=" + rollbackFrom +*/ "): " +
-                actualRollbackTo + " >= " + i.log().lastEventNumber() +
-                " || " + actualRollbackTo + " < 0 " +
-                " || " + i.log().events().subList(actualRollbackTo, i.log().events().size()).stream().filter(e -> e.type() instanceof RequestEventType<?,?>).count() + " > 1"
-                /*+ rollbackFrom + " != " +  i.log().lastEventNumber()*/
-            );
             return Mono.just(new OutputChangeContext<>(
                 i,
                 ProcessResult.rejected(

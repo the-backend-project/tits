@@ -17,6 +17,7 @@ import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.o
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.assemble;
 
 import com.github.thxmasj.statemachine.BasicEventType.Rollback.Data;
+import com.github.thxmasj.statemachine.StateMachine.RejectedEvent;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.Column;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
 import java.sql.ResultSet;
@@ -170,7 +171,7 @@ public class RollbackTest {
             eventListener.onEvent(trigger(Forward, Pacman))
                 .flatMap(output -> eventListener.onEvent(trigger(Rollback, Pacman, output.entityId()), new Data(-2, 1, "test")))
         )
-        .expectErrorMessage("Rollback on Pacman not allowed for Moving: Can't rollback to event number -1")
+        .expectErrorMatches(t -> t instanceof RejectedEvent && t.getMessage().matches("Rollback on Pacman/.{36} rejected for state Moving: Can't rollback to event number -1"))
         .verify();
   }
 
@@ -180,7 +181,7 @@ public class RollbackTest {
             eventListener.onEvent(trigger(Forward, Pacman))
                 .flatMap(output -> eventListener.onEvent(trigger(Rollback, Pacman, output.entityId()), new Data(2, 1, "test")))
         )
-        .expectErrorMessage("Rollback on Pacman not allowed for Moving: Can't rollback to event number 2")
+        .expectErrorMatches(t -> t instanceof RejectedEvent && t.getMessage().matches("Rollback on Pacman/.{36} rejected for state Moving: Can't rollback to event number 2"))
         .verify();
   }
 
