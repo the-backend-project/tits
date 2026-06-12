@@ -15,15 +15,15 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
 import javax.sql.DataSource;
-import com.github.thxmasj.statemachine.http.HttpRequestRouter.HttpRequestRoute;
+import com.github.thxmasj.statemachine.http.inbox.HttpRequestRoute;
 import com.sun.net.httpserver.HttpContext;
 import com.sun.net.httpserver.HttpServer;
 import reactor.core.publisher.Mono;
 
-import static com.github.thxmasj.statemachine.BuiltinEntities.Models.RequestDispatching;
-import static com.github.thxmasj.statemachine.BuiltinEntities.Models.RequestRouting;
-import static com.github.thxmasj.statemachine.BuiltinEntities.requestDispatchingTransitions;
-import static com.github.thxmasj.statemachine.BuiltinEntities.requestRoutingTransitions;
+import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.EntityModels.RequestDispatching;
+import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.EntityModels.RequestRouting;
+import static com.github.thxmasj.statemachine.http.inbox.TransitionModels.requestDispatchingTransitions;
+import static com.github.thxmasj.statemachine.http.inbox.TransitionModels.requestRoutingTransitions;
 
 public class Init {
 

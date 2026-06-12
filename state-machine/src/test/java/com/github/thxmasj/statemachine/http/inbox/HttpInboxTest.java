@@ -1,45 +1,57 @@
-package com.github.thxmasj.statemachine;
+package com.github.thxmasj.statemachine.http.inbox;
 
-import static com.github.thxmasj.statemachine.BuiltinEntities.CompleteRequest;
-import static com.github.thxmasj.statemachine.BuiltinEntities.Models.RequestDispatching;
-import static com.github.thxmasj.statemachine.BuiltinEntities.inboxTrigger;
-import static com.github.thxmasj.statemachine.BuiltinEntities.requestDispatchingTransitions;
 import static com.github.thxmasj.statemachine.BuiltinEventTypes.Rollback;
 import static com.github.thxmasj.statemachine.EntitySelector.entityId;
 import static com.github.thxmasj.statemachine.EntitySelector.entityIdFromSession;
-import static com.github.thxmasj.statemachine.EventTriggerTest.States.Processing;
-import static com.github.thxmasj.statemachine.EventTriggerTest.States.Unreachable;
-import static com.github.thxmasj.statemachine.HttpInboxTest.Queues.DeviceListener;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.assemble;
-import static com.github.thxmasj.statemachine.TransitionStreamTest.Entities.Lamp;
-import static com.github.thxmasj.statemachine.TransitionStreamTest.States.Off;
-import static com.github.thxmasj.statemachine.TransitionStreamTest.States.On;
 import static com.github.thxmasj.statemachine.Tuples.tuple;
 import static com.github.thxmasj.statemachine.Validated.valid;
-import static com.github.thxmasj.statemachine.http.HttpRequestRouter.HttpRequestRoute.ContentRoute.anyContent;
-import static com.github.thxmasj.statemachine.http.HttpRequestRouter.HttpRequestRoute.ContentRoute.newEntity;
-import static com.github.thxmasj.statemachine.http.HttpRequestRouter.HttpRequestRoute.ContentRoute.parseEntityId;
-import static com.github.thxmasj.statemachine.http.HttpRequestRouter.HttpRequestRoute.ContentRoute.parseMessageId;
+import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.CompleteRequest;
+import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.EntityModels.RequestDispatching;
+import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.TRIGGER;
+import static com.github.thxmasj.statemachine.http.inbox.HttpInboxTest.Entities.Lamp;
+import static com.github.thxmasj.statemachine.http.inbox.HttpInboxTest.Queues.DeviceListener;
+import static com.github.thxmasj.statemachine.http.inbox.HttpInboxTest.States.Off;
+import static com.github.thxmasj.statemachine.http.inbox.HttpInboxTest.States.On;
+import static com.github.thxmasj.statemachine.http.inbox.HttpInboxTest.States.Processing;
+import static com.github.thxmasj.statemachine.http.inbox.HttpInboxTest.States.Unreachable;
+import static com.github.thxmasj.statemachine.http.inbox.HttpRequestRoute.ContentRoute.anyContent;
+import static com.github.thxmasj.statemachine.http.inbox.HttpRequestRoute.ContentRoute.newEntity;
+import static com.github.thxmasj.statemachine.http.inbox.HttpRequestRoute.ContentRoute.parseEntityId;
+import static com.github.thxmasj.statemachine.http.inbox.HttpRequestRoute.ContentRoute.parseMessageId;
+import static com.github.thxmasj.statemachine.http.inbox.TransitionModels.requestDispatchingTransitions;
 import static com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Method.DELETE;
 import static com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Method.POST;
 import static com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Method.PUT;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.thxmasj.statemachine.BasicEventType;
 import com.github.thxmasj.statemachine.BasicEventType.Rollback.Data;
-import com.github.thxmasj.statemachine.BuiltinEntities.RequestParser.ParsedRequest;
+import com.github.thxmasj.statemachine.EntityModel;
+import com.github.thxmasj.statemachine.Event;
+import com.github.thxmasj.statemachine.EventTrigger;
+import com.github.thxmasj.statemachine.EventType;
 import com.github.thxmasj.statemachine.IncomingResponseValidator.Result;
 import com.github.thxmasj.statemachine.IncomingResponseValidator.Result.Status;
+import com.github.thxmasj.statemachine.Init;
+import com.github.thxmasj.statemachine.InputEvent;
+import com.github.thxmasj.statemachine.OutboxQueue;
+import com.github.thxmasj.statemachine.OutgoingRequestCreator;
+import com.github.thxmasj.statemachine.PlantUMLFormatter;
+import com.github.thxmasj.statemachine.State;
+import com.github.thxmasj.statemachine.StateMachine;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.statemachine.Validated.Valid;
-import com.github.thxmasj.statemachine.http.HttpRequestRouter.HttpRequestRoute;
 import com.github.thxmasj.statemachine.http.NettyHttpClient;
 import com.github.thxmasj.statemachine.http.NettyHttpClientBuilder;
+import com.github.thxmasj.statemachine.http.inbox.HttpInbox.ParsedRequest;
 import com.github.thxmasj.statemachine.message.http.HttpMessageParser;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Method;
@@ -69,7 +81,7 @@ public class HttpInboxTest {
     Off,
     Processing {
       @Override
-      public Timeout timeout() {
+      public Timeout<?> timeout() {
         return rollbackAfter(Duration.ofMillis(PROCESSING_TIMEOUT));
       }
     },
@@ -421,7 +433,7 @@ public class HttpInboxTest {
     HttpResponseMessage response = HttpMessageParser.parseResponse(responseEvent.data());
     assertEquals(422, response.statusCode());
     ProblemDetail pd = ProblemDetail.parse(response.body());
-    assertEquals("EventThatIsAlwaysRejected on Lamp not allowed for Off", pd.detail());
+    assertThat(pd.detail()).matches("EventThatIsAlwaysRejected on Lamp/.{36} rejected for state Off");
     assertEquals(422, pd.status());
   }
 
@@ -547,7 +559,7 @@ public class HttpInboxTest {
   }
 
   private Event<?> onRequest(Method method, URI uri, String body) {
-    return onRequest(inboxTrigger, new HttpRequestMessage(method, uri, Map.of(), body));
+    return onRequest(TRIGGER, new HttpRequestMessage(method, uri, Map.of(), body));
   }
 
   private Event<?> onRollbackRequest(String messageId) {

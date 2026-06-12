@@ -17,8 +17,6 @@ public class EventTriggerTest {
 
   enum States implements State {Begin, Processing, Unreachable}
 
-  private static final Random random = new Random();
-
   enum Entities implements EntityModel {
     Apple {
         @Override

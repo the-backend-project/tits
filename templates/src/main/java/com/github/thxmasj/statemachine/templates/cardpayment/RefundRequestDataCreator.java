@@ -1,6 +1,6 @@
 package com.github.thxmasj.statemachine.templates.cardpayment;
 
-import com.github.thxmasj.statemachine.BuiltinEntities.EventReference;
+import com.github.thxmasj.statemachine.http.inbox.HttpInbox.EventReference;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthenticationResult;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Authorisation;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.PaymentToken;

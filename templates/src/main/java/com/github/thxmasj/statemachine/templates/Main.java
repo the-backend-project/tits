@@ -6,10 +6,10 @@ import com.github.thxmasj.statemachine.templates.cardpayment.DummySettlementTran
 import java.io.IOException;
 import java.util.List;
 
-import static com.github.thxmasj.statemachine.BuiltinEntities.Models.RequestDispatching;
-import static com.github.thxmasj.statemachine.BuiltinEntities.Models.RequestRouting;
-import static com.github.thxmasj.statemachine.BuiltinEntities.requestDispatchingTransitions;
-import static com.github.thxmasj.statemachine.BuiltinEntities.requestRoutingTransitions;
+import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.EntityModels.RequestDispatching;
+import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.EntityModels.RequestRouting;
+import static com.github.thxmasj.statemachine.http.inbox.TransitionModels.requestDispatchingTransitions;
+import static com.github.thxmasj.statemachine.http.inbox.TransitionModels.requestRoutingTransitions;
 import static com.github.thxmasj.statemachine.templates.Batching.EntityTypes.Batch;
 import static com.github.thxmasj.statemachine.templates.Batching.EntityTypes.Item;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Aggregate.Payment;
