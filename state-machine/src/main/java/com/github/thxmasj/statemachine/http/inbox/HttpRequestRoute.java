@@ -2,6 +2,7 @@ package com.github.thxmasj.statemachine.http.inbox;
 
 import com.fasterxml.jackson.core.type.*;
 import com.github.thxmasj.statemachine.*;
+import com.github.thxmasj.statemachine.http.inbox.HttpInbox.RoutedRequest;
 import com.github.thxmasj.statemachine.message.http.*;
 
 import java.util.*;
@@ -30,12 +31,12 @@ public record HttpRequestRoute<T>(
       UUID dispatchingEventTypeId,
       EventType<U, ?> processEventType,
       EntityModel processType,
-      Function<HttpInbox.ParsedRequest<T>, U> processInput,
+      Function<RoutedRequest<T>, U> processInput,
       BiFunction<HttpRequestMessage, T, ? extends Validated<? extends EntitySelector>> processSelector,
       Function<HttpRequestMessage, HttpRequestMessage> normalizer
   ) {
 
-    public EventType<HttpInbox.ParsedRequest<T>, Void> dispatchingEventType() {
+    public EventType<RoutedRequest<T>, Void> dispatchingEventType() {
       return BasicEventType.of(
           "Dispatch: " + processEventType.name(),
           dispatchingEventTypeId,
@@ -137,7 +138,7 @@ public record HttpRequestRoute<T>(
         UUID dispatchingEventTypeId,
         EventType<U, ?> processEventType,
         EntityModel processType,
-        Function<HttpInbox.ParsedRequest<T>, U> processInput,
+        Function<RoutedRequest<T>, U> processInput,
         BiFunction<HttpRequestMessage, T, ? extends Validated<? extends EntitySelector>> processSelector
     ) {
       return new ContentRoute<>(

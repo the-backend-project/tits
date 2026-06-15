@@ -36,6 +36,8 @@ import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.States.Begin;
 
 public interface HttpInbox {
 
+  record RouteId(int metaDataRoute, int contentRoute) {}
+
   EventType<HttpRequestMessage, Void> RouteRequest = BasicEventType.of("Route request", UUID.fromString("e55c0077-eddd-4840-b880-2bf0ace4468a"), HttpRequestMessage.class, Void.class);
 
   EventTrigger<HttpRequestMessage, HttpRequestMessage, ?> TRIGGER = new EventTrigger<>(
@@ -56,16 +58,16 @@ public interface HttpInbox {
       new DataType<>(new TypeReference<>() {}, HttpRequestMessage.class, HttpResponseMessage.class),
       HttpRequestMessage.class
   );
-  EventType<Tuple2<ParsedRequest<?>, EventReference>, Tuple2<HttpRequestMessage, EventReference>> AcceptRequest = BasicEventType.of(
+  EventType<Tuple2<RoutedRequest<?>, EventReference>, Tuple2<HttpRequestMessage, EventReference>> AcceptRequest = BasicEventType.of(
       "Accept request",
       UUID.fromString("9615c3fb-4f15-47f5-b5d3-6149a6164d70"),
-      new DataType<>(new TypeReference<>() {}, ParsedRequest.class, EventReference.class),
+      new DataType<>(new TypeReference<>() {}, RoutedRequest.class, EventReference.class),
       new DataType<>(new TypeReference<>() {}, HttpRequestMessage.class, EventReference.class)
   );
-  EventType<Tuple3<String, ParsedRequest<?>, EventReference>, HttpRequestMessage> AcceptRollbackRequest = BasicEventType.of(
+  EventType<Tuple3<String, RoutedRequest<?>, EventReference>, HttpRequestMessage> AcceptRollbackRequest = BasicEventType.of(
       "Accept rollback request",
       UUID.fromString("abd02d03-8bdc-4bea-9135-214f31489965"),
-      new DataType<>(new TypeReference<>() {}, String.class, ParsedRequest.class, EventReference.class),
+      new DataType<>(new TypeReference<>() {}, String.class, RoutedRequest.class, EventReference.class),
       HttpRequestMessage.class
   );
   ResponseEventType<Tuple2<String, EventReference>> CompleteRequest = new ResponseEventType<>(
@@ -216,7 +218,8 @@ public interface HttpInbox {
 
   record EventReference(UUID entityId, int eventNumber) {}
 
-  record ParsedRequest<T>(
+  record RoutedRequest<T>(
+      RouteId routeId,
       HttpRequestMessage request,
       T body,
       MessageId messageId,
