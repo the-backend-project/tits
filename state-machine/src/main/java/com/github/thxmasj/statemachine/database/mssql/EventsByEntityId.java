@@ -12,7 +12,7 @@ import com.github.thxmasj.statemachine.SecondaryId;
 import com.github.thxmasj.statemachine.database.Row;
 import com.github.thxmasj.statemachine.database.UnknownEntity;
 import com.github.thxmasj.statemachine.database.jdbc.JDBCRow;
-import com.github.thxmasj.statemachine.database.mssql.SchemaNames.Column;
+
 import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.BiFunction;
 import javax.sql.DataSource;
+import com.github.thxmasj.statemachine.database.mssql.SchemaNames.Column;
 import reactor.core.publisher.Mono;
 
 @SuppressWarnings("StringConcatenationInLoop")

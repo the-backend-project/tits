@@ -7,6 +7,7 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import com.github.thxmasj.statemachine.http.outbox.HttpOutbox;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -16,7 +17,7 @@ public class OutboxWorker {
       "Transaction \\(Process ID (\\d+)\\) was deadlocked on lock resources with another process and has been chosen as the deadlock victim. Rerun the transaction.");
 
   private final StateMachine stateMachine;
-  private final OutboxQueue queue;
+  private final HttpOutbox.EntityModel queue;
   private final Clock clock;
   private final Listener listener;
   private final ProcessBackedOff processBackedOff;
@@ -27,7 +28,7 @@ public class OutboxWorker {
       StateMachine stateMachine,
       ProcessBackedOff processBackedOff,
       Listener listener,
-      OutboxQueue queue,
+      HttpOutbox.EntityModel queue,
       Clock clock
   ) {
     this.stateMachine = stateMachine;
@@ -39,31 +40,32 @@ public class OutboxWorker {
 
   public Flux<ForwardStatus> doForward() {
     System.out.println("doForward() on " + queue.name());
-    var now = LocalDateTime.now(clock);
-    return processBackedOff.execute(now, queue)
-        .doOnNext(e -> listener.forwardingAttempt(
-                e.requestId(),
-                e.entityModel(),
-                e.queue().name(),
-                e.entityId(),
-                e.eventNumber(),
-                e.enqueuedAt(),
-                e.attempt(),
-                e.correlationId()
-            )
-        )
-        .flatMap(stateMachine::forward)
-        .onErrorResume(
-            this::isDeadlock, _ -> {
-              listener.forwardingDeadlock(queue.name());
-              return Mono.just(ForwardStatus.Deadlock);
-            }
-        )
-        .onErrorResume(t -> {
-          listener.forwardingError(queue.name(), t);
-          return Mono.just(ForwardStatus.Error);
-        })
-        .switchIfEmpty(Flux.just(ForwardStatus.Empty).doOnNext(_ -> listener.forwardingEmptyQueue(queue.name())));
+    return Flux.empty();
+//    var now = LocalDateTime.now(clock);
+//    return processBackedOff.execute(now, queue)
+//        .doOnNext(e -> listener.forwardingAttempt(
+//                e.requestId(),
+//                e.entityModel(),
+//                e.queue().name(),
+//                e.entityId(),
+//                e.eventNumber(),
+//                e.enqueuedAt(),
+//                e.attempt(),
+//                e.correlationId()
+//            )
+//        )
+//        .flatMap(stateMachine::forward)
+//        .onErrorResume(
+//            this::isDeadlock, _ -> {
+//              listener.forwardingDeadlock(queue.name());
+//              return Mono.just(ForwardStatus.Deadlock);
+//            }
+//        )
+//        .onErrorResume(t -> {
+//          listener.forwardingError(queue.name(), t);
+//          return Mono.just(ForwardStatus.Error);
+//        })
+//        .switchIfEmpty(Flux.just(ForwardStatus.Empty).doOnNext(_ -> listener.forwardingEmptyQueue(queue.name())));
   }
 
   public Looper<ForwardStatus> forwarder(boolean enable) {

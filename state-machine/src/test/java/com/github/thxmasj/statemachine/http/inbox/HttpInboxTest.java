@@ -3,6 +3,7 @@ package com.github.thxmasj.statemachine.http.inbox;
 import static com.github.thxmasj.statemachine.BuiltinEventTypes.Rollback;
 import static com.github.thxmasj.statemachine.EntitySelector.entityId;
 import static com.github.thxmasj.statemachine.EntitySelector.entityIdFromSession;
+import static com.github.thxmasj.statemachine.EntitySelector.newEntityId;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.assemble;
 import static com.github.thxmasj.statemachine.Tuples.tuple;
@@ -11,7 +12,6 @@ import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.CompleteReque
 import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.EntityModels.RequestDispatching;
 import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.TRIGGER;
 import static com.github.thxmasj.statemachine.http.inbox.HttpInboxTest.Entities.Lamp;
-import static com.github.thxmasj.statemachine.http.inbox.HttpInboxTest.Queues.DeviceListener;
 import static com.github.thxmasj.statemachine.http.inbox.HttpInboxTest.States.Off;
 import static com.github.thxmasj.statemachine.http.inbox.HttpInboxTest.States.On;
 import static com.github.thxmasj.statemachine.http.inbox.HttpInboxTest.States.Processing;
@@ -33,15 +33,12 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.thxmasj.statemachine.BasicEventType;
 import com.github.thxmasj.statemachine.BasicEventType.Rollback.Data;
+import com.github.thxmasj.statemachine.DelaySpecification;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.Event;
 import com.github.thxmasj.statemachine.EventTrigger;
 import com.github.thxmasj.statemachine.EventType;
-import com.github.thxmasj.statemachine.IncomingResponseValidator.Result;
-import com.github.thxmasj.statemachine.IncomingResponseValidator.Result.Status;
 import com.github.thxmasj.statemachine.Init;
-import com.github.thxmasj.statemachine.InputEvent;
-import com.github.thxmasj.statemachine.OutboxQueue;
 import com.github.thxmasj.statemachine.OutgoingRequestCreator;
 import com.github.thxmasj.statemachine.PlantUMLFormatter;
 import com.github.thxmasj.statemachine.State;
@@ -52,6 +49,12 @@ import com.github.thxmasj.statemachine.Validated.Valid;
 import com.github.thxmasj.statemachine.http.NettyHttpClient;
 import com.github.thxmasj.statemachine.http.NettyHttpClientBuilder;
 import com.github.thxmasj.statemachine.http.inbox.HttpInbox.RoutedRequest;
+import com.github.thxmasj.statemachine.http.outbox.HttpOutbox;
+import com.github.thxmasj.statemachine.http.outbox.HttpOutbox.CustomRequest;
+import com.github.thxmasj.statemachine.http.outbox.HttpOutbox.DeliveryGuarantee.AtLeastOnce;
+import com.github.thxmasj.statemachine.http.outbox.HttpOutbox.DeliveryGuarantee.AtMostOnce;
+import com.github.thxmasj.statemachine.http.outbox.RequestEventType;
+import com.github.thxmasj.statemachine.http.outbox.ResponseEventType;
 import com.github.thxmasj.statemachine.message.http.HttpMessageParser;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Method;
@@ -88,6 +91,9 @@ public class HttpInboxTest {
     Unreachable
   }
 
+  private static final RequestEventType<Void> Process0 = new RequestEventType<>("Process 0", UUID.fromString("bff734f9-7d03-495e-a121-a1c06732a951"), Void.class);
+  private static final RequestEventType<Void> Process3 = new RequestEventType<>("Process 3", UUID.fromString("e3b68698-c824-4bb9-a127-c66560dfc252"), Void.class);
+
   private static final Random random = new Random();
 
   enum Entities implements EntityModel {
@@ -104,6 +110,9 @@ public class HttpInboxTest {
 
     }
   }
+
+  static HttpOutbox.EntityModel<Void> Process0Outbox = HttpOutbox.EntityModel.of("Process0Outbox", UUID.fromString("6aa5ecc8-0110-406c-8780-5430064564b5"), Void.class);
+  static HttpOutbox.EntityModel<Void> Process3Outbox = HttpOutbox.EntityModel.of("Process3Outbox", UUID.fromString("4526e2a0-2b9d-49de-a683-fff85b44c798"), Void.class);
 
   private static Map<State, List<TransitionModel<?, ?>>> lampTransitions() {
     return Map.of(
@@ -122,8 +131,9 @@ public class HttpInboxTest {
         Off, List.of(
             onEvent(InternalProcessing).to(On)
                 .assemble(TransitionContext::eventReference)
-                .trigger(new ProcessRequest(0)).with(_ -> null).to(DeviceListener).guaranteed()
-                .trigger(CompleteRequest).with(d -> tuple("Light is on! " + random.nextLong(), d)).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                .trigger(Process0).on(Process0Outbox).identifiedBy(newEntityId())
+                //.trigger(new ProcessRequest(0)).with(_ -> null).to(DeviceListener).guaranteed()
+                .trigger(CompleteRequest).with(d -> tuple("Light is on! " + random.nextLong(), d.t1())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(),
             onEvent(ComplexInternalProcessing).to(Processing)
                 .assemble(d -> d)
@@ -131,41 +141,38 @@ public class HttpInboxTest {
                 .output(),
             onEvent(ExternalProcessing).to(Processing)
                 .assembleInput()
-                .trigger(new ProcessRequest(0))
-                .with(_ -> null)
-                .to(DeviceListener)
-                .guaranteed()
-                .responseValidator((_, _, _, _) -> Mono.just(new Result(
-                    Status.Ok,
-                    "Ok",
-                    new InputEvent<>(ExternalProcessingDone, null)
-                )))
+                .trigger(Process0).on(Process0Outbox).identifiedBy(newEntityId())
+                //.trigger(new ProcessRequest(0)).with(_ -> null).to(DeviceListener).guaranteed()
+//                .responseValidator((_, _, _, _) -> Mono.just(new Result(
+//                    Status.Ok,
+//                    "Ok",
+//                    new InputEvent<>(ExternalProcessingDone, null)
+//                )))
                 .output(),
             onEvent(LongExternalProcessing).to(Processing)
                 .assembleInput()
-                .trigger(new ProcessRequest(LONG_EXTERNAL_PROCESSING))
-                .with(_ -> null)
-                .to(DeviceListener)
-                .guaranteed()
-                .responseValidator((_, _, _, _) -> Mono.just(new Result(
-                    Status.Ok,
-                    "Ok",
-                    new InputEvent<>(ExternalProcessingDone, null)
-                )))
+                .trigger(Process3).on(Process3Outbox).identifiedBy(newEntityId())
+//                .trigger(new ProcessRequest(LONG_EXTERNAL_PROCESSING))
+//                .with(_ -> null)
+//                .to(DeviceListener)
+//                .guaranteed()
+//                .responseValidator((_, _, _, _) -> Mono.just(new Result(
+//                    Status.Ok,
+//                    "Ok",
+//                    new InputEvent<>(ExternalProcessingDone, null)
+//                )))
                 .reversible(
                     assemble((log, rollbackType) -> "")
                         // NB: Response in request/reply session not possible with reversals triggered by the resolver
                         //.trigger(ComplexInternalProcessResponse).with(_ -> "Failed to switch on light! :(((").on(inboxExchange).identifiedBy(entityIdFromSession())
-                        .trigger(new ProcessRequest(0))
-                        .with(_ -> null)
-                        .to(DeviceListener)
-                        .guaranteed()
-                        .responseValidator((_, _, _, _) -> Mono.just(new Result(
-                            Status.Ok,
-                            "Ok",
-                            new InputEvent<>(ExternalProcessingDone, null)
-                        )))
-                        .complete()
+                        .trigger(Process0).on(Process0Outbox).identifiedBy(newEntityId())
+                        //.trigger(new ProcessRequest(0)).with(_ -> null).to(DeviceListener).guaranteed()
+//                        .responseValidator((_, _, _, _) -> Mono.just(new Result(
+//                            Status.Ok,
+//                            "Ok",
+//                            new InputEvent<>(ExternalProcessingDone, null)
+//                        )))
+//                        .complete()
                 )
                 .output(),
             onEvent(SwitchOn).to(On).output()
@@ -213,11 +220,12 @@ public class HttpInboxTest {
       ComplexInternalProcessingDone = BasicEventType.of(
           "ComplexInternalProcessingDone",
           UUID.fromString("88c87c85-7778-4171-bc75-702f9e60b00e")
-      ),
-      ExternalProcessingDone = BasicEventType.of(
-          "ExternalProcessingDone",
-          UUID.fromString("464fca06-f872-4e38-a167-5550f5247310")
       );
+  static ResponseEventType<Void> ExternalProcessingDone = new ResponseEventType<>(
+      "ExternalProcessingDone",
+      UUID.fromString("464fca06-f872-4e38-a167-5550f5247310"),
+      Void.class
+  );
   static EventType<BasicEventType.Rollback.Data, BasicEventType.Rollback.Data>
       Cancel = new BasicEventType.Cancel("Cancel", UUID.fromString("d94c29c8-f113-4dee-921f-1a8e58f916f4"));
   static EventType<String, String>
@@ -308,14 +316,13 @@ public class HttpInboxTest {
       )
   );
 
-  enum Queues implements OutboxQueue {
-    DeviceListener {
-      @Override
-      public UUID id() {
-        return UUID.fromString("ca9a8d7a-8342-42e1-ab58-62c61f8d4719");
-      }
-    };
+  private static HttpRequestMessage requestMessage(String path) {
+    return new HttpRequestMessage(
+        POST,
+        URI.create("http://localhost:" + server.getAddress().getPort() + path)
+    );
   }
+
 
   static class ProcessRequest implements OutgoingRequestCreator<Void> {
 
@@ -359,10 +366,24 @@ public class HttpInboxTest {
         Lamp,
         lampTransitions(),
         routes,
-        queue -> switch (queue) {
-          case DeviceListener -> new NettyHttpClient(new NettyHttpClientBuilder().build());
-          default -> throw new IllegalStateException("Unexpected value: " + queue);
-        }
+        List.of(
+            CustomRequest.sync(
+                _ -> requestMessage("/process/0"),
+                new AtMostOnce(),
+                ExternalProcessingDone,
+                Lamp,
+                new NettyHttpClient(new NettyHttpClientBuilder().build()),
+                Process0Outbox
+            ),
+            CustomRequest.sync(
+                _ -> requestMessage("/process/3000"),
+                new AtLeastOnce(new DelaySpecification(Duration.ofSeconds(10), Duration.ofSeconds(100), Duration.ofSeconds(600), 1.5)),
+                ExternalProcessingDone,
+                Lamp,
+                new NettyHttpClient(new NettyHttpClientBuilder().build()),
+                Process3Outbox
+            )
+        )
     );
   }
 

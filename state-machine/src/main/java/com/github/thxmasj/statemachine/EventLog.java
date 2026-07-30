@@ -1,10 +1,12 @@
 package com.github.thxmasj.statemachine;
 
+import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
+
 import static com.github.thxmasj.statemachine.Event.join;
 import static java.util.Collections.unmodifiableList;
 import static java.util.stream.Collectors.joining;
 
-import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.NoSuchElementException;
@@ -99,6 +101,11 @@ public record EventLog(
         .filter(e -> e.type().id().equals(eventType.id()))
         .map(e -> ((Event<T>)e).getUnmarshalledData())
         .toList();
+  }
+
+  public ZonedDateTime created() {
+    // TODO: Assumes empty log will never exist
+    return events().getFirst().timestamp();
   }
 
   public long sum(EventType<?, Long> eventType) {

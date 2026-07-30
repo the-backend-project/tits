@@ -18,13 +18,13 @@ import static com.github.thxmasj.statemachine.TransitionModelBuilder.assemble;
 
 import com.github.thxmasj.statemachine.BasicEventType.Rollback.Data;
 import com.github.thxmasj.statemachine.StateMachine.RejectedEvent;
-import com.github.thxmasj.statemachine.database.mssql.SchemaNames.Column;
-import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import com.github.thxmasj.statemachine.database.mssql.SchemaNames.Column;
+import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
 import org.junit.jupiter.api.Test;
 import reactor.test.StepVerifier;
 
@@ -135,8 +135,7 @@ public class RollbackTest {
               )
 
           )
-      ),
-      null
+      )
   );
 
   @Test

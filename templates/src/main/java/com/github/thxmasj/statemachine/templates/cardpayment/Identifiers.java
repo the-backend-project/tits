@@ -3,6 +3,7 @@ package com.github.thxmasj.statemachine.templates.cardpayment;
 import com.github.thxmasj.statemachine.SecondaryId;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
+
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;

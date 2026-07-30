@@ -16,12 +16,11 @@ public interface EntityModel {
 
   State initialState();
 
-  default List<OutboxQueue> queues() {
-    return List.of();
+  static EntityModel of(String name, UUID id, State initialState) {
+    return new EntityModel() {
+      @Override public String name() {return name;}
+      @Override public UUID id() {return id;}
+      @Override public State initialState() {return initialState;}
+    };
   }
-
-  default EntityModel parentEntity() {
-    return null;
-  }
-
 }

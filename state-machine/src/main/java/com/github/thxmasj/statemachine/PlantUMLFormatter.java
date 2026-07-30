@@ -12,7 +12,6 @@ import java.io.IOException;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -132,31 +131,8 @@ public class PlantUMLFormatter {
         targetState.name(),
         Stream.of(
             String.format("%s", eventType.name()),
-            "I:" + eventType.inputDataType().name() + "/" + "O:" + eventType.outputDataType().name(),
-            transition.outgoingRequests().stream().map(ns -> outgoingRequest(ns, false)).collect(joining("\\n")),
-            transition.reverseModel() != null ? transition.reverseModel()
-                .outgoingRequests()
-                .stream()
-                .map(ns -> outgoingRequest(ns, true))
-                .collect(joining("\\n")) : ""
+            "I:" + eventType.inputDataType().name() + "/" + "O:" + eventType.outputDataType().name()
         ).filter(not(String::isEmpty)).collect(joining("\\n"))
-    );
-  }
-
-  private String outgoingRequest(OutgoingRequestModel<?, ?> spec, boolean reverse) {
-    return String.format(
-        "<color:" + (reverse ? "red" : "blue") + ">%s %s %s</color>",
-//        spec.creatorType() != null ? spec.creatorType().getSimpleName() :
-            spec.creator().name(),
-        spec.guaranteed() ? "&#8658;" : "&#8594;",
-        spec.queue()
-    );
-  }
-
-  private String outgoingResponse(OutgoingResponseModel<?, ?> spec, boolean reverse) {
-    return String.format(
-        "<color:" + (reverse ? "red" : "blue") + ">&#8592; %s</color>",
-        Objects.requireNonNullElseGet(spec.creatorType(), () -> spec.creator().getClass()).getSimpleName()
     );
   }
 

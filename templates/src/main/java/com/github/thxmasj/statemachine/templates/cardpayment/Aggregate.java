@@ -3,9 +3,8 @@ package com.github.thxmasj.statemachine.templates.cardpayment;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.Begin;
 
 import com.github.thxmasj.statemachine.EntityModel;
-import com.github.thxmasj.statemachine.OutboxQueue;
 import com.github.thxmasj.statemachine.State;
-import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
+
 import java.util.List;
 import java.util.UUID;
 
@@ -17,11 +16,6 @@ public enum Aggregate implements EntityModel {
     @Override
     public UUID id() {
       return id;
-    }
-
-    @Override
-    public List<OutboxQueue> queues() {
-      return List.of(Queues.values());
     }
 
     @Override

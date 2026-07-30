@@ -13,9 +13,7 @@ public interface Listener {
         Entity entity,
         Duration timeout,
         Event event,
-        List<String> secondaryIds,
-        List<String> outgoingRequests,
-        List<String> incomingResponses
+        List<String> secondaryIds
     ) {
       public record Entity(
           String model,

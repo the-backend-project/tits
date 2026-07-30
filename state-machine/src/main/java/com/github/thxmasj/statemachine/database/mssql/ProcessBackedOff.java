@@ -1,25 +1,28 @@
 package com.github.thxmasj.statemachine.database.mssql;
 
 import com.github.thxmasj.statemachine.DelaySpecification;
-import com.github.thxmasj.statemachine.EntityModel;
+import com.github.thxmasj.statemachine.EventLog;
 import com.github.thxmasj.statemachine.OutboxElement;
-import com.github.thxmasj.statemachine.OutboxQueue;
 import com.github.thxmasj.statemachine.database.Client;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.time.ZonedDateTime;
 import java.util.List;
+import java.util.function.Function;
+import com.github.thxmasj.statemachine.database.Row;
+import com.github.thxmasj.statemachine.http.outbox.HttpOutbox;
 import reactor.core.publisher.Flux;
+
+import static java.util.Objects.requireNonNull;
 
 public class ProcessBackedOff {
 
-  private final List<EntityModel> entityModels;
   private final Client databaseClient;
   private final String sql;
   private final Clock clock;
   private final DelaySpecification backoff;
 
-  public ProcessBackedOff(Client databaseClient, List<EntityModel> entityModels, String schemaName, Clock clock, DelaySpecification backoff) {
-    this.entityModels = entityModels;
+  public ProcessBackedOff(Client databaseClient, String schemaName, Clock clock, DelaySpecification backoff) {
     this.databaseClient = databaseClient;
     this.clock = clock;
     this.backoff = backoff;
@@ -90,7 +93,7 @@ public class ProcessBackedOff {
         """.replace("{schema}", schemaName);
   }
 
-  public Flux<OutboxElement> execute(LocalDateTime now, OutboxQueue queue) {
+  public Flux<OutboxElement> execute(LocalDateTime now, HttpOutbox.EntityModel queue) {
     return databaseClient.sql(sql)
         .name("ProcessBackedOff")
         .bind("now", now)
@@ -98,10 +101,26 @@ public class ProcessBackedOff {
         .bind("minimumBackoff", backoff.minimum().toSeconds())
         .bind("backoffPowerBase", backoff.powerBase())
         .bind("queueId", queue.id())
-        .map(Mappers.queueElementMapper(entityModels, clock, queue, now))
+        .map(queueElementMapper(clock, queue, now))
         .all()
         .doOnError(Throwable::printStackTrace)
         ;
   }
+
+  static Function<Row, OutboxElement> queueElementMapper(
+      Clock clock,
+      HttpOutbox.EntityModel queue,
+      LocalDateTime now
+  ) {
+    return row -> new OutboxElement(
+        row.get("ElementId", byte[].class),
+        new EventLog(queue, null, List.of(), List.of()), // TODO
+        row.get("CorrelationId", String.class),
+        requireNonNull(row.get("Attempt", Integer.class)),
+        ZonedDateTime.of(requireNonNull(row.get("NextAttemptAt", LocalDateTime.class)), clock.getZone()),
+        ZonedDateTime.of(now, clock.getZone())
+    );
+  }
+
 
 }

@@ -41,11 +41,11 @@ public class MoveToDLQ {
 
     public Mono<Void> execute(OutboxElement outboxElement, String cause) {
       return databaseClient.sql(sql).name("MoveToDLQ")
-          .bind("entityId", outboxElement.entityId().value())
-          .bind("eventNumber", outboxElement.eventNumber())
-          .bind("queueId", outboxElement.queue().id())
+          .bind("entityId", outboxElement.requestLog().entityId().value())
+          .bind("eventNumber", outboxElement.requestLog().lastEventNumber())
+          .bind("queueId", outboxElement.requestLog().entityModel().id())
           .bind("cause", cause)
-          .bind("requestId", outboxElement.requestId())
+          .bind("requestId", outboxElement.requestLog().entityId().value())
           .update()
           .then();
     }

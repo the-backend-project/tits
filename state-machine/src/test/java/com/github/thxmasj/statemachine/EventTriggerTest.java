@@ -5,11 +5,9 @@ import static com.github.thxmasj.statemachine.EventTriggerTest.Entities.Banana;
 import static com.github.thxmasj.statemachine.EventTriggerTest.States.Begin;
 
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
-import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Random;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeAll;
 
@@ -60,7 +58,7 @@ public class EventTriggerTest {
     Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions = new HashMap<>();
     transitions.put(Apple, appleTransitions());
     transitions.put(Banana, bananaTransitions());
-    stateMachine = Init.stateMachine(transitions, queue -> switch (queue) {default -> null;});
+    stateMachine = Init.stateMachine(transitions);
   }
 
 }

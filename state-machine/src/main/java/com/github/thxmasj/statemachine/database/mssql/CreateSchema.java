@@ -4,11 +4,12 @@ import static java.util.stream.Collectors.joining;
 
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.database.Client;
-import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
+
 import java.nio.charset.StandardCharsets;
 import java.util.Comparator;
 import java.util.List;
 import java.util.zip.CRC32;
+import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
 import reactor.core.publisher.Mono;
 
 @SuppressWarnings({"StringConcatenationInLoop"})

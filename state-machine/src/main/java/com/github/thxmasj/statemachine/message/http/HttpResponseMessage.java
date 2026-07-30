@@ -56,6 +56,7 @@ public class HttpResponseMessage {
   }
 
   public HttpResponseMessage(int statusCode, String reasonPhrase, Map<String, String> headers) {
+    System.out.printf("Creating response without body: %d %s\n", statusCode, reasonPhrase);
     this(statusCode, reasonPhrase, headers, null);
   }
 

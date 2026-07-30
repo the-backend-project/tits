@@ -1,9 +1,18 @@
 package com.github.thxmasj.statemachine;
 
+import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.EntityModels.RequestDispatching;
+import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.EntityModels.RequestRouting;
+import static com.github.thxmasj.statemachine.http.inbox.TransitionModels.requestDispatchingTransitions;
+import static com.github.thxmasj.statemachine.http.inbox.TransitionModels.requestRoutingTransitions;
+
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.statemachine.database.Client.Config;
 import com.github.thxmasj.statemachine.database.jdbc.DataSourceBuilder;
-import com.github.thxmasj.statemachine.http.HttpClient;
+import com.github.thxmasj.statemachine.http.inbox.HttpRequestRoute;
+import com.github.thxmasj.statemachine.http.outbox.HttpOutbox;
+import com.github.thxmasj.statemachine.http.outbox.HttpOutbox.CustomRequest;
+import com.sun.net.httpserver.HttpContext;
+import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.URI;
@@ -15,15 +24,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
 import javax.sql.DataSource;
-import com.github.thxmasj.statemachine.http.inbox.HttpRequestRoute;
-import com.sun.net.httpserver.HttpContext;
-import com.sun.net.httpserver.HttpServer;
 import reactor.core.publisher.Mono;
-
-import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.EntityModels.RequestDispatching;
-import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.EntityModels.RequestRouting;
-import static com.github.thxmasj.statemachine.http.inbox.TransitionModels.requestDispatchingTransitions;
-import static com.github.thxmasj.statemachine.http.inbox.TransitionModels.requestRoutingTransitions;
 
 public class Init {
 
@@ -34,35 +35,39 @@ public class Init {
       EntityModel entityModel,
       Map<State, List<TransitionModel<?, ?>>> processTransitions,
       List<HttpRequestRoute<?>> routes,
-      Function<OutboxQueue, HttpClient> outbox
+      List<CustomRequest<?, ?>> outboxRequests
   ) {
     Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions = new HashMap<>();
     transitions.put(entityModel, processTransitions);
     transitions.put(RequestRouting, requestRoutingTransitions(routes));
     transitions.put(RequestDispatching, requestDispatchingTransitions(routes, List.of()));
-    return stateMachine(transitions, outbox);
+    for (var outboxRequest : outboxRequests) {
+      transitions.put(outboxRequest.outboxModel(), HttpOutbox.transitions(outboxRequest));
+    }
+    return stateMachine(transitions);
   }
 
   public static StateMachine stateMachine(
-      Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions,
-      Function<OutboxQueue, HttpClient> outbox
+      Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions
   ) {
     return new StateMachine(
         _ -> Mono.empty(),
-            transitions,
+        transitions,
         dataSource,
         migrationDataSource,
-        UUID.randomUUID().toString(),
-        "Test",
+        UUID.randomUUID().toString(), // schema name
+        "Test", // role
         Clock.systemUTC(),
-        new Logger("Test"),
-        outbox
+        new Logger("Test")
     );
   }
 
   public static HttpServer httpServer() throws IOException {
+    long t0 = System.currentTimeMillis();
     var server = HttpServer.create(new InetSocketAddress(0), 1);
     server.start();
+    long t1 = System.currentTimeMillis();
+    System.out.println("HTTP server started on port " + server.getAddress().getPort() + " in " + (t1 - t0) + "ms");
     return server;
   }
 
@@ -103,6 +108,17 @@ public class Init {
         path,
         exchange -> {
           exchange.sendResponseHeaders(200, 0);
+          exchange.getResponseBody().close();
+          exchange.close();
+        }
+    );
+  }
+
+  public static HttpContext addBadRequestContext(HttpServer server, String path) {
+    return server.createContext(
+        path,
+        exchange -> {
+          exchange.sendResponseHeaders(400, 0);
           exchange.getResponseBody().close();
           exchange.close();
         }

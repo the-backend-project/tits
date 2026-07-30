@@ -1,21 +1,11 @@
 package com.github.thxmasj.statemachine;
 
-import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import java.time.Duration;
 import java.time.ZonedDateTime;
-import java.util.UUID;
 
 public record OutboxElement(
     byte[] queueElementId,
-    UUID requestId,
-    EntityId entityId,
-    EntityModel entityModel,
-    int eventNumber,
-    UUID creatorId,
-    OutboxQueue queue,
-    boolean guaranteed,
-    ZonedDateTime enqueuedAt,
-    HttpRequestMessage data,
+    EventLog requestLog,
     String correlationId,
     int attempt,
     ZonedDateTime nextAttemptAt,
