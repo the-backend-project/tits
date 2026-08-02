@@ -5,6 +5,7 @@ import static com.github.thxmasj.statemachine.EntitySelector.newEntityId;
 import static com.github.thxmasj.statemachine.EventTrigger.trigger;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.assemble;
+import static com.github.thxmasj.statemachine.Validated.valid;
 import static com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Method.POST;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -20,8 +21,10 @@ import com.github.thxmasj.statemachine.State;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.statemachine.http.NettyHttpClient;
 import com.github.thxmasj.statemachine.http.NettyHttpClientBuilder;
+import com.github.thxmasj.statemachine.http.outbox.HttpOutbox.Callback;
 import com.github.thxmasj.statemachine.http.outbox.HttpOutbox.CustomRequest;
 import com.github.thxmasj.statemachine.http.outbox.HttpOutbox.DeliveryGuarantee.AtMostOnce;
+import com.github.thxmasj.statemachine.http.outbox.HttpOutbox.ResponseHandler;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -67,6 +70,7 @@ public class HttpOutboxTest {
     EntityModel process = EntityModel.of("Process", UUID.randomUUID(), States.Begin);
     EventType<Void, Void> doProcess = BasicEventType.of("Do process", UUID.randomUUID());
     EventType<Void, Void> processed = BasicEventType.of("Processed", UUID.randomUUID());
+    EventType<Void, Void> failed = BasicEventType.of("Failed", UUID.randomUUID());
     Map<State, List<TransitionModel<?, ?>>> processTransitions = Map.of(
         States.Begin, List.of(
             onEvent(doProcess).to(States.WaitingForResponse)
@@ -75,6 +79,8 @@ public class HttpOutboxTest {
         ),
         States.WaitingForResponse, List.of(
             onEvent(processed).to(States.Done)
+                .output(),
+            onEvent(failed).to(States.Done)
                 .output()
         )
     );
@@ -86,10 +92,17 @@ public class HttpOutboxTest {
         List.of(CustomRequest.sync(
             _ -> requestMessage(path),
             new AtMostOnce(),
-            processed,
-            process,
             new NettyHttpClient(new NettyHttpClientBuilder().build()),
-            Exchange
+            Exchange,
+            new ResponseHandler<>(
+                _ -> valid(null),
+                r -> r.message().statusCode() >= 200 && r.message().statusCode() < 300,
+                r -> r.message().statusCode() >= 500 && r.message().statusCode() < 600,
+                _ -> true,
+                new Callback<>(Void.class, processed, _ -> null),
+                new Callback<>(Void.class, failed, _ -> null),
+                process
+            )
         ))
     );
     Init.addOkContext(server, path);
@@ -97,6 +110,62 @@ public class HttpOutboxTest {
         .assertNext(event -> assertEquals(doProcess, event.type()))
         .assertNext(event -> assertEquals(processed, event.type()))
         .thenCancel().verify();
+  }
+
+  @Test
+  // NB:
+  // Same as the successfulExchange() test except that third party responds with Bad request
+  // and second event returned is asserted to be "failed" instead of "processed".
+  // TODO: DRY it up!
+  public void failedExchange() {
+    EntityModel process = EntityModel.of("Process", UUID.randomUUID(), States.Begin);
+    EventType<Void, Void> doProcess = BasicEventType.of("Do process", UUID.randomUUID());
+    EventType<Void, Void> processed = BasicEventType.of("Processed", UUID.randomUUID());
+    EventType<Void, Void> failed = BasicEventType.of("Failed", UUID.randomUUID());
+    Map<State, List<TransitionModel<?, ?>>> processTransitions = Map.of(
+        States.Begin, List.of(
+            onEvent(doProcess).to(States.WaitingForResponse)
+                .trigger(Exchange.sendRequest()).on(Exchange).identifiedBy(newEntityId())
+                .output()
+        ),
+        States.WaitingForResponse, List.of(
+            onEvent(processed).to(States.Done)
+                .output(),
+            onEvent(failed).to(States.Done)
+                .output()
+        )
+    );
+    String path = "/" + UUID.randomUUID();
+    var machine = Init.stateMachine(
+        process,
+        processTransitions,
+        List.of(),
+        List.of(CustomRequest.sync(
+            _ -> requestMessage(path),
+            new AtMostOnce(),
+            new NettyHttpClient(new NettyHttpClientBuilder().build()),
+            Exchange,
+            new ResponseHandler<>(
+                _ -> valid(null),
+                r -> r.message().statusCode() >= 200 && r.message().statusCode() < 300,
+                r -> r.message().statusCode() >= 500 && r.message().statusCode() < 600,
+                _ -> true,
+                new Callback<>(Void.class, processed, _ -> null),
+                new Callback<>(Void.class, failed, _ -> null),
+                process
+            )
+        ))
+    );
+    Init.addBadRequestContext(server, path);
+    StepVerifier.create(machine.onEvent(trigger(doProcess, process)))
+        .assertNext(event -> assertEquals(doProcess, event.type()))
+        .assertNext(event -> assertEquals(failed, event.type()))
+        .thenCancel().verify();
+  }
+
+  @Test
+  public void failedExchangeIsRolledBack() {
+    // TODO
   }
 
   @Test
@@ -123,10 +192,18 @@ public class HttpOutboxTest {
         List.of(CustomRequest.sync(
             _ -> requestMessage(path),
             new AtMostOnce(),
-            processed,
-            process,
             new NettyHttpClient(new NettyHttpClientBuilder().build()),
-            Exchange
+            Exchange,
+            new ResponseHandler<>(
+                _ -> valid(null),
+                r -> r.message().statusCode() >= 200 && r.message().statusCode() < 300,
+                r -> r.message().statusCode() >= 500 && r.message().statusCode() < 600,
+                _ -> true,
+                new Callback<>(Void.class, processed, _ -> null),
+                new Callback<>(Void.class, processed, _ -> null),
+                process
+            )
+
         ))
     );
     Init.addBadRequestContext(server, path);

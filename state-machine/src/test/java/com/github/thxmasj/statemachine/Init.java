@@ -35,7 +35,7 @@ public class Init {
       EntityModel entityModel,
       Map<State, List<TransitionModel<?, ?>>> processTransitions,
       List<HttpRequestRoute<?>> routes,
-      List<CustomRequest<?, ?>> outboxRequests
+      List<CustomRequest<?, ?, ?>> outboxRequests
   ) {
     Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions = new HashMap<>();
     transitions.put(entityModel, processTransitions);

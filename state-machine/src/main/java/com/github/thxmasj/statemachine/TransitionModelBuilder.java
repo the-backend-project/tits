@@ -611,15 +611,27 @@ public class TransitionModelBuilder<I, T, O> {
   }
 
   public <I1> TransitionModelBuilder<I, T, O> choice(List<GuardedTransition<T, I1, ?>> guardedTransitions, Function<T, I1> dataAdapter) {
-    var builder = this;
+    TransitionModelBuilder<I, T, O> builder = this;
     for (var guardedTransition : guardedTransitions) {
       builder = builder.when(guardedTransition, dataAdapter);
     }
     return builder;
   }
 
+  public TransitionModelBuilder<I, T, O> choice(List<GuardedTransition<T, T, ?>> guardedTransitions) {
+    TransitionModelBuilder<I, T, O> builder = this;
+    for (var guardedTransition : guardedTransitions) {
+      builder = builder.when(guardedTransition);
+    }
+    return builder;
+  }
+
   public <I1, O1> TransitionModelBuilder<I, T, O> when(GuardedTransition<T, I1, O1> guardedTransition, Function<T, I1> dataAdapter) {
     return when(guardedTransition.guard()).then(guardedTransition.then(), dataAdapter);
+  }
+
+  public <O1> TransitionModelBuilder<I, T, O> when(GuardedTransition<T, T, O1> guardedTransition) {
+    return when(guardedTransition.guard()).then(guardedTransition.then());
   }
 
   public WithFilter<I, T, O> when(Predicate<T> filter) {

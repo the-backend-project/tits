@@ -38,6 +38,7 @@ import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.Event;
 import com.github.thxmasj.statemachine.EventTrigger;
 import com.github.thxmasj.statemachine.EventType;
+import com.github.thxmasj.statemachine.IncomingResponseValidator.Result.Status;
 import com.github.thxmasj.statemachine.Init;
 import com.github.thxmasj.statemachine.OutgoingRequestCreator;
 import com.github.thxmasj.statemachine.PlantUMLFormatter;
@@ -50,11 +51,12 @@ import com.github.thxmasj.statemachine.http.NettyHttpClient;
 import com.github.thxmasj.statemachine.http.NettyHttpClientBuilder;
 import com.github.thxmasj.statemachine.http.inbox.HttpInbox.RoutedRequest;
 import com.github.thxmasj.statemachine.http.outbox.HttpOutbox;
+import com.github.thxmasj.statemachine.http.outbox.HttpOutbox.Callback;
 import com.github.thxmasj.statemachine.http.outbox.HttpOutbox.CustomRequest;
 import com.github.thxmasj.statemachine.http.outbox.HttpOutbox.DeliveryGuarantee.AtLeastOnce;
 import com.github.thxmasj.statemachine.http.outbox.HttpOutbox.DeliveryGuarantee.AtMostOnce;
+import com.github.thxmasj.statemachine.http.outbox.HttpOutbox.ResponseHandler;
 import com.github.thxmasj.statemachine.http.outbox.RequestEventType;
-import com.github.thxmasj.statemachine.http.outbox.ResponseEventType;
 import com.github.thxmasj.statemachine.message.http.HttpMessageParser;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Method;
@@ -221,7 +223,7 @@ public class HttpInboxTest {
           "ComplexInternalProcessingDone",
           UUID.fromString("88c87c85-7778-4171-bc75-702f9e60b00e")
       );
-  static ResponseEventType<Void> ExternalProcessingDone = new ResponseEventType<>(
+  static EventType<Void, Void> ExternalProcessingDone = BasicEventType.of(
       "ExternalProcessingDone",
       UUID.fromString("464fca06-f872-4e38-a167-5550f5247310"),
       Void.class
@@ -357,6 +359,20 @@ public class HttpInboxTest {
   private static StateMachine stateMachine;
   private static HttpServer server;
 
+  static Status status(HttpResponseMessage responseMessage) {
+    int c = responseMessage.statusCode();
+    if (c >= 200 && c < 300) {
+      return Status.Ok;
+    } else if (c >= 400 && c < 500) {
+      return Status.PermanentError;
+    } else if (c >= 500 && c < 600) {
+      return Status.TransientError;
+    } else {
+      return Status.PermanentError;
+    }
+  }
+
+
   @BeforeAll
   public static void setUp() throws IOException {
     server = Init.httpServer();
@@ -370,18 +386,32 @@ public class HttpInboxTest {
             CustomRequest.sync(
                 _ -> requestMessage("/process/0"),
                 new AtMostOnce(),
-                ExternalProcessingDone,
-                Lamp,
                 new NettyHttpClient(new NettyHttpClientBuilder().build()),
-                Process0Outbox
+                Process0Outbox,
+                new ResponseHandler<>(
+                    _ -> null,
+                    r -> r.message().statusCode() >= 200 && r.message().statusCode() < 300,
+                    r -> r.message().statusCode() >= 500 && r.message().statusCode() < 600,
+                    _ -> true,
+                    new Callback<>(Void.class, ExternalProcessingDone, _ -> null),
+                    new Callback<>(Void.class, ExternalProcessingDone, _ -> null),
+                    Lamp
+                )
             ),
             CustomRequest.sync(
                 _ -> requestMessage("/process/3000"),
                 new AtLeastOnce(new DelaySpecification(Duration.ofSeconds(10), Duration.ofSeconds(100), Duration.ofSeconds(600), 1.5)),
-                ExternalProcessingDone,
-                Lamp,
                 new NettyHttpClient(new NettyHttpClientBuilder().build()),
-                Process3Outbox
+                Process3Outbox,
+                new ResponseHandler<>(
+                    _ -> null,
+                    r -> r.message().statusCode() >= 200 && r.message().statusCode() < 300,
+                    r -> r.message().statusCode() >= 500 && r.message().statusCode() < 600,
+                    _ -> true,
+                    new Callback<>(Void.class, ExternalProcessingDone, _ -> null),
+                    new Callback<>(Void.class, ExternalProcessingDone, _ -> null),
+                    Lamp
+                )
             )
         )
     );
