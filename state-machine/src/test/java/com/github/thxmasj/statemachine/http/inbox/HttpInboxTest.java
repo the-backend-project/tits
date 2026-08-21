@@ -33,7 +33,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.thxmasj.statemachine.BasicEventType;
 import com.github.thxmasj.statemachine.BasicEventType.Rollback.Data;
-import com.github.thxmasj.statemachine.DelaySpecification;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.Event;
 import com.github.thxmasj.statemachine.EventTrigger;
@@ -50,13 +49,10 @@ import com.github.thxmasj.statemachine.Validated.Valid;
 import com.github.thxmasj.statemachine.http.NettyHttpClient;
 import com.github.thxmasj.statemachine.http.NettyHttpClientBuilder;
 import com.github.thxmasj.statemachine.http.inbox.HttpInbox.RoutedRequest;
+import com.github.thxmasj.statemachine.http.outbox.AtLeastOnce;
+import com.github.thxmasj.statemachine.http.outbox.AtMostOnce;
+import com.github.thxmasj.statemachine.http.outbox.Callback;
 import com.github.thxmasj.statemachine.http.outbox.HttpOutbox;
-import com.github.thxmasj.statemachine.http.outbox.HttpOutbox.Callback;
-import com.github.thxmasj.statemachine.http.outbox.HttpOutbox.CustomRequest;
-import com.github.thxmasj.statemachine.http.outbox.HttpOutbox.DeliveryGuarantee.AtLeastOnce;
-import com.github.thxmasj.statemachine.http.outbox.HttpOutbox.DeliveryGuarantee.AtMostOnce;
-import com.github.thxmasj.statemachine.http.outbox.HttpOutbox.ResponseHandler;
-import com.github.thxmasj.statemachine.http.outbox.RequestEventType;
 import com.github.thxmasj.statemachine.message.http.HttpMessageParser;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Method;
@@ -79,7 +75,6 @@ import reactor.core.publisher.Mono;
 public class HttpInboxTest {
 
   private static final long PROCESSING_TIMEOUT = 2000;
-  private static final long LONG_EXTERNAL_PROCESSING = PROCESSING_TIMEOUT + 1000;
 
   enum States implements State {
     On,
@@ -92,9 +87,6 @@ public class HttpInboxTest {
     },
     Unreachable
   }
-
-  private static final RequestEventType<Void> Process0 = new RequestEventType<>("Process 0", UUID.fromString("bff734f9-7d03-495e-a121-a1c06732a951"), Void.class);
-  private static final RequestEventType<Void> Process3 = new RequestEventType<>("Process 3", UUID.fromString("e3b68698-c824-4bb9-a127-c66560dfc252"), Void.class);
 
   private static final Random random = new Random();
 
@@ -113,8 +105,8 @@ public class HttpInboxTest {
     }
   }
 
-  static HttpOutbox.EntityModel<Void> Process0Outbox = HttpOutbox.EntityModel.of("Process0Outbox", UUID.fromString("6aa5ecc8-0110-406c-8780-5430064564b5"), Void.class);
-  static HttpOutbox.EntityModel<Void> Process3Outbox = HttpOutbox.EntityModel.of("Process3Outbox", UUID.fromString("4526e2a0-2b9d-49de-a683-fff85b44c798"), Void.class);
+  private static HttpOutbox<?> Process0Outbox;
+  private static HttpOutbox<?> Process3Outbox;
 
   private static Map<State, List<TransitionModel<?, ?>>> lampTransitions() {
     return Map.of(
@@ -133,7 +125,7 @@ public class HttpInboxTest {
         Off, List.of(
             onEvent(InternalProcessing).to(On)
                 .assemble(TransitionContext::eventReference)
-                .trigger(Process0).on(Process0Outbox).identifiedBy(newEntityId())
+                .trigger(Process0Outbox.sendRequest()).on(Process0Outbox).identifiedBy(newEntityId())
                 //.trigger(new ProcessRequest(0)).with(_ -> null).to(DeviceListener).guaranteed()
                 .trigger(CompleteRequest).with(d -> tuple("Light is on! " + random.nextLong(), d.t1())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(),
@@ -143,7 +135,7 @@ public class HttpInboxTest {
                 .output(),
             onEvent(ExternalProcessing).to(Processing)
                 .assembleInput()
-                .trigger(Process0).on(Process0Outbox).identifiedBy(newEntityId())
+                .trigger(Process0Outbox.sendRequest()).on(Process0Outbox).identifiedBy(newEntityId())
                 //.trigger(new ProcessRequest(0)).with(_ -> null).to(DeviceListener).guaranteed()
 //                .responseValidator((_, _, _, _) -> Mono.just(new Result(
 //                    Status.Ok,
@@ -153,7 +145,7 @@ public class HttpInboxTest {
                 .output(),
             onEvent(LongExternalProcessing).to(Processing)
                 .assembleInput()
-                .trigger(Process3).on(Process3Outbox).identifiedBy(newEntityId())
+                .trigger(Process3Outbox.sendRequest()).on(Process3Outbox).identifiedBy(newEntityId())
 //                .trigger(new ProcessRequest(LONG_EXTERNAL_PROCESSING))
 //                .with(_ -> null)
 //                .to(DeviceListener)
@@ -167,7 +159,7 @@ public class HttpInboxTest {
                     assemble((log, rollbackType) -> "")
                         // NB: Response in request/reply session not possible with reversals triggered by the resolver
                         //.trigger(ComplexInternalProcessResponse).with(_ -> "Failed to switch on light! :(((").on(inboxExchange).identifiedBy(entityIdFromSession())
-                        .trigger(Process0).on(Process0Outbox).identifiedBy(newEntityId())
+                        .trigger(Process0Outbox.sendRequest()).on(Process0Outbox).identifiedBy(newEntityId())
                         //.trigger(new ProcessRequest(0)).with(_ -> null).to(DeviceListener).guaranteed()
 //                        .responseValidator((_, _, _, _) -> Mono.just(new Result(
 //                            Status.Ok,
@@ -378,42 +370,58 @@ public class HttpInboxTest {
     server = Init.httpServer();
     Init.addDelayContext(server, "/long-process", Duration.ofSeconds(10));
     Init.addDelayContext(server, "/process", uri -> Duration.ofMillis(Long.parseLong(uri.getPath().substring("/process/".length()))));
+    Process0Outbox = new AtMostOnce<>(
+        "Process0Outbox",
+        UUID.fromString("2c68ffa2-0935-46fd-a032-2647ca51b801"),
+        Void.class,
+        _ -> requestMessage("/process/0"),
+        new NettyHttpClient(new NettyHttpClientBuilder().build()),
+        Lamp,
+        null,
+        null,
+        new Callback<>(ExternalProcessingDone, _ -> null),
+        new Callback<>(ExternalProcessingDone, _ -> null),
+        _ -> null, // contentParser
+        r -> r.message().statusCode() >= 200 && r.message().statusCode() <= 299,
+        r -> r.message().statusCode() >= 400 && r.message().statusCode() <= 499, // failurePredicate
+        r -> r.message().statusCode() >= 500 && r.message().statusCode() <= 599, // rollbackPredicate
+        (_, _) -> null,
+        new AtLeastOnce<Void, Void, Void, Void>(
+            "Process0RollbackOutbox",
+            UUID.fromString("513f7e3e-c03e-4016-b5f3-ddb981cb1ffe"),
+            Void.class,
+            _ -> requestMessage("/rollback"),
+            (_, o) -> o,
+            new NettyHttpClient(new NettyHttpClientBuilder().build()),
+            null, // processModel
+            null, // onSuccess
+            null, // onFailure
+            _ -> null, // contentParser
+            r -> r.message().statusCode() >= 200 && r.message().statusCode() <= 299,
+            r -> r.message().statusCode() >= 500 && r.message().statusCode() <= 599, // transientFailurePredicate
+            r -> r.message().statusCode() >= 400 && r.message().statusCode() <= 499 // permanentFailurePredicate
+        )
+    );
+    Process3Outbox = new AtLeastOnce<>(
+        "Process3Outbox",
+        UUID.fromString("2e86f07c-50ed-4922-9839-54dca94be4b6"),
+        Void.class,
+        _ -> requestMessage("/process/3000"),
+        (_, requestMessage) -> requestMessage,
+        new NettyHttpClient(new NettyHttpClientBuilder().build()),
+        Lamp,
+        new Callback<>(ExternalProcessingDone, _ -> null),
+        new Callback<>(ExternalProcessingDone, _ -> null),
+        _ -> null, // contentParser
+        r -> r.message().statusCode() >= 200 && r.message().statusCode() <= 299,
+        r -> r.message().statusCode() >= 500 && r.message().statusCode() <= 599, // transientFailurePredicate
+        r -> r.message().statusCode() >= 400 && r.message().statusCode() <= 499 // permanentFailurePredicate
+    );
     stateMachine = Init.stateMachine(
         Lamp,
         lampTransitions(),
         routes,
-        List.of(
-            CustomRequest.sync(
-                _ -> requestMessage("/process/0"),
-                new AtMostOnce(),
-                new NettyHttpClient(new NettyHttpClientBuilder().build()),
-                Process0Outbox,
-                new ResponseHandler<>(
-                    _ -> null,
-                    r -> r.message().statusCode() >= 200 && r.message().statusCode() < 300,
-                    r -> r.message().statusCode() >= 500 && r.message().statusCode() < 600,
-                    _ -> true,
-                    new Callback<>(Void.class, ExternalProcessingDone, _ -> null),
-                    new Callback<>(Void.class, ExternalProcessingDone, _ -> null),
-                    Lamp
-                )
-            ),
-            CustomRequest.sync(
-                _ -> requestMessage("/process/3000"),
-                new AtLeastOnce(new DelaySpecification(Duration.ofSeconds(10), Duration.ofSeconds(100), Duration.ofSeconds(600), 1.5)),
-                new NettyHttpClient(new NettyHttpClientBuilder().build()),
-                Process3Outbox,
-                new ResponseHandler<>(
-                    _ -> null,
-                    r -> r.message().statusCode() >= 200 && r.message().statusCode() < 300,
-                    r -> r.message().statusCode() >= 500 && r.message().statusCode() < 600,
-                    _ -> true,
-                    new Callback<>(Void.class, ExternalProcessingDone, _ -> null),
-                    new Callback<>(Void.class, ExternalProcessingDone, _ -> null),
-                    Lamp
-                )
-            )
-        )
+        List.of(Process0Outbox, Process3Outbox)
     );
   }
 
@@ -484,7 +492,7 @@ public class HttpInboxTest {
     HttpResponseMessage response = HttpMessageParser.parseResponse(responseEvent.data());
     assertEquals(422, response.statusCode());
     ProblemDetail pd = ProblemDetail.parse(response.body());
-    assertThat(pd.detail()).matches("EventThatIsAlwaysRejected on Lamp/.{36} rejected for state Off");
+    assertThat(pd.detail()).matches("\\[EventThatIsAlwaysRejected] on \\[Lamp]/.{36} rejected for state \\[Off]");
     assertEquals(422, pd.status());
   }
 

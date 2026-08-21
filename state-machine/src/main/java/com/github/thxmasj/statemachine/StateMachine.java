@@ -46,9 +46,7 @@ import com.github.thxmasj.statemachine.database.mssql.LastSecondaryId;
 import com.github.thxmasj.statemachine.database.mssql.Mappers;
 import com.github.thxmasj.statemachine.database.mssql.MoveToDLQ;
 import com.github.thxmasj.statemachine.database.mssql.NextDeadline;
-import com.github.thxmasj.statemachine.database.mssql.ProcessBackedOff;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
-import com.github.thxmasj.statemachine.http.outbox.HttpOutbox;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import jakarta.annotation.Nullable;
 import jakarta.validation.constraints.NotNull;
@@ -532,19 +530,19 @@ public class StateMachine {
         case ChangeContext.CombinedChangeContext<?, ?> _ -> {}
         case ChangeContext.RejectedChangeContext<?> _ -> {}
         case ChangeContext.UnknownIdChangeContext<?> _ -> {}
-        case ChangeContext.ActionChangeContext<?, ?, ?> _ -> {}
+        case ChangeContext.ActionChangeContext<?, ?> _ -> {}
       }
     }
     return changes;
   }
 
-  private List<ActionTrigger<?, ?>> actionTriggers(@NotNull ChangeContext<?> tail) {
-    ArrayList<ActionTrigger<?, ?>> actionTriggers = new ArrayList<>();
+  private List<ActionTrigger<?>> actionTriggers(@NotNull ChangeContext<?> tail) {
+    ArrayList<ActionTrigger<?>> actionTriggers = new ArrayList<>();
     OutputChangeContext<?> lastOutput = null;
     for (var c = tail; c != null; c = c.previous()) {
       switch (c) {
         case OutputChangeContext.OutputChangeContext<?> occ -> lastOutput = occ;
-        case ChangeContext.ActionChangeContext<?, ?, ?> acc -> {
+        case ChangeContext.ActionChangeContext<?, ?> acc -> {
           if (lastOutput != null && lastOutput.stepOutput().isAccepted()) {
             actionTriggers.add(
                 acc.actionTrigger().withEvent(lastOutput.stepOutput().accepted().event())
@@ -557,9 +555,19 @@ public class StateMachine {
     return actionTriggers;
   }
 
-  private <I, O> Mono<ProcessResult<?>> onEvent(
+  private <I> Mono<ProcessResult<?>> onEvent(
       String correlationId,
-      EventType<I, O> eventType,
+      InputEvent<I> inputEvent,
+      EventLog eventLog,
+      ChangeContext<?> stage1,
+      List<IdentityResult<?>> identityResults
+  ) {
+    return onEvent(correlationId, inputEvent.eventType(), inputEvent.data(), eventLog, stage1, identityResults);
+  }
+
+  private <I> Mono<ProcessResult<?>> onEvent(
+      String correlationId,
+      EventType<I, ?> eventType,
       I input,
       EventLog eventLog,
       ChangeContext<?> stage1,
@@ -891,7 +899,7 @@ public class StateMachine {
 
     private static String prefixMessage(EventType<?, ?> eventType, EntityModel entityModel, EntityId entityId) {
       return String.format(
-          "%s on %s/%s rejected",
+          "[%s] on [%s]/%s rejected",
           eventType != null ? eventType.name() : "<no event type>",
           entityModel != null ? entityModel.name() : "<no entity model>",
           entityId != null ? entityId.value() : "<no entity id>"
@@ -916,7 +924,7 @@ public class StateMachine {
 
     public RejectedEvent(EventType<?, ?> eventType, EntityModel entityModel, EntityId entityId, State currentState) {
       super(String.format(
-          "%s for state %s",
+          "%s for state [%s]",
           prefixMessage(eventType, entityModel, entityId),
           currentState != null ? currentState.name() : "<no current state>"
       ));
@@ -934,7 +942,7 @@ public class StateMachine {
         int rollbackTo
     ) {
       super(String.format(
-          "%s for state %s: Can't rollback to event number %d",
+          "%s for state [%s]: Can't rollback to event number %d",
           prefixMessage(eventType, entityModel, entityId),
           currentState != null ? currentState.name() : "<no current state>",
           rollbackTo
@@ -1063,12 +1071,11 @@ public class StateMachine {
         );
   }
 
-  private <T, U> Mono<ProcessResult<?>> triggerAction(ActionTrigger<T, U> actionTrigger, String correlationId, ChangeContext<?> stage1) {
+  private <T> Mono<ProcessResult<?>> triggerAction(ActionTrigger<T> actionTrigger, String correlationId, ChangeContext<?> stage1) {
     return actionTrigger.trigger()
         .flatMap(triggerResult -> onEvent(
                 correlationId,
-                triggerResult.eventType(),
-                triggerResult.data(),
+                triggerResult,
                 actionTrigger.eventLog(),
                 stage1,
                 List.of()

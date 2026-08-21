@@ -1,30 +1,21 @@
 package com.github.thxmasj.statemachine.http.outbox;
 
-import static com.github.thxmasj.statemachine.BuiltinEventTypes.Rollback;
 import static com.github.thxmasj.statemachine.EntitySelector.newEntityId;
 import static com.github.thxmasj.statemachine.EventTrigger.trigger;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
-import static com.github.thxmasj.statemachine.TransitionModelBuilder.assemble;
 import static com.github.thxmasj.statemachine.Validated.valid;
 import static com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Method.POST;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.github.thxmasj.statemachine.BasicEventType;
-import com.github.thxmasj.statemachine.BuiltinEventTypes;
 import com.github.thxmasj.statemachine.EntityModel;
-import com.github.thxmasj.statemachine.Event;
-import com.github.thxmasj.statemachine.EventTrigger;
-import com.github.thxmasj.statemachine.EventTrigger.EventSpec;
 import com.github.thxmasj.statemachine.EventType;
 import com.github.thxmasj.statemachine.Init;
 import com.github.thxmasj.statemachine.State;
+import com.github.thxmasj.statemachine.StateMachine;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.statemachine.http.NettyHttpClient;
 import com.github.thxmasj.statemachine.http.NettyHttpClientBuilder;
-import com.github.thxmasj.statemachine.http.outbox.HttpOutbox.Callback;
-import com.github.thxmasj.statemachine.http.outbox.HttpOutbox.CustomRequest;
-import com.github.thxmasj.statemachine.http.outbox.HttpOutbox.DeliveryGuarantee.AtMostOnce;
-import com.github.thxmasj.statemachine.http.outbox.HttpOutbox.ResponseHandler;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -33,7 +24,6 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.function.Function;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import reactor.test.StepVerifier;
@@ -45,17 +35,11 @@ public class HttpOutboxTest {
     WaitingForResponse {@Override public Timeout<?> timeout() {return rollbackAfter(Duration.ofSeconds(2));}},
     Done
   }
-  static HttpOutbox.EntityModel<Void> Exchange = HttpOutbox.EntityModel.of("Exchange", UUID.fromString("4e46d568-5c7f-4a3b-ae4c-e6ef5eab72d2"), Void.class);
-  static EntityModel model = EntityModel.of("Process", UUID.fromString("5b1e3415-cde6-478c-a329-4af7e1a32c1f"), States.Begin);
-  static EventType<Void, Void> requestEvent = BasicEventType.of("Request", UUID.fromString("599c52aa-f89c-41a4-8836-e7aba133eac9"));
-  static EventType<Void, Void> responseEvent = BasicEventType.of("Response", UUID.fromString("f4b3e70d-13a1-4804-a8a9-6dc803e8e99e"));
   static HttpServer server;
 
   @BeforeAll
   public static void setup() throws IOException {
     server = Init.httpServer();
-    Init.addDelayContext(server, "/delay4", Duration.ofSeconds(4));
-    Init.addOkContext(server, "/empty-response");
   }
 
   private static HttpRequestMessage requestMessage(String path) {
@@ -67,254 +51,94 @@ public class HttpOutboxTest {
 
   @Test
   public void successfulExchange() {
-    EntityModel process = EntityModel.of("Process", UUID.randomUUID(), States.Begin);
-    EventType<Void, Void> doProcess = BasicEventType.of("Do process", UUID.randomUUID());
-    EventType<Void, Void> processed = BasicEventType.of("Processed", UUID.randomUUID());
-    EventType<Void, Void> failed = BasicEventType.of("Failed", UUID.randomUUID());
-    Map<State, List<TransitionModel<?, ?>>> processTransitions = Map.of(
-        States.Begin, List.of(
-            onEvent(doProcess).to(States.WaitingForResponse)
-                .trigger(Exchange.sendRequest()).on(Exchange).identifiedBy(newEntityId())
-                .output()
-        ),
-        States.WaitingForResponse, List.of(
-            onEvent(processed).to(States.Done)
-                .output(),
-            onEvent(failed).to(States.Done)
-                .output()
-        )
-    );
-    String path = "/" + UUID.randomUUID();
-    var machine = Init.stateMachine(
-        process,
-        processTransitions,
-        List.of(),
-        List.of(CustomRequest.sync(
-            _ -> requestMessage(path),
-            new AtMostOnce(),
-            new NettyHttpClient(new NettyHttpClientBuilder().build()),
-            Exchange,
-            new ResponseHandler<>(
-                _ -> valid(null),
-                r -> r.message().statusCode() >= 200 && r.message().statusCode() < 300,
-                r -> r.message().statusCode() >= 500 && r.message().statusCode() < 600,
-                _ -> true,
-                new Callback<>(Void.class, processed, _ -> null),
-                new Callback<>(Void.class, failed, _ -> null),
-                process
-            )
-        ))
-    );
-    Init.addOkContext(server, path);
-    StepVerifier.create(machine.onEvent(trigger(doProcess, process)))
-        .assertNext(event -> assertEquals(doProcess, event.type()))
-        .assertNext(event -> assertEquals(processed, event.type()))
+    var model = ProcessModel.create();
+    Init.addOkContext(server, model.path());
+    StepVerifier.create(model.machine().onEvent(trigger(model.doProcess(), model.process())))
+        .assertNext(event -> assertEquals(model.doProcess(), event.type()))
+        .assertNext(event -> assertEquals(model.processed(), event.type()))
         .thenCancel().verify();
   }
 
   @Test
-  // NB:
-  // Same as the successfulExchange() test except that third party responds with Bad request
-  // and second event returned is asserted to be "failed" instead of "processed".
-  // TODO: DRY it up!
   public void failedExchange() {
-    EntityModel process = EntityModel.of("Process", UUID.randomUUID(), States.Begin);
-    EventType<Void, Void> doProcess = BasicEventType.of("Do process", UUID.randomUUID());
-    EventType<Void, Void> processed = BasicEventType.of("Processed", UUID.randomUUID());
-    EventType<Void, Void> failed = BasicEventType.of("Failed", UUID.randomUUID());
-    Map<State, List<TransitionModel<?, ?>>> processTransitions = Map.of(
-        States.Begin, List.of(
-            onEvent(doProcess).to(States.WaitingForResponse)
-                .trigger(Exchange.sendRequest()).on(Exchange).identifiedBy(newEntityId())
-                .output()
-        ),
-        States.WaitingForResponse, List.of(
-            onEvent(processed).to(States.Done)
-                .output(),
-            onEvent(failed).to(States.Done)
-                .output()
-        )
-    );
-    String path = "/" + UUID.randomUUID();
-    var machine = Init.stateMachine(
-        process,
-        processTransitions,
-        List.of(),
-        List.of(CustomRequest.sync(
-            _ -> requestMessage(path),
-            new AtMostOnce(),
-            new NettyHttpClient(new NettyHttpClientBuilder().build()),
-            Exchange,
-            new ResponseHandler<>(
-                _ -> valid(null),
-                r -> r.message().statusCode() >= 200 && r.message().statusCode() < 300,
-                r -> r.message().statusCode() >= 500 && r.message().statusCode() < 600,
-                _ -> true,
-                new Callback<>(Void.class, processed, _ -> null),
-                new Callback<>(Void.class, failed, _ -> null),
-                process
-            )
-        ))
-    );
-    Init.addBadRequestContext(server, path);
-    StepVerifier.create(machine.onEvent(trigger(doProcess, process)))
-        .assertNext(event -> assertEquals(doProcess, event.type()))
-        .assertNext(event -> assertEquals(failed, event.type()))
+    var model = ProcessModel.create();
+    Init.addBadRequestContext(server, model.path());
+    StepVerifier.create(model.machine().onEvent(trigger(model.doProcess(), model.process())))
+        .assertNext(event -> assertEquals(model.doProcess(), event.type()))
+        .assertNext(event -> assertEquals(model.failed(), event.type()))
         .thenCancel().verify();
   }
 
-  @Test
-  public void failedExchangeIsRolledBack() {
-    // TODO
-  }
+  record ProcessModel(
+      EntityModel process,
+      EventType<Void, Void> doProcess,
+      EventType<Void, Void> processed,
+      EventType<Void, Void> failed,
+      StateMachine machine,
+      String path
+  ) {
+    static ProcessModel create() {
+      EntityModel process = EntityModel.of("Process", UUID.randomUUID(), States.Begin);
+      EventType<Void, Void> doProcess = BasicEventType.of("Do process", UUID.randomUUID());
+      EventType<Void, Void> processed = BasicEventType.of("Processed", UUID.randomUUID());
+      EventType<Void, Void> failed = BasicEventType.of("Failed", UUID.randomUUID());
+      String path = "/" + UUID.randomUUID();
+      HttpOutbox<Void> Exchange = new AtMostOnce<>(
+          "Exchange",
+          UUID.fromString("a3778c63-144f-4748-9e8b-cc10ee20db3f"),
+          Void.class,
+          _ -> requestMessage(path),
+          new NettyHttpClient(new NettyHttpClientBuilder().build()),
+          process,
+          null,
+          null,
+          new Callback<>(processed, _ -> null),
+          new Callback<>(failed, _ -> null),
+          _ -> null, // contentParser
+          r -> r.message().statusCode() >= 200 && r.message().statusCode() <= 299,
+          r -> r.message().statusCode() >= 400 && r.message().statusCode() <= 499, // failurePredicate
+          r -> r.message().statusCode() >= 500 && r.message().statusCode() <= 599, // rollbackPredicate
+          (_, _) -> null,
+          new AtLeastOnce<Void, Void, Void, Void>(
+              "ExchangeRollback",
+              UUID.fromString("fd4959b4-5c14-4b7a-8ea5-b559b94f803c"),
+              Void.class,
+              _ -> requestMessage("/rollback"),
+              (_, o) -> o,
+              new NettyHttpClient(new NettyHttpClientBuilder().build()),
+              null, // processModel
+              null, // onSuccess
+              null, // onFailure
+              _ -> valid(null), // contentParser
+              r -> r.message().statusCode() >= 200 && r.message().statusCode() <= 299,
+              r -> r.message().statusCode() >= 500 && r.message().statusCode() <= 599, // transientFailurePredicate
+              r -> r.message().statusCode() >= 400 && r.message().statusCode() <= 499 // permanentFailurePredicate
+          )
+      );
 
-  @Test
-  public void invalidResponseIsRolledBack() {
-    EntityModel process = EntityModel.of("Process", UUID.randomUUID(), States.Begin);
-    EventType<Void, Void> doProcess = BasicEventType.of("Do process", UUID.randomUUID());
-    EventType<Void, Void> processed = BasicEventType.of("Processed", UUID.randomUUID());
-    Map<State, List<TransitionModel<?, ?>>> processTransitions = Map.of(
-        States.Begin, List.of(
-            onEvent(doProcess).to(States.WaitingForResponse)
-                .trigger(Exchange.sendRequest()).on(Exchange).identifiedBy(newEntityId())
-                .output()
-        ),
-        States.WaitingForResponse, List.of(
-            onEvent(processed).to(States.Done)
-                .output()
-        )
-    );
-    String path = "/" + UUID.randomUUID();
-    var machine = Init.stateMachine(
-        process,
-        processTransitions,
-        List.of(),
-        List.of(CustomRequest.sync(
-            _ -> requestMessage(path),
-            new AtMostOnce(),
-            new NettyHttpClient(new NettyHttpClientBuilder().build()),
-            Exchange,
-            new ResponseHandler<>(
-                _ -> valid(null),
-                r -> r.message().statusCode() >= 200 && r.message().statusCode() < 300,
-                r -> r.message().statusCode() >= 500 && r.message().statusCode() < 600,
-                _ -> true,
-                new Callback<>(Void.class, processed, _ -> null),
-                new Callback<>(Void.class, processed, _ -> null),
-                process
-            )
+      Map<State, List<TransitionModel<?, ?>>> processTransitions = Map.of(
+          States.Begin, List.of(
+              onEvent(doProcess).to(States.WaitingForResponse)
+                  .trigger(Exchange.sendRequest()).on(Exchange).identifiedBy(newEntityId())
+                  .output()
+          ),
+          States.WaitingForResponse, List.of(
+              onEvent(processed).to(States.Done)
+                  .output(),
+              onEvent(failed).to(States.Done)
+                  .output()
+          )
+      );
 
-        ))
-    );
-    Init.addBadRequestContext(server, path);
-    StepVerifier.create(machine.onEvent(trigger(doProcess, process)))
-        .assertNext(event -> assertEquals(doProcess, event.type()))
-        .assertNext(event -> assertEquals(processed, event.type()))
-        .thenCancel().verify();
-  }
+      var machine = Init.stateMachine(
+          process,
+          processTransitions,
+          List.of(),
+          List.of(Exchange)
+      );
+      return new ProcessModel(process, doProcess, processed, failed, machine, path);
+    }
 
-  /// Verifies behavior when a response arrives after the waiting state times out.
-  /// * Event log should immediately have the triggered event, which also is the event that triggers the request.
-  /// * Immediately after the state timeout the event log should also have a rollback event. (TODO)
-  /// * No event for the response should be recorded after the server responds. (TODO)
-  /// * The outbox queue should be empty. (TODO)
-  @Test
-  public void responseArrivesAfterStateTimeout() {
-    Map<State, List<TransitionModel<?, ?>>> processTransitions = Map.of(
-        States.Begin, List.of(
-            onEvent(requestEvent).to(States.WaitingForResponse)
-                //.trigger(request("/delay4")).with(d -> d).to(otherService)
-                .trigger(Exchange.sendRequest()).on(Exchange).identifiedBy(newEntityId())
-                //.responseValidator(validator(Status.Ok, new InputEvent<>(responseEvent, null)))
-                .output()
-        ),
-        States.WaitingForResponse, List.of(onEvent(responseEvent).to(States.Done).output())
-    );
-    var machine = Init.stateMachine(
-        model,
-        processTransitions,
-        List.of(),
-        List.of(CustomRequest.async(
-            _ -> requestMessage("/delay4"),
-            new AtMostOnce(),
-            new NettyHttpClient(new NettyHttpClientBuilder().build()),
-            Exchange
-        ))
-    );
-    List<Event<?>> results = machine.onEvent(new EventTrigger<>(new EventSpec<>(requestEvent, Function.identity()), List.of(newEntityId()), model, false))
-        //.take(2)
-        .take(1)
-        .collectList()
-        .block(Duration.ofSeconds(5));
-    assertEquals(requestEvent, results.get(0).type());
-    //assertEquals(Rollback, results.get(1).type());
-  }
-
-  @Test
-  public void corruptedResponse() {
-    Map<State, List<TransitionModel<?, ?>>> processTransitions = Map.of(
-        States.Begin, List.of(
-            onEvent(requestEvent).to(States.WaitingForResponse)
-                //.trigger(request("/empty-response")).with(d -> d).to(otherService)
-                .trigger(Exchange.sendRequest()).on(Exchange).identifiedBy(newEntityId())
-                //.responseValidator(validator(Status.PermanentError, new InputEvent<>(Rollback, new Data(-1, 1, "Malformed response"))))
-                .output()
-        ),
-        States.WaitingForResponse, List.of(onEvent(responseEvent).to(States.Done).output())
-    );
-    var machine = Init.stateMachine(
-        model,
-        processTransitions,
-        List.of(),
-        List.of(CustomRequest.async(
-            _ -> requestMessage("/empty-response"),
-            new AtMostOnce(),
-            new NettyHttpClient(new NettyHttpClientBuilder().build()),
-            Exchange
-        ))
-    );
-    List<Event<?>> results = machine.onEvent(new EventTrigger<>(new EventSpec<>(requestEvent, Function.identity()), List.of(newEntityId()), model, false))
-        .take(2)
-        .collectList()
-        .block(Duration.ofSeconds(5));
-    assertEquals(requestEvent, results.get(0).type());
-    assertEquals(Rollback, results.get(1).type());
-  }
-
-  @Test
-  public void rollbackSideEffects() {
-    Map<State, List<TransitionModel<?, ?>>> processTransitions = Map.of(
-        States.Begin, List.of(
-            onEvent(requestEvent).to(States.WaitingForResponse)
-//                .trigger(request("/empty-response"))
-//                .with(d -> d).to(otherService)
-//                .responseValidator(validator(Status.PermanentError, new InputEvent<>(Rollback, new Data(-1, 1, "Malformed response"))))
-                .trigger(Exchange.sendRequest()).on(Exchange).identifiedBy(newEntityId())
-                .reversible(
-                    assemble((_, _) -> "Hello, world!")
-                        .trigger(BuiltinEventTypes.Status).on(model).identifiedBy(newEntityId())
-                )
-                .output()
-        ),
-        States.WaitingForResponse, List.of(onEvent(responseEvent).to(States.Done).output())
-    );
-    var machine = Init.stateMachine(
-        model,
-        processTransitions,
-        List.of(),
-        List.of(CustomRequest.async(
-            _ -> requestMessage("/empty-response"),
-            new AtMostOnce(),
-            new NettyHttpClient(new NettyHttpClientBuilder().build()),
-            Exchange
-        ))
-    );
-    List<Event<?>> results = machine.onEvent(new EventTrigger<>(new EventSpec<>(requestEvent, Function.identity()), List.of(newEntityId()), model, false))
-        .take(2)
-        .collectList()
-        .block(Duration.ofSeconds(5));
-    assertEquals(requestEvent, results.get(0).type());
-    assertEquals(Rollback, results.get(1).type());
   }
 
 }

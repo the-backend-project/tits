@@ -10,7 +10,6 @@ import com.github.thxmasj.statemachine.database.Client.Config;
 import com.github.thxmasj.statemachine.database.jdbc.DataSourceBuilder;
 import com.github.thxmasj.statemachine.http.inbox.HttpRequestRoute;
 import com.github.thxmasj.statemachine.http.outbox.HttpOutbox;
-import com.github.thxmasj.statemachine.http.outbox.HttpOutbox.CustomRequest;
 import com.sun.net.httpserver.HttpContext;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -35,14 +34,14 @@ public class Init {
       EntityModel entityModel,
       Map<State, List<TransitionModel<?, ?>>> processTransitions,
       List<HttpRequestRoute<?>> routes,
-      List<CustomRequest<?, ?, ?>> outboxRequests
+      List<HttpOutbox<?>> outboxes
   ) {
     Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions = new HashMap<>();
     transitions.put(entityModel, processTransitions);
     transitions.put(RequestRouting, requestRoutingTransitions(routes));
     transitions.put(RequestDispatching, requestDispatchingTransitions(routes, List.of()));
-    for (var outboxRequest : outboxRequests) {
-      transitions.put(outboxRequest.outboxModel(), HttpOutbox.transitions(outboxRequest));
+    for (var outbox : outboxes) {
+      transitions.put(outbox, outbox.transitions());
     }
     return stateMachine(transitions);
   }

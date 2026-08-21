@@ -4,6 +4,7 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState
 
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.State;
+import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
 
 import java.util.List;
 import java.util.UUID;
@@ -24,10 +25,10 @@ public enum Aggregate implements EntityModel {
     }
 
 
-    @Override
-    public EntityModel parentEntity() {
-      return Settlement;
-    }
+//    @Override
+//    public EntityModel parentEntity() {
+//      return Settlement;
+//    }
 
   },
   Settlement {
@@ -48,10 +49,10 @@ public enum Aggregate implements EntityModel {
       return Begin;
     }
 
-    @Override
-    public List<OutboxQueue> queues() {
-      return List.of(Queues.values());
-    }
+//    @Override
+//    public List<OutboxQueue> queues() {
+//      return List.of(Queues.values());
+//    }
 
   },
   Merchant {

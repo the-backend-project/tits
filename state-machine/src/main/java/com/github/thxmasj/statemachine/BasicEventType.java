@@ -26,6 +26,10 @@ public class BasicEventType<I, O> implements EventType<I, O> {
     return new BasicEventType<>(name, id, inputDataType, new DataType<>(outputDataType));
   }
 
+  public static <I, O> EventType<I, O> of(String name, UUID id, Class<I> inputDataType, DataType<O> outputDataType) {
+    return new BasicEventType<>(name, id, new DataType<>(inputDataType), outputDataType);
+  }
+
   public static <I, O> EventType<I, O> of(String name, UUID id, DataType<I> inputDataType, DataType<O> outputDataType) {
     return new BasicEventType<>(name, id, inputDataType, outputDataType);
   }

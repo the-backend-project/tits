@@ -93,7 +93,7 @@ public class ProcessBackedOff {
         """.replace("{schema}", schemaName);
   }
 
-  public Flux<OutboxElement> execute(LocalDateTime now, HttpOutbox.EntityModel queue) {
+  public Flux<OutboxElement> execute(LocalDateTime now, HttpOutbox queue) {
     return databaseClient.sql(sql)
         .name("ProcessBackedOff")
         .bind("now", now)
@@ -109,7 +109,7 @@ public class ProcessBackedOff {
 
   static Function<Row, OutboxElement> queueElementMapper(
       Clock clock,
-      HttpOutbox.EntityModel queue,
+      HttpOutbox queue,
       LocalDateTime now
   ) {
     return row -> new OutboxElement(

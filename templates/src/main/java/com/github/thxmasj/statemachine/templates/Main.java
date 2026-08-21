@@ -22,8 +22,35 @@ public class Main {
     System.out.println(new PlantUMLFormatter(RequestDispatching, requestDispatchingTransitions(List.of(), List.of())).formatToImage("docs/images/"));
     System.out.println(new PlantUMLFormatter(Item, Item.transitions()).formatToImage("docs/images/"));
     System.out.println(new PlantUMLFormatter(Batch, Batch.transitions()).formatToImage("docs/images/"));
-    System.out.println(new PlantUMLFormatter(Payment, new DummyPaymentTransitions().transitions()).formatToImage("docs/images/"));
-    System.out.println(new PlantUMLFormatter(Settlement, new DummySettlementTransitions().transitions()).formatToImage("docs/images/"));
+    System.out.println(new PlantUMLFormatter(Payment,
+        new DummyPaymentTransitions().transitions(
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+        )
+    ).formatToImage("docs/images/"));
+    System.out.println(new PlantUMLFormatter(
+        Settlement,
+        new DummySettlementTransitions().transitions(null, null)
+    ).formatToImage("docs/images/"));
   }
 
 }

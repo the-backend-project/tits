@@ -16,8 +16,6 @@ import com.github.thxmasj.statemachine.database.Client.Query.Builder;
 import com.github.thxmasj.statemachine.database.Client.UniqueIndexConstraintViolation;
 import com.github.thxmasj.statemachine.database.EventAlreadyExists;
 import com.github.thxmasj.statemachine.database.SecondaryIdAlreadyExists;
-import com.github.thxmasj.statemachine.http.outbox.HttpOutbox;
-import com.github.thxmasj.statemachine.http.outbox.RequestEventType;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.ZonedDateTime;
@@ -25,6 +23,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.IntStream;
+import com.github.thxmasj.statemachine.http.outbox.HttpOutbox;
 import reactor.core.publisher.Flux;
 
 public class ChangeState {
@@ -263,7 +262,7 @@ public class ChangeState {
     //
     // 'Normal' event
     //
-    if (event != null && !(entityModel instanceof HttpOutbox.EntityModel)) {
+    if (event != null && !(entityModel instanceof HttpOutbox)) {
       sql +=
           """
           DELETE [{schema}].[Timeout] FROM [{schema}].[Timeout] WITH (INDEX([ixEntityId]))

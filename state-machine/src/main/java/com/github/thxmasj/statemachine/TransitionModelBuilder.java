@@ -54,7 +54,7 @@ public class TransitionModelBuilder<I, T, O> {
       State to,
       EventType<I, O> eventType,
       List<EventTrigger<?, ?, ?>> triggers,
-      List<Action<?, ?>> actions,
+      List<Action<?>> actions,
       List<Filter<?, ?, ?>> filters,
       TransitionModel<Data, Data> reverseModel
   ) {
@@ -250,9 +250,9 @@ public class TransitionModelBuilder<I, T, O> {
       }
     }
 
-    record ActionChangeContext<T, U, V>(
+    record ActionChangeContext<T, U>(
         ChangeContext<T> previous,
-        ActionTrigger<U, V> actionTrigger
+        ActionTrigger<U> actionTrigger
     ) implements ChangeContext<T> {
       @Override public String toString() {
         return "Action: " + actionTrigger.action().name();
@@ -571,7 +571,7 @@ public class TransitionModelBuilder<I, T, O> {
     return new WithEventType<>(this, eventType);
   }
 
-  public record WithAction<I, T, O, I1, O1>(TransitionModelBuilder<I, T, O> builder, Action<I1, O1> action) {
+  public record WithAction<I, T, O, I1>(TransitionModelBuilder<I, T, O> builder, Action<I1> action) {
 
     public TransitionModelBuilder<I, T, O> with(Function<T, I1> dataAdapter) {
       var modelContext = new ModelContext<>(
@@ -598,7 +598,7 @@ public class TransitionModelBuilder<I, T, O> {
 
   }
 
-  public <I1, O1> WithAction<I, T, O, I1, O1> trigger(Action<I1, O1> action) {
+  public <I1> WithAction<I, T, O, I1> trigger(Action<I1> action) {
     return new WithAction<>(this, action);
   }
 
@@ -895,8 +895,8 @@ public class TransitionModelBuilder<I, T, O> {
     return new TransitionModel<>(
         modelContext,
         builderFunction.andThen(a -> a.map(b -> {
-              if (!(b instanceof ChoiceChangeContext) || !(b.previous() instanceof OutputChangeContext))
-                throw new IllegalStateException();
+//              if (!(b instanceof ChoiceChangeContext) || !(b.previous() instanceof OutputChangeContext))
+//                throw new IllegalStateException("Expected current ChangeContext to be ChoiceChangeContext (is " + b.getClass().getSimpleName() + ") or previous ChangeContext to be OutputChangeContext (is " + b.previous().getClass().getSimpleName() + ")");
               return new OutputChangeContext<>(
                   b,
                   ProcessResult.completed(

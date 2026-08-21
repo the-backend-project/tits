@@ -170,7 +170,7 @@ public class RollbackTest {
             eventListener.onEvent(trigger(Forward, Pacman))
                 .flatMap(output -> eventListener.onEvent(trigger(Rollback, Pacman, output.entityId()), new Data(-2, 1, "test")))
         )
-        .expectErrorMatches(t -> t instanceof RejectedEvent && t.getMessage().matches("Rollback on Pacman/.{36} rejected for state Moving: Can't rollback to event number -1"))
+        .expectErrorMatches(t -> t instanceof RejectedEvent && t.getMessage().matches("\\[Rollback] on \\[Pacman]/.{36} rejected for state \\[Moving]: Can't rollback to event number -1"))
         .verify();
   }
 
@@ -180,7 +180,7 @@ public class RollbackTest {
             eventListener.onEvent(trigger(Forward, Pacman))
                 .flatMap(output -> eventListener.onEvent(trigger(Rollback, Pacman, output.entityId()), new Data(2, 1, "test")))
         )
-        .expectErrorMatches(t -> t instanceof RejectedEvent && t.getMessage().matches("Rollback on Pacman/.{36} rejected for state Moving: Can't rollback to event number 2"))
+        .expectErrorMatches(t -> t instanceof RejectedEvent && t.getMessage().matches("\\[Rollback] on \\[Pacman]/.{36} rejected for state \\[Moving]: Can't rollback to event number 2"))
         .verify();
   }
 

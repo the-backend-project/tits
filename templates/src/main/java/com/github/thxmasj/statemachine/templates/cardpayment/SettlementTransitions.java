@@ -17,8 +17,6 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.Open;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.ProcessingSettlement;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.Reconciled;
-import static com.github.thxmasj.statemachine.templates.cardpayment.Queues.Acquirer;
-import static com.github.thxmasj.statemachine.templates.cardpayment.Queues.Merchant;
 import static com.github.thxmasj.statemachine.templates.cardpayment.ReconciliationValuesDataCreator.reconciliationValues;
 import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.CutOffRequest;
 import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.GetAcquirerBatchNumber;
@@ -36,7 +34,12 @@ import com.github.thxmasj.statemachine.IncomingResponseValidator;
 import com.github.thxmasj.statemachine.State;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;
+import com.github.thxmasj.statemachine.Tuples.Tuple3;
 import com.github.thxmasj.statemachine.Tuples.Tuple4;
+import com.github.thxmasj.statemachine.http.outbox.AtLeastOnce;
+import com.github.thxmasj.statemachine.templates.cardpayment.AcquirerResponse.ReconciliationValues;
+import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Merchant;
+import com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.CutOff;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -49,7 +52,12 @@ public abstract class SettlementTransitions {
 
   protected abstract OutgoingRequests.ApprovedCutOff approvedCutOff();
 
-  public Map<State, List<TransitionModel<?, ?>>> transitions() {
+  public Map<State, List<TransitionModel<?, ?>>> transitions(
+      // validateSettlementResponse()
+      AtLeastOnce<Tuple3<BatchNumber, AcquirerBatchNumber, Merchant>, ?, ?, ?> reconciliationToAcquirer,
+      //
+      AtLeastOnce<Tuple2<CutOff, ReconciliationValues>, ?, ?, ?> approvedCutOffToMerchant
+  ) {
     return Map.of(
         Begin, List.of(
             // TODO: GetBatchNumber cannot be ReadOnly as it triggers a transition
@@ -77,11 +85,16 @@ public abstract class SettlementTransitions {
             onEvent(CutOffRequest).to(ProcessingSettlement)
                 .assemble(c -> tuple(c.input(), c.log().id(BatchNumber), c.log().id(AcquirerBatchNumber), c.eventReference()))
                 .trigger(Get).on(Aggregate.Merchant).identifiedBy(d -> secondaryId(MerchantId, d.t1().merchantId()))
-                .trigger(reconciliation()).with(d -> tuple(d.t1().t2(), d.t1().t3(), d.t2().accepted().event().getUnmarshalledData()))
-                .to(Acquirer).guaranteed().responseValidator(validateSettlementResponse())
-                .trigger(SettlementEvent.Open).with(d -> d.t1().t3().next()).on(Settlement).identifiedBy(newEntityId())
-                .trigger(CompleteRequest).with(d -> tuple("", d.t1().t1().t4())).on(RequestDispatching).identifiedBy(entityIdFromSession())
-                .output(d -> d.t1().t1().t1().t1())
+                .trigger(reconciliationToAcquirer.sendRequest())
+                .with(d -> tuple(d.t1().t2(), d.t1().t3(), d.t2().accepted().event().getUnmarshalledData()))
+                .on(reconciliationToAcquirer)
+                .identifiedBy(newEntityId())
+//                .trigger(reconciliation())
+//                .with(d -> tuple(d.t1().t2(), d.t1().t3(), d.t2().accepted().event().getUnmarshalledData()))
+//                .to(Acquirer).guaranteed().responseValidator(validateSettlementResponse())
+                .trigger(SettlementEvent.Open).with(d -> d.t1().t1().t3().next()).on(Settlement).identifiedBy(newEntityId())
+                .trigger(CompleteRequest).with(d -> tuple("", d.t1().t1().t1().t4())).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                .output(d -> d.t1().t1().t1().t1().t1())
         ),
         ProcessingSettlement, List.of(
             onEvent(GetBatchNumber).toSelf().assemble(c -> c.log().id(BatchNumber)).output(d -> d),
@@ -105,7 +118,13 @@ public abstract class SettlementTransitions {
                             input.reconciliationValues(),
                             input
                         ))
-                        .trigger(approvedCutOff()).with(d -> new Tuple2<>(d.t1(), d.t2())).to(Merchant).guaranteed()
+                        .trigger(approvedCutOffToMerchant.sendRequest())
+                        .with(d -> new Tuple2<>(d.t1(), d.t2()))
+                        .on(approvedCutOffToMerchant)
+                        .identifiedBy(newEntityId())
+//                        .trigger(approvedCutOff())
+//                        .with(d -> new Tuple2<>(d.t1(), d.t2()))
+//                        .to(Merchant).guaranteed()
                         .output(),
                     Tuple4::t4
                 )
