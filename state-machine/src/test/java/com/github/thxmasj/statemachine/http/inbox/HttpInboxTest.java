@@ -7,6 +7,7 @@ import static com.github.thxmasj.statemachine.EntitySelector.newEntityId;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.assemble;
 import static com.github.thxmasj.statemachine.Tuples.tuple;
+import static com.github.thxmasj.statemachine.Validated.invalid;
 import static com.github.thxmasj.statemachine.Validated.valid;
 import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.CompleteRequest;
 import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.EntityModels.RequestDispatching;
@@ -125,7 +126,7 @@ public class HttpInboxTest {
         Off, List.of(
             onEvent(InternalProcessing).to(On)
                 .assemble(TransitionContext::eventReference)
-                .trigger(Process0Outbox.sendRequest()).on(Process0Outbox).identifiedBy(newEntityId())
+                .trigger(Process0Outbox.requestDispatched()).on(Process0Outbox).identifiedBy(newEntityId())
                 //.trigger(new ProcessRequest(0)).with(_ -> null).to(DeviceListener).guaranteed()
                 .trigger(CompleteRequest).with(d -> tuple("Light is on! " + random.nextLong(), d.t1())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(),
@@ -135,7 +136,7 @@ public class HttpInboxTest {
                 .output(),
             onEvent(ExternalProcessing).to(Processing)
                 .assembleInput()
-                .trigger(Process0Outbox.sendRequest()).on(Process0Outbox).identifiedBy(newEntityId())
+                .trigger(Process0Outbox.requestDispatched()).on(Process0Outbox).identifiedBy(newEntityId())
                 //.trigger(new ProcessRequest(0)).with(_ -> null).to(DeviceListener).guaranteed()
 //                .responseValidator((_, _, _, _) -> Mono.just(new Result(
 //                    Status.Ok,
@@ -145,7 +146,7 @@ public class HttpInboxTest {
                 .output(),
             onEvent(LongExternalProcessing).to(Processing)
                 .assembleInput()
-                .trigger(Process3Outbox.sendRequest()).on(Process3Outbox).identifiedBy(newEntityId())
+                .trigger(Process3Outbox.requestDispatched()).on(Process3Outbox).identifiedBy(newEntityId())
 //                .trigger(new ProcessRequest(LONG_EXTERNAL_PROCESSING))
 //                .with(_ -> null)
 //                .to(DeviceListener)
@@ -159,7 +160,7 @@ public class HttpInboxTest {
                     assemble((log, rollbackType) -> "")
                         // NB: Response in request/reply session not possible with reversals triggered by the resolver
                         //.trigger(ComplexInternalProcessResponse).with(_ -> "Failed to switch on light! :(((").on(inboxExchange).identifiedBy(entityIdFromSession())
-                        .trigger(Process0Outbox.sendRequest()).on(Process0Outbox).identifiedBy(newEntityId())
+                        .trigger(Process0Outbox.requestDispatched()).on(Process0Outbox).identifiedBy(newEntityId())
                         //.trigger(new ProcessRequest(0)).with(_ -> null).to(DeviceListener).guaranteed()
 //                        .responseValidator((_, _, _, _) -> Mono.just(new Result(
 //                            Status.Ok,
@@ -377,16 +378,16 @@ public class HttpInboxTest {
         _ -> requestMessage("/process/0"),
         new NettyHttpClient(new NettyHttpClientBuilder().build()),
         Lamp,
-        null,
-        null,
-        new Callback<>(ExternalProcessingDone, _ -> null),
-        new Callback<>(ExternalProcessingDone, _ -> null),
-        _ -> null, // contentParser
-        r -> r.message().statusCode() >= 200 && r.message().statusCode() <= 299,
-        r -> r.message().statusCode() >= 400 && r.message().statusCode() <= 499, // failurePredicate
-        r -> r.message().statusCode() >= 500 && r.message().statusCode() <= 599, // rollbackPredicate
-        (_, _) -> null,
-        new AtLeastOnce<Void, Void, Void, Void>(
+        new Callback<>(ExternalProcessingDone, _ -> null), // onPeerUnavailable
+        new Callback<>(ExternalProcessingDone, _ -> null), // onMissingResponse
+        new Callback<>(ExternalProcessingDone, _ -> null), // onSuccess
+        new Callback<>(ExternalProcessingDone, _ -> null), // onFailure
+        new Callback<>(ExternalProcessingDone, _ -> null), // onInvalidResponseRejection
+        new Callback<>(ExternalProcessingDone, _ -> null), // onInvalidResponseUnknown
+        message -> message.body() == null ? valid(null) : invalid("Expected empty body"), // contentParser
+        r -> r.t1().statusCode() >= 200 && r.t1().statusCode() <= 299, // successPredicate
+        r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499, // invalidResponseRejectionPredicate
+        new AtLeastOnce<>(
             "Process0RollbackOutbox",
             UUID.fromString("513f7e3e-c03e-4016-b5f3-ddb981cb1ffe"),
             Void.class,

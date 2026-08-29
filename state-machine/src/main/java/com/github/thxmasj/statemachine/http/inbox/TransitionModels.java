@@ -72,6 +72,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.stream.IntStream;
 
 public interface TransitionModels {
@@ -81,7 +82,7 @@ public interface TransitionModels {
         Begin, List.of(
             onEvent(RouteRequest).to(Routed)
                 .assembleInput()
-                .choice(IntStream.range(0, routes.size()).mapToObj(i -> TransitionModels.metadataRouteTransition(i, routes.get(i))).collect(toList()), d -> d)
+                .choice(IntStream.range(0, routes.size()).mapToObj(i -> TransitionModels.metadataRouteTransition(i, routes.get(i))).collect(toList()))
                 .otherwise(
                     onEvent(RejectAsUnroutable).to(Rejected)
                         .assembleInput()
@@ -104,7 +105,10 @@ public interface TransitionModels {
     );
   }
 
-  private static <T> GuardedTransition<HttpRequestMessage, HttpRequestMessage, Void> metadataRouteTransition(int metaDataRouteId, HttpRequestRoute<T> metadataRoute) {
+  private static <T> GuardedTransition<HttpRequestMessage, HttpRequestMessage, Void> metadataRouteTransition(
+      int metaDataRouteId,
+      HttpRequestRoute<T> metadataRoute
+  ) {
     return new GuardedTransition<>(
         metadataRoute.metadataPredicate(),
         onEvent(RouteRequest).to(Routed)
@@ -124,10 +128,10 @@ public interface TransitionModels {
                 IntStream.range(0, metadataRoute.contentRoutes().size())
                     .mapToObj(contentRouteId -> contentRouteTransition(
                         new RouteId(metaDataRouteId, contentRouteId),
-                        metadataRoute.contentRoutes().get(contentRouteId)
+                        metadataRoute.contentRoutes().get(contentRouteId),
+                        d -> tuple(d.t1(), d.t2().validValue())
                     ))
-                    .collect(toList()),
-                d -> tuple(d.t1(), d.t2().validValue())
+                    .collect(toList())
             )
             .otherwise(
                 onEvent(RejectAsUnroutable).to(Rejected)
@@ -135,13 +139,15 @@ public interface TransitionModels {
                     .trigger(RespondBadRequest).with(d -> d).on(RequestRouting).identifiedBy(entityIdFromSession())
                     .output(),
                 _ -> "No route matching content"
-            )
+            ),
+        Function.identity()
     );
   }
 
   private static <T, U> GuardedTransition<Tuple2<HttpRequestMessage, Validated<T>>, Tuple2<HttpRequestMessage, T>, Void> contentRouteTransition(
       RouteId routeId,
-      ContentRoute<T, U> contentRoute
+      ContentRoute<T, U> contentRoute,
+      Function<Tuple2<HttpRequestMessage, Validated<T>>, Tuple2<HttpRequestMessage, T>> dataAdapter
   ) {
     EventType<Tuple2<HttpRequestMessage, T>, Void> contentRoutingEvent = BasicEventType.of(
         contentRoute.predicateName(),
@@ -218,7 +224,8 @@ public interface TransitionModels {
                       processSelector
                   );
                 }
-            )
+            ),
+        dataAdapter
     );
   }
 

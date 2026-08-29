@@ -94,12 +94,12 @@ public class HttpOutboxTest {
           null,
           new Callback<>(processed, _ -> null),
           new Callback<>(failed, _ -> null),
-          _ -> null, // contentParser
-          r -> r.message().statusCode() >= 200 && r.message().statusCode() <= 299,
-          r -> r.message().statusCode() >= 400 && r.message().statusCode() <= 499, // failurePredicate
-          r -> r.message().statusCode() >= 500 && r.message().statusCode() <= 599, // rollbackPredicate
-          (_, _) -> null,
-          new AtLeastOnce<Void, Void, Void, Void>(
+          new Callback<>(failed, _ -> null),
+          new Callback<>(failed, _ -> null),
+          _ -> valid(null), // contentParser
+          r -> r.t1().statusCode() >= 200 && r.t1().statusCode() <= 299, // successPredicate
+          r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499, // invalidResponseRejectionPredicate
+          new AtLeastOnce<>(
               "ExchangeRollback",
               UUID.fromString("fd4959b4-5c14-4b7a-8ea5-b559b94f803c"),
               Void.class,
@@ -119,7 +119,7 @@ public class HttpOutboxTest {
       Map<State, List<TransitionModel<?, ?>>> processTransitions = Map.of(
           States.Begin, List.of(
               onEvent(doProcess).to(States.WaitingForResponse)
-                  .trigger(Exchange.sendRequest()).on(Exchange).identifiedBy(newEntityId())
+                  .trigger(Exchange.requestDispatched()).on(Exchange).identifiedBy(newEntityId())
                   .output()
           ),
           States.WaitingForResponse, List.of(

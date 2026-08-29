@@ -610,15 +610,7 @@ public class TransitionModelBuilder<I, T, O> {
     return builder;
   }
 
-  public <I1> TransitionModelBuilder<I, T, O> choice(List<GuardedTransition<T, I1, ?>> guardedTransitions, Function<T, I1> dataAdapter) {
-    TransitionModelBuilder<I, T, O> builder = this;
-    for (var guardedTransition : guardedTransitions) {
-      builder = builder.when(guardedTransition, dataAdapter);
-    }
-    return builder;
-  }
-
-  public TransitionModelBuilder<I, T, O> choice(List<GuardedTransition<T, T, ?>> guardedTransitions) {
+  public <I1> TransitionModelBuilder<I, T, O> choice(List<GuardedTransition<T, I1, ?>> guardedTransitions) {
     TransitionModelBuilder<I, T, O> builder = this;
     for (var guardedTransition : guardedTransitions) {
       builder = builder.when(guardedTransition);
@@ -626,12 +618,8 @@ public class TransitionModelBuilder<I, T, O> {
     return builder;
   }
 
-  public <I1, O1> TransitionModelBuilder<I, T, O> when(GuardedTransition<T, I1, O1> guardedTransition, Function<T, I1> dataAdapter) {
-    return when(guardedTransition.guard()).then(guardedTransition.then(), dataAdapter);
-  }
-
-  public <O1> TransitionModelBuilder<I, T, O> when(GuardedTransition<T, T, O1> guardedTransition) {
-    return when(guardedTransition.guard()).then(guardedTransition.then());
+  public <I1, O1> TransitionModelBuilder<I, T, O> when(GuardedTransition<T, I1, O1> guardedTransition) {
+    return when(guardedTransition.guard()).then(guardedTransition.then(), guardedTransition.dataAdapter());
   }
 
   public WithFilter<I, T, O> when(Predicate<T> filter) {
@@ -973,17 +961,12 @@ public class TransitionModelBuilder<I, T, O> {
 
     public Mono<OutputChangeContext<O>> calculate(InitialChangeContext<I> initialChangeContext) {
       log(modelContext, "calculate [" + eventType().name() + "] on [" + initialChangeContext.log().entityModel().name() + "]");
-      Mono<OutputChangeContext<O>> output = chain.apply(Mono.just(initialChangeContext));
-//      System.out.println("Calculate succeeded");
-//      if (eventType().name().equals("Response")) {
-//        System.out.println("Handling output for response");
-//        output = output.doOnNext(c -> System.out.println("Got output for response"));
-//        output = output.doOnError(c -> System.out.println("Got error for response"));
-//        output = output.doOnSuccess(c -> System.out.println("Got success for response"));
-//        output.subscribe();
-//
-//      }
-      return output;
+      try {
+        return chain.apply(Mono.just(initialChangeContext));
+      } catch (Exception e) {
+        e.printStackTrace();
+        throw e;
+      }
     }
 
     private Mono<OutputChangeContext<O>> calculateReverse(Mono<InitialChangeContext<I>> initial) {

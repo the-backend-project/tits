@@ -10,8 +10,8 @@ public sealed interface HttpOutbox<I> extends com.github.thxmasj.statemachine.En
   Map<State, List<TransitionModelBuilder.TransitionModel<?, ?>>> transitions();
 
   default State initialState() {
-    return States.Begin;
+    return AtMostOnce.States.Begin;
   }
 
-  EventType<I, Tuples.Tuple2<I, HttpRequestMessage>> sendRequest();
+  EventType<I, HttpRequestMessage> requestDispatched();
 }

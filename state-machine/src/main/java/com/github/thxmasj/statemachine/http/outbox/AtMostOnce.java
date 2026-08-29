@@ -1,20 +1,21 @@
 package com.github.thxmasj.statemachine.http.outbox;
 
 import static com.github.thxmasj.statemachine.EntitySelector.entityIdFromSession;
-import static com.github.thxmasj.statemachine.EntitySelector.newEntityId;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
 import static com.github.thxmasj.statemachine.Tuples.tuple;
-import static com.github.thxmasj.statemachine.http.outbox.EventTypes.HandleResponse;
-import static com.github.thxmasj.statemachine.http.outbox.States.Begin;
-import static com.github.thxmasj.statemachine.http.outbox.States.Completed;
-import static com.github.thxmasj.statemachine.http.outbox.States.InFlight;
+import static com.github.thxmasj.statemachine.http.outbox.AtMostOnce.States.Begin;
+import static com.github.thxmasj.statemachine.http.outbox.AtMostOnce.States.Delivered;
+import static com.github.thxmasj.statemachine.http.outbox.AtMostOnce.States.Failed;
+import static com.github.thxmasj.statemachine.http.outbox.AtMostOnce.States.InFlight;
+import static com.github.thxmasj.statemachine.http.outbox.AtMostOnce.States.Intermediate;
+import static com.github.thxmasj.statemachine.http.outbox.AtMostOnce.States.Unknown;
+import static com.github.thxmasj.statemachine.http.outbox.EventTypes.ResponseReceived;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.github.thxmasj.statemachine.Action;
 import com.github.thxmasj.statemachine.BasicEventType;
 import com.github.thxmasj.statemachine.EventType;
 import com.github.thxmasj.statemachine.EventType.DataType;
-import com.github.thxmasj.statemachine.GuardedTransition;
 import com.github.thxmasj.statemachine.InputEvent;
 import com.github.thxmasj.statemachine.State;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionContext;
@@ -25,81 +26,113 @@ import com.github.thxmasj.statemachine.http.HttpClient;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import java.net.ConnectException;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import reactor.core.publisher.Mono;
 
-public final class AtMostOnce<I, R, S, F, RI> implements HttpOutbox<I> {
+public final class AtMostOnce<I, RI> implements HttpOutbox<I> {
 
   private final String name;
   private final UUID id;
-  private final EventType<I, Tuple2<I, HttpRequestMessage>> sendRequest;
+  private final EventType<I, HttpRequestMessage> requestDispatched;
+  private final AtLeastOnce<RI> rollbackModel;
 
   @Override
-  public EventType<I, Tuple2<I, HttpRequestMessage>> sendRequest() {
-    return sendRequest;
+  public EventType<I, HttpRequestMessage> requestDispatched() {
+    return requestDispatched;
+  }
+
+  public EventType<RI, HttpRequestMessage> rollbackDispatched() {
+    return rollbackModel.requestDispatched();
   }
 
   private final Map<State, List<TransitionModel<?, ?>>> transitions;
 
-  public AtMostOnce(
+  public <T1, T2, T3, R> AtMostOnce(
       String name,
       UUID id,
       Class<I> inputDataType,
       Function<TransitionContext<I>, HttpRequestMessage> messageCreator,
       HttpClient httpForwarder,
       com.github.thxmasj.statemachine.EntityModel processModel,
-      Callback<String, F> onPeerUnavailable,
-      Callback<String, F> onMissingResponse,
-      Callback<ParsedResponse<R>, S> onSuccess,
-      Callback<ParsedResponse<R>, F> onFailure,
+      Callback<Void, Void> onPeerUnavailable,
+      Callback<Void, Void> onMissingResponse,
+      Callback<Tuple2<HttpResponseMessage, R>, T2> onSuccess,
+      Callback<Tuple2<HttpResponseMessage, R>, T3> onFailure,
+      Callback<Tuple2<HttpResponseMessage, String>, T1> onInvalidResponseRejection,
+      Callback<Tuple2<HttpResponseMessage, String>, T1> onInvalidResponseUnknown, // Rollback
       Function<HttpResponseMessage, Validated<R>> contentParser,
-      Predicate<ParsedResponse<R>> successPredicate,
-      Predicate<ParsedResponse<R>> failurePredicate,
-      Predicate<ParsedResponse<R>> rollbackPredicate,
-      BiFunction<I, ParsedResponse<R>, RI> rollbackAdapter,
-      AtLeastOnce<RI, ?, ?, ?> rollbackModel
+      Predicate<Tuple2<HttpResponseMessage, R>> successPredicate,
+      Predicate<Tuple2<HttpResponseMessage, String>> invalidResponseRejectionPredicate,
+      AtLeastOnce<RI> rollbackModel
   ) {
     this.name = name;
     this.id = id;
-    this.sendRequest = BasicEventType.of(
-        "Send request",
+    this.rollbackModel = rollbackModel;
+    this.requestDispatched = BasicEventType.of(
+        "Request dispatched",
         UUID.fromString("3f22bfef-dcb4-4560-8b88-6b5040433319"),
         inputDataType,
-        new DataType<>(new TypeReference<>(){}, inputDataType, HttpRequestMessage.class)
+        new DataType<>(new TypeReference<>() {}, inputDataType, HttpRequestMessage.class)
     );
-    EventType<String, String> HandleUndeliveredRequest = BasicEventType.of(
-        "Handle undelivered request",
+    EventType<Void, Void> connectionFailed = BasicEventType.of(
+        "Connection failed",
         UUID.fromString("14be9085-1f7c-427c-9963-2c72cdc0888f"),
-        (Class<String>)null,
-        String.class
-    );
-    EventType<Void, Void> handleMissingResponse = BasicEventType.of(
-        "Handle missing response",
-        UUID.fromString("94ba4ab3-3b87-4ceb-9fd3-0e8ab0c21a34"),
-        (Class<Void>) null,
+        Void.class,
         Void.class
     );
-    EventType<ParsedResponse<R>, HttpResponseMessage> handleValidResponse = BasicEventType.of(
-        "Handle valid response",
-        UUID.fromString("b19a7b1d-ea28-4ed1-8442-4981f4e58f12"),
-        (Class<ParsedResponse<R>>) null,
+    EventType<Void, Void> connectionDropped = BasicEventType.of(
+        "Connection dropped",
+        UUID.fromString("94ba4ab3-3b87-4ceb-9fd3-0e8ab0c21a34"),
+        Void.class,
+        Void.class
+    );
+    // Intermediate
+    EventType<Tuple2<HttpResponseMessage, R>, Tuple2<HttpResponseMessage, R>> validResponse = BasicEventType.of(
+        "[valid response]",
+        UUID.fromString("c9fcf4d6-95f8-418f-aa6b-c3d987d3a3c3"),
+        (Class<Tuple2<HttpResponseMessage, R>>) null,
+        (Class<Tuple2<HttpResponseMessage, R>>) null
+    );
+    // Intermediate
+    EventType<Tuple2<HttpResponseMessage, String>, Tuple2<HttpResponseMessage, String>> invalidResponse = BasicEventType.of(
+        "[invalid response]",
+        UUID.fromString("3bd020c3-caf8-4a9b-a10c-d818f98a6de7"),
+        (Class<Tuple2<HttpResponseMessage, String>>) null,
+        (Class<Tuple2<HttpResponseMessage, String>>) null
+    );
+    // Leaf
+    EventType<Tuple2<HttpResponseMessage, R>, HttpResponseMessage> requestAccepted = BasicEventType.of(
+        "[request accepted]",
+        UUID.fromString("0f8fe1c2-2d29-406c-87b5-f9f43a03a54f"),
+        (Class<Tuple2<HttpResponseMessage, R>>) null,
         HttpResponseMessage.class
     );
-    EventType<ParsedResponse<R>, HttpResponseMessage> handleInvalidResponse = BasicEventType.of(
-        "Handle invalid response",
-        UUID.fromString("f55d5b0c-ae92-468c-a905-2e845b64b490"),
-        (Class<ParsedResponse<R>>) null,
+    // Leaf
+    EventType<Tuple2<HttpResponseMessage, R>, HttpResponseMessage> requestReceivedAndRejected = BasicEventType.of(
+        "[request rejected]",
+        UUID.fromString("5362567f-792e-4f8a-81d6-3b201d44d3f0"),
+        (Class<Tuple2<HttpResponseMessage, R>>) null,
         HttpResponseMessage.class
     );
-    EventType<ParsedResponse<R>, HttpResponseMessage> handleRollback = BasicEventType.of(
-        "Handle rollback",
-        UUID.fromString("31f72145-8abc-40cb-902b-1d5fc3f81149"),
-        (Class<ParsedResponse<R>>) null,
+    // Leaf
+    EventType<Tuple2<HttpResponseMessage, String>, HttpResponseMessage> invalidResponseAndRejected = BasicEventType.of(
+        "[request rejected]",
+        UUID.fromString("402f9bf4-855c-4383-ac54-3375f9d156d1"),
+        (Class<Tuple2<HttpResponseMessage, String>>) null,
+        HttpResponseMessage.class
+    );
+    // Leaf
+    EventType<Tuple2<HttpResponseMessage, String>, HttpResponseMessage> invalidResponseAndUnknown = BasicEventType.of(
+        "[unknown status]",
+        UUID.fromString("ecfb2c9d-178b-4c3e-b09e-c580e09b01b4"),
+        (Class<Tuple2<HttpResponseMessage, String>>) null,
         HttpResponseMessage.class
     );
     Action<HttpRequestMessage> forward = new Action<>() {
@@ -107,107 +140,114 @@ public final class AtMostOnce<I, R, S, F, RI> implements HttpOutbox<I> {
       @Override
       public Mono<InputEvent<?>> execute(HttpRequestMessage data) {
         return httpForwarder.exchange(data)
-            .<InputEvent<?>>map(response -> new InputEvent<>(HandleResponse, response))
-            .onErrorResume(ConnectException.class, e -> Mono.just(new InputEvent<>(HandleUndeliveredRequest, e.getMessage())));
+            .<InputEvent<?>>map(response -> new InputEvent<>(ResponseReceived, response))
+            .onErrorResume(ConnectException.class, e -> Mono.just(new InputEvent<>(connectionFailed, null)));
       }
     };
-    this.transitions = Map.of(
+    Map<State, List<TransitionModel<?, ?>>> t = Map.of(
         Begin, List.of(
-            onEvent(sendRequest).to(InFlight)
-                .assemble(c -> tuple(c.input(), messageCreator.apply(c)))
-                .trigger(forward).with(Tuple2::t2)
+            onEvent(requestDispatched).to(InFlight)
+                .assemble(messageCreator)
+                .trigger(forward).with(d -> d)
                 .output(d -> d)
         ),
         InFlight, List.of(
+            rollbackModel.requestDispatchedTransition(),
             onPeerUnavailable != null ?
-                onEvent(HandleUndeliveredRequest).to(Completed)
+                onEvent(connectionFailed).to(Failed)
                     .assembleInput()
                     .trigger(onPeerUnavailable.eventType())
                     .with(onPeerUnavailable.dataAdapter())
                     .on(processModel)
                     .identifiedBy(entityIdFromSession())
                     .output(Tuple2::t1) :
-                onEvent(HandleUndeliveredRequest).to(Completed)
+                onEvent(connectionFailed).to(Failed)
                     .assembleInput()
                     .output(d -> d),
             onMissingResponse != null ?
-                onEvent(handleMissingResponse).to(Completed)
-                    .assemble(c -> c.log().one(sendRequest))
+                onEvent(connectionDropped).to(Unknown)
+                    .assembleInput()
                     .trigger(onMissingResponse.eventType())
-                    .with(_ -> onMissingResponse.dataAdapter().apply("No response"))
+                    .with(onMissingResponse.dataAdapter())
                     .on(processModel)
                     .identifiedBy(entityIdFromSession())
-                    .trigger(rollbackModel.sendRequest())
-                    .with(d -> rollbackAdapter.apply(d.t1().t1(), null))
-                    .on(rollbackModel)
-                    .identifiedBy(newEntityId())
                     .output() :
-                onEvent(handleMissingResponse).to(Completed)
-                    .assemble(c -> c.log().one(sendRequest))
-                    .trigger(rollbackModel.sendRequest())
-                    .with(d -> rollbackAdapter.apply(d.t1(), null))
-                    .on(rollbackModel)
-                    .identifiedBy(newEntityId())
+                onEvent(connectionDropped).to(Unknown)
+                    .assembleInput()
                     .output(),
-            onEvent(HandleResponse).to(Completed)
-                .assemble(c -> new ParsedResponse<>(c.input(), contentParser.apply(c.input())))
-                .choice(
-                    List.of(
-                        new GuardedTransition<>(
-                            successPredicate,
+            onEvent(ResponseReceived).to(Intermediate)
+                .assemble(c -> tuple(c.input(), contentParser.apply(c.input())))
+                .when(d -> d.t2().isValid())
+                .then(
+                    onEvent(validResponse).to(Intermediate)
+                        .assembleInput()
+                        .when(successPredicate)
+                        .then(
                             onSuccess != null ?
-                                onEvent(handleValidResponse).to(Completed)
+                                onEvent(requestAccepted).to(Delivered)
                                     .assembleInput()
                                     .trigger(onSuccess.eventType())
                                     .with(onSuccess.dataAdapter())
                                     .on(processModel)
                                     .identifiedBy(entityIdFromSession())
-                                    .output(d -> d.t1().message()) :
-                                onEvent(handleValidResponse).to(Completed).assembleInput().output(ParsedResponse::message)
-                        ),
-                        new GuardedTransition<>(
-                            rollbackPredicate,
+                                    .output(d -> d.t1().t1()) :
+                                onEvent(requestAccepted).to(Delivered)
+                                    .assembleInput()
+                                    .output(d -> d.t1())
+                        )
+                        .otherwise(
                             onFailure != null ?
-                                onEvent(handleRollback).to(Completed)
-                                    .assemble(c -> tuple(c.log().one(sendRequest).t1(), c.log().one(sendRequest).t2(), c.input()))
-                                    .trigger(onFailure.eventType())
-                                    .with(d -> onFailure.dataAdapter().apply(d.t3()))
-                                    .on(processModel)
-                                    .identifiedBy(entityIdFromSession())
-                                    .trigger(rollbackModel.sendRequest())
-                                    .with(d -> rollbackAdapter.apply(d.t1().t1(), d.t1().t3()))
-                                    .on(rollbackModel)
-                                    .identifiedBy(newEntityId())
-                                    .output(d -> d.t1().t1().t3().message()) :
-                                onEvent(handleRollback).to(Completed)
-                                    .assemble(c -> tuple(c.log().one(sendRequest).t1(), c.log().one(sendRequest).t2(), c.input()))
-                                    .trigger(rollbackModel.sendRequest())
-                                    .with(d -> rollbackAdapter.apply(d.t1(), d.t3()))
-                                    .on(rollbackModel)
-                                    .identifiedBy(newEntityId())
-                                    .output(d -> d.t1().t3().message())
-                        ),
-                        new GuardedTransition<>(
-                            failurePredicate,
-                            onFailure != null ?
-                                onEvent(handleInvalidResponse).to(Completed)
+                                onEvent(requestReceivedAndRejected).to(Failed)
                                     .assembleInput()
                                     .trigger(onFailure.eventType())
                                     .with(onFailure.dataAdapter())
                                     .on(processModel)
                                     .identifiedBy(entityIdFromSession())
-                                    .output(d -> d.t1().message()) :
-                                onEvent(handleInvalidResponse).to(Completed).assembleInput().output(ParsedResponse::message)
-                        )
-                    )
-                )
-                .otherwise(
-                    onEvent(handleInvalidResponse).to(Completed)
+                                    .output(d -> d.t1().t1()) :
+                                onEvent(requestReceivedAndRejected).to(Failed)
+                                    .assembleInput()
+                                    .output(d -> d.t1())
+                        ),
+                    d -> tuple(d.t1(), d.t2().validValue())
+                ).otherwise(
+                    onEvent(invalidResponse).to(Intermediate)
                         .assembleInput()
-                        .output(ParsedResponse::message)
+                        .when(invalidResponseRejectionPredicate)
+                        .then(
+                            onInvalidResponseRejection != null ?
+                                onEvent(invalidResponseAndRejected).to(Failed)
+                                    .assembleInput()
+                                    .trigger(onInvalidResponseRejection.eventType())
+                                    .with(onInvalidResponseRejection.dataAdapter())
+                                    .on(processModel)
+                                    .identifiedBy(entityIdFromSession())
+                                    .output(d -> d.t1().t1()) :
+                                onEvent(invalidResponseAndRejected).to(Failed)
+                                    .assembleInput()
+                                    .output(d -> d.t1())
+                        )
+                        .otherwise(
+                            onInvalidResponseUnknown != null ?
+                              onEvent(invalidResponseAndUnknown).to(Unknown)
+                                  .assembleInput()
+                                  .trigger(onInvalidResponseUnknown.eventType())
+                                  .with(onInvalidResponseUnknown.dataAdapter())
+                                  .on(processModel)
+                                  .identifiedBy(entityIdFromSession())
+                                  .output(d -> d.t1().t1()) :
+                                onEvent(invalidResponseAndUnknown).to(Unknown)
+                                    .assembleInput()
+                                    .output(d -> d.t1())
+                        ),
+                    d -> tuple(d.t1(), d.t2().invalidReason())
                 )
-        )
+        ),
+        Intermediate, List.of(),
+        Failed, List.of(),
+        Delivered, List.of(rollbackModel.requestDispatchedTransition()),
+        Unknown, List.of(rollbackModel.requestDispatchedTransition())
     );
+    this.transitions = combine(t, rollbackModel.transitions());
   }
 
   @Override
@@ -225,4 +265,31 @@ public final class AtMostOnce<I, R, S, F, RI> implements HttpOutbox<I> {
     return transitions;
   }
 
+  private static Map<State, List<TransitionModel<?, ?>>> combine(
+      Map<State, List<TransitionModel<?, ?>>> m1,
+      Map<State, List<TransitionModel<?, ?>>> m2
+  ) {
+    return Stream.concat(m1.entrySet().stream(), m2.entrySet().stream())
+        .collect(Collectors.toMap(
+            Map.Entry::getKey,
+            Map.Entry::getValue,
+            (_, _) -> {
+              throw new IllegalArgumentException("TransitionModel maps can't be combined - they use the same State key");
+            }
+        ));
+  }
+
+  enum States implements State {
+    Intermediate,
+    Begin,
+    InFlight {
+      @Override
+      public Timeout<?> timeout() {
+        return new Timeout<>(Duration.ofSeconds(10), EventTypes.TimeoutExpired, _ -> null);
+      }
+    },
+    Failed,
+    Delivered,
+    Unknown
+  }
 }

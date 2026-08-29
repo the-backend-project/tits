@@ -41,9 +41,6 @@ public class Main {
             null,
             null,
             null,
-            null,
-            null,
-            null,
             null
         )
     ).formatToImage("docs/images/"));

@@ -7,11 +7,17 @@ import java.util.UUID;
 
 public interface EventTypes {
 
-  EventType<HttpResponseMessage, HttpResponseMessage> HandleResponse = BasicEventType.of(
-      "Handle response",
+  EventType<HttpResponseMessage, Void> ResponseReceived = BasicEventType.of(
+      "Response received",
       UUID.fromString("cd730efa-286d-4e29-b8bf-55df708fe889"),
       HttpResponseMessage.class,
-      HttpResponseMessage.class
+      Void.class
+  );
+  EventType<Void, Void> TimeoutExpired = BasicEventType.of(
+      "Timeout expired",
+      UUID.fromString("7ff41071-2411-405d-acf2-c3b66823f17d"),
+      Void.class,
+      Void.class
   );
   EventType<Void, Void> Retry = BasicEventType.of(
       "Retry",

@@ -54,9 +54,9 @@ public abstract class SettlementTransitions {
 
   public Map<State, List<TransitionModel<?, ?>>> transitions(
       // validateSettlementResponse()
-      AtLeastOnce<Tuple3<BatchNumber, AcquirerBatchNumber, Merchant>, ?, ?, ?> reconciliationToAcquirer,
+      AtLeastOnce<Tuple3<BatchNumber, AcquirerBatchNumber, Merchant>> reconciliationToAcquirer,
       //
-      AtLeastOnce<Tuple2<CutOff, ReconciliationValues>, ?, ?, ?> approvedCutOffToMerchant
+      AtLeastOnce<Tuple2<CutOff, ReconciliationValues>> approvedCutOffToMerchant
   ) {
     return Map.of(
         Begin, List.of(
@@ -85,7 +85,7 @@ public abstract class SettlementTransitions {
             onEvent(CutOffRequest).to(ProcessingSettlement)
                 .assemble(c -> tuple(c.input(), c.log().id(BatchNumber), c.log().id(AcquirerBatchNumber), c.eventReference()))
                 .trigger(Get).on(Aggregate.Merchant).identifiedBy(d -> secondaryId(MerchantId, d.t1().merchantId()))
-                .trigger(reconciliationToAcquirer.sendRequest())
+                .trigger(reconciliationToAcquirer.requestDispatched())
                 .with(d -> tuple(d.t1().t2(), d.t1().t3(), d.t2().accepted().event().getUnmarshalledData()))
                 .on(reconciliationToAcquirer)
                 .identifiedBy(newEntityId())
@@ -118,7 +118,7 @@ public abstract class SettlementTransitions {
                             input.reconciliationValues(),
                             input
                         ))
-                        .trigger(approvedCutOffToMerchant.sendRequest())
+                        .trigger(approvedCutOffToMerchant.requestDispatched())
                         .with(d -> new Tuple2<>(d.t1(), d.t2()))
                         .on(approvedCutOffToMerchant)
                         .identifiedBy(newEntityId())
