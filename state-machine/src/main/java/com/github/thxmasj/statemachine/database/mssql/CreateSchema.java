@@ -71,6 +71,8 @@ public class CreateSchema {
             EntityId      UNIQUEIDENTIFIER NOT NULL,
             EntityModelId UNIQUEIDENTIFIER NOT NULL,
             EventNumber   SMALLINT         NOT NULL,
+            Type          UNIQUEIDENTIFIER NOT NULL,
+            Data          VARCHAR(MAX),
             Deadline      DATETIME2(2)     NOT NULL,
             CorrelationId VARCHAR(36)      NOT NULL,
             Attempt       INT              NOT NULL

@@ -19,6 +19,7 @@ import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.Acti
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.AssembledChangeContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.ChoiceChangeContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.CombinedChangeContext;
+import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.DelayedTriggerChangeContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.IdentityChangeContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.InitialChangeContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.OutputChangeContext;
@@ -32,6 +33,7 @@ import com.github.thxmasj.statemachine.Tuples.Tuple4;
 import com.github.thxmasj.statemachine.database.UnknownEntity;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
 import com.github.thxmasj.statemachine.http.inbox.HttpInbox.EventReference;
+import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -40,6 +42,7 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -175,6 +178,21 @@ public class TransitionModelBuilder<I, T, O> {
         return "Trigger (outer: " + outer + ")";
       }
 
+    }
+
+    record DelayedTriggerChangeContext<T, I1>(
+        ChangeContext<T> previous,
+        DelayedEvent<I1> delayedEvent
+    ) implements ChangeContext<T> {
+      @Override public String toString() {
+        return "Delayed trigger: " + delayedEvent.entityModel().name() + "/" + delayedEvent.type().name() + "/"
+            + delayedEvent.entityId() + "/" + delayedEvent.eventNumber() + " after " + delayedEvent.after();
+      }
+
+      @Override
+      public T stepOutput() {
+        return previous.stepOutput();
+      }
     }
 
     record CombinedChangeContext<T, U>(
@@ -495,9 +513,15 @@ public class TransitionModelBuilder<I, T, O> {
   public record WithEventType<I, T, O, I1, O1>(TransitionModelBuilder<I, T, O> builder, EventType<I1, O1> eventType) {
 
     public record WithEventTypeAndData<I, T, O, I1, O1>(WithEventType<I, T, O, I1, O1> eventType, Function<T, I1> dataAdapter) {
+
       public WithEntity<I, T, O, I1, O1> on(EntityModel entityModel) {
         return new WithEntity<>(this, entityModel);
       }
+
+      public TransitionModelBuilder<I, T, O> after(Function<T, Duration> delay) {
+        return this.eventType.builder.triggerDelayed(this.eventType.eventType(), this.dataAdapter, delay);
+      }
+
     }
 
     public record WithIdentifier<I, T, O, I1, O1>(WithEntity<I, T, O, I1, O1> entity, List<Function<T, ? extends EntitySelector>> entitySelectors) {
@@ -529,17 +553,18 @@ public class TransitionModelBuilder<I, T, O> {
         return complete().output();
       }
 
-      private EventTrigger<T, I1, O1> completeTrigger() {
-        return new EventTrigger<>(
-            new EventSpec<>(this.entity.eventTypeAndData.eventType.eventType, this.entity.eventTypeAndData.dataAdapter),
-            this.entitySelectors,
-            this.entity.entityModel,
-            false // TODO: Support create entity
-        );
-      }
-
       private TransitionModelBuilder<I, Tuple2<T, ProcessResult<O1>>, O> complete() {
-        return this.entity.eventTypeAndData.eventType.builder.trigger(completeTrigger());
+        return this.entity.eventTypeAndData.eventType.builder.trigger(
+            new EventTrigger<>(
+                new EventSpec<>(
+                    this.entity.eventTypeAndData.eventType.eventType,
+                    this.entity.eventTypeAndData.dataAdapter
+                ),
+                this.entitySelectors,
+                this.entity.entityModel,
+                false // TODO: Support create entity
+            )
+        );
       }
 
       public WithIdentifier<I, T, O, I1, O1> identifiedBy(Function<T, ? extends EntitySelector> entitySelector) {
@@ -555,6 +580,10 @@ public class TransitionModelBuilder<I, T, O> {
         return new WithIdentifier<>(this, List.of(entitySelector)).complete();
       }
 
+    }
+
+    public TransitionModelBuilder<I, T, O> after(Function<T, Duration> delay) {
+      return this.builder.triggerDelayed(eventType, _ -> null, delay);
     }
 
     public WithEventTypeAndData<I, T, O, I1, O1> with(Function<T, I1> dataAdapter) {
@@ -830,12 +859,6 @@ public class TransitionModelBuilder<I, T, O> {
                         ))
                     )
                 .map(output -> new TriggerChangeContext<>(output, c))
-//                .contextWrite(ctx -> {
-//                  EventLog eventLog = c.initialChangeContext().log();
-//                  if (modelContext.eventType() == null) return ctx;
-//                  System.out.println("Session entity id for " + eventLog.entityModel().name() + ": " + eventLog.entityId().value());
-//                  return ctx.put(eventLog.entityModel(), eventLog.entityId());
-//                })
             );
     var eventTriggers = join(modelContext.triggers, eventTrigger);
     return new TransitionModelBuilder<>(
@@ -848,6 +871,26 @@ public class TransitionModelBuilder<I, T, O> {
             modelContext.filters,
             modelContext.reverseModel
         ),
+        builderFunction.andThen(f)
+    );
+  }
+
+  private <I1, O1> TransitionModelBuilder<I, T, O> triggerDelayed(EventType<I1, O1> eventType, Function<T, I1> dataAdapter, Function<T, Duration> delay) {
+    Function<Mono<ChangeContext<T>>, Mono<ChangeContext<T>>> f =
+        changeContext -> changeContext
+            .map(c -> new DelayedTriggerChangeContext<>(
+                c,
+                new DelayedEvent<>(
+                    c.initialChangeContext().log().entityModel(),
+                    c.initialChangeContext().log().entityId().value(),
+                    eventType,
+                    c.initialChangeContext().eventNumber() + 1,
+                    dataAdapter.apply(c.stepOutput()),
+                    c.initialChangeContext().timestamp().plus(delay.apply(c.stepOutput()))
+                )
+            ));
+    return new TransitionModelBuilder<>(
+        modelContext,
         builderFunction.andThen(f)
     );
   }
@@ -872,8 +915,7 @@ public class TransitionModelBuilder<I, T, O> {
                     b.initialChangeContext().timestamp(),
                     f.apply(b.stepOutput())
                 ),
-                b.initialChangeContext().log().entityModel(),
-                modelContext.to() != null && modelContext.to().timeout() != State.NEVER_TIMEOUT ? modelContext.to().timeout().duration() : null
+                b.initialChangeContext().log().entityModel()
             )
         )))
     );
@@ -911,8 +953,7 @@ public class TransitionModelBuilder<I, T, O> {
                     modelContext.eventType(),
                     b.initialChangeContext().timestamp()
                 ),
-                b.initialChangeContext().log().entityModel(),
-                modelContext.to() != null && modelContext.to().timeout() != State.NEVER_TIMEOUT ? modelContext.to().timeout().duration() : null
+                b.initialChangeContext().log().entityModel()
             )
         )))
     );
@@ -961,12 +1002,7 @@ public class TransitionModelBuilder<I, T, O> {
 
     public Mono<OutputChangeContext<O>> calculate(InitialChangeContext<I> initialChangeContext) {
       log(modelContext, "calculate [" + eventType().name() + "] on [" + initialChangeContext.log().entityModel().name() + "]");
-      try {
-        return chain.apply(Mono.just(initialChangeContext));
-      } catch (Exception e) {
-        e.printStackTrace();
-        throw e;
-      }
+      return chain.apply(Mono.just(initialChangeContext));
     }
 
     private Mono<OutputChangeContext<O>> calculateReverse(Mono<InitialChangeContext<I>> initial) {
@@ -1000,7 +1036,7 @@ public class TransitionModelBuilder<I, T, O> {
   }
 
   static void log(ModelContext<?, ?> modelContext, String text) {
-    System.out.println(ZonedDateTime.now().toString() + ": " + modelContext.description() + ": " + text);
+    System.out.println(ZonedDateTime.now() + ": " + modelContext.description() + ": " + text);
   }
 
 }

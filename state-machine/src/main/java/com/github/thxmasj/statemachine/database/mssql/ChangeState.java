@@ -5,6 +5,7 @@ import static java.util.stream.Collectors.joining;
 import static java.util.stream.IntStream.range;
 
 import com.github.thxmasj.statemachine.BasicEventType;
+import com.github.thxmasj.statemachine.DelayedEvent;
 import com.github.thxmasj.statemachine.EntityId;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.Event;
@@ -16,25 +17,22 @@ import com.github.thxmasj.statemachine.database.Client.Query.Builder;
 import com.github.thxmasj.statemachine.database.Client.UniqueIndexConstraintViolation;
 import com.github.thxmasj.statemachine.database.EventAlreadyExists;
 import com.github.thxmasj.statemachine.database.SecondaryIdAlreadyExists;
+import com.github.thxmasj.statemachine.http.outbox.HttpOutbox;
 import java.time.Clock;
-import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.IntStream;
-import com.github.thxmasj.statemachine.http.outbox.HttpOutbox;
 import reactor.core.publisher.Flux;
 
 public class ChangeState {
 
-  private final List<EntityModel> entityModels;
   private final Client databaseClient;
   private final Clock clock;
   private final String schema;
 
-  public ChangeState(List<EntityModel> entityModels, Client databaseClient, String schema, Clock clock) {
-    this.entityModels = entityModels;
+  public ChangeState(Client databaseClient, String schema, Clock clock) {
     this.databaseClient = databaseClient;
     this.clock = clock;
     this.schema = schema;
@@ -42,7 +40,6 @@ public class ChangeState {
 
   private void bind(Builder spec, ZonedDateTime timestamp, String correlationId, Change change) {
     Event<?> event = change.newEvent();
-    ZonedDateTime deadline = change.timeout() != null ? timestamp.plus(change.timeout()) : null;
     if (change.entityId() != null)
       spec.bind("entityId", change.entityId().value());
     spec.bind("entityModelId", change.entityModel().id());
@@ -62,27 +59,12 @@ public class ChangeState {
       if (secondaryId.model().isSerial())
         spec.bind("secondaryId" + secondaryId.model().name() + "SerialNumber", secondaryId.serialNumber());
     }
-//    for (int i = 0; i < change.outgoingRequests().size(); i++) {
-//      OutgoingRequest orq = change.outgoingRequests().get(i);
-//      if (orq.parentEntity() != null) {
-//        spec.bind("outgoingRequestParentEntityId" + i, orq.parentEntity().value());
-//      }
-//      spec.bind("outgoingRequestId" + i, orq.id())
-//          .bind("outgoingRequestQueueId" + i, orq.queue().id())
-//          .bind("outgoingRequestEventNumber" + i, orq.eventNumber())
-//          .bind("outgoingRequestCreatorId" + i, orq.creatorId())
-//          .bind("correlationId", correlationId)
-//          .bind("outgoingRequestGuaranteedDelivery" + i, orq.guaranteed())
-//          .bind("outgoingRequestData" + i, orq.message().message());
-//    }
-//    if (change.incomingResponse() != null) {
-//      IncomingResponse irs = change.incomingResponse();
-//      spec.bind("incomingResponseEventNumber", irs.eventNumber())
-//          .bind("incomingResponseRequestId", irs.requestId())
-//          .bind("incomingResponseData", irs.message().message());
-//    }
-    if (deadline != null) {
+    if (change.delayedEvent() != null) {
+      ZonedDateTime deadline = change.delayedEvent().after();
       spec
+          .bind("eventNumber", change.delayedEvent().eventNumber())
+          .bind("type", change.delayedEvent().type().id())
+          .bind("data", Event.marshal(change.delayedEvent().data()))
           .bind("deadline", deadline.withZoneSameInstant(clock.getZone()).toLocalDateTime())
           .bind("correlationId", correlationId);
     }
@@ -98,7 +80,7 @@ public class ChangeState {
 
     List<SecondaryId<?>> newSecondaryIds();
 
-    Duration timeout();
+    DelayedEvent<?> delayedEvent();
 
     static Change fromAcceptedEvent(ProcessResult.Accepted<?> acceptedEvent) {
       return new Change() {
@@ -123,8 +105,8 @@ public class ChangeState {
         }
 
         @Override
-        public Duration timeout() {
-          return acceptedEvent.timeout();
+        public DelayedEvent<?> delayedEvent() {
+          return null;
         }
 
         @Override
@@ -134,6 +116,45 @@ public class ChangeState {
               newEvent().typeName() + "]:" +
               newEvent().eventNumber() +
               (newEvent().type() instanceof BasicEventType.ReadOnly<?,?> ? " (read-only)" : "");
+        }
+
+      };
+    }
+
+    static Change fromDelayedEvent(DelayedEvent<?> delayedEvent) {
+      return new Change() {
+        @Override
+        public EntityModel entityModel() {
+          return delayedEvent.entityModel();
+        }
+
+        @Override
+        public EntityId entityId() {
+          return new EntityId.UUID(delayedEvent.entityId());
+        }
+
+        @Override
+        public Event<?> newEvent() {
+          return null;
+        }
+
+        @Override
+        public List<SecondaryId<?>> newSecondaryIds() {
+          return List.of();
+        }
+
+        @Override
+        public DelayedEvent<?> delayedEvent() {
+          return delayedEvent;
+        }
+
+        @Override
+        public String toString() {
+          return entityModel().name() + ":" +
+              delayedEvent.entityId() + ":ev:[" +
+              delayedEvent.type().name() + "]:" +
+              delayedEvent.eventNumber() +
+              " after " + delayedEvent.after();
         }
 
       };
@@ -162,7 +183,7 @@ public class ChangeState {
         }
 
         @Override
-        public Duration timeout() {
+        public DelayedEvent<?> delayedEvent() {
           return null;
         }
 
@@ -194,9 +215,7 @@ public class ChangeState {
             changes.get(i).entityModel(),
             changes.get(i).newEvent(),
             changes.get(i).newSecondaryIds(),
-//            changes.get(i).outgoingRequests(),
-//            changes.get(i).incomingResponse(),
-            changes.get(i).timeout() != null
+            changes.get(i).delayedEvent()
         )).collect(joining("\n")) +
             """
             INSERT INTO @QueueElementToProcess (ChangeIndex, MessageIndex, RequestId, ElementId)
@@ -226,9 +245,7 @@ public class ChangeState {
       EntityModel entityModel,
       Event<?> event,
       List<SecondaryId<?>> secondaryIds,
-//      List<OutgoingRequest> outgoingRequests,
-//      IncomingResponse incomingResponse,
-      boolean withDeadline
+      DelayedEvent<?> delayedEvent
   ) {
     String sql =
         """
@@ -285,201 +302,15 @@ public class ChangeState {
               .replace("{changeIndex}", String.valueOf(changeIndex));
     }
 
-    //
-    // HttpOutbox incoming response event
-    //
-//    if (event != null && entityModel instanceof HttpOutbox.EntityModel && event.type() == HttpOutbox.Response) {
-//      sql +=
-//        /* Deletes corresponding outgoing request from queue when incoming response has arrived. Note that this must
-//           be done prior to insertion of new outgoing requests (see below), otherwise, in case of rollback, the new
-//           outgoing request will be deleted as well */
-//          """
-//          DELETE [{schema}].[OutboxQueue] FROM [{schema}].[OutboxQueue] WITH (INDEX([ixEntityId]))
-//          WHERE EntityId=@entityId{changeIndex} AND RequestId=:incomingResponseRequestId
-//          IF @@ROWCOUNT != 1
-//            THROW 50003, 'Failed to delete outgoing request from queue', 1;
-//          """.replace("{changeIndex}", String.valueOf(changeIndex))
-//              .replace("{schema}", schema);
-//    }
-
-    //
-    // HttpOutbox outgoing request event
-    //
-//    if (event != null && entityModel instanceof HttpOutbox.EntityModel outEntityModel && event.type() instanceof RequestEventType) {
-//    sql += range(0, outgoingRequests.size()).mapToObj(i ->
-//        """
-//        INSERT INTO [{schema}].[OutboxRequest] (
-//          Id,
-//          QueueId,
-//          EntityId,
-//          EventNumber,
-//          Timestamp,
-//          Data
-//        )
-//        OUTPUT {changeIndex}, {i}, inserted.Id INTO @OutboxElement
-//        VALUES (
-//          :outgoingRequestId{i},
-//          :outgoingRequestQueueId{i},
-//          @entityId{changeIndex},
-//          :outgoingRequestEventNumber{i},
-//          :timestamp,
-//          :outgoingRequestData{i}
-//        );
-//        """.replace("{changeIndex}", String.valueOf(changeIndex))
-//            .replace("{i}", String.valueOf(i))
-//            .replace("{schema}", schema)
-//    ).collect(joining());
-
-//      sql += //range(0, outgoingRequests.size()).mapToObj(i ->
-//          """
-//          INSERT INTO [{schema}].[OutboxQueue] (
-//            QueueId,
-//            EntityModelId,
-//            EntityId,
-//            {parentEntityColumn}
-//            EventNumber,
-//            CreatorId,
-//            Guaranteed,
-//            CorrelationId,
-//            Timestamp,
-//            RequestId
-//          )
-//          OUTPUT {changeIndex}, {i}, inserted.RequestId, inserted.ElementId, inserted.Guaranteed INTO @QueueElement
-//          VALUES (
-//            :outgoingRequestQueueId{i},
-//            :entityModelId,
-//            @entityId{changeIndex},
-//            {parentEntityValue}
-//            :outgoingRequestEventNumber{i},
-//            :outgoingRequestCreatorId{i},
-//            :outgoingRequestGuaranteedDelivery{i},
-//            :correlationId,
-//            :timestamp,
-//            (SELECT RequestId FROM @OutboxElement WHERE ChangeIndex={changeIndex} AND MessageIndex={i})
-//          );
-//          """.replace("{changeIndex}", String.valueOf(changeIndex))
-//              .replace("{i}", String.valueOf(0))
-//              .replace("{schema}", schema)
-//              .replace("{parentEntityColumn}", outEntityModel.parentEntity() != null ? "ParentEntityId," : "")
-//              .replace(
-//                  "{parentEntityValue}",
-//                  outEntityModel.parentEntity() != null ? ":outgoingRequestParentEntityId" + 0 + "," : ""
-//              );
-//      if (outEntityModel.guaranteed()) {
-//        sql += //range(0, outgoingRequests.size()).filter(i -> outgoingRequests.get(i).guaranteed()).mapToObj(i ->
-//            """
-//            SET XACT_ABORT OFF
-//            BEGIN TRY
-//            INSERT INTO [{schema}].[OutboxQueueProcessing] (
-//              ElementId,
-//              QueueId,
-//              EntityModelId,
-//              EntityId,
-//              EventNumber,
-//              CreatorId,
-//              Guaranteed,
-//              Data,
-//              CorrelationId,
-//              EnqueuedAt,
-//              Attempt,
-//              NextAttemptAt,
-//              RequestId
-//            )
-//            OUTPUT {changeIndex}, {i}, inserted.RequestId, inserted.ElementId INTO @QueueElementToProcess
-//            SELECT
-//              (SELECT ElementId FROM @QueueElement WHERE ChangeIndex = {changeIndex} AND MessageIndex = {i}),
-//              :outgoingRequestQueueId{i},
-//              :entityModelId,
-//              @entityId{changeIndex},
-//              :outgoingRequestEventNumber{i},
-//              :outgoingRequestCreatorId{i},
-//              :outgoingRequestGuaranteedDelivery{i},
-//              :outgoingRequestData{i},
-//              :correlationId,
-//              :timestamp,
-//              1,
-//              (DATEADD(millisecond, 10*1000, :timestamp)), -- TODO: (DATEADD(millisecond, :minimumBackoff*1000, :now))
-//              (SELECT RequestId FROM @OutboxElement WHERE ChangeIndex={changeIndex} AND MessageIndex={i})
-//            WHERE @entityId{changeIndex} NOT IN (
-//              SELECT EntityId
-//              FROM [{schema}].[OutboxDeadLetterQueue]
-//              WITH (INDEX([pkOutboxDeadLetterQueue]))
-//              WHERE QueueId=:outgoingRequestQueueId{i}
-//            )
-//            AND @entityId{changeIndex} NOT IN (
-//              SELECT EntityId
-//              FROM [{schema}].[OutboxQueueProcessing]
-//              WITH (INDEX([pkOutboxQueueProcessing]))
-//              WHERE QueueId=:outgoingRequestQueueId{i}
-//            )
-//            """.replace("{changeIndex}", String.valueOf(changeIndex))
-//                .replace("{i}", String.valueOf(0))
-//                .replace("{schema}", schema)
-//                +
-//                (
-//                    childEntity(outEntityModel) == null ? "" :
-//                        """
-//                        AND @entityId{changeIndex} NOT IN (
-//                          SELECT ParentEntityId
-//                          FROM [{schema}].[OutboxQueue]
-//                          WHERE ParentEntityId IS NOT NULL
-//                          AND QueueId=:outgoingRequestQueueId{i})
-//                        """.replace("{changeIndex}", String.valueOf(changeIndex))
-//                            .replace("{i}", String.valueOf(0))
-//                            .replace("{schema}", schema)
-//                ) +
-//                """
-//                END TRY
-//                BEGIN CATCH
-//                END CATCH
-//                SET XACT_ABORT ON
-//                """;
-//      }
-//    }
-
-//    sql += incomingResponse == null ? "" :
-//        """
-//        INSERT INTO [{schema}].[OutboxResponse] (
-//          EntityId,
-//          EventNumber,
-//          Timestamp,
-//          Data,
-//          RequestId
-//        ) VALUES (
-//          @entityId{changeIndex},
-//          :incomingResponseEventNumber,
-//          :timestamp,
-//          :incomingResponseData,
-//          :incomingResponseRequestId
-//        );
-//        """.replace("{changeIndex}", String.valueOf(changeIndex))
-//            .replace("{schema}", schema);
-
-    //
-    // HttpOutbox incoming response event (again, guaranteed only)
-    //
-//    if (event != null &&
-//        entityModel instanceof HttpOutbox.EntityModel outEntityModel &&
-//        event.type() == HttpOutbox.Response &&
-//        outEntityModel.guaranteed()
-//    ) {
-//      sql += //incomingResponse != null && incomingResponse.guaranteed() ?
-//          """
-//          DELETE [{schema}].[OutboxQueueProcessing] FROM [{schema}].[OutboxQueueProcessing] WITH (INDEX(pkOutboxQueueProcessing))
-//          WHERE EntityId=@entityId{changeIndex} AND RequestId=:incomingResponseRequestId
-//          IF @@ROWCOUNT != 1
-//            THROW 50004, 'Failed to delete queue processing element (change index {changeIndex}, incomingResponseRequestId)', 1;
-//          """.replace("{changeIndex}", String.valueOf(changeIndex))
-//              .replace("{schema}", schema);
-//    }
-
-    if (withDeadline && event != null)
+    if (delayedEvent != null)
       sql +=
           """
           INSERT INTO [{schema}].[Timeout] (
             EntityId,
             EntityModelId,
             EventNumber,
+            Type,
+            Data,
             Deadline,
             CorrelationId,
             Attempt
@@ -487,6 +318,8 @@ public class ChangeState {
             @entityId{changeIndex},
             :entityModelId,
             :eventNumber,
+            :type,
+            :data,
             :deadline,
             :correlationId,
             0

@@ -34,6 +34,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.thxmasj.statemachine.BasicEventType;
 import com.github.thxmasj.statemachine.BasicEventType.Rollback.Data;
+import com.github.thxmasj.statemachine.DelaySpecification;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.Event;
 import com.github.thxmasj.statemachine.EventTrigger;
@@ -377,6 +378,7 @@ public class HttpInboxTest {
         Void.class,
         _ -> requestMessage("/process/0"),
         new NettyHttpClient(new NettyHttpClientBuilder().build()),
+        Duration.ofSeconds(10),
         Lamp,
         new Callback<>(ExternalProcessingDone, _ -> null), // onPeerUnavailable
         new Callback<>(ExternalProcessingDone, _ -> null), // onMissingResponse
@@ -394,13 +396,16 @@ public class HttpInboxTest {
             _ -> requestMessage("/rollback"),
             (_, o) -> o,
             new NettyHttpClient(new NettyHttpClientBuilder().build()),
+            Duration.ofSeconds(10),
             null, // processModel
             null, // onSuccess
-            null, // onFailure
-            _ -> null, // contentParser
-            r -> r.message().statusCode() >= 200 && r.message().statusCode() <= 299,
-            r -> r.message().statusCode() >= 500 && r.message().statusCode() <= 599, // transientFailurePredicate
-            r -> r.message().statusCode() >= 400 && r.message().statusCode() <= 499 // permanentFailurePredicate
+            _ -> valid(null), // contentParser
+            r -> r.t1().statusCode() >= 200 && r.t1().statusCode() <= 299,
+            r -> r.t1().statusCode() >= 500 && r.t1().statusCode() <= 599, // transientFailurePredicate
+            r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499, // invalidResponseRejectionPredicate
+            r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499, // invalidResponseTransientFailurePredicate
+            c -> Duration.between(c.enqueueTime(), c.now()).compareTo(Duration.ofHours(5)) < 0,
+            c -> new DelaySpecification(Duration.ofSeconds(10), Duration.ofMinutes(10), Duration.ofHours(5), 1.5).calculateDelay(c.attemptNumber())
         )
     );
     Process3Outbox = new AtLeastOnce<>(
@@ -410,13 +415,16 @@ public class HttpInboxTest {
         _ -> requestMessage("/process/3000"),
         (_, requestMessage) -> requestMessage,
         new NettyHttpClient(new NettyHttpClientBuilder().build()),
+        Duration.ofSeconds(10),
         Lamp,
         new Callback<>(ExternalProcessingDone, _ -> null),
-        new Callback<>(ExternalProcessingDone, _ -> null),
-        _ -> null, // contentParser
-        r -> r.message().statusCode() >= 200 && r.message().statusCode() <= 299,
-        r -> r.message().statusCode() >= 500 && r.message().statusCode() <= 599, // transientFailurePredicate
-        r -> r.message().statusCode() >= 400 && r.message().statusCode() <= 499 // permanentFailurePredicate
+        _ -> valid(null), // contentParser
+        r -> r.t1().statusCode() >= 200 && r.t1().statusCode() <= 299,
+        r -> r.t1().statusCode() >= 500 && r.t1().statusCode() <= 599, // transientFailurePredicate
+        r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499, // invalidResponseRejectionPredicate
+        r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499, // invalidResponseTransientFailurePredicate
+        c -> Duration.between(c.enqueueTime(), c.now()).compareTo(Duration.ofHours(5)) < 0,
+        c -> new DelaySpecification(Duration.ofSeconds(10), Duration.ofMinutes(10), Duration.ofHours(5), 1.5).calculateDelay(c.attemptNumber())
     );
     stateMachine = Init.stateMachine(
         Lamp,

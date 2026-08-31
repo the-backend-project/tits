@@ -8,6 +8,7 @@ import static com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Me
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.github.thxmasj.statemachine.BasicEventType;
+import com.github.thxmasj.statemachine.DelaySpecification;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.EventType;
 import com.github.thxmasj.statemachine.Init;
@@ -89,16 +90,17 @@ public class HttpOutboxTest {
           Void.class,
           _ -> requestMessage(path),
           new NettyHttpClient(new NettyHttpClientBuilder().build()),
+          Duration.ofSeconds(10),
           process,
-          null,
-          null,
+          new Callback<>(failed, _ -> null),
+          new Callback<>(failed, _ -> null),
           new Callback<>(processed, _ -> null),
           new Callback<>(failed, _ -> null),
           new Callback<>(failed, _ -> null),
           new Callback<>(failed, _ -> null),
-          _ -> valid(null), // contentParser
+          _ -> valid((Void)null), // contentParser
           r -> r.t1().statusCode() >= 200 && r.t1().statusCode() <= 299, // successPredicate
-          r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499, // invalidResponseRejectionPredicate
+          r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499, // isRejectedByInvalidResponse
           new AtLeastOnce<>(
               "ExchangeRollback",
               UUID.fromString("fd4959b4-5c14-4b7a-8ea5-b559b94f803c"),
@@ -110,9 +112,12 @@ public class HttpOutboxTest {
               null, // onSuccess
               null, // onFailure
               _ -> valid(null), // contentParser
-              r -> r.message().statusCode() >= 200 && r.message().statusCode() <= 299,
-              r -> r.message().statusCode() >= 500 && r.message().statusCode() <= 599, // transientFailurePredicate
-              r -> r.message().statusCode() >= 400 && r.message().statusCode() <= 499 // permanentFailurePredicate
+              r -> r.t1().statusCode() >= 200 && r.t1().statusCode() <= 299, // isDelivered
+              r -> r.t1().statusCode() >= 500 && r.t1().statusCode() <= 599, // isFailureTransient
+              r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499, // isRejectedByInvalidResponse
+              r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499, // isFailureByInvalidResponse
+              c -> Duration.between(c.enqueueTime(), c.now()).compareTo(Duration.ofHours(5)) < 0,
+              c -> new DelaySpecification(Duration.ofSeconds(10), Duration.ofMinutes(10), Duration.ofHours(5), 1.5).calculateDelay(c.attemptNumber())
           )
       );
 

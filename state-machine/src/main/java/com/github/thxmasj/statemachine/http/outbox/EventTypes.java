@@ -15,15 +15,20 @@ public interface EventTypes {
   );
   EventType<Void, Void> TimeoutExpired = BasicEventType.of(
       "Timeout expired",
-      UUID.fromString("7ff41071-2411-405d-acf2-c3b66823f17d"),
-      Void.class,
-      Void.class
+      UUID.fromString("7ff41071-2411-405d-acf2-c3b66823f17d")
   );
   EventType<Void, Void> Retry = BasicEventType.of(
       "Retry",
-      UUID.fromString("61bd64d6-6b65-453e-8d60-7b4e01c5aa53"),
-      Void.class,
-      Void.class
+      UUID.fromString("61bd64d6-6b65-453e-8d60-7b4e01c5aa53")
   );
+  EventType<Void, Void> ConnectionFailed = BasicEventType.of(
+      "Connection failed",
+      UUID.fromString("14be9085-1f7c-427c-9963-2c72cdc0888f")
+  );
+  EventType<Void, Void> ConnectionDropped = BasicEventType.of(
+      "Connection dropped",
+      UUID.fromString("94ba4ab3-3b87-4ceb-9fd3-0e8ab0c21a34")
+  );
+
 
 }

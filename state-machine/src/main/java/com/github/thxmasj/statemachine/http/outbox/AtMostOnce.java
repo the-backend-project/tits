@@ -9,7 +9,10 @@ import static com.github.thxmasj.statemachine.http.outbox.AtMostOnce.States.Fail
 import static com.github.thxmasj.statemachine.http.outbox.AtMostOnce.States.InFlight;
 import static com.github.thxmasj.statemachine.http.outbox.AtMostOnce.States.Intermediate;
 import static com.github.thxmasj.statemachine.http.outbox.AtMostOnce.States.Unknown;
+import static com.github.thxmasj.statemachine.http.outbox.EventTypes.ConnectionDropped;
+import static com.github.thxmasj.statemachine.http.outbox.EventTypes.ConnectionFailed;
 import static com.github.thxmasj.statemachine.http.outbox.EventTypes.ResponseReceived;
+import static com.github.thxmasj.statemachine.http.outbox.EventTypes.TimeoutExpired;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.github.thxmasj.statemachine.Action;
@@ -60,6 +63,7 @@ public final class AtMostOnce<I, RI> implements HttpOutbox<I> {
       Class<I> inputDataType,
       Function<TransitionContext<I>, HttpRequestMessage> messageCreator,
       HttpClient httpForwarder,
+      Duration inflightTimeout,
       com.github.thxmasj.statemachine.EntityModel processModel,
       Callback<Void, Void> onPeerUnavailable,
       Callback<Void, Void> onMissingResponse,
@@ -68,8 +72,8 @@ public final class AtMostOnce<I, RI> implements HttpOutbox<I> {
       Callback<Tuple2<HttpResponseMessage, String>, T1> onInvalidResponseRejection,
       Callback<Tuple2<HttpResponseMessage, String>, T1> onInvalidResponseUnknown, // Rollback
       Function<HttpResponseMessage, Validated<R>> contentParser,
-      Predicate<Tuple2<HttpResponseMessage, R>> successPredicate,
-      Predicate<Tuple2<HttpResponseMessage, String>> invalidResponseRejectionPredicate,
+      Predicate<Tuple2<HttpResponseMessage, R>> isDelivered,
+      Predicate<Tuple2<HttpResponseMessage, String>> isRejectedByInvalidResponse,
       AtLeastOnce<RI> rollbackModel
   ) {
     this.name = name;
@@ -80,18 +84,6 @@ public final class AtMostOnce<I, RI> implements HttpOutbox<I> {
         UUID.fromString("3f22bfef-dcb4-4560-8b88-6b5040433319"),
         inputDataType,
         new DataType<>(new TypeReference<>() {}, inputDataType, HttpRequestMessage.class)
-    );
-    EventType<Void, Void> connectionFailed = BasicEventType.of(
-        "Connection failed",
-        UUID.fromString("14be9085-1f7c-427c-9963-2c72cdc0888f"),
-        Void.class,
-        Void.class
-    );
-    EventType<Void, Void> connectionDropped = BasicEventType.of(
-        "Connection dropped",
-        UUID.fromString("94ba4ab3-3b87-4ceb-9fd3-0e8ab0c21a34"),
-        Void.class,
-        Void.class
     );
     // Intermediate
     EventType<Tuple2<HttpResponseMessage, R>, Tuple2<HttpResponseMessage, R>> validResponse = BasicEventType.of(
@@ -141,7 +133,7 @@ public final class AtMostOnce<I, RI> implements HttpOutbox<I> {
       public Mono<InputEvent<?>> execute(HttpRequestMessage data) {
         return httpForwarder.exchange(data)
             .<InputEvent<?>>map(response -> new InputEvent<>(ResponseReceived, response))
-            .onErrorResume(ConnectException.class, e -> Mono.just(new InputEvent<>(connectionFailed, null)));
+            .onErrorResume(ConnectException.class, e -> Mono.just(new InputEvent<>(ConnectionFailed, null)));
       }
     };
     Map<State, List<TransitionModel<?, ?>>> t = Map.of(
@@ -149,30 +141,42 @@ public final class AtMostOnce<I, RI> implements HttpOutbox<I> {
             onEvent(requestDispatched).to(InFlight)
                 .assemble(messageCreator)
                 .trigger(forward).with(d -> d)
+                .trigger(TimeoutExpired).after(_ -> inflightTimeout)
                 .output(d -> d)
         ),
         InFlight, List.of(
             rollbackModel.requestDispatchedTransition(),
             onPeerUnavailable != null ?
-                onEvent(connectionFailed).to(Failed)
+                onEvent(ConnectionFailed).to(Failed)
                     .assembleInput()
                     .trigger(onPeerUnavailable.eventType())
                     .with(onPeerUnavailable.dataAdapter())
                     .on(processModel)
                     .identifiedBy(entityIdFromSession())
                     .output(Tuple2::t1) :
-                onEvent(connectionFailed).to(Failed)
+                onEvent(ConnectionFailed).to(Failed)
                     .assembleInput()
                     .output(d -> d),
             onMissingResponse != null ?
-                onEvent(connectionDropped).to(Unknown)
+                onEvent(ConnectionDropped).to(Unknown)
                     .assembleInput()
                     .trigger(onMissingResponse.eventType())
                     .with(onMissingResponse.dataAdapter())
                     .on(processModel)
                     .identifiedBy(entityIdFromSession())
                     .output() :
-                onEvent(connectionDropped).to(Unknown)
+                onEvent(ConnectionDropped).to(Unknown)
+                    .assembleInput()
+                    .output(),
+            onMissingResponse != null ?
+                onEvent(TimeoutExpired).to(Unknown)
+                    .assembleInput()
+                    .trigger(onMissingResponse.eventType())
+                    .with(onMissingResponse.dataAdapter())
+                    .on(processModel)
+                    .identifiedBy(entityIdFromSession())
+                    .output() :
+                onEvent(TimeoutExpired).to(Unknown)
                     .assembleInput()
                     .output(),
             onEvent(ResponseReceived).to(Intermediate)
@@ -181,7 +185,7 @@ public final class AtMostOnce<I, RI> implements HttpOutbox<I> {
                 .then(
                     onEvent(validResponse).to(Intermediate)
                         .assembleInput()
-                        .when(successPredicate)
+                        .when(isDelivered)
                         .then(
                             onSuccess != null ?
                                 onEvent(requestAccepted).to(Delivered)
@@ -212,7 +216,7 @@ public final class AtMostOnce<I, RI> implements HttpOutbox<I> {
                 ).otherwise(
                     onEvent(invalidResponse).to(Intermediate)
                         .assembleInput()
-                        .when(invalidResponseRejectionPredicate)
+                        .when(isRejectedByInvalidResponse)
                         .then(
                             onInvalidResponseRejection != null ?
                                 onEvent(invalidResponseAndRejected).to(Failed)
@@ -282,12 +286,7 @@ public final class AtMostOnce<I, RI> implements HttpOutbox<I> {
   enum States implements State {
     Intermediate,
     Begin,
-    InFlight {
-      @Override
-      public Timeout<?> timeout() {
-        return new Timeout<>(Duration.ofSeconds(10), EventTypes.TimeoutExpired, _ -> null);
-      }
-    },
+    InFlight,
     Failed,
     Delivered,
     Unknown

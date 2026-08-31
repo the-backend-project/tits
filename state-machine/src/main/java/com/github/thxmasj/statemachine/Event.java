@@ -135,7 +135,7 @@ public final class Event<T> {
       .configure(DeserializationFeature.ADJUST_DATES_TO_CONTEXT_TIME_ZONE, false)
       .setSerializationInclusion(Include.NON_NULL);
 
-  private static <T> String marshal(T data) {
+  public static <T> String marshal(T data) {
     return switch (data) {
       case String s -> s;
       case Number n -> n.toString();

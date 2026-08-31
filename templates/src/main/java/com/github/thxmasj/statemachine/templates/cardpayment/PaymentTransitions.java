@@ -62,7 +62,6 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEv
 import static com.github.thxmasj.statemachine.templates.cardpayment.validators.ValidatedAmount.validateAmount;
 import static com.github.thxmasj.statemachine.templates.cardpayment.validators.ValidatedTransactionTime.validateTransactionTime;
 
-import com.github.thxmasj.statemachine.IncomingResponseValidator;
 import com.github.thxmasj.statemachine.State;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
@@ -81,6 +80,7 @@ import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Acquir
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthenticationResult;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Authorisation;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Authorisation.MerchantDetails;
+import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Capture;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Merchant;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.PaymentToken;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Refund;
@@ -95,107 +95,109 @@ import java.util.function.Function;
 
 public abstract class PaymentTransitions {
 
-  protected abstract OutgoingRequests.Authentication authentication();
-
-  protected abstract OutgoingRequests.Preauthorisation preauthorisation();
-
-  protected abstract OutgoingRequests.PreauthorisationReversal preauthorisationReversal();
-
-  protected abstract OutgoingRequests.Authorisation authorisation();
-
-  protected abstract OutgoingRequests.AuthorisationReversal authorisationReversal();
-
-  protected abstract OutgoingRequests.RolledBackPreauthorisationRequest rolledBackPreauthorisationRequest();
-
-  protected abstract OutgoingRequests.RolledBackAuthorisationRequest rolledBackAuthorisationRequest();
-
-  protected abstract OutgoingRequests.FailedAuthentication failedAuthentication();
-
-  protected abstract OutgoingRequests.FailedTokenValidation failedTokenValidation();
-
-  protected abstract OutgoingRequests.FailedAuthorisation failedAuthorisation();
-
-  protected abstract OutgoingRequests.DeclinedAuthorisation declinedAuthorisation();
-
-  protected abstract OutgoingRequests.ApprovedPreauthorisation approvedPreauthorisation();
-
-  protected abstract OutgoingRequests.ApprovedCapture approvedCapture();
-
-  protected abstract OutgoingRequests.ApprovedAuthorisation approvedAuthorisation();
-
-  protected abstract OutgoingRequests.Capture capture();
-
-  protected abstract OutgoingRequests.CaptureTooLate captureRequestedTooLate();
-
-  protected abstract OutgoingRequests.RefundAuthorisation refundAuthorisation();
-
-  protected abstract OutgoingRequests.RefundReversal refundReversal();
-
-  protected abstract OutgoingRequests.FailedRefund failedRefund();
-
-  protected abstract OutgoingRequests.ApprovedRefund approvedRefund();
-
-  protected abstract OutgoingRequests.DeclinedRefund declinedRefund();
-
-  protected abstract IncomingResponseValidator<AuthenticationResult> validateAuthenticationResponse();
-
-  protected abstract IncomingResponseValidator<AcquirerResponse> validatePreauthorisationResponse();
-
-  protected abstract IncomingResponseValidator<AcquirerResponse> validatePreauthorisationReversalResponse();
-
-  protected abstract IncomingResponseValidator<AcquirerResponse> validateAuthorisationResponse();
-
-  protected abstract IncomingResponseValidator<AcquirerResponse> validateAuthorisationReversalResponse();
-
-  protected abstract IncomingResponseValidator<AcquirerResponse> validateAuthorisationAdviceResponse();
-
-  protected abstract IncomingResponseValidator<AcquirerResponse> validateCaptureResponse();
-
-  protected abstract IncomingResponseValidator<AcquirerResponse> validateRefundResponse();
-
-  protected abstract IncomingResponseValidator<AcquirerResponse> validateRefundReversalResponse();
+//  protected abstract OutgoingRequests.Authentication authentication();
+//
+//  protected abstract OutgoingRequests.Preauthorisation preauthorisation();
+//
+//  protected abstract OutgoingRequests.PreauthorisationReversal preauthorisationReversal();
+//
+//  protected abstract OutgoingRequests.Authorisation authorisation();
+//
+//  protected abstract OutgoingRequests.AuthorisationReversal authorisationReversal();
+//
+//  protected abstract OutgoingRequests.RolledBackPreauthorisationRequest rolledBackPreauthorisationRequest();
+//
+//  protected abstract OutgoingRequests.RolledBackAuthorisationRequest rolledBackAuthorisationRequest();
+//
+//  protected abstract OutgoingRequests.FailedAuthentication failedAuthentication();
+//
+//  protected abstract OutgoingRequests.FailedTokenValidation failedTokenValidation();
+//
+//  protected abstract OutgoingRequests.FailedAuthorisation failedAuthorisation();
+//
+//  protected abstract OutgoingRequests.DeclinedAuthorisation declinedAuthorisation();
+//
+//  protected abstract OutgoingRequests.ApprovedPreauthorisation approvedPreauthorisation();
+//
+//  protected abstract OutgoingRequests.ApprovedCapture approvedCapture();
+//
+//  protected abstract OutgoingRequests.ApprovedAuthorisation approvedAuthorisation();
+//
+//  protected abstract OutgoingRequests.Capture capture();
+//
+//  protected abstract OutgoingRequests.CaptureTooLate captureRequestedTooLate();
+//
+//  protected abstract OutgoingRequests.RefundAuthorisation refundAuthorisation();
+//
+//  protected abstract OutgoingRequests.RefundReversal refundReversal();
+//
+//  protected abstract OutgoingRequests.FailedRefund failedRefund();
+//
+//  protected abstract OutgoingRequests.ApprovedRefund approvedRefund();
+//
+//  protected abstract OutgoingRequests.DeclinedRefund declinedRefund();
+//
+//  protected abstract IncomingResponseValidator<AuthenticationResult> validateAuthenticationResponse();
+//
+//  protected abstract IncomingResponseValidator<AcquirerResponse> validatePreauthorisationResponse();
+//
+//  protected abstract IncomingResponseValidator<AcquirerResponse> validatePreauthorisationReversalResponse();
+//
+//  protected abstract IncomingResponseValidator<AcquirerResponse> validateAuthorisationResponse();
+//
+//  protected abstract IncomingResponseValidator<AcquirerResponse> validateAuthorisationReversalResponse();
+//
+//  protected abstract IncomingResponseValidator<AcquirerResponse> validateAuthorisationAdviceResponse();
+//
+//  protected abstract IncomingResponseValidator<AcquirerResponse> validateCaptureResponse();
+//
+//  protected abstract IncomingResponseValidator<AcquirerResponse> validateRefundResponse();
+//
+//  protected abstract IncomingResponseValidator<AcquirerResponse> validateRefundReversalResponse();
 
   protected abstract PaymentToken paymentToken(String encryptedAuthenticationData);
 
   public Map<State, List<TransitionModel<?, ?>>> transitions(
       // validateAuthenticationResponse() - no rollback
       AtMostOnce<AuthenticationData, ?> authenticator,
+
       AtLeastOnce<Tuple4<Authorisation, Merchant, AuthenticationResult, PaymentToken>> failedAuthenticationToAcquirer,
       // validateAuthorisationAdviceResponse()
       AtLeastOnce<Tuple4<Authorisation, Merchant, AuthenticationResult, PaymentToken>> failedTokenValidationToAcquirer,
+
       // validateAuthorisationResponse()
       // validateAuthorisationReversalResponse()
       AtMostOnce<Tuple5<Authorisation, Merchant, AcquirerBatchNumber, AuthenticationResult, PaymentToken>, Tuple2<AuthorisationReversalData, AcquirerBatchNumber>> authorisationToAcquirer,
-      //
-      AtLeastOnce<Tuple2<AuthorisationReversalData, BatchNumber>> rolledBackAuthorisationRequestToMerchant,
       // validatePreauthorisationResponse()
       // validatePreauthorisationReversalResponse()
-      AtMostOnce<Tuple4<PaymentEvent.Authorisation, PaymentEvent.Merchant, AuthenticationResult, PaymentToken>, PreauthorisationReversalData> preauthorisationToAcquirer,
+      AtMostOnce<Tuple4<Authorisation, Merchant, AuthenticationResult, PaymentToken>, PreauthorisationReversalData> preauthorisationToAcquirer,
+      //
+      AtLeastOnce<Tuple5<Authorisation, Merchant, AuthenticationResult, Capture, PaymentToken>> captureRequestedTooLateToAcquirer,
+      // validateCaptureResponse()
+      AtLeastOnce<Tuple3<CaptureRequestData, AcquirerBatchNumber, PaymentToken>> captureToAcquirer,
+      // validateRefundResponse()
+      // validateRefundReversalResponse()
+      AtMostOnce<Tuple3<RefundRequestData, AcquirerBatchNumber, PaymentToken>, Tuple2<RefundReversalData, AcquirerBatchNumber>> refundAuthorisationToAcquirer,
+      //
+      AtLeastOnce<Tuple2<AuthorisationReversalData, BatchNumber>> rolledBackAuthorisationRequestToMerchant,
       //
       AtLeastOnce<PreauthorisationReversalData> rolledBackPreauthorisationRequestToMerchant,
       //
-      AtLeastOnce<Tuple3<PaymentEvent.Authorisation, PaymentEvent.Merchant, AcquirerResponse>> approvedPreauthorisationToMerchant,
+      AtLeastOnce<Tuple3<Authorisation, Merchant, AcquirerResponse>> approvedPreauthorisationToMerchant,
       //
-      AtLeastOnce<Tuple3<PaymentEvent.Authorisation, PaymentEvent.Merchant, AuthenticationResult>> failedAuthorisationToMerchant,
+      AtLeastOnce<Tuple3<Authorisation, Merchant, AuthenticationResult>> failedAuthorisationToMerchant,
       //
-      AtLeastOnce<Tuple4<PaymentEvent.Authorisation, PaymentEvent.Merchant, BatchNumber, AcquirerResponse>> approvedAuthorisationToMerchant,
+      AtLeastOnce<Tuple4<Authorisation, Merchant, BatchNumber, AcquirerResponse>> approvedAuthorisationToMerchant,
       //
-      AtLeastOnce<Tuple3<PaymentEvent.Authorisation, PaymentEvent.Merchant, AcquirerResponse>> declinedAuthorisationToMerchant,
+      AtLeastOnce<Tuple3<Authorisation, Merchant, AcquirerResponse>> declinedAuthorisationToMerchant,
       //
-      AtLeastOnce<Tuple4<PaymentEvent.Authorisation, PaymentEvent.Merchant, BatchNumber, AcquirerResponse>> approvedCaptureToMerchant,
+      AtLeastOnce<Tuple4<Authorisation, Merchant, BatchNumber, AcquirerResponse>> approvedCaptureToMerchant,
       //
-      AtLeastOnce<Tuple5<PaymentEvent.Authorisation, PaymentEvent.Merchant, AuthenticationResult, PaymentEvent.Capture, PaymentToken>> captureRequestedTooLateToAcquirer,
-      // validateCaptureResponse()
-      AtLeastOnce<Tuple3<CaptureRequestData, AcquirerBatchNumber, PaymentToken>> captureToAcquirer,
-      //
-      AtLeastOnce<Tuple2<PaymentEvent.Authorisation, PaymentEvent.Merchant>> failedRefundToMerchant,
+      AtLeastOnce<Tuple2<Authorisation, Merchant>> failedRefundToMerchant,
       //
       AtLeastOnce<Tuple2<ApprovedRefundData, BatchNumber>> approvedRefundToMerchant,
       //
-      AtLeastOnce<Tuple3<PaymentEvent.Authorisation, PaymentEvent.Merchant, AcquirerResponse>> declinedRefundToMerchant,
-      // validateRefundResponse()
-      // validateRefundReversalResponse()
-      AtMostOnce<Tuple3<RefundRequestData, AcquirerBatchNumber, PaymentToken>, Tuple2<RefundReversalData, AcquirerBatchNumber>> refundAuthorisationToAcquirer
+      AtLeastOnce<Tuple3<Authorisation, Merchant, AcquirerResponse>> declinedRefundToMerchant
     ) {
     return mergeModels(Map.of(
             Begin, List.of(
@@ -536,7 +538,7 @@ public abstract class PaymentTransitions {
   }
 
   private TransitionModel<?, ?> captureRequestTransition(
-      AtLeastOnce<Tuple5<PaymentEvent.Authorisation, PaymentEvent.Merchant, AuthenticationResult, PaymentEvent.Capture, PaymentToken>> captureRequestedTooLateToAcquirer,
+      AtLeastOnce<Tuple5<PaymentEvent.Authorisation, PaymentEvent.Merchant, AuthenticationResult, Capture, PaymentToken>> captureRequestedTooLateToAcquirer,
       AtLeastOnce<Tuple3<CaptureRequestData, AcquirerBatchNumber, PaymentToken>> captureToAcquirer
   ) {
     return onEvent(CaptureRequest).to(ProcessingCapture)

@@ -122,7 +122,7 @@ public class StateMachine {
     }
     this.clock = clock;
     var jdbcClient = new JDBCClient(dataSource);
-    this.changeState = new ChangeState(entityModels, jdbcClient, schemaName, clock);
+    this.changeState = new ChangeState(jdbcClient, schemaName, clock);
     var eventMappers = eventTypes.entrySet().stream().collect(toMap(Entry::getKey, e -> Mappers.eventMapper(e.getValue(), clock)));
     this.eventsByEntityId = new EventsByEntityId(dataSource, entityModels, schemaName, eventMappers);
     this.eventsByLookupId = new EventsByLookupId(dataSource, entityModels, schemaName, eventMappers);
@@ -346,7 +346,7 @@ public class StateMachine {
       public Completed<T> completed() {return this;}
     }
 
-    record Accepted<T>(Event<T> event, EntityModel entityModel, Duration timeout) implements ProcessResult<T> {
+    record Accepted<T>(Event<T> event, EntityModel entityModel) implements ProcessResult<T> {
       public Accepted<T> accepted() {return this;}
     }
 
@@ -402,11 +402,7 @@ public class StateMachine {
     }
 
     static <T> Accepted<T> accepted(Event<T> event, EntityModel entityModel) {
-      return new Accepted<>(event, entityModel, null);
-    }
-
-    static <T> Accepted<T> accepted(Event<T> event, EntityModel entityModel, Duration timeout) {
-      return new Accepted<>(event, entityModel, timeout);
+      return new Accepted<>(event, entityModel);
     }
 
     default boolean isAccepted() {
@@ -518,6 +514,7 @@ public class StateMachine {
             when occ.stepOutput().isAccepted() && !(occ.previous() instanceof ChangeContext.ChoiceChangeContext<?>) ->
             changes.add(Change.fromAcceptedEvent(occ.stepOutput().accepted()));
         case ChangeContext.OutputChangeContext<?> _ -> {}
+        case ChangeContext.DelayedTriggerChangeContext<?, ?> dtcc -> changes.add(Change.fromDelayedEvent(dtcc.delayedEvent()));
         case ChangeContext.AssembledChangeContext<?> _ -> {}
         case ChangeContext.ChoiceChangeContext<?> _ -> {}
         case ChangeContext.InitialChangeContext<?> _ -> {}
@@ -779,7 +776,7 @@ public class StateMachine {
     System.out.println("Finding log from change context for entity id " + entityId.value() + ":\n" + chainToString(changeContext));
     for (var c = changeContext; c != null; c = c.previous()) {
       if (c instanceof OutputChangeContext<?>(TransitionModelBuilder.ChangeContext<?> previous, ProcessResult<?> stepOutput)
-          && stepOutput instanceof Accepted<?>(Event<?> event, _, _)
+          && stepOutput instanceof Accepted<?>(Event<?> event, _)
           && event.entityId().equals(entityId.value())
           && !(previous instanceof ChoiceChangeContext)) {
         return c.initialChangeContext().log().withNewEvent(event);
@@ -988,12 +985,16 @@ public class StateMachine {
                     change.entityId().value(),
                     change.newSecondaryIds().stream().map(id -> id.model().name() + ":" + id.data()).toList()
                 ),
-                change.timeout(),
+                change.delayedEvent() != null ? change.delayedEvent().after() : null,
                 change.newEvent() != null ? new Listener.Change.Event(
                     change.newEvent().eventNumber(),
                     change.newEvent().type().name(),
                     change.newEvent().data()
-                ) : null,
+                ) : (change.delayedEvent() != null ? new Listener.Change.Event(
+                    change.delayedEvent().eventNumber(),
+                    change.delayedEvent().type().name(),
+                    Event.marshal(change.delayedEvent().data())
+                ) : null),
                 change.newSecondaryIds().stream().map(id -> id.model().name() + ":" + id.data()).toList()
             )
         )
