@@ -1,12 +1,12 @@
 package com.github.thxmasj.statemachine.templates.cardpayment;
 
-import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.CompleteRequest;
-import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.EntityModels.RequestDispatching;
 import static com.github.thxmasj.statemachine.EntitySelector.entityIdFromSession;
 import static com.github.thxmasj.statemachine.EntitySelector.newEntityId;
 import static com.github.thxmasj.statemachine.EntitySelector.secondaryId;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
 import static com.github.thxmasj.statemachine.Tuples.tuple;
+import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.CompleteRequest;
+import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.EntityModels.RequestDispatching;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Aggregate.Settlement;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Identifiers.AcquirerBatchNumber;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Identifiers.BatchNumber;
@@ -30,7 +30,6 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEv
 import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Reconcile;
 import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Timeout;
 
-import com.github.thxmasj.statemachine.IncomingResponseValidator;
 import com.github.thxmasj.statemachine.State;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;
@@ -44,21 +43,20 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 
-public abstract class SettlementTransitions {
+public class SettlementTransitions {
 
-  protected abstract IncomingResponseValidator<AcquirerResponse> validateSettlementResponse();
+  private final Map<State, List<TransitionModel<?, ?>>> transitions;
 
-  protected abstract OutgoingRequests.Reconciliation reconciliation();
+  public Map<State, List<TransitionModel<?, ?>>> transitions() {
+    return transitions;
+  }
 
-  protected abstract OutgoingRequests.ApprovedCutOff approvedCutOff();
-
-  public Map<State, List<TransitionModel<?, ?>>> transitions(
+  public SettlementTransitions(
       // validateSettlementResponse()
       AtLeastOnce<Tuple3<BatchNumber, AcquirerBatchNumber, Merchant>> reconciliationToAcquirer,
-      //
       AtLeastOnce<Tuple2<CutOff, ReconciliationValues>> approvedCutOffToMerchant
   ) {
-    return Map.of(
+    this.transitions = Map.of(
         Begin, List.of(
             // TODO: GetBatchNumber cannot be ReadOnly as it triggers a transition
             onEvent(GetBatchNumber).to(Open)

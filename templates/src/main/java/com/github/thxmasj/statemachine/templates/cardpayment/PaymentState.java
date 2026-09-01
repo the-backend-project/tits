@@ -7,7 +7,9 @@ import java.time.Duration;
 
 public enum PaymentState implements State {
   Begin,
+  Rejected,
   ProcessingAuthentication,
+  AuthenticationFailed,
   ProcessingAuthorisation {@Override public Timeout<?> timeout() {return rollbackAfter(ofMillis(6600), 2);}},
   AuthorisationFailed,
   ProcessingCapture,
