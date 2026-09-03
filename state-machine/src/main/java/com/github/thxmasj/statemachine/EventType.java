@@ -55,6 +55,10 @@ public interface EventType<I, O> {
       this.name = "(" + name(t1Type) + ", " + name(t2Type) + ", " + name(t3Type) + ", " + name(t4Type) + ", " + name(t5Type) + ")";
     }
 
+    public static <T> DataType<T> unknown() {
+      return new DataType<>(null);
+    }
+
     public Class<T> value() {
       return clazz;
     }

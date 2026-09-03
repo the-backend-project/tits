@@ -9,9 +9,13 @@ public sealed interface HttpOutbox<I> extends com.github.thxmasj.statemachine.En
 
   Map<State, List<TransitionModelBuilder.TransitionModel<?, ?>>> transitions();
 
-  default State initialState() {
-    return AtMostOnce.States.Begin;
+  EventType<I, HttpRequestMessage> requestDispatched();
+
+  static AtLeastOnceBuilder.NameStep atLeastOnce() {
+    return AtLeastOnceBuilder.create();
   }
 
-  EventType<I, HttpRequestMessage> requestDispatched();
+  static AtMostOnceBuilder.NameStep atMostOnce() {
+    return AtMostOnceBuilder.create();
+  }
 }

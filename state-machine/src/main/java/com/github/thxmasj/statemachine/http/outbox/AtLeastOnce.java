@@ -71,7 +71,7 @@ public final class AtLeastOnce<I> implements HttpOutbox<I> {
       Class<I> inputDataType,
       Function<TransitionContext<I>, HttpRequestMessage> messageCreator,
       BiFunction<TransitionContext<Void>, HttpRequestMessage, HttpRequestMessage> repeatMessageCreator,
-      HttpClient httpForwarder,
+      HttpClient forwarder,
       Duration inflightTimeout,
       com.github.thxmasj.statemachine.EntityModel processModel,
       Callback<Tuple2<HttpResponseMessage, R>, S> onSuccess,
@@ -107,51 +107,51 @@ public final class AtLeastOnce<I> implements HttpOutbox<I> {
     EventType<Tuple2<HttpResponseMessage, String>, HttpResponseMessage> invalidResponseAndRejected = BasicEventType.of(
         "[invalid response, request rejected]",
         UUID.fromString("402f9bf4-855c-4383-ac54-3375f9d156d1"),
-        (Class<Tuple2<HttpResponseMessage, String>>) null,
+        DataType.unknown(),
         HttpResponseMessage.class
     );
     EventType<Tuple2<HttpResponseMessage, R>, HttpResponseMessage> requestReceivedAndRejected = BasicEventType.of(
         "[request rejected]",
         UUID.fromString("5362567f-792e-4f8a-81d6-3b201d44d3f0"),
-        (Class<Tuple2<HttpResponseMessage, R>>) null,
+        DataType.unknown(),
         HttpResponseMessage.class
     );
     EventType<Tuple2<HttpResponseMessage, R>, HttpResponseMessage> requestReceivedAndRejectedTransiently = BasicEventType.of(
         "[request rejected transiently]",
         UUID.fromString("bcdf93f4-657d-4b26-b165-74279a5ea477"),
-        (Class<Tuple2<HttpResponseMessage, R>>) null,
+        DataType.unknown(),
         HttpResponseMessage.class
     );
     EventType<Tuple2<HttpResponseMessage, R>, HttpResponseMessage> requestReceivedAndRejectedPermanently = BasicEventType.of(
         "[request rejected permanently]",
         UUID.fromString("94b1169f-8e09-45d5-bdff-cae9b146db30"),
-        (Class<Tuple2<HttpResponseMessage, R>>) null,
+        DataType.unknown(),
         HttpResponseMessage.class
     );
     EventType<Tuple2<HttpResponseMessage, String>, HttpResponseMessage> invalidResponseAndRejectedPermanently = BasicEventType.of(
         "[invalid response, request rejected permanently]",
         UUID.fromString("94eca92d-a229-4aa9-bc02-48260fa1bbf0"),
-        (Class<Tuple2<HttpResponseMessage, String>>) null,
+        DataType.unknown(),
         HttpResponseMessage.class
     );
     EventType<Tuple2<HttpResponseMessage, String>, HttpResponseMessage> invalidResponseAndRejectedTransiently = BasicEventType.of(
         "[invalid response, request rejected transiently]",
         UUID.fromString("9f121370-4b8d-4a08-a7ef-30555c1e1f48"),
-        (Class<Tuple2<HttpResponseMessage, String>>) null,
+        DataType.unknown(),
         HttpResponseMessage.class
     );
     // Leaf
     EventType<Tuple2<HttpResponseMessage, R>, HttpResponseMessage> requestAccepted = BasicEventType.of(
         "[request accepted]",
         UUID.fromString("0f8fe1c2-2d29-406c-87b5-f9f43a03a54f"),
-        (Class<Tuple2<HttpResponseMessage, R>>) null,
+        DataType.unknown(),
         HttpResponseMessage.class
     );
     // Leaf
     EventType<Tuple2<HttpResponseMessage, String>, HttpResponseMessage> invalidResponseAndUnknown = BasicEventType.of(
         "[invalid response, unknown status]",
         UUID.fromString("ecfb2c9d-178b-4c3e-b09e-c580e09b01b4"),
-        (Class<Tuple2<HttpResponseMessage, String>>) null,
+        DataType.unknown(),
         HttpResponseMessage.class
     );
     var attemptsExhausted = BasicEventType.of("Attempts exhausted", UUID.fromString("19a29ca5-6021-41e7-b247-74fd3b8389dd"));
@@ -160,7 +160,7 @@ public final class AtLeastOnce<I> implements HttpOutbox<I> {
       @Override public String name() {return "Forward";}
       @Override
       public Mono<InputEvent<?>> execute(HttpRequestMessage data) {
-        return httpForwarder.exchange(data)
+        return forwarder.exchange(data)
             .<InputEvent<?>>map(response -> new InputEvent<>(ResponseReceived, response))
             .onErrorResume(ConnectException.class, _ -> Mono.just(new InputEvent<>(ConnectionFailed, null)));
       }
@@ -310,6 +310,11 @@ public final class AtLeastOnce<I> implements HttpOutbox<I> {
   @Override
   public UUID id() {
     return id;
+  }
+
+  @Override
+  public State initialState() {
+    return States.Begin;
   }
 
   @Override

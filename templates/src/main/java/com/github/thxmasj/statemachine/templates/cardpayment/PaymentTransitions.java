@@ -21,6 +21,7 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.Identifiers.
 import static com.github.thxmasj.statemachine.templates.cardpayment.Identifiers.MerchantId;
 import static com.github.thxmasj.statemachine.templates.cardpayment.MerchantEvent.Get;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AcquirerDeclined;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthenticationUnavailable;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthorisationApproved;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Cancel;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.CaptureApproved;
@@ -82,6 +83,8 @@ import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Authen
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Authorisation;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Authorisation.MerchantDetails;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Capture;
+import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.FailedAuthenticationResult;
+import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.FailedAuthenticationResult.Status;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Merchant;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.PaymentToken;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Refund;
@@ -105,12 +108,10 @@ public class PaymentTransitions {
 
   public PaymentTransitions(
       Function<String, PaymentToken> tokenDecrypter,
-      // validateAuthenticationResponse() - no rollback
-      AtMostOnce<AuthenticationData, ?> authenticator,
-
-      AtLeastOnce<Tuple4<Authorisation, Merchant, AuthenticationResult, PaymentToken>> failedAuthenticationToAcquirer,
+      AtMostOnce<AuthenticationData, Void> authenticator,
+      AtLeastOnce<Tuple4<Authorisation, Merchant, FailedAuthenticationResult, PaymentToken>> failedAuthenticationToAcquirer,
       // validateAuthorisationAdviceResponse()
-      AtLeastOnce<Tuple4<Authorisation, Merchant, AuthenticationResult, PaymentToken>> failedTokenValidationToAcquirer,
+      AtLeastOnce<Tuple4<Authorisation, Merchant, FailedAuthenticationResult, PaymentToken>> failedTokenValidationToAcquirer,
 
       // validateAuthorisationResponse()
       // validateAuthorisationReversalResponse()
@@ -214,44 +215,87 @@ public class PaymentTransitions {
                     )
             ),
             ProcessingAuthentication, List.of(
-                onEvent(InvalidAuthenticationToken).to(AuthenticationFailed)
-                    .assemble(c -> tuple(c.input(), c.eventReference()))
+                onEvent(AuthenticationUnavailable).to(AuthenticationFailed)
+                    .assemble(c -> c.eventReference())
                     .trigger(CompleteInvalidRequest)
-                    .with(d -> tuple("Invalid authentication token", d.t2()))
-                    .on(RequestDispatching)
-                    .identifiedBy(entityIdFromSession())
-                    .output(),
-                onEvent(InvalidPaymentTokenStatus).to(AuthenticationFailed)
-                    .assemble(c -> tuple(c.input(), c.eventReference()))
-                    .trigger(CompleteInvalidRequest)
-                    .with(d -> tuple("Payment token is inactive", d.t2()))
+                    .with(d -> tuple("Authentication unavailable", d))
                     .on(RequestDispatching)
                     .identifiedBy(entityIdFromSession())
                     .output(),
                 onEvent(PaymentEvent.AuthenticationFailed).to(AuthenticationFailed)
-                    .assemble(c -> tuple(c.log().one(ValidPaymentRequest).t1(), c.log().one(ValidPaymentRequest).t2(), c.input(), c.eventReference()))
-                    //.trigger(failedAuthentication()).with(d -> tuple(d.t1(), d.t2(), d.t3(), tokenDecrypter.apply(d.t1().authenticationData()))).to(Acquirer).guaranteed()
-                    .trigger(failedAuthenticationToAcquirer.requestDispatched()).with(d -> tuple(d.t1(), d.t2(), d.t3(), tokenDecrypter.apply(d.t1().authenticationData()))).on(failedAuthenticationToAcquirer).identifiedBy(newEntityId())
-                    .trigger(CompleteInvalidRequest)
-                    .with(d -> tuple("Authentication failed", d.t1().t4()))
-                    .on(RequestDispatching)
-                    .identifiedBy(entityIdFromSession())
-                    .output(),
-                onEvent(InvalidPaymentTokenOwnership).to(AuthenticationFailed)
-                    .assemble(c -> tuple(
-                        c.log().one(ValidPaymentRequest).t1(),
-                        c.log().one(ValidPaymentRequest).t2(),
-                        c.input(),
-                        tokenDecrypter.apply(c.log().one(ValidPaymentRequest).t1().authenticationData()),
-                        c.eventReference()
-                    ))
-//                    .trigger(failedTokenValidation()).with(d -> tuple(d.t1(), d.t2(), d.t3(), d.t4())).to(Acquirer).guaranteed().responseValidator(validateAuthorisationAdviceResponse())
-                    .trigger(failedTokenValidationToAcquirer.requestDispatched()).with(d -> tuple(d.t1(), d.t2(), d.t3(), d.t4())).on(failedTokenValidationToAcquirer).identifiedBy(newEntityId())
-                    .trigger(CompleteInvalidRequest)
-                    .with(d -> tuple("Payment token is not accessible", d.t1().t5()))
-                    .on(RequestDispatching)
-                    .identifiedBy(entityIdFromSession())
-                    .output(),
+                    .assemble(c -> tuple(c.input(), c.eventReference()))
+                    .when(d -> d.t1().status() == Status.InvalidAuthenticationToken)
+                    .then(
+                        onEvent(InvalidAuthenticationToken).to(AuthenticationFailed)
+                            .assemble(c -> c.eventReference())
+                            .trigger(CompleteInvalidRequest)
+                            .with(d -> tuple("Invalid authentication token", d))
+                            .on(RequestDispatching)
+                            .identifiedBy(entityIdFromSession())
+                            .output(),
+                        _ -> null
+                    )
+                    .when(d -> d.t1().status() == Status.InvalidPaymentTokenStatus)
+                    .then(
+                        onEvent(InvalidPaymentTokenStatus).to(AuthenticationFailed)
+                            .assemble(c -> c.eventReference())
+                            .trigger(CompleteInvalidRequest)
+                            .with(d -> tuple("Payment token is inactive", d))
+                            .on(RequestDispatching)
+                            .identifiedBy(entityIdFromSession())
+                            .output(),
+                        _ -> null
+                    )
+                    .when(d -> d.t1().status() == Status.InvalidAuthentication)
+                    .then(
+                        onEvent(PaymentEvent.InvalidAuthentication).to(AuthenticationFailed)
+                            .assemble(c -> tuple(
+                                c.log().one(ValidPaymentRequest).t1(),
+                                c.log().one(ValidPaymentRequest).t2(),
+                                c.input(),
+                                c.eventReference()
+                            ))
+                            .trigger(failedAuthenticationToAcquirer.requestDispatched())
+                            .with(d -> tuple(d.t1(), d.t2(), d.t3(), tokenDecrypter.apply(d.t1().authenticationData())))
+                            .on(failedAuthenticationToAcquirer)
+                            .identifiedBy(newEntityId())
+                            .trigger(CompleteInvalidRequest)
+                            .with(d -> tuple("Authentication failed", d.t1().t4()))
+                            .on(RequestDispatching)
+                            .identifiedBy(entityIdFromSession())
+                            .output(),
+                        d -> d.t1()
+                    )
+                    .when(d -> d.t1().status() == Status.InvalidPaymentTokenOwnership)
+                    .then(
+                        onEvent(InvalidPaymentTokenOwnership).to(AuthenticationFailed)
+                            .assemble(c -> tuple(
+                                c.log().one(ValidPaymentRequest).t1(),
+                                c.log().one(ValidPaymentRequest).t2(),
+                                c.input(),
+                                tokenDecrypter.apply(c.log().one(ValidPaymentRequest).t1().authenticationData()),
+                                c.eventReference()
+                            ))
+                            .trigger(failedTokenValidationToAcquirer.requestDispatched()).with(d -> tuple(d.t1(), d.t2(), d.t3(), d.t4())).on(failedTokenValidationToAcquirer).identifiedBy(newEntityId())
+                            .trigger(CompleteInvalidRequest)
+                            .with(d -> tuple("Payment token is not accessible", d.t1().t5()))
+                            .on(RequestDispatching)
+                            .identifiedBy(entityIdFromSession())
+                            .output(),
+                        d -> d.t1()
+                    )
+                    .otherwise(
+                        // TODO: We could avoid this if we allowed a switch over Status.
+                        //       How can we maintain the visual model/diagram for that?
+                        onEvent(AuthenticationUnavailable).to(AuthenticationFailed)
+                            .assemble(c -> c.eventReference())
+                            .trigger(CompleteInvalidRequest)
+                            .with(d -> tuple("Unknown authentication status", d))
+                            .on(RequestDispatching)
+                            .identifiedBy(entityIdFromSession())
+                            .output(),
+                        _ -> null
+                    ),
                 onEvent(PaymentEvent.Authorisation).to(ProcessingAuthorisation)
                     .assemble((input, log) -> tuple(log.one(ValidPaymentRequest), input))
                     .when(d -> d.t1().t1().capture()).then(

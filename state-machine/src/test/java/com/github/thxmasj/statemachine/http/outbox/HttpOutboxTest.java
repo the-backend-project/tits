@@ -70,6 +70,26 @@ public class HttpOutboxTest {
         .thenCancel().verify();
   }
 
+  @Test
+  public void successfulExchangeWithoutRollback() {
+    var model = ProcessModelWithoutRollback.create();
+    Init.addOkContext(server, model.path());
+    StepVerifier.create(model.machine().onEvent(trigger(model.doProcess(), model.process())))
+        .assertNext(event -> assertEquals(model.doProcess(), event.type()))
+        .assertNext(event -> assertEquals(model.processed(), event.type()))
+        .thenCancel().verify();
+  }
+
+  @Test
+  public void failedExchangeWithoutRollback() {
+    var model = ProcessModelWithoutRollback.create();
+    Init.addBadRequestContext(server, model.path());
+    StepVerifier.create(model.machine().onEvent(trigger(model.doProcess(), model.process())))
+        .assertNext(event -> assertEquals(model.doProcess(), event.type()))
+        .assertNext(event -> assertEquals(model.failed(), event.type()))
+        .thenCancel().verify();
+  }
+
   record ProcessModel(
       EntityModel process,
       EventType<Void, Void> doProcess,
@@ -84,42 +104,39 @@ public class HttpOutboxTest {
       EventType<Void, Void> processed = BasicEventType.of("Processed", UUID.randomUUID());
       EventType<Void, Void> failed = BasicEventType.of("Failed", UUID.randomUUID());
       String path = "/" + UUID.randomUUID();
-      HttpOutbox<Void> Exchange = new AtMostOnce<>(
-          "Exchange",
-          UUID.fromString("a3778c63-144f-4748-9e8b-cc10ee20db3f"),
-          Void.class,
-          _ -> requestMessage(path),
-          new NettyHttpClient(new NettyHttpClientBuilder().build()),
-          Duration.ofSeconds(10),
-          process,
-          new Callback<>(failed, _ -> null),
-          new Callback<>(failed, _ -> null),
-          new Callback<>(processed, _ -> null),
-          new Callback<>(failed, _ -> null),
-          new Callback<>(failed, _ -> null),
-          new Callback<>(failed, _ -> null),
-          _ -> valid((Void)null), // contentParser
-          r -> r.t1().statusCode() >= 200 && r.t1().statusCode() <= 299, // successPredicate
-          r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499, // isRejectedByInvalidResponse
-          new AtLeastOnce<>(
-              "ExchangeRollback",
-              UUID.fromString("fd4959b4-5c14-4b7a-8ea5-b559b94f803c"),
-              Void.class,
-              _ -> requestMessage("/rollback"),
-              (_, o) -> o,
-              new NettyHttpClient(new NettyHttpClientBuilder().build()),
-              null, // processModel
-              null, // onSuccess
-              null, // onFailure
-              _ -> valid(null), // contentParser
-              r -> r.t1().statusCode() >= 200 && r.t1().statusCode() <= 299, // isDelivered
-              r -> r.t1().statusCode() >= 500 && r.t1().statusCode() <= 599, // isFailureTransient
-              r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499, // isRejectedByInvalidResponse
-              r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499, // isFailureByInvalidResponse
-              c -> Duration.between(c.enqueueTime(), c.now()).compareTo(Duration.ofHours(5)) < 0,
-              c -> new DelaySpecification(Duration.ofSeconds(10), Duration.ofMinutes(10), Duration.ofHours(5), 1.5).calculateDelay(c.attemptNumber())
+      HttpOutbox<Void> Exchange = HttpOutbox.atMostOnce()
+          .name("Exchange")
+          .id(UUID.fromString("a3778c63-144f-4748-9e8b-cc10ee20db3f"))
+          .inputDataType(Void.class)
+          .messageCreator(_ -> requestMessage(path))
+          .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
+          .processModel(process)
+          .onPeerUnavailable(failed)
+          .onMissingResponse(failed)
+          .onInvalidResponseRejection(failed)
+          .onInvalidResponseUnknown(failed)
+          .contentParser(_ -> valid((Void) null))
+          .onSuccess(processed)
+          .onFailure(failed)
+          .isDelivered(r -> r.t1().statusCode() >= 200 && r.t1().statusCode() <= 299)
+          .isRejectedByInvalidResponse(r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499)
+          .rollbackModel(HttpOutbox.atLeastOnce()
+              .name("ExchangeRollback")
+              .id(UUID.fromString("fd4959b4-5c14-4b7a-8ea5-b559b94f803c"))
+              .inputDataType(Void.class)
+              .messageCreator(_ -> requestMessage("/rollback"))
+              .repeatMessageCreator((_, o) -> o)
+              .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
+              .contentParser(_ -> valid(null))
+              .isDelivered(r -> r.t1().statusCode() >= 200 && r.t1().statusCode() <= 299)
+              .isFailureTransient(r -> r.t1().statusCode() >= 500 && r.t1().statusCode() <= 599)
+              .isRejectedByInvalidResponse(r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499)
+              .isFailureByInvalidResponseTransient(r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499)
+              .isAttemptAvailable(c -> Duration.between(c.enqueueTime(), c.now()).compareTo(Duration.ofHours(5)) < 0)
+              .backoffAlgorithm(c -> new DelaySpecification(Duration.ofSeconds(10), Duration.ofMinutes(10), Duration.ofHours(5), 1.5).calculateDelay(c.attemptNumber()))
+              .build()
           )
-      );
+          .build();
 
       Map<State, List<TransitionModel<?, ?>>> processTransitions = Map.of(
           States.Begin, List.of(
@@ -142,6 +159,63 @@ public class HttpOutboxTest {
           List.of(Exchange)
       );
       return new ProcessModel(process, doProcess, processed, failed, machine, path);
+    }
+
+  }
+
+  record ProcessModelWithoutRollback(
+      EntityModel process,
+      EventType<Void, Void> doProcess,
+      EventType<Void, Void> processed,
+      EventType<Void, Void> failed,
+      StateMachine machine,
+      String path
+  ) {
+    static ProcessModelWithoutRollback create() {
+      EntityModel process = EntityModel.of("Process", UUID.randomUUID(), States.Begin);
+      EventType<Void, Void> doProcess = BasicEventType.of("Do process", UUID.randomUUID());
+      EventType<Void, Void> processed = BasicEventType.of("Processed", UUID.randomUUID());
+      EventType<Void, Void> failed = BasicEventType.of("Failed", UUID.randomUUID());
+      String path = "/" + UUID.randomUUID();
+      HttpOutbox<Void> Exchange = HttpOutbox.atMostOnce()
+          .name("ExchangeWithoutRollback")
+          .id(UUID.fromString("a3778c63-144f-4748-9e8b-cc10ee20db3f"))
+          .inputDataType(Void.class)
+          .messageCreator(_ -> requestMessage(path))
+          .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
+          .processModel(process)
+          .onPeerUnavailable(failed)
+          .onMissingResponse(failed)
+          .onInvalidResponseRejection(failed)
+          .onInvalidResponseUnknown(failed)
+          .contentParser(_ -> valid((Void) null))
+          .onSuccess(processed)
+          .onFailure(failed)
+          .isDelivered(r -> r.t1().statusCode() >= 200 && r.t1().statusCode() <= 299)
+          .isRejectedByInvalidResponse(r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499)
+          .build();
+
+      Map<State, List<TransitionModel<?, ?>>> processTransitions = Map.of(
+          States.Begin, List.of(
+              onEvent(doProcess).to(States.WaitingForResponse)
+                  .trigger(Exchange.requestDispatched()).on(Exchange).identifiedBy(newEntityId())
+                  .output()
+          ),
+          States.WaitingForResponse, List.of(
+              onEvent(processed).to(States.Done)
+                  .output(),
+              onEvent(failed).to(States.Done)
+                  .output()
+          )
+      );
+
+      var machine = Init.stateMachine(
+          process,
+          processTransitions,
+          List.of(),
+          List.of(Exchange)
+      );
+      return new ProcessModelWithoutRollback(process, doProcess, processed, failed, machine, path);
     }
 
   }

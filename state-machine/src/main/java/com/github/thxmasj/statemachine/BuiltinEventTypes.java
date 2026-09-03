@@ -9,6 +9,7 @@ import java.util.UUID;
 
 public interface BuiltinEventTypes {
 
+  EventType<EntityModel, EntityModel> ServiceUnavailable = of("ServiceUnavailable", UUID.fromString("f91e560f-ba7b-4e14-976a-82e592a627f5"), EntityModel.class);
   EventType<String, String>
     InvalidResponse = of("InvalidResponse", UUID.fromString("450679ab-bc60-46cb-bb97-d171c34c2750"), String.class);
   EventType<String, Void>
@@ -18,6 +19,7 @@ public interface BuiltinEventTypes {
   EventType<Void, State> Status = new ReadOnly<>("Status", UUID.fromString("324dc75d-e83d-4b9b-8ad9-b3521184def6"), Void.class, State.class);
 
   List<EventType<?, ?>> ALL = List.of(
+      ServiceUnavailable,
       RequestUndelivered,
       InvalidResponse,
       Rollback,

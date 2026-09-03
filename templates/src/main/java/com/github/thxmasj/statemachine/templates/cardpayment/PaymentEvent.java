@@ -40,7 +40,16 @@ public interface PaymentEvent {
       String authenticationReference,
       String authenticationProviderId,
       String cryptogram
-  ) {}
+  ) {
+  }
+
+  record FailedAuthenticationResult(
+      String authenticationReference,
+      String authenticationProviderId,
+      Status status
+  ) {
+    public enum Status {InvalidPaymentTokenOwnership, InvalidAuthenticationToken, InvalidAuthentication, InvalidPaymentTokenStatus}
+  }
 
   record AcquirerAuthorisation(
     AuthenticationResult authenticationResult,
@@ -102,12 +111,14 @@ public interface PaymentEvent {
   EventType<Void, Void> InsufficientMerchantDetails = BasicEventType.of("Insufficient merchant details", UUID.fromString("a7f228ba-f5d2-43ab-bfc1-531954d223e7"), Void.class);
   EventType<ValidatedAmount.Invalid, ValidatedAmount.Invalid> InvalidAmount = BasicEventType.of("Invalid amount", UUID.fromString("c19e6784-4059-4216-b67b-087ca5f2e764"), ValidatedAmount.Invalid.class);
   EventType<ValidatedTransactionTime.Invalid, ValidatedTransactionTime.Invalid> InvalidTransactionTime = BasicEventType.of("Invalid transaction time", UUID.fromString("9db62961-6fc5-48e1-95fe-0157d62f309c"), ValidatedTransactionTime.Invalid.class);
-  EventType<AuthenticationResult, Void> AuthenticationFailed = BasicEventType.of("Authentication failed", UUID.fromString("ad1dc496-ecdd-4871-9a87-715df7b30aac"), AuthenticationResult.class, Void.class);
+  EventType<Void, Void> AuthenticationUnavailable = BasicEventType.of("Authentication unavailable", UUID.fromString("5c0450f5-6254-4b8e-91c8-bca833486d16"));
+  EventType<FailedAuthenticationResult, Void> AuthenticationFailed = BasicEventType.of("Authentication failed", UUID.fromString("601f3431-4f47-41e7-ba06-6d0cbbcd9a87"), FailedAuthenticationResult.class, Void.class);
+  EventType<FailedAuthenticationResult, Void> InvalidAuthentication = BasicEventType.of("Invalid authentication", UUID.fromString("ad1dc496-ecdd-4871-9a87-715df7b30aac"), FailedAuthenticationResult.class, Void.class);
   EventType<AuthenticationResult, AcquirerAuthorisation> Preauthorisation = BasicEventType.of("Pre-authorization", UUID.fromString("8327e33f-65bd-42f8-90da-8ba977c979a1"), AuthenticationResult.class, AcquirerAuthorisation.class);
   EventType<AcquirerResponse, AcquirerResponse> PreauthorisationApproved = BasicEventType.of("Pre-authorization approved", UUID.fromString("ef315a8e-b9e7-4434-8710-4d238e6ac9c0"), AcquirerResponse.class);
-  EventType<AuthenticationResult, Void> InvalidPaymentTokenOwnership = BasicEventType.of("Invalid payment token ownership", UUID.fromString("778511db-70c0-443b-963a-4e614040256f"), AuthenticationResult.class, Void.class);
+  EventType<FailedAuthenticationResult, Void> InvalidPaymentTokenOwnership = BasicEventType.of("Invalid payment token ownership", UUID.fromString("778511db-70c0-443b-963a-4e614040256f"), FailedAuthenticationResult.class, Void.class);
   EventType<AuthenticationResult, Void> InvalidPaymentTokenStatus = BasicEventType.of("Invalid payment token status", UUID.fromString("0e15a3a7-ee6d-4ddd-9eaa-5d98bf42d635"), AuthenticationResult.class, Void.class);
-  EventType<AuthenticationResult, Void> InvalidAuthenticationToken = BasicEventType.of("Invalid authentication token", UUID.fromString("de24bd56-5ad1-4b1e-b567-8eb719c0ff51"), AuthenticationResult.class, Void.class);
+  EventType<Void, Void> InvalidAuthenticationToken = BasicEventType.of("Invalid authentication token", UUID.fromString("de24bd56-5ad1-4b1e-b567-8eb719c0ff51"));
   EventType<AuthenticationResult, AcquirerAuthorisation> Authorisation = BasicEventType.of("Authorization", UUID.fromString("7d36acf7-18b7-409f-bb8f-19a5f73d02c8"), AuthenticationResult.class, AcquirerAuthorisation.class);
   EventType<AcquirerResponse, AcquirerResponse> AuthorisationApproved = BasicEventType.of("Authorization approved", UUID.fromString("4a3821a0-dbba-448b-8175-c40e4a771df4"), AcquirerResponse.class);
   EventType<AcquirerResponse, AcquirerResponse> AuthorisationAdviceApproved = BasicEventType.of("Authorization advice approved", UUID.fromString("c1fd88f3-2821-4c4d-bee1-52750f10f554"), AcquirerResponse.class);
