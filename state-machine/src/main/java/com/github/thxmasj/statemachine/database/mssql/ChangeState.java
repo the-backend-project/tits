@@ -17,7 +17,7 @@ import com.github.thxmasj.statemachine.database.Client.Query.Builder;
 import com.github.thxmasj.statemachine.database.Client.UniqueIndexConstraintViolation;
 import com.github.thxmasj.statemachine.database.EventAlreadyExists;
 import com.github.thxmasj.statemachine.database.SecondaryIdAlreadyExists;
-import com.github.thxmasj.statemachine.http.outbox.HttpOutbox;
+import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest;
 import java.time.Clock;
 import java.time.ZonedDateTime;
 import java.util.List;
@@ -202,6 +202,7 @@ public class ChangeState {
   public record OutboxElement(int changeIndex, int messageIndex, UUID requestId, byte[] elementId) {}
 
   public Flux<OutboxElement> execute(ZonedDateTime timestamp, String correlationId, List<Change> changes) {
+    System.out.println("ChangeState: Changes to store:\n" + changes.stream().map(c -> "  |" + c.toString()).collect(joining("\n")));
     String sql =
         """
         SET XACT_ABORT ON;
@@ -279,7 +280,7 @@ public class ChangeState {
     //
     // 'Normal' event
     //
-    if (event != null && !(entityModel instanceof HttpOutbox)) {
+    if (event != null) {
       sql +=
           """
           DELETE [{schema}].[Timeout] FROM [{schema}].[Timeout] WITH (INDEX([ixEntityId]))

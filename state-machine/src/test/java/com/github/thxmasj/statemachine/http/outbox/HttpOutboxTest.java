@@ -1,15 +1,22 @@
 package com.github.thxmasj.statemachine.http.outbox;
 
+import static com.github.thxmasj.statemachine.BuiltinEventTypes.Rollback;
+import static com.github.thxmasj.statemachine.EntitySelector.entityId;
 import static com.github.thxmasj.statemachine.EntitySelector.newEntityId;
 import static com.github.thxmasj.statemachine.EventTrigger.trigger;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
+import static com.github.thxmasj.statemachine.TransitionModelBuilder.assemble;
+import static com.github.thxmasj.statemachine.Validated.invalid;
 import static com.github.thxmasj.statemachine.Validated.valid;
 import static com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Method.POST;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import com.github.thxmasj.statemachine.BasicEventType;
+import com.github.thxmasj.statemachine.BasicEventType.Rollback.Data;
 import com.github.thxmasj.statemachine.DelaySpecification;
 import com.github.thxmasj.statemachine.EntityModel;
+import com.github.thxmasj.statemachine.Event;
 import com.github.thxmasj.statemachine.EventType;
 import com.github.thxmasj.statemachine.Init;
 import com.github.thxmasj.statemachine.State;
@@ -71,6 +78,36 @@ public class HttpOutboxTest {
   }
 
   @Test
+  public void unknownExchange() {
+    unknownExchange(ProcessModel.create());
+  }
+
+  private Event<?> unknownExchange(ProcessModel model) {
+    Init.addInternalServerErrorContext(server, model.path());
+    var events = model.machine().onEvent(trigger(model.doProcess(), model.process()))
+        .take(2)
+        .collectList()
+        .block();
+    assertNotNull(events);
+    assertEquals(model.doProcess(), events.get(0).type());
+    assertEquals(model.unknown(), events.get(1).type());
+    return events.get(1);
+  }
+
+  @Test
+  public void rollbackOfUnknownExchange() {
+    var model = ProcessModel.create();
+    Init.addOkContext(server, "/rollback");
+    var unknown = unknownExchange(model);
+    var rollback = model.machine().onEvent(
+        trigger(Rollback, model.process(), unknown.entityId()),
+        new Data(0, unknown.eventNumber(), "Technical")
+    ).blockFirst();
+    assertNotNull(rollback);
+    assertEquals(Rollback, rollback.type());
+  }
+
+  @Test
   public void successfulExchangeWithoutRollback() {
     var model = ProcessModelWithoutRollback.create();
     Init.addOkContext(server, model.path());
@@ -92,39 +129,41 @@ public class HttpOutboxTest {
 
   record ProcessModel(
       EntityModel process,
-      EventType<Void, Void> doProcess,
+      EventType<Void, UUID> doProcess,
       EventType<Void, Void> processed,
       EventType<Void, Void> failed,
+      EventType<Void, Void> missingResponse,
+      EventType<Void, Void> unknown,
       StateMachine machine,
       String path
   ) {
     static ProcessModel create() {
-      EntityModel process = EntityModel.of("Process", UUID.randomUUID(), States.Begin);
-      EventType<Void, Void> doProcess = BasicEventType.of("Do process", UUID.randomUUID());
-      EventType<Void, Void> processed = BasicEventType.of("Processed", UUID.randomUUID());
-      EventType<Void, Void> failed = BasicEventType.of("Failed", UUID.randomUUID());
+      EntityModel process = EntityModel.of("Process", UUID.fromString("dda0cc10-3356-4522-8527-ca4f7006c566"), States.Begin);
+      EventType<Void, UUID> doProcess = BasicEventType.of("Do process", UUID.fromString("dbcf351c-b50e-4789-80e9-f52e2be789cd"), Void.class, UUID.class);
+      EventType<Void, Void> processed = BasicEventType.of("Processed", UUID.fromString("433d18b2-8429-4615-aeb0-5de2240413ea"));
+      EventType<Void, Void> failed = BasicEventType.of("Failed", UUID.fromString("0f4b6aea-a9c2-4b33-b315-844a4e32e45b"));
+      EventType<Void, Void> missingResponse = BasicEventType.of("Missing response", UUID.fromString("7cd9c1f1-1ce0-4249-a709-5e11ea2f6404"));
+      EventType<Void, Void> unknown = BasicEventType.of("Unknown", UUID.fromString("46cf31dd-56ed-41cb-b2ca-501930a23e44"));
       String path = "/" + UUID.randomUUID();
-      HttpOutbox<Void> Exchange = HttpOutbox.atMostOnce()
+      AtMostOnce<Void, Void> Exchange = HttpOutboxRequest.atMostOnce()
           .name("Exchange")
           .id(UUID.fromString("a3778c63-144f-4748-9e8b-cc10ee20db3f"))
-          .inputDataType(Void.class)
-          .messageCreator(_ -> requestMessage(path))
+          .<Void>messageCreator(_ -> requestMessage(path))
           .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
           .processModel(process)
           .onPeerUnavailable(failed)
-          .onMissingResponse(failed)
+          .onMissingResponse(missingResponse)
           .onInvalidResponseRejection(failed)
-          .onInvalidResponseUnknown(failed)
-          .contentParser(_ -> valid((Void) null))
+          .onInvalidResponseUnknown(unknown)
+          .contentParser(message -> message.statusCode() == 200 && message.body() == null ? valid((Void) null) : invalid("Invalid response"))
           .onSuccess(processed)
           .onFailure(failed)
           .isDelivered(r -> r.t1().statusCode() >= 200 && r.t1().statusCode() <= 299)
           .isRejectedByInvalidResponse(r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499)
-          .rollbackModel(HttpOutbox.atLeastOnce()
+          .rollbackModel(HttpOutboxRequest.atLeastOnce()
               .name("ExchangeRollback")
               .id(UUID.fromString("fd4959b4-5c14-4b7a-8ea5-b559b94f803c"))
-              .inputDataType(Void.class)
-              .messageCreator(_ -> requestMessage("/rollback"))
+              .<Void>messageCreator(_ -> requestMessage("/rollback"))
               .repeatMessageCreator((_, o) -> o)
               .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
               .contentParser(_ -> valid(null))
@@ -142,14 +181,18 @@ public class HttpOutboxTest {
           States.Begin, List.of(
               onEvent(doProcess).to(States.WaitingForResponse)
                   .trigger(Exchange.requestDispatched()).on(Exchange).identifiedBy(newEntityId())
-                  .output()
+                  .reversible(
+                      assemble((log, _) -> log.one(doProcess))
+                          .trigger(Exchange.rollbackDispatched()).on(Exchange).identifiedBy(d -> entityId(d))
+                  )
+                  .output(d -> d.t2().accepted().event().entityId())
           ),
           States.WaitingForResponse, List.of(
-              onEvent(processed).to(States.Done)
-                  .output(),
-              onEvent(failed).to(States.Done)
-                  .output()
-          )
+              onEvent(processed).to(States.Done).output(),
+              onEvent(failed).to(States.Done).output(),
+              onEvent(unknown).to(States.Done).output()
+          ),
+          States.Done, List.of()
       );
 
       var machine = Init.stateMachine(
@@ -158,7 +201,7 @@ public class HttpOutboxTest {
           List.of(),
           List.of(Exchange)
       );
-      return new ProcessModel(process, doProcess, processed, failed, machine, path);
+      return new ProcessModel(process, doProcess, processed, failed, missingResponse, unknown, machine, path);
     }
 
   }
@@ -177,11 +220,10 @@ public class HttpOutboxTest {
       EventType<Void, Void> processed = BasicEventType.of("Processed", UUID.randomUUID());
       EventType<Void, Void> failed = BasicEventType.of("Failed", UUID.randomUUID());
       String path = "/" + UUID.randomUUID();
-      HttpOutbox<Void> Exchange = HttpOutbox.atMostOnce()
+      HttpOutboxRequest<Void> Exchange = HttpOutboxRequest.atMostOnce()
           .name("ExchangeWithoutRollback")
           .id(UUID.fromString("a3778c63-144f-4748-9e8b-cc10ee20db3f"))
-          .inputDataType(Void.class)
-          .messageCreator(_ -> requestMessage(path))
+          .<Void>messageCreator(_ -> requestMessage(path))
           .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
           .processModel(process)
           .onPeerUnavailable(failed)

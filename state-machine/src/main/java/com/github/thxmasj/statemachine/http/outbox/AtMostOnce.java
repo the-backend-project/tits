@@ -14,7 +14,6 @@ import static com.github.thxmasj.statemachine.http.outbox.EventTypes.ConnectionF
 import static com.github.thxmasj.statemachine.http.outbox.EventTypes.ResponseReceived;
 import static com.github.thxmasj.statemachine.http.outbox.EventTypes.TimeoutExpired;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.github.thxmasj.statemachine.Action;
 import com.github.thxmasj.statemachine.BasicEventType;
 import com.github.thxmasj.statemachine.EntityModel;
@@ -40,7 +39,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import reactor.core.publisher.Mono;
 
-public final class AtMostOnce<I, RI> implements HttpOutbox<I> {
+public final class AtMostOnce<I, RI> implements HttpOutboxRequest<I> {
 
   private final String name;
   private final UUID id;
@@ -61,8 +60,7 @@ public final class AtMostOnce<I, RI> implements HttpOutbox<I> {
   public <T1, T2, T3, T4, T5, T6, R> AtMostOnce(
       String name,
       UUID id,
-      Class<I> inputDataType,
-      Function<TransitionContext<I>, HttpRequestMessage> messageCreator,
+      Function<TransitionContext<I>, Mono<HttpRequestMessage>> messageCreator,
       HttpClient forwarder,
       Duration inflightTimeout,
       com.github.thxmasj.statemachine.EntityModel processModel,
@@ -83,8 +81,8 @@ public final class AtMostOnce<I, RI> implements HttpOutbox<I> {
     this.requestDispatched = BasicEventType.of(
         "Request dispatched",
         UUID.fromString("3f22bfef-dcb4-4560-8b88-6b5040433319"),
-        inputDataType,
-        new DataType<>(new TypeReference<>() {}, inputDataType, HttpRequestMessage.class)
+        DataType.unknown(),
+        HttpRequestMessage.class
     );
     // Intermediate
     EventType<Tuple2<HttpResponseMessage, R>, Tuple2<HttpResponseMessage, R>> validResponse = BasicEventType.of(
@@ -239,10 +237,11 @@ public final class AtMostOnce<I, RI> implements HttpOutbox<I> {
     Map<State, List<TransitionModel<?, ?>>> t = Map.of(
         Begin, List.of(
             onEvent(requestDispatched).to(InFlight)
-                .assemble(messageCreator)
-                .trigger(forward).with(d -> d)
+                .assembleReactive(c -> messageCreator.apply(c).zipWith(Mono.just(c.triggerEvent())))
+                .trigger(forward).with(d -> d.getT1())
                 .trigger(TimeoutExpired).after(_ -> inflightTimeout)
-                .output(d -> d)
+                .newIdentifier(ProcessReference, d -> d.getT2())
+                .output(d -> d.t1().getT1())
         ),
         InFlight, inFlightTransitions,
         Intermediate, List.of(),

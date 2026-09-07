@@ -20,6 +20,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.BiFunction;
+import java.util.stream.Collectors;
 import javax.sql.DataSource;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.Column;
 import reactor.core.publisher.Mono;
@@ -67,7 +68,6 @@ public class EventsByEntityId {
   public Mono<EventLog> execute(EntityModel entityModel, EntityId entityId) {
     String sqlToPrepare = requireNonNull(sqls.get(entityModel), "Unknown model " + entityModel.name());
     return Mono.fromCallable(() -> {
-      System.out.println("Finding event log for " + entityModel.name() + "/" + entityId.value());
       try (
           var connection = dataSource.getConnection();
           var statement = prepare(sqlToPrepare, Map.of("entityId", entityId.value()), connection)
@@ -88,6 +88,7 @@ public class EventsByEntityId {
         rs.close();
         if (events.isEmpty() && secondaryIds.isEmpty())
           throw new UnknownEntity(entityModel, entityId);
+        System.out.println("Found event log for " + entityModel.name() + "/" + entityId.value() + ": " + events.stream().map(e -> e.typeName()).collect(joining(", ")));
         return new EventLog(entityModel, entityId, secondaryIds, Collections.unmodifiableList(events));
       }
     });

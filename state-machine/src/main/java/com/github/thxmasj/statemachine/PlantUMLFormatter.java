@@ -114,7 +114,7 @@ public class PlantUMLFormatter {
         String choiceName = "Choice" + choiceCounter2.incrementAndGet(); //choiceName(state, transition);
         s.append(String.format("%s -down-> %s: %s\n", state.name(), choiceName, transition.eventType().name()));
         for (var filter : transition.filters()) {
-          s.append(transition(choiceName, traverser.targetState(state, filter.alternative().model()), filter.alternative().model().eventType(), transition));
+          s.append(transition(choiceName, traverser.targetState(state, filter.alternative().model()), filter.alternative().model().eventType(), filter.alternative().model()));
         }
       } else {
         s.append(transition(state.name(), targetState, transition.eventType(), transition));
@@ -131,7 +131,8 @@ public class PlantUMLFormatter {
         targetState.name(),
         Stream.of(
             String.format("%s", eventType.name()),
-            "f: " + eventType.inputDataType().name() + " → " + eventType.outputDataType().name()
+            "f: " + eventType.inputDataType().name() + " → " + eventType.outputDataType().name(),
+            transition.triggers().stream().map(t -> "<&share>" + t.eventSpec().eventType().name() + "@" + t.entityModel().name()).collect(joining("\\n"))
         ).filter(not(String::isEmpty)).collect(joining("\\n"))
     );
   }

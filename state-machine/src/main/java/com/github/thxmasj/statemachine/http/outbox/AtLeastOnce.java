@@ -3,7 +3,7 @@ package com.github.thxmasj.statemachine.http.outbox;
 import static com.github.thxmasj.statemachine.EntitySelector.entityIdFromSession;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
 import static com.github.thxmasj.statemachine.Tuples.tuple;
-import static com.github.thxmasj.statemachine.http.outbox.AtLeastOnce.States.BackedOff;
+import static com.github.thxmasj.statemachine.http.outbox.AtLeastOnce.States.Compensating;
 import static com.github.thxmasj.statemachine.http.outbox.AtLeastOnce.States.Begin;
 import static com.github.thxmasj.statemachine.http.outbox.AtLeastOnce.States.Dead;
 import static com.github.thxmasj.statemachine.http.outbox.AtLeastOnce.States.Delivered;
@@ -14,7 +14,6 @@ import static com.github.thxmasj.statemachine.http.outbox.EventTypes.ConnectionF
 import static com.github.thxmasj.statemachine.http.outbox.EventTypes.ResponseReceived;
 import static com.github.thxmasj.statemachine.http.outbox.EventTypes.TimeoutExpired;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.github.thxmasj.statemachine.Action;
 import com.github.thxmasj.statemachine.BasicEventType;
 import com.github.thxmasj.statemachine.EventType;
@@ -39,7 +38,7 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import reactor.core.publisher.Mono;
 
-public final class AtLeastOnce<I> implements HttpOutbox<I> {
+public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
 
   private final String name;
   private final UUID id;
@@ -68,8 +67,7 @@ public final class AtLeastOnce<I> implements HttpOutbox<I> {
   public <S, R> AtLeastOnce(
       String name,
       UUID id,
-      Class<I> inputDataType,
-      Function<TransitionContext<I>, HttpRequestMessage> messageCreator,
+      Function<TransitionContext<I>, Mono<HttpRequestMessage>> messageCreator,
       BiFunction<TransitionContext<Void>, HttpRequestMessage, HttpRequestMessage> repeatMessageCreator,
       HttpClient forwarder,
       Duration inflightTimeout,
@@ -88,8 +86,8 @@ public final class AtLeastOnce<I> implements HttpOutbox<I> {
     this.requestDispatched = BasicEventType.of(
         "Request dispatched",
         UUID.fromString("3f22bfef-dcb4-4560-8b88-6b5040433319"),
-        inputDataType,
-        new DataType<>(new TypeReference<>(){}, inputDataType, HttpRequestMessage.class)
+        DataType.unknown(),
+        HttpRequestMessage.class
     );
     // Intermediate
     EventType<Tuple2<HttpResponseMessage, R>, Tuple2<HttpResponseMessage, R>> validResponse = BasicEventType.of(
@@ -165,19 +163,27 @@ public final class AtLeastOnce<I> implements HttpOutbox<I> {
             .onErrorResume(ConnectException.class, _ -> Mono.just(new InputEvent<>(ConnectionFailed, null)));
       }
     };
+    // NB! This transition is only used by AtMostOnce and does not add the ProcessReference identifier as it is always added.
     this.requestDispatchedTransition = onEvent(requestDispatched).to(InFlight)
-        .assemble(messageCreator)
+        .assembleReactive(messageCreator)
         .trigger(forward).with(d -> d)
         .trigger(TimeoutExpired).after(_ -> inflightTimeout)
         .output(d -> d);
     this.transitions = Map.of(
-        Begin, List.of(requestDispatchedTransition),
+        Begin, List.of(
+            onEvent(requestDispatched).to(InFlight)
+                .assembleReactive(c -> messageCreator.apply(c).zipWith(Mono.just(c.triggerEvent())))
+                .trigger(forward).with(d -> d.getT1())
+                .trigger(TimeoutExpired).after(_ -> inflightTimeout)
+                .newIdentifier(ProcessReference, d -> d.getT2())
+                .output(d -> d.t1().getT1())
+        ),
         InFlight, List.of(
             onEvent(ConnectionFailed).to(Intermediate)
                 .assemble(c -> new RetryContext(c.log().created(), c.timestamp(), c.log().lastEventNumber()))
                 .when(isAttemptAvailable)
                 .then(
-                    onEvent(attemptsAvailable).to(BackedOff)
+                    onEvent(attemptsAvailable).to(Compensating)
                         .assembleInput()
                         .trigger(TimeoutExpired).after(backoffAlgorithm)
                         .output(),
@@ -188,7 +194,7 @@ public final class AtLeastOnce<I> implements HttpOutbox<I> {
                 .assemble(c -> new RetryContext(c.log().created(), c.timestamp(), c.log().lastEventNumber()))
                 .when(isAttemptAvailable)
                 .then(
-                    onEvent(attemptsAvailable).to(BackedOff)
+                    onEvent(attemptsAvailable).to(Compensating)
                         .assembleInput()
                         .trigger(TimeoutExpired).after(backoffAlgorithm)
                         .output(),
@@ -199,7 +205,7 @@ public final class AtLeastOnce<I> implements HttpOutbox<I> {
                 .assemble(c -> new RetryContext(c.log().created(), c.timestamp(), c.log().lastEventNumber()))
                 .when(isAttemptAvailable)
                 .then(
-                    onEvent(attemptsAvailable).to(BackedOff)
+                    onEvent(attemptsAvailable).to(Compensating)
                         .assembleInput()
                         .trigger(TimeoutExpired).after(backoffAlgorithm)
                         .output(),
@@ -235,7 +241,7 @@ public final class AtLeastOnce<I> implements HttpOutbox<I> {
                                         .assemble(c -> new RetryContext(c.log().created(), c.timestamp(), c.log().lastEventNumber()))
                                         .when(isAttemptAvailable)
                                         .then(
-                                            onEvent(attemptsAvailable).to(BackedOff)
+                                            onEvent(attemptsAvailable).to(Compensating)
                                                 .assembleInput()
                                                 .trigger(TimeoutExpired).after(backoffAlgorithm)
                                                 .output(),
@@ -263,7 +269,7 @@ public final class AtLeastOnce<I> implements HttpOutbox<I> {
                                         .assemble(c -> new RetryContext(c.log().created(), c.timestamp(), c.log().lastEventNumber()))
                                         .when(isAttemptAvailable)
                                         .then(
-                                            onEvent(attemptsAvailable).to(BackedOff)
+                                            onEvent(attemptsAvailable).to(Compensating)
                                                 .assembleInput()
                                                 .trigger(TimeoutExpired).after(backoffAlgorithm)
                                                 .output(),
@@ -282,7 +288,7 @@ public final class AtLeastOnce<I> implements HttpOutbox<I> {
                                     .assemble(c -> new RetryContext(c.log().created(), c.timestamp(), c.log().lastEventNumber()))
                                     .when(isAttemptAvailable)
                                     .then(
-                                        onEvent(attemptsAvailable).to(BackedOff)
+                                        onEvent(attemptsAvailable).to(Compensating)
                                             .assembleInput()
                                             .trigger(TimeoutExpired).after(backoffAlgorithm)
                                             .output(),
@@ -293,7 +299,7 @@ public final class AtLeastOnce<I> implements HttpOutbox<I> {
                     d -> tuple(d.t1(), d.t2().invalidReason())
                 )
         ),
-        BackedOff, List.of(
+        Compensating, List.of(
             onEvent(TimeoutExpired).to(InFlight)
                 .assemble(c -> repeatMessageCreator.apply(c, c.log().one(requestDispatched)))
                 .trigger(forward).with(d -> d)
@@ -327,7 +333,7 @@ public final class AtLeastOnce<I> implements HttpOutbox<I> {
     Begin,
     InFlight,
     Delivered,
-    BackedOff,
+    Compensating,
     Dead
   }
 

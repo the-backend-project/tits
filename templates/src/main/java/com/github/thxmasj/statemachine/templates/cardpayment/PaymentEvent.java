@@ -36,6 +36,15 @@ public interface PaymentEvent {
     ) {}
   }
 
+  record ReversalData(
+      boolean clientOriginated,
+      boolean technicalReversal,
+      long amount,
+      String merchantReference,
+      String authorisationCode,
+      String simulation
+  ) {}
+
   record AuthenticationResult(
       String authenticationReference,
       String authenticationProviderId,

@@ -9,7 +9,7 @@ import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.statemachine.database.Client.Config;
 import com.github.thxmasj.statemachine.database.jdbc.DataSourceBuilder;
 import com.github.thxmasj.statemachine.http.inbox.HttpRequestRoute;
-import com.github.thxmasj.statemachine.http.outbox.HttpOutbox;
+import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest;
 import com.sun.net.httpserver.HttpContext;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -34,7 +34,7 @@ public class Init {
       EntityModel entityModel,
       Map<State, List<TransitionModel<?, ?>>> processTransitions,
       List<HttpRequestRoute<?>> routes,
-      List<HttpOutbox<?>> outboxes
+      List<HttpOutboxRequest<?>> outboxes
   ) {
     Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions = new HashMap<>();
     transitions.put(entityModel, processTransitions);
@@ -118,6 +118,17 @@ public class Init {
         path,
         exchange -> {
           exchange.sendResponseHeaders(400, 0);
+          exchange.getResponseBody().close();
+          exchange.close();
+        }
+    );
+  }
+
+  public static HttpContext addInternalServerErrorContext(HttpServer server, String path) {
+    return server.createContext(
+        path,
+        exchange -> {
+          exchange.sendResponseHeaders(500, 0);
           exchange.getResponseBody().close();
           exchange.close();
         }

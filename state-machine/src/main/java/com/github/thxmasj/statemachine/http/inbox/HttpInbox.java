@@ -6,6 +6,7 @@ import com.github.thxmasj.statemachine.EntityId;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.EntitySelector;
 import com.github.thxmasj.statemachine.EntitySelector.ById;
+import com.github.thxmasj.statemachine.EventReference;
 import com.github.thxmasj.statemachine.EventTrigger;
 import com.github.thxmasj.statemachine.EventTrigger.EventSpec;
 import com.github.thxmasj.statemachine.EventType;
@@ -148,12 +149,12 @@ public interface HttpInbox {
     }
   };
 
-  static <T> ContentParser<T> jsonParser(Class<T> contentType) {
-    return new JsonContentParser<>(contentType, true);
+  static <T> Function<HttpRequestMessage, Validated<T>> jsonParser(Class<T> contentType) {
+    return new JsonRequestValidator<>(contentType, true);
   }
 
-  static <T> ContentParser<T> jsonParser(Class<T> contentType, boolean validate) {
-    return new JsonContentParser<>(contentType, validate);
+  static <T> Function<HttpRequestMessage, Validated<T>> jsonParser(Class<T> contentType, boolean validate) {
+    return new JsonRequestValidator<>(contentType, validate);
   }
 
   static Validated<String> authorize(HttpRequestMessage httpRequest) {
@@ -215,8 +216,6 @@ public interface HttpInbox {
     }
 
   record MessageId(String clientId, String value) {}
-
-  record EventReference(UUID entityId, int eventNumber) {}
 
   record RoutedRequest<T>(
       RouteId routeId,

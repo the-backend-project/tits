@@ -54,7 +54,7 @@ import com.github.thxmasj.statemachine.http.inbox.HttpInbox.RoutedRequest;
 import com.github.thxmasj.statemachine.http.outbox.AtLeastOnce;
 import com.github.thxmasj.statemachine.http.outbox.AtMostOnce;
 import com.github.thxmasj.statemachine.http.outbox.Callback;
-import com.github.thxmasj.statemachine.http.outbox.HttpOutbox;
+import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest;
 import com.github.thxmasj.statemachine.message.http.HttpMessageParser;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Method;
@@ -107,8 +107,8 @@ public class HttpInboxTest {
     }
   }
 
-  private static HttpOutbox<?> Process0Outbox;
-  private static HttpOutbox<?> Process3Outbox;
+  private static HttpOutboxRequest<?> Process0Outbox;
+  private static HttpOutboxRequest<?> Process3Outbox;
 
   private static Map<State, List<TransitionModel<?, ?>>> lampTransitions() {
     return Map.of(
@@ -375,8 +375,7 @@ public class HttpInboxTest {
     Process0Outbox = new AtMostOnce<>(
         "Process0Outbox",
         UUID.fromString("2c68ffa2-0935-46fd-a032-2647ca51b801"),
-        Void.class,
-        _ -> requestMessage("/process/0"),
+        _ -> Mono.just(requestMessage("/process/0")),
         new NettyHttpClient(new NettyHttpClientBuilder().build()),
         Duration.ofSeconds(10),
         Lamp,
@@ -392,8 +391,7 @@ public class HttpInboxTest {
         new AtLeastOnce<>(
             "Process0RollbackOutbox",
             UUID.fromString("513f7e3e-c03e-4016-b5f3-ddb981cb1ffe"),
-            Void.class,
-            _ -> requestMessage("/rollback"),
+            _ -> Mono.just(requestMessage("/rollback")),
             (_, o) -> o,
             new NettyHttpClient(new NettyHttpClientBuilder().build()),
             Duration.ofSeconds(10),
@@ -411,8 +409,7 @@ public class HttpInboxTest {
     Process3Outbox = new AtLeastOnce<>(
         "Process3Outbox",
         UUID.fromString("2e86f07c-50ed-4922-9839-54dca94be4b6"),
-        Void.class,
-        _ -> requestMessage("/process/3000"),
+        _ -> Mono.just(requestMessage("/process/3000")),
         (_, requestMessage) -> requestMessage,
         new NettyHttpClient(new NettyHttpClientBuilder().build()),
         Duration.ofSeconds(10),

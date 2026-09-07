@@ -14,12 +14,13 @@ import java.util.UUID;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import reactor.core.publisher.Mono;
 
 /// Builder of [AtLeastOnce] outboxes. The settings are given in the fixed order of the steps below, each step
 /// returning the next one, so that the order is enforced by the compiler. A step which has a default is optional and
 /// can be skipped, as it also offers the settings of the steps following it.
 ///
-/// The type of the data which the request message is created from is introduced by [InputDataTypeStep] and the type
+/// The type of the data which the request message is created from is introduced by [MessageCreatorStep] and the type
 /// of the parsed response content by [ContentParserStep].
 public final class AtLeastOnceBuilder {
 
@@ -36,18 +37,16 @@ public final class AtLeastOnceBuilder {
 
   public interface IdStep {
 
-    InputDataTypeStep id(UUID id);
+    MessageCreatorStep id(UUID id);
   }
 
-  /// Optional: the input data type defaults to [Void].
-  public interface InputDataTypeStep extends MessageCreatorStep<Void> {
+  public interface MessageCreatorStep {
 
-    <I> MessageCreatorStep<I> inputDataType(Class<I> inputDataType);
-  }
+    default <I> RepeatMessageCreatorStep<I> messageCreator(Function<TransitionContext<I>, HttpRequestMessage> messageCreator) {
+      return messageCreatorReactive(messageCreator.andThen(Mono::just));
+    }
 
-  public interface MessageCreatorStep<I> {
-
-    RepeatMessageCreatorStep<I> messageCreator(Function<TransitionContext<I>, HttpRequestMessage> messageCreator);
+    <I> RepeatMessageCreatorStep<I> messageCreatorReactive(Function<TransitionContext<I>, Mono<HttpRequestMessage>> messageCreator);
   }
 
   /// Optional: the repeated message defaults to the message of the original attempt.
@@ -130,7 +129,7 @@ public final class AtLeastOnceBuilder {
     AtLeastOnce<I> build();
   }
 
-  private static final class WithNothing implements NameStep, IdStep, InputDataTypeStep {
+  private static final class WithNothing implements NameStep, IdStep, MessageCreatorStep {
 
     private String name;
     private UUID id;
@@ -142,49 +141,35 @@ public final class AtLeastOnceBuilder {
     }
 
     @Override
-    public InputDataTypeStep id(UUID id) {
+    public MessageCreatorStep id(UUID id) {
       this.id = id;
       return this;
     }
 
     @Override
-    public <I> MessageCreatorStep<I> inputDataType(Class<I> inputDataType) {
-      return new WithInputDataType<>(name, id, inputDataType);
-    }
-
-    @Override
-    public RepeatMessageCreatorStep<Void> messageCreator(
-        Function<TransitionContext<Void>, HttpRequestMessage> messageCreator
+    public <I> RepeatMessageCreatorStep<I> messageCreatorReactive(
+        Function<TransitionContext<I>, Mono<HttpRequestMessage>> messageCreator
     ) {
-      return inputDataType(Void.class).messageCreator(messageCreator);
+      return new WithMessageCreator<>(name, id, messageCreator);
     }
   }
 
-  private static final class WithInputDataType<I> implements MessageCreatorStep<I>, RepeatMessageCreatorStep<I>,
+  private static final class WithMessageCreator<I> implements RepeatMessageCreatorStep<I>,
       InflightTimeoutStep<I> {
 
     private final String name;
     private final UUID id;
-    private final Class<I> inputDataType;
-    private Function<TransitionContext<I>, HttpRequestMessage> messageCreator;
+    private final Function<TransitionContext<I>, Mono<HttpRequestMessage>> messageCreator;
     private BiFunction<TransitionContext<Void>, HttpRequestMessage, HttpRequestMessage> repeatMessageCreator =
         (_, message) -> message;
     private HttpClient forwarder;
     private Duration inflightTimeout = Duration.ofSeconds(10);
     private EntityModel processModel;
 
-    private WithInputDataType(String name, UUID id, Class<I> inputDataType) {
+    private WithMessageCreator(String name, UUID id, Function<TransitionContext<I>, Mono<HttpRequestMessage>> messageCreator) {
       this.name = name;
       this.id = id;
-      this.inputDataType = inputDataType;
-    }
-
-    @Override
-    public RepeatMessageCreatorStep<I> messageCreator(
-        Function<TransitionContext<I>, HttpRequestMessage> messageCreator
-    ) {
       this.messageCreator = messageCreator;
-      return this;
     }
 
     @Override
@@ -218,7 +203,6 @@ public final class AtLeastOnceBuilder {
       return new WithContentParser<>(
           name,
           id,
-          inputDataType,
           messageCreator,
           repeatMessageCreator,
           forwarder,
@@ -235,8 +219,7 @@ public final class AtLeastOnceBuilder {
 
     private final String name;
     private final UUID id;
-    private final Class<I> inputDataType;
-    private final Function<TransitionContext<I>, HttpRequestMessage> messageCreator;
+    private final Function<TransitionContext<I>, Mono<HttpRequestMessage>> messageCreator;
     private final BiFunction<TransitionContext<Void>, HttpRequestMessage, HttpRequestMessage> repeatMessageCreator;
     private final HttpClient forwarder;
     private final Duration inflightTimeout;
@@ -253,8 +236,7 @@ public final class AtLeastOnceBuilder {
     private WithContentParser(
         String name,
         UUID id,
-        Class<I> inputDataType,
-        Function<TransitionContext<I>, HttpRequestMessage> messageCreator,
+        Function<TransitionContext<I>, Mono<HttpRequestMessage>> messageCreator,
         BiFunction<TransitionContext<Void>, HttpRequestMessage, HttpRequestMessage> repeatMessageCreator,
         HttpClient forwarder,
         Duration inflightTimeout,
@@ -263,7 +245,6 @@ public final class AtLeastOnceBuilder {
     ) {
       this.name = name;
       this.id = id;
-      this.inputDataType = inputDataType;
       this.messageCreator = messageCreator;
       this.repeatMessageCreator = repeatMessageCreator;
       this.forwarder = forwarder;
@@ -333,7 +314,6 @@ public final class AtLeastOnceBuilder {
       return new AtLeastOnce<>(
           name,
           id,
-          inputDataType,
           messageCreator,
           repeatMessageCreator,
           forwarder,

@@ -10,7 +10,7 @@ import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.function.Function;
 import com.github.thxmasj.statemachine.database.Row;
-import com.github.thxmasj.statemachine.http.outbox.HttpOutbox;
+import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest;
 import reactor.core.publisher.Flux;
 
 import static java.util.Objects.requireNonNull;
@@ -93,7 +93,7 @@ public class ProcessBackedOff {
         """.replace("{schema}", schemaName);
   }
 
-  public Flux<OutboxElement> execute(LocalDateTime now, HttpOutbox queue) {
+  public Flux<OutboxElement> execute(LocalDateTime now, HttpOutboxRequest queue) {
     return databaseClient.sql(sql)
         .name("ProcessBackedOff")
         .bind("now", now)
@@ -109,7 +109,7 @@ public class ProcessBackedOff {
 
   static Function<Row, OutboxElement> queueElementMapper(
       Clock clock,
-      HttpOutbox queue,
+      HttpOutboxRequest queue,
       LocalDateTime now
   ) {
     return row -> new OutboxElement(

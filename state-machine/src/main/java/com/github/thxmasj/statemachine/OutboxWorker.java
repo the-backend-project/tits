@@ -7,7 +7,7 @@ import java.time.Duration;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import com.github.thxmasj.statemachine.http.outbox.HttpOutbox;
+import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest;
 import reactor.core.publisher.Flux;
 
 public class OutboxWorker {
@@ -16,7 +16,7 @@ public class OutboxWorker {
       "Transaction \\(Process ID (\\d+)\\) was deadlocked on lock resources with another process and has been chosen as the deadlock victim. Rerun the transaction.");
 
   private final StateMachine stateMachine;
-  private final HttpOutbox queue;
+  private final HttpOutboxRequest queue;
   private final Clock clock;
   private final Listener listener;
   private final ProcessBackedOff processBackedOff;
@@ -27,7 +27,7 @@ public class OutboxWorker {
       StateMachine stateMachine,
       ProcessBackedOff processBackedOff,
       Listener listener,
-      HttpOutbox queue,
+      HttpOutboxRequest queue,
       Clock clock
   ) {
     this.stateMachine = stateMachine;

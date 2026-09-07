@@ -123,7 +123,7 @@ public class StateMachine {
     this.clock = clock;
     var jdbcClient = new JDBCClient(dataSource);
     this.changeState = new ChangeState(jdbcClient, schemaName, clock);
-    var eventMappers = eventTypes.entrySet().stream().collect(toMap(Entry::getKey, e -> Mappers.eventMapper(e.getValue(), clock)));
+    var eventMappers = eventTypes.entrySet().stream().collect(toMap(Entry::getKey, e -> Mappers.eventMapper(e.getKey(), e.getValue(), clock)));
     this.eventsByEntityId = new EventsByEntityId(dataSource, entityModels, schemaName, eventMappers);
     this.eventsByLookupId = new EventsByLookupId(dataSource, entityModels, schemaName, eventMappers);
     this.eventsByLastEntity = new EventsByLastEntity(
@@ -587,6 +587,7 @@ public class StateMachine {
             new InitialChangeContext<>(
                 stage1,
                 null,
+                null,
                 tuple.t2(),
                 tuple.t3(),
                 eventLog.lastEventNumber() + 1,
@@ -608,6 +609,7 @@ public class StateMachine {
           case Rejected<?> r -> tuple.t2().rejectModel() == null ? Mono.error(r.exception()) :
               tuple.t2().rejectModel().calculate(
                   new InitialChangeContext<>(
+                      null,
                       null,
                       null,
                       tuple.t2(),
@@ -773,15 +775,16 @@ public class StateMachine {
   }
 
   private EventLog logFromNestedChanges(EntityId entityId, ChangeContext<?> changeContext) {
-    System.out.println("Finding log from change context for entity id " + entityId.value() + ":\n" + chainToString(changeContext));
     for (var c = changeContext; c != null; c = c.previous()) {
       if (c instanceof OutputChangeContext<?>(TransitionModelBuilder.ChangeContext<?> previous, ProcessResult<?> stepOutput)
           && stepOutput instanceof Accepted<?>(Event<?> event, _)
           && event.entityId().equals(entityId.value())
           && !(previous instanceof ChoiceChangeContext)) {
+        System.out.println("Found log from change context for entity id " + entityId.value() + ":\n" + chainToString(changeContext));
         return c.initialChangeContext().log().withNewEvent(event);
       }
     }
+    System.out.println("Did not find log from change context for entity id " + entityId.value());
     return null;
   }
 
@@ -848,6 +851,7 @@ public class StateMachine {
                 new InitialChangeContext<>(
                     null,
                     tail,
+                    new EventReference(tail.initialChangeContext().log().entityId().value(), tail.initialChangeContext().eventNumber()),
                     tuple.t2(),
                     tuple.t3(),
                     tuple.t1().lastEventNumber() + 1,

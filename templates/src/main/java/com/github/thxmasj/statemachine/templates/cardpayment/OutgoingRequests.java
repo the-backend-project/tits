@@ -8,14 +8,12 @@ import com.github.thxmasj.statemachine.Tuples.Tuple5;
 import com.github.thxmasj.statemachine.templates.cardpayment.AcquirerResponse.ReconciliationValues;
 import com.github.thxmasj.statemachine.templates.cardpayment.ApprovedRefundDataCreator.ApprovedRefundData;
 import com.github.thxmasj.statemachine.templates.cardpayment.AuthenticationDataCreator.AuthenticationData;
-import com.github.thxmasj.statemachine.templates.cardpayment.AuthorisationReversalDataCreator.AuthorisationReversalData;
+import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.ReversalData;
 import com.github.thxmasj.statemachine.templates.cardpayment.CaptureRequestDataCreator.CaptureRequestData;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthenticationResult;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Merchant;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.PaymentToken;
-import com.github.thxmasj.statemachine.templates.cardpayment.PreauthorisationReversalDataCreator.PreauthorisationReversalData;
 import com.github.thxmasj.statemachine.templates.cardpayment.RefundRequestDataCreator.RefundRequestData;
-import com.github.thxmasj.statemachine.templates.cardpayment.RefundReversalDataCreator.RefundReversalData;
 import com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.CutOff;
 import java.util.UUID;
 
@@ -29,7 +27,7 @@ public class OutgoingRequests {
     default UUID id() {return UUID.fromString("c0e84149-a4aa-4e37-900f-a520ea8c9327");}
     default String name() {return "Preauthorisation";}
   }
-  public interface PreauthorisationReversal extends OutgoingRequestCreator<PreauthorisationReversalData> {
+  public interface PreauthorisationReversal extends OutgoingRequestCreator<ReversalData> {
     default UUID id() {return UUID.fromString("6f311a5d-e8ab-413f-897e-b3fb813e17a2");}
     default String name() {return "PreauthorisationReversal";}
   }
@@ -37,15 +35,15 @@ public class OutgoingRequests {
     default UUID id() {return UUID.fromString("564a47ea-f414-4690-9700-19554dd81bf3");}
     default String name() {return "Authorisation";}
   }
-  public interface AuthorisationReversal extends OutgoingRequestCreator<Tuple2<AuthorisationReversalData, AcquirerBatchNumber>> {
+  public interface AuthorisationReversal extends OutgoingRequestCreator<Tuple2<ReversalData, AcquirerBatchNumber>> {
     default UUID id() {return UUID.fromString("96bff53a-2401-4cbc-a584-83aec6608bd3");}
     default String name() {return "AuthorisationReversal";}
   }
-  public interface RolledBackPreauthorisationRequest extends OutgoingRequestCreator<PreauthorisationReversalData> {
+  public interface RolledBackPreauthorisationRequest extends OutgoingRequestCreator<ReversalData> {
     default UUID id() {return UUID.fromString("b9f4230d-1a55-4453-a9e7-7a6079985171");}
     default String name() {return "RolledBackPreauthorisationRequest";}
   }
-  public interface RolledBackAuthorisationRequest extends OutgoingRequestCreator<Tuple2<AuthorisationReversalData, BatchNumber>> {
+  public interface RolledBackAuthorisationRequest extends OutgoingRequestCreator<Tuple2<ReversalData, BatchNumber>> {
     default UUID id() {return UUID.fromString("86293a8d-03e8-4e89-9857-8d44bc31afac");}
     default String name() {return "RolledBackAuthorisationRequest";}
   }
@@ -89,7 +87,7 @@ public class OutgoingRequests {
     default UUID id() {return UUID.fromString("ffae8e0e-42d9-49a8-840e-37df49bd77c6");}
     default String name() {return "RefundAuthorisation";}
   }
-  public interface RefundReversal extends OutgoingRequestCreator<Tuple2<RefundReversalData, AcquirerBatchNumber>> {
+  public interface RefundReversal extends OutgoingRequestCreator<Tuple2<ReversalData, AcquirerBatchNumber>> {
     default UUID id() {return UUID.fromString("0cf16704-4b46-4fb1-8078-81ab223a51b3");}
     default String name() {return "RefundReversal";}
   }

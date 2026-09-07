@@ -32,7 +32,6 @@ import com.github.thxmasj.statemachine.Tuples.Tuple2;
 import com.github.thxmasj.statemachine.Tuples.Tuple4;
 import com.github.thxmasj.statemachine.database.UnknownEntity;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
-import com.github.thxmasj.statemachine.http.inbox.HttpInbox.EventReference;
 import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
@@ -42,7 +41,6 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.UUID;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -71,6 +69,7 @@ public class TransitionModelBuilder<I, T, O> {
   }
 
   public interface TransitionContext<I> {
+    EventReference triggerEvent();
     State from();
     ZonedDateTime timestamp();
     String correlationId();
@@ -136,6 +135,7 @@ public class TransitionModelBuilder<I, T, O> {
     record InitialChangeContext<I>(
         ChangeContext<?> stage1,
         ChangeContext<?> previous,
+        EventReference triggerEvent,
         TransitionModel<?, ?> transitionModel,
         State from,
         int eventNumber,
@@ -398,6 +398,7 @@ public class TransitionModelBuilder<I, T, O> {
                   Mono.just(new InitialChangeContext<>(
                       null,
                       c,
+                      null,
                       tm.reverseModel(),
                       i.from(),
                       event.eventNumber(),
@@ -470,6 +471,13 @@ public class TransitionModelBuilder<I, T, O> {
       return new TransitionModelBuilder<>(
           modelContext,
           initialChangeContext -> initialChangeContext.map(i -> new AssembledChangeContext<>(i, assembler.apply(i)))
+      );
+    }
+
+    public <T> TransitionModelBuilder<I, T, O> assembleReactive(Function<TransitionContext<I>, Mono<T>> assembler) {
+      return new TransitionModelBuilder<>(
+          modelContext,
+          initialChangeContext -> initialChangeContext.flatMap(i -> assembler.apply(i).map(t -> new AssembledChangeContext<>(i, t)))
       );
     }
 
@@ -736,6 +744,7 @@ public class TransitionModelBuilder<I, T, O> {
                         new InitialChangeContext<>(
                             null,
                             c,
+                            null,
                             filter.alternative().model(),
                             c.initialChangeContext().from(),
                             c.initialChangeContext().eventNumber(),
@@ -1032,6 +1041,10 @@ public class TransitionModelBuilder<I, T, O> {
 
     public List<Filter<?,?,?>> filters() {
       return modelContext.filters();
+    }
+
+    public List<EventTrigger<?, ?, ?>> triggers() {
+      return modelContext.triggers();
     }
   }
 

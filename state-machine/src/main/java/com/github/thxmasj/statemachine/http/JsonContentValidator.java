@@ -1,4 +1,6 @@
-package com.github.thxmasj.statemachine.http.inbox;
+package com.github.thxmasj.statemachine.http;
+
+import static java.util.stream.Collectors.joining;
 
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -8,16 +10,14 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.github.thxmasj.statemachine.Validated;
 import com.github.thxmasj.statemachine.Validated.Invalid;
 import com.github.thxmasj.statemachine.Validated.Valid;
-import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
-import org.hibernate.validator.messageinterpolation.ParameterMessageInterpolator;
 import java.util.Set;
+import java.util.function.Function;
+import org.hibernate.validator.messageinterpolation.ParameterMessageInterpolator;
 
-import static java.util.stream.Collectors.joining;
-
-public class JsonContentParser<T> implements ContentParser<T> {
+public class JsonContentValidator<T> implements Function<String, Validated<T>> {
 
   private final Class<T> contentType;
   private final boolean validate;
@@ -33,18 +33,18 @@ public class JsonContentParser<T> implements ContentParser<T> {
       .buildValidatorFactory()
       .getValidator();
 
-  public JsonContentParser(Class<T> contentType, boolean validate) {
+  public JsonContentValidator(Class<T> contentType, boolean validate) {
     this.contentType = contentType;
     this.validate = validate;
   }
 
   @Override
-  public Validated<T> apply(HttpRequestMessage request) {
+  public Validated<T> apply(String content) {
     if (contentType == Void.class) {
       return new Valid<>(null);
     } else {
       try {
-        T value = objectMapper.readValue(request.body(), contentType);
+        T value = objectMapper.readValue(content, contentType);
         Set<ConstraintViolation<T>> violations = validate ? jsonValidator.validate(value) : Set.of();
         return violations.isEmpty() ?
             new Valid<>(value) :
@@ -52,7 +52,7 @@ public class JsonContentParser<T> implements ContentParser<T> {
                 .map(v -> v == null ? "n/a" : v.getPropertyPath() + ": " + v.getMessage())
                 .collect(joining(", ")));
       } catch (JsonProcessingException e) {
-        return new Invalid<>("Failed to parse body with " + contentType.getName() + ": " + e.getMessage());
+        return new Invalid<>("Failed to parse content with " + contentType.getName() + ": " + e.getMessage());
       }
     }
   }

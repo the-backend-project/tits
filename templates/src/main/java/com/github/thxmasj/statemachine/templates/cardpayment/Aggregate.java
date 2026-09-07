@@ -5,7 +5,6 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.State;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
-
 import java.util.List;
 import java.util.UUID;
 
@@ -23,7 +22,6 @@ public enum Aggregate implements EntityModel {
     public State initialState() {
       return Begin;
     }
-
 
 //    @Override
 //    public EntityModel parentEntity() {

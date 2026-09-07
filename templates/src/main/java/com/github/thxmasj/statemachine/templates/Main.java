@@ -13,7 +13,7 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.Aggregate.Se
 import com.github.thxmasj.statemachine.PlantUMLFormatter;
 import com.github.thxmasj.statemachine.http.outbox.AtLeastOnce;
 import com.github.thxmasj.statemachine.http.outbox.AtMostOnce;
-import com.github.thxmasj.statemachine.http.outbox.HttpOutbox;
+import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentTransitions;
 import com.github.thxmasj.statemachine.templates.cardpayment.SettlementTransitions;
 import java.io.IOException;
@@ -34,7 +34,6 @@ public class Main {
             null,
             atMostOnce("Authentication"),
             atLeastOnce("FailedAuthenticationToAcquirer"),
-            atLeastOnce("FailedTokenValidationToAcquirer"),
             atMostOnce("AuthorisationToAcquirer"),
             atMostOnce("PreauthorisationToAcquirer"),
             atLeastOnce("CaptureRequestedTooLateToAcquirer"),
@@ -62,11 +61,10 @@ public class Main {
   }
 
   private static <I, RI> AtMostOnce<I, RI> atMostOnce(String name) {
-    return HttpOutbox.atMostOnce()
+    return HttpOutboxRequest.atMostOnce()
         .name(name)
         .id(UUID.randomUUID())
-        .inputDataType((Class<I>) null)
-        .messageCreator(_ -> null)
+        .<I>messageCreator(_ -> null)
         .forwarder(null)
         .contentParser(_ -> valid(null))
         .isDelivered(_ -> true)
@@ -76,11 +74,10 @@ public class Main {
   }
 
   private static <I> AtLeastOnce<I> atLeastOnce(String name) {
-    return HttpOutbox.atLeastOnce()
+    return HttpOutboxRequest.atLeastOnce()
         .name(name)
         .id(UUID.randomUUID())
-        .inputDataType((Class<I>) null)
-        .messageCreator(_ -> null)
+        .<I>messageCreator(_ -> null)
         .forwarder(null)
         .contentParser(_ -> valid(null))
         .isDelivered(_ -> true)

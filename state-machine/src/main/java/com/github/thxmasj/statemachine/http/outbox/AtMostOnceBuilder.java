@@ -14,12 +14,13 @@ import java.time.Duration;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import reactor.core.publisher.Mono;
 
 /// Builder of [AtMostOnce] outboxes. The settings are given in the fixed order of the steps below, each step
 /// returning the next one, so that the order is enforced by the compiler. A step which has a default is optional and
 /// can be skipped, as it also offers the settings of the steps following it.
 ///
-/// The type of the data which the request message is created from is introduced by [InputDataTypeStep], the type of
+/// The type of the data which the request message is created from is introduced by [MessageCreatorStep], the type of
 /// the parsed response content by [ContentParserStep], and the type of the data which the rollback request message is
 /// created from by [RollbackModelStep].
 public final class AtMostOnceBuilder {
@@ -37,18 +38,16 @@ public final class AtMostOnceBuilder {
 
   public interface IdStep {
 
-    InputDataTypeStep id(UUID id);
+    MessageCreatorStep id(UUID id);
   }
 
-  /// Optional: the input data type defaults to [Void].
-  public interface InputDataTypeStep extends MessageCreatorStep<Void> {
+  public interface MessageCreatorStep {
 
-    <I> MessageCreatorStep<I> inputDataType(Class<I> inputDataType);
-  }
+    default <I> ForwarderStep<I> messageCreator(Function<TransitionContext<I>, HttpRequestMessage> messageCreator) {
+      return messageCreatorReactive(messageCreator.andThen(Mono::just));
+    }
 
-  public interface MessageCreatorStep<I> {
-
-    ForwarderStep<I> messageCreator(Function<TransitionContext<I>, HttpRequestMessage> messageCreator);
+    <I> ForwarderStep<I> messageCreatorReactive(Function<TransitionContext<I>, Mono<HttpRequestMessage>> messageCreator);
   }
 
   public interface ForwarderStep<I> {
@@ -162,7 +161,7 @@ public final class AtMostOnceBuilder {
     AtMostOnce<I, RI> build();
   }
 
-  private static final class WithNothing implements NameStep, IdStep, InputDataTypeStep {
+  private static final class WithNothing implements NameStep, IdStep, MessageCreatorStep {
 
     private String name;
     private UUID id;
@@ -174,29 +173,23 @@ public final class AtMostOnceBuilder {
     }
 
     @Override
-    public InputDataTypeStep id(UUID id) {
+    public MessageCreatorStep id(UUID id) {
       this.id = id;
       return this;
     }
 
     @Override
-    public <I> MessageCreatorStep<I> inputDataType(Class<I> inputDataType) {
-      return new WithInputDataType<>(name, id, inputDataType);
-    }
-
-    @Override
-    public ForwarderStep<Void> messageCreator(Function<TransitionContext<Void>, HttpRequestMessage> messageCreator) {
-      return inputDataType(Void.class).messageCreator(messageCreator);
+    public <I> ForwarderStep<I> messageCreatorReactive(Function<TransitionContext<I>, Mono<HttpRequestMessage>> messageCreator) {
+      return new WithMessageCreator<>(name, id, messageCreator);
     }
   }
 
-  private static final class WithInputDataType<I> implements MessageCreatorStep<I>, ForwarderStep<I>,
+  private static final class WithMessageCreator<I> implements ForwarderStep<I>,
       InflightTimeoutStep<I> {
 
     private final String name;
     private final UUID id;
-    private final Class<I> inputDataType;
-    private Function<TransitionContext<I>, HttpRequestMessage> messageCreator;
+    private final Function<TransitionContext<I>, Mono<HttpRequestMessage>> messageCreator;
     private HttpClient forwarder;
     private Duration inflightTimeout = Duration.ofSeconds(10);
     private EntityModel processModel;
@@ -205,16 +198,10 @@ public final class AtMostOnceBuilder {
     private Callback<Tuple2<HttpResponseMessage, String>, ?> onInvalidResponseRejection;
     private Callback<Tuple2<HttpResponseMessage, String>, ?> onInvalidResponseUnknown;
 
-    private WithInputDataType(String name, UUID id, Class<I> inputDataType) {
+    private WithMessageCreator(String name, UUID id, Function<TransitionContext<I>, Mono<HttpRequestMessage>> messageCreator) {
       this.name = name;
       this.id = id;
-      this.inputDataType = inputDataType;
-    }
-
-    @Override
-    public ForwarderStep<I> messageCreator(Function<TransitionContext<I>, HttpRequestMessage> messageCreator) {
       this.messageCreator = messageCreator;
-      return this;
     }
 
     @Override
@@ -298,7 +285,6 @@ public final class AtMostOnceBuilder {
       return new WithContentParser<>(
           name,
           id,
-          inputDataType,
           messageCreator,
           forwarder,
           inflightTimeout,
@@ -317,8 +303,7 @@ public final class AtMostOnceBuilder {
 
     private final String name;
     private final UUID id;
-    private final Class<I> inputDataType;
-    private final Function<TransitionContext<I>, HttpRequestMessage> messageCreator;
+    private final Function<TransitionContext<I>, Mono<HttpRequestMessage>> messageCreator;
     private final HttpClient forwarder;
     private final Duration inflightTimeout;
     private final EntityModel processModel;
@@ -335,8 +320,7 @@ public final class AtMostOnceBuilder {
     private WithContentParser(
         String name,
         UUID id,
-        Class<I> inputDataType,
-        Function<TransitionContext<I>, HttpRequestMessage> messageCreator,
+        Function<TransitionContext<I>, Mono<HttpRequestMessage>> messageCreator,
         HttpClient forwarder,
         Duration inflightTimeout,
         EntityModel processModel,
@@ -348,7 +332,6 @@ public final class AtMostOnceBuilder {
     ) {
       this.name = name;
       this.id = id;
-      this.inputDataType = inputDataType;
       this.messageCreator = messageCreator;
       this.forwarder = forwarder;
       this.inflightTimeout = inflightTimeout;
@@ -407,7 +390,6 @@ public final class AtMostOnceBuilder {
       return () -> new AtMostOnce<>(
           name,
           id,
-          inputDataType,
           messageCreator,
           forwarder,
           inflightTimeout,

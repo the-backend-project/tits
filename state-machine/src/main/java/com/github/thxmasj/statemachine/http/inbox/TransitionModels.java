@@ -55,7 +55,7 @@ import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;
 import com.github.thxmasj.statemachine.Validated;
 import com.github.thxmasj.statemachine.http.inbox.HttpInbox.CustomResponse;
-import com.github.thxmasj.statemachine.http.inbox.HttpInbox.EventReference;
+import com.github.thxmasj.statemachine.EventReference;
 import com.github.thxmasj.statemachine.http.inbox.HttpInbox.MessageId;
 import com.github.thxmasj.statemachine.http.inbox.HttpInbox.RouteId;
 import com.github.thxmasj.statemachine.http.inbox.HttpInbox.RoutedRequest;

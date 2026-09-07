@@ -1,7 +1,7 @@
 package com.github.thxmasj.statemachine.http.inbox;
 
 import com.github.thxmasj.statemachine.*;
-import com.github.thxmasj.statemachine.http.inbox.HttpInbox.EventReference;
+import com.github.thxmasj.statemachine.EventReference;
 import com.github.thxmasj.statemachine.message.http.*;
 
 import java.util.*;

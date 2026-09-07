@@ -5,6 +5,7 @@ import static java.util.Objects.requireNonNull;
 import static java.util.stream.Collectors.toMap;
 
 import com.github.thxmasj.statemachine.EntityId;
+import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.Event;
 import com.github.thxmasj.statemachine.EventType;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
@@ -35,14 +36,15 @@ public class Mappers {
   }
 
   public static BiFunction<EntityId, Row, Event<?>> eventMapper(
-        List<EventType<?, ?>> eventTypes,
-        Clock clock
+      EntityModel entityModel,
+      List<EventType<?, ?>> eventTypes,
+      Clock clock
   ) {
     var eventTypeMapper = Mappers.eventTypeMapper(eventTypes);
     return (entityId, row) -> {
       UUID eventTypeId = row.get("Type", UUID.class);
       EventType<?, ?> eventType = eventTypeMapper.apply(eventTypeId);
-      if (eventType == null) throw new MappingFailure(format("No event type for type id %s", eventTypeId));
+      if (eventType == null) throw new MappingFailure(format("No event type for type id %s in entity model %s", eventTypeId, entityModel.name()));
       try {
         return new Event<>(
             entityId.value(),
