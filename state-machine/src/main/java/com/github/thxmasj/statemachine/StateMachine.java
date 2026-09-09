@@ -291,7 +291,7 @@ public class StateMachine {
 
     @Override
     public InputEvent<String> invalidResponse(String cause) {
-      return new InputEvent<>(BuiltinEventTypes.InvalidResponse, cause);
+      return new InputEvent<>(com.github.thxmasj.statemachine.http.outbox.EventTypes.InvalidResponse, cause);
     }
 
     @Override

@@ -1,6 +1,8 @@
 package com.github.thxmasj.statemachine.http.outbox;
 
-import static com.github.thxmasj.statemachine.BuiltinEventTypes.ServiceUnavailable;
+import static com.github.thxmasj.statemachine.http.outbox.EventTypes.InvalidResponse;
+import static com.github.thxmasj.statemachine.http.outbox.EventTypes.ServiceUnavailable;
+import static com.github.thxmasj.statemachine.http.outbox.EventTypes.TimeoutExpired;
 
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.EventType;
@@ -76,7 +78,7 @@ public final class AtMostOnceBuilder {
 
   }
 
-  /// Optional: the missing response callback defaults to none.
+  /// Optional: the missing response callback defaults to TimeoutExpired.
   public interface OnMissingResponseStep<I> extends OnInvalidResponseRejectionStep<I> {
 
     <S> OnInvalidResponseRejectionStep<I> onMissingResponse(
@@ -87,7 +89,7 @@ public final class AtMostOnceBuilder {
     OnInvalidResponseRejectionStep<I> onMissingResponse(EventType<Void, ?> eventType);
   }
 
-  /// Optional: the invalid response rejection callback defaults to none.
+  /// Optional: the invalid response rejection callback defaults to InvalidResponse.
   public interface OnInvalidResponseRejectionStep<I> extends OnInvalidResponseUnknownStep<I> {
 
     <S> OnInvalidResponseUnknownStep<I> onInvalidResponseRejection(
@@ -98,7 +100,7 @@ public final class AtMostOnceBuilder {
     OnInvalidResponseUnknownStep<I> onInvalidResponseRejection(EventType<Void, ?> eventType);
   }
 
-  /// Optional: the invalid response unknown callback defaults to none.
+  /// Optional: the invalid response unknown callback defaults to InvalidResponse.
   public interface OnInvalidResponseUnknownStep<I> extends ContentParserStep<I> {
 
     <S> ContentParserStep<I> onInvalidResponseUnknown(
@@ -194,9 +196,9 @@ public final class AtMostOnceBuilder {
     private Duration inflightTimeout = Duration.ofSeconds(10);
     private EntityModel processModel;
     private Callback<EntityModel, ?> onPeerUnavailable = new Callback<>(ServiceUnavailable, d -> d);
-    private Callback<EntityModel, ?> onMissingResponse;
-    private Callback<Tuple2<HttpResponseMessage, String>, ?> onInvalidResponseRejection;
-    private Callback<Tuple2<HttpResponseMessage, String>, ?> onInvalidResponseUnknown;
+    private Callback<EntityModel, ?> onMissingResponse = new Callback<>(TimeoutExpired, _ -> null);
+    private Callback<Tuple2<HttpResponseMessage, String>, ?> onInvalidResponseRejection = new Callback<>(InvalidResponse, Tuple2::t2);
+    private Callback<Tuple2<HttpResponseMessage, String>, ?> onInvalidResponseUnknown = new Callback<>(InvalidResponse, Tuple2::t2);
 
     private WithMessageCreator(String name, UUID id, Function<TransitionContext<I>, Mono<HttpRequestMessage>> messageCreator) {
       this.name = name;

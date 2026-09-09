@@ -1,11 +1,18 @@
 package com.github.thxmasj.statemachine.http.outbox;
 
+import static com.github.thxmasj.statemachine.BasicEventType.of;
+
 import com.github.thxmasj.statemachine.BasicEventType;
+import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.EventType;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import java.util.UUID;
 
 public interface EventTypes {
+
+  EventType<EntityModel, EntityModel> ServiceUnavailable = of("ServiceUnavailable", UUID.fromString("f91e560f-ba7b-4e14-976a-82e592a627f5"), EntityModel.class);
+  EventType<String, String>
+      InvalidResponse = of("InvalidResponse", UUID.fromString("450679ab-bc60-46cb-bb97-d171c34c2750"), String.class);
 
   EventType<HttpResponseMessage, Void> ResponseReceived = BasicEventType.of(
       "Response received",
@@ -29,6 +36,5 @@ public interface EventTypes {
       "Connection dropped",
       UUID.fromString("94ba4ab3-3b87-4ceb-9fd3-0e8ab0c21a34")
   );
-
 
 }

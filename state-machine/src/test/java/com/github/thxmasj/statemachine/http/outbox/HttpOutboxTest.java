@@ -8,6 +8,8 @@ import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.o
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.assemble;
 import static com.github.thxmasj.statemachine.Validated.invalid;
 import static com.github.thxmasj.statemachine.Validated.valid;
+import static com.github.thxmasj.statemachine.http.outbox.EventTypes.InvalidResponse;
+import static com.github.thxmasj.statemachine.http.outbox.EventTypes.TimeoutExpired;
 import static com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Method.POST;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -125,6 +127,44 @@ public class HttpOutboxTest {
         .assertNext(event -> assertEquals(model.doProcess(), event.type()))
         .assertNext(event -> assertEquals(model.failed(), event.type()))
         .thenCancel().verify();
+  }
+
+  @Test
+  public void defaultInvalidResponseRejection() {
+    var model = ProcessModelWithDefaultInvalidResponseRejection.create();
+    Init.addBadRequestContext(server, model.path());
+    StepVerifier.create(model.machine().onEvent(trigger(model.doProcess(), model.process())))
+        .assertNext(event -> assertEquals(model.doProcess(), event.type()))
+        .assertNext(event -> {
+          assertEquals(InvalidResponse, event.type());
+          assertEquals("Invalid response", event.data());
+        })
+        .thenCancel().verify();
+  }
+
+  @Test
+  public void defaultInvalidResponseUnknown() {
+    var model = ProcessModelWithDefaultInvalidResponseUnknown.create();
+    Init.addBadRequestContext(server, model.path());
+    StepVerifier.create(model.machine().onEvent(trigger(model.doProcess(), model.process())))
+        .assertNext(event -> assertEquals(model.doProcess(), event.type()))
+        .assertNext(event -> {
+          assertEquals(InvalidResponse, event.type());
+          assertEquals("Invalid response", event.data());
+        })
+        .thenCancel().verify();
+  }
+
+  @Test
+  public void defaultMissingResponse() {
+    var model = ProcessModelWithDefaultMissingResponse.create();
+    var inFlightTransitions = model.exchange().transitions().get(AtMostOnce.States.InFlight);
+    var timeoutTransition = inFlightTransitions.stream()
+        .filter(t -> t.eventType().equals(TimeoutExpired))
+        .findFirst()
+        .orElseThrow();
+    assertEquals(1, timeoutTransition.triggers().size());
+    assertEquals(TimeoutExpired, timeoutTransition.triggers().get(0).eventSpec().eventType());
   }
 
   record ProcessModel(
@@ -258,6 +298,120 @@ public class HttpOutboxTest {
           List.of(Exchange)
       );
       return new ProcessModelWithoutRollback(process, doProcess, processed, failed, machine, path);
+    }
+
+  }
+
+  record ProcessModelWithDefaultInvalidResponseRejection(
+      EntityModel process,
+      EventType<Void, Void> doProcess,
+      StateMachine machine,
+      String path
+  ) {
+    static ProcessModelWithDefaultInvalidResponseRejection create() {
+      EntityModel process = EntityModel.of("Process", UUID.randomUUID(), States.Begin);
+      EventType<Void, Void> doProcess = BasicEventType.of("Do process", UUID.randomUUID());
+      String path = "/" + UUID.randomUUID();
+      HttpOutboxRequest<Void> Exchange = HttpOutboxRequest.atMostOnce()
+          .name("ExchangeWithDefaultInvalidResponse")
+          .id(UUID.fromString("a3778c63-144f-4748-9e8b-cc10ee20db3f"))
+          .<Void>messageCreator(_ -> requestMessage(path))
+          .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
+          .processModel(process)
+          .contentParser(_ -> invalid("Invalid response"))
+          .isDelivered(_ -> false)
+          .isRejectedByInvalidResponse(_ -> true)
+          .build();
+
+      Map<State, List<TransitionModel<?, ?>>> processTransitions = Map.of(
+          States.Begin, List.of(
+              onEvent(doProcess).to(States.WaitingForResponse)
+                  .trigger(Exchange.requestDispatched()).on(Exchange).identifiedBy(newEntityId())
+                  .output()
+          ),
+          States.WaitingForResponse, List.of(
+              onEvent(InvalidResponse).to(States.Done)
+                  .assembleInput()
+                  .output(d -> d)
+          ),
+          States.Done, List.of()
+      );
+
+      var machine = Init.stateMachine(
+          process,
+          processTransitions,
+          List.of(),
+          List.of(Exchange)
+      );
+      return new ProcessModelWithDefaultInvalidResponseRejection(process, doProcess, machine, path);
+    }
+
+  }
+
+  record ProcessModelWithDefaultInvalidResponseUnknown(
+      EntityModel process,
+      EventType<Void, Void> doProcess,
+      StateMachine machine,
+      String path
+  ) {
+    static ProcessModelWithDefaultInvalidResponseUnknown create() {
+      EntityModel process = EntityModel.of("Process", UUID.randomUUID(), States.Begin);
+      EventType<Void, Void> doProcess = BasicEventType.of("Do process", UUID.randomUUID());
+      String path = "/" + UUID.randomUUID();
+      HttpOutboxRequest<Void> Exchange = HttpOutboxRequest.atMostOnce()
+          .name("ExchangeWithDefaultInvalidResponseUnknown")
+          .id(UUID.fromString("a3778c63-144f-4748-9e8b-cc10ee20db3f"))
+          .<Void>messageCreator(_ -> requestMessage(path))
+          .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
+          .processModel(process)
+          .contentParser(_ -> invalid("Invalid response"))
+          .isDelivered(_ -> false)
+          .isRejectedByInvalidResponse(_ -> false)
+          .build();
+
+      Map<State, List<TransitionModel<?, ?>>> processTransitions = Map.of(
+          States.Begin, List.of(
+              onEvent(doProcess).to(States.WaitingForResponse)
+                  .trigger(Exchange.requestDispatched()).on(Exchange).identifiedBy(newEntityId())
+                  .output()
+          ),
+          States.WaitingForResponse, List.of(
+              onEvent(InvalidResponse).to(States.Done)
+                  .assembleInput()
+                  .output(d -> d)
+          ),
+          States.Done, List.of()
+      );
+
+      var machine = Init.stateMachine(
+          process,
+          processTransitions,
+          List.of(),
+          List.of(Exchange)
+      );
+      return new ProcessModelWithDefaultInvalidResponseUnknown(process, doProcess, machine, path);
+    }
+
+  }
+
+  record ProcessModelWithDefaultMissingResponse(
+      EntityModel process,
+      HttpOutboxRequest<Void> exchange
+  ) {
+    static ProcessModelWithDefaultMissingResponse create() {
+      EntityModel process = EntityModel.of("Process", UUID.randomUUID(), States.Begin);
+      String path = "/" + UUID.randomUUID();
+      HttpOutboxRequest<Void> exchange = HttpOutboxRequest.atMostOnce()
+          .name("ExchangeWithDefaultMissingResponse")
+          .id(UUID.fromString("a3778c63-144f-4748-9e8b-cc10ee20db3f"))
+          .<Void>messageCreator(_ -> requestMessage(path))
+          .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
+          .processModel(process)
+          .contentParser(_ -> valid((Void) null))
+          .isDelivered(_ -> true)
+          .isRejectedByInvalidResponse(_ -> false)
+          .build();
+      return new ProcessModelWithDefaultMissingResponse(process, exchange);
     }
 
   }

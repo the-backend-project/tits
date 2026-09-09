@@ -31,4 +31,7 @@ public class JsonResponseValidator<T> implements Function<HttpResponseMessage, V
     return invalid("Invalid status code: " + response.statusCode());
   }
 
+  public static <T> JsonResponseValidator<T> json(Class<T> contentType) {
+    return new JsonResponseValidator<>(new int[]{200, 201, 202, 204}, contentType, true);
+  }
 }
