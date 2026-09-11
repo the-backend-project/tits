@@ -441,6 +441,7 @@ public class PaymentTransitions {
             ),
             AuthenticationFailed, List.of(),
             AuthorisationFailed, List.of(),
+            Rejected, List.of(),
             ProcessingCapture, List.of(
                 onEvent(CaptureApproved).to(Authorised)
                     .assemble((input, log) -> tuple(log.one(ValidPaymentRequest).t1(), log.one(ValidPaymentRequest).t2(), input))

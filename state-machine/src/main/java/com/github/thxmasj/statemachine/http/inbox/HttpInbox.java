@@ -108,6 +108,11 @@ public interface HttpInbox {
   EventType<String, HttpResponseMessage> RespondBadRequest = BasicEventType.of("RespondBadRequest", UUID.fromString("a8225270-6a22-4f1f-ae17-5b5519d46df1"), String.class, HttpResponseMessage.class);
   SecondaryIdModel<MessageId> MessageId = new SecondaryIdModel<>() {
     @Override
+    public UUID id() {
+      return UUID.fromString("f721bf54-891b-41a0-aa63-5d3cbde52437");
+    }
+
+    @Override
     public String name() {return "MessageId";}
 
     @Override
@@ -128,6 +133,11 @@ public interface HttpInbox {
     }
   };
   SecondaryIdModel<MessageId> RollbackMessageId = new SecondaryIdModel<>() {
+    @Override
+    public UUID id() {
+      return UUID.fromString("58cafda3-1818-4015-8f97-3d9f3bd2856f");
+    }
+
     @Override
     public String name() {return "RollbackMessageId";}
 

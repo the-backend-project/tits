@@ -7,10 +7,16 @@ import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdMod
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;
+import java.util.UUID;
 
 public interface Identifiers {
 
   SecondaryIdModel<String> MerchantId = new SecondaryIdModel<>(){
+    @Override
+    public UUID id() {
+      return UUID.fromString("2c1166f0-ad63-4387-ae88-c710eee9c9eb");
+    }
+
     @Override
     public String name() {
       return "MerchantId";
@@ -37,6 +43,11 @@ public interface Identifiers {
   };
 
   SecondaryIdModel<BatchNumber> BatchNumber =  new SecondaryIdModel<>() {
+    @Override
+    public UUID id() {
+      return UUID.fromString("e0ca999b-0853-43eb-b1a6-f0f2ef6130b5");
+    }
+
     @Override
     public String name() {
       return "BatchNumber";
@@ -69,7 +80,12 @@ public interface Identifiers {
 
   };
 
-  SecondaryIdModel<AcquirerBatchNumber> AcquirerBatchNumber =   new SecondaryIdModel<>() {
+  SecondaryIdModel<AcquirerBatchNumber> AcquirerBatchNumber = new SecondaryIdModel<>() {
+    @Override
+    public UUID id() {
+      return UUID.fromString("8708bc15-006c-4476-8811-5d5e2511bcd3");
+    }
+
     @Override
     public String name() {
       return "AcquirerBatchNumber";

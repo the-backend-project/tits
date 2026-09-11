@@ -24,6 +24,8 @@ import java.util.UUID;
 public class Main {
 
   static void main() throws IOException {
+    var atLeastOnce = atLeastOnce("AtLeastOnce");
+    System.out.println(new PlantUMLFormatter(atLeastOnce, atLeastOnce.transitions()).formatToImage("docs/images/"));
     System.out.println(new PlantUMLFormatter(RequestRouting, requestRoutingTransitions(List.of())).formatToImage("docs/images/"));
     System.out.println(new PlantUMLFormatter(RequestDispatching, requestDispatchingTransitions(List.of(), List.of())).formatToImage("docs/images/"));
     System.out.println(new PlantUMLFormatter(Item, Item.transitions()).formatToImage("docs/images/"));

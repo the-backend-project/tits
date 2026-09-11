@@ -41,7 +41,7 @@ public class Traverser {
     return currentState;
   }
 
-  public State targetState(State currentState, TransitionModel<?, ?> transition) {
+  private State targetState(State currentState, TransitionModel<?, ?> transition) {
     return transition.toState() != null ? transition.toState() : currentState; // toSelf
   }
 

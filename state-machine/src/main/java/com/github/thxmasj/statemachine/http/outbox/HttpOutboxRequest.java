@@ -18,6 +18,11 @@ public sealed interface HttpOutboxRequest<I> extends com.github.thxmasj.statemac
 
   SecondaryIdModel<EventReference> ProcessReference = new SecondaryIdModel<>() {
     @Override
+    public UUID id() {
+      return UUID.fromString("18133749-083b-44a0-a046-bda1d8d3fce7");
+    }
+
+    @Override
     public String name() {
       return "ProcessReference";
     }

@@ -51,6 +51,11 @@ public class RollbackTest {
 
   static SecondaryIdModel<UUID> SpeedId = new SecondaryIdModel<>() {
     @Override
+    public UUID id() {
+      return UUID.fromString("16a902b5-49ae-46a8-8e0d-3711e6b41b44");
+    }
+
+    @Override
     public String name() {
       return "SpeedId";
     }

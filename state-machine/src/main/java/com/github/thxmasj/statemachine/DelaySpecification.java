@@ -7,7 +7,7 @@ import java.time.ZonedDateTime;
 
 public record DelaySpecification(Duration minimum, Duration maximum, Duration totalMaximum, double powerBase) {
 
-  public Duration calculateDelay(int attempts) {
+  public Duration calculateDelay(long attempts) {
     if (attempts == 0)
       return minimum;
     Duration delay = exponential(minimum, powerBase, attempts);
@@ -25,7 +25,7 @@ public record DelaySpecification(Duration minimum, Duration maximum, Duration to
     return t1.compareTo(t2) < 0 ? t2 : t1;
   }
 
-  private Duration exponential(Duration minimum, double powerBase, int times) {
+  private Duration exponential(Duration minimum, double powerBase, long times) {
     BigDecimal minimumInSeconds = BigDecimal.valueOf(minimum.getSeconds())
         .add(BigDecimal.valueOf(minimum.getNano(), 9));
     double poweredValue = Math.pow(powerBase, times);

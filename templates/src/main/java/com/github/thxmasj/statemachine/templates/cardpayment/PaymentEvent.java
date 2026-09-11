@@ -133,7 +133,7 @@ public interface PaymentEvent {
   EventType<AcquirerResponse, AcquirerResponse> AuthorisationAdviceApproved = BasicEventType.of("Authorization advice approved", UUID.fromString("c1fd88f3-2821-4c4d-bee1-52750f10f554"), AcquirerResponse.class);
   EventType<Capture, Capture> CaptureRequest = BasicEventType.of("Capture request", UUID.fromString("b4cef9f9-c9dd-40e4-a627-25ba529aec2e"), Capture.class);
   EventType<CaptureRequestData, Capture> ValidCaptureRequest = RequestEventType.of("Valid capture request", UUID.fromString("0cce8545-ce69-4c4c-8e42-056df84297e7"), CaptureRequestData.class, Capture.class);
-  EventType<Capture, Capture> DeclinedUnauthorisedCapture = BasicEventType.of("Decline unauthorized capture", UUID.fromString("d39b2369-f88a-482e-8715-49de39fbdf93"), Capture.class);
+  EventType<Capture, Capture> DeclinedUnauthorisedCapture = BasicEventType.of("Declined unauthorized capture", UUID.fromString("d39b2369-f88a-482e-8715-49de39fbdf93"), Capture.class);
   EventType<Capture, Capture> DeclineLateCapture = BasicEventType.of("Declined late capture", UUID.fromString("5da4f734-9779-41b9-a653-58388a63b8b9"), Capture.class);
   EventType<AcquirerResponse, AcquirerResponse> CaptureApproved = BasicEventType.of("Capture approved", UUID.fromString("6186a241-f9e0-40ae-b444-6ce5e2509dcc"), AcquirerResponse.class);
   EventType<Refund, Refund> RefundRequest = BasicEventType.of("Refund request", UUID.fromString("4f6d6f15-f8a4-477e-b750-dc52a1f245eb"), Refund.class);

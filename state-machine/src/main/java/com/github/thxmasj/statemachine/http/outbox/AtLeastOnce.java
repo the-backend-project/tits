@@ -44,7 +44,7 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
   private final UUID id;
   private final EventType<I, HttpRequestMessage> requestDispatched;
   private final TransitionModel<I, HttpRequestMessage> requestDispatchedTransition;
-
+  private final Map<State, List<TransitionModel<?, ?>>> transitions;
 
   @Override
   public EventType<I, HttpRequestMessage> requestDispatched() {
@@ -55,13 +55,10 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
     return requestDispatchedTransition;
   }
 
-  private final Map<State, List<TransitionModel<?, ?>>> transitions;
-
-
   public record RetryContext(
       ZonedDateTime enqueueTime,
       ZonedDateTime now,
-      int attemptNumber
+      long attemptNumber
   ) {}
 
   public <S, R> AtLeastOnce(
@@ -114,7 +111,7 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
         DataType.unknown(),
         HttpResponseMessage.class
     );
-    EventType<Tuple2<HttpResponseMessage, R>, HttpResponseMessage> requestReceivedAndRejectedTransiently = BasicEventType.of(
+    EventType<Void, HttpResponseMessage> requestReceivedAndRejectedTransiently = BasicEventType.of(
         "[request rejected transiently]",
         UUID.fromString("bcdf93f4-657d-4b26-b165-74279a5ea477"),
         DataType.unknown(),
@@ -132,7 +129,7 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
         DataType.unknown(),
         HttpResponseMessage.class
     );
-    EventType<Tuple2<HttpResponseMessage, String>, HttpResponseMessage> invalidResponseAndRejectedTransiently = BasicEventType.of(
+    EventType<Void, HttpResponseMessage> invalidResponseAndRejectedTransiently = BasicEventType.of(
         "[invalid response, request rejected transiently]",
         UUID.fromString("9f121370-4b8d-4a08-a7ef-30555c1e1f48"),
         DataType.unknown(),
@@ -146,7 +143,7 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
         HttpResponseMessage.class
     );
     // Leaf
-    EventType<Tuple2<HttpResponseMessage, String>, HttpResponseMessage> invalidResponseAndUnknown = BasicEventType.of(
+    EventType<Void, HttpResponseMessage> invalidResponseAndUnknown = BasicEventType.of(
         "[invalid response, unknown status]",
         UUID.fromString("ecfb2c9d-178b-4c3e-b09e-c580e09b01b4"),
         DataType.unknown(),
@@ -163,7 +160,8 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
             .onErrorResume(ConnectException.class, _ -> Mono.just(new InputEvent<>(ConnectionFailed, null)));
       }
     };
-    // NB! This transition is only used by AtMostOnce and does not add the ProcessReference identifier as it is always added.
+    Function<TransitionContext<Void>, RetryContext> retry = c -> new RetryContext(c.log().created(), c.timestamp(), c.log().count(attemptsAvailable) + 1);
+    // NB! This transition is only used by AtMostOnce and does not add the ProcessReference identifier as it will be already added.
     this.requestDispatchedTransition = onEvent(requestDispatched).to(InFlight)
         .assembleReactive(messageCreator)
         .trigger(forward).with(d -> d)
@@ -180,7 +178,7 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
         ),
         InFlight, List.of(
             onEvent(ConnectionFailed).to(Intermediate)
-                .assemble(c -> new RetryContext(c.log().created(), c.timestamp(), c.log().lastEventNumber()))
+                .assemble(retry)
                 .when(isAttemptAvailable)
                 .then(
                     onEvent(attemptsAvailable).to(Compensating)
@@ -191,7 +189,7 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
                 )
                 .otherwise(onEvent(attemptsExhausted).to(Dead).output(), _ -> null),
             onEvent(ConnectionDropped).to(Intermediate)
-                .assemble(c -> new RetryContext(c.log().created(), c.timestamp(), c.log().lastEventNumber()))
+                .assemble(retry)
                 .when(isAttemptAvailable)
                 .then(
                     onEvent(attemptsAvailable).to(Compensating)
@@ -202,7 +200,7 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
                 )
                 .otherwise(onEvent(attemptsExhausted).to(Dead).output(), _ -> null),
             onEvent(TimeoutExpired).to(Intermediate)
-                .assemble(c -> new RetryContext(c.log().created(), c.timestamp(), c.log().lastEventNumber()))
+                .assemble(retry)
                 .when(isAttemptAvailable)
                 .then(
                     onEvent(attemptsAvailable).to(Compensating)
@@ -238,7 +236,7 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
                                 .when(isFailureTransient)
                                 .then(
                                     onEvent(requestReceivedAndRejectedTransiently).to(Intermediate)
-                                        .assemble(c -> new RetryContext(c.log().created(), c.timestamp(), c.log().lastEventNumber()))
+                                        .assemble(retry)
                                         .when(isAttemptAvailable)
                                         .then(
                                             onEvent(attemptsAvailable).to(Compensating)
@@ -247,7 +245,8 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
                                                 .output(),
                                             d -> d
                                         )
-                                        .otherwise(onEvent(attemptsExhausted).to(Dead).output(), _ -> null)
+                                        .otherwise(onEvent(attemptsExhausted).to(Dead).output(), _ -> null),
+                                    _ -> null
                                 )
                                 .otherwise(
                                     onEvent(requestReceivedAndRejectedPermanently).to(Dead)
@@ -266,7 +265,7 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
                                 .when(isFailureByInvalidResponseTransient)
                                 .then(
                                     onEvent(invalidResponseAndRejectedTransiently).to(Intermediate)
-                                        .assemble(c -> new RetryContext(c.log().created(), c.timestamp(), c.log().lastEventNumber()))
+                                        .assemble(retry)
                                         .when(isAttemptAvailable)
                                         .then(
                                             onEvent(attemptsAvailable).to(Compensating)
@@ -275,7 +274,8 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
                                                 .output(),
                                             d -> d
                                         )
-                                        .otherwise(onEvent(attemptsExhausted).to(Dead).output(), _ -> null)
+                                        .otherwise(onEvent(attemptsExhausted).to(Dead).output(), _ -> null),
+                                    _ -> null
                                 )
                                 .otherwise(
                                     onEvent(invalidResponseAndRejectedPermanently).to(Dead)
@@ -285,7 +285,7 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
                         )
                         .otherwise(
                                 onEvent(invalidResponseAndUnknown).to(Intermediate)
-                                    .assemble(c -> new RetryContext(c.log().created(), c.timestamp(), c.log().lastEventNumber()))
+                                    .assemble(retry)
                                     .when(isAttemptAvailable)
                                     .then(
                                         onEvent(attemptsAvailable).to(Compensating)
@@ -294,7 +294,8 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
                                             .output(),
                                         d -> d
                                     )
-                                    .otherwise(onEvent(attemptsExhausted).to(Dead).output(), _ -> null)
+                                    .otherwise(onEvent(attemptsExhausted).to(Dead).output(), _ -> null),
+                            _ -> null
                         ),
                     d -> tuple(d.t1(), d.t2().invalidReason())
                 )
@@ -304,7 +305,10 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
                 .assemble(c -> repeatMessageCreator.apply(c, c.log().one(requestDispatched)))
                 .trigger(forward).with(d -> d)
                 .output()
-            )
+            ),
+        Intermediate, List.of(),
+        Dead, List.of(),
+        Delivered, List.of()
     );
   }
 

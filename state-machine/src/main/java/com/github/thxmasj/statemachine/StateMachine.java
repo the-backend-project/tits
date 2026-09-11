@@ -116,7 +116,7 @@ public class StateMachine {
         ));
     this.delayer = delayer != null ? delayer : _ -> Mono.empty();
     if (schemaDataSource != null) {
-      new CreateSchema(entityModels, schemaName, role).execute(new JDBCClient(schemaDataSource))
+      new CreateSchema(entityModels.stream().flatMap(em -> em.secondaryIds().stream()).distinct().toList(), schemaName, role).execute(new JDBCClient(schemaDataSource))
           .timeout(Duration.ofSeconds(5), Mono.error(new RuntimeException("Schema creation timed out. Is the database running?")))
           .block();
     }
@@ -851,7 +851,10 @@ public class StateMachine {
                 new InitialChangeContext<>(
                     null,
                     tail,
-                    new EventReference(tail.initialChangeContext().log().entityId().value(), tail.initialChangeContext().eventNumber()),
+                    new EventReference(
+                        tail.initialChangeContext().log().entityId().value(),
+                        tail.initialChangeContext().eventNumber()
+                    ),
                     tuple.t2(),
                     tuple.t3(),
                     tuple.t1().lastEventNumber() + 1,

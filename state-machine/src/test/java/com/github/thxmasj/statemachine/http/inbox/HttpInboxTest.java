@@ -597,7 +597,7 @@ public class HttpInboxTest {
 
   @Test
   public void formatModel() throws IOException {
-    System.out.println(new PlantUMLFormatter(RequestDispatching, requestDispatchingTransitions(routes, List.of()), false).formatToImage("/tmp"));
+    System.out.println(new PlantUMLFormatter(RequestDispatching, requestDispatchingTransitions(routes, List.of())).formatToImage("/tmp"));
   }
 
   @JsonIgnoreProperties(ignoreUnknown = true)

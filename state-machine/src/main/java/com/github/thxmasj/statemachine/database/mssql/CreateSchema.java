@@ -2,25 +2,23 @@ package com.github.thxmasj.statemachine.database.mssql;
 
 import static java.util.stream.Collectors.joining;
 
-import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.database.Client;
-
+import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
 import java.nio.charset.StandardCharsets;
 import java.util.Comparator;
 import java.util.List;
 import java.util.zip.CRC32;
-import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
 import reactor.core.publisher.Mono;
 
 @SuppressWarnings({"StringConcatenationInLoop"})
 public class CreateSchema {
 
-  private final List<EntityModel> entityModels;
+  private final List<SecondaryIdModel<?>> idModels;
   private final String schema;
   private final String role;
 
-  public CreateSchema(List<EntityModel> entityModels, String schemaName, String role) {
-    this.entityModels = entityModels.stream().sorted(Comparator.comparing(EntityModel::id)).toList();
+  public CreateSchema(List<SecondaryIdModel<?>> idModels, String schemaName, String role) {
+    this.idModels = idModels.stream().sorted(Comparator.comparing(SecondaryIdModel::id)).toList();
     this.schema = schemaName;
     this.role = role;
   }
@@ -40,11 +38,7 @@ public class CreateSchema {
   }
 
   private String coreSql() {
-    StringBuilder sql = new StringBuilder();
-    for (var entityModel : entityModels) {
-      sql.append(sqlForEntity(entityModel));
-    }
-    return sql.toString();
+    return sqlForIds(idModels);
   }
 
   private String createSql(String schema) {
@@ -86,14 +80,12 @@ public class CreateSchema {
     return initSql + coreSql;
   }
 
-  private String sqlForEntity(EntityModel entityModel) {
-    var entity = entityModel.name();
-    var names = new SchemaNames(schema, entityModel);
-    var q = names.qualifiedNames();
+  private String sqlForIds(List<SecondaryIdModel<?>> ids) {
+    var names = new SchemaNames(schema, null);
     String sql = "";
-        for (SecondaryIdModel<?> secondaryId : entityModel.secondaryIds()) {
-          String tableName = entity + "_" + secondaryId.name();
-          String qualifiedTableName = q.idTable(secondaryId);
+        for (SecondaryIdModel<?> secondaryId : ids) {
+          String tableName = "Id_" + secondaryId.name();
+          String qualifiedTableName = String.format("[%s].[%s]", schema, tableName);
           sql +=
               """
               CREATE TABLE {qualifiedTableName}

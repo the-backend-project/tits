@@ -2,6 +2,7 @@ package com.github.thxmasj.statemachine;
 
 import static java.util.function.Predicate.not;
 import static java.util.stream.Collectors.joining;
+import static java.util.stream.Collectors.toMap;
 
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import java.io.BufferedWriter;
@@ -12,7 +13,6 @@ import java.io.IOException;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
@@ -24,19 +24,11 @@ public class PlantUMLFormatter {
 
   private final static String STATE_BEGIN = "Begin"; // A bit bad to hard code the "Begin" name, as it is by convention only.
   private final EntityModel model;
-  private final Traverser traverser;
-  Map<State, List<TransitionModel<?, ?>>> transitions;
-  private final boolean hideBuiltin;
+  Map<String, List<TransitionModel<?, ?>>> transitions;
 
   public PlantUMLFormatter(EntityModel model, Map<State, List<TransitionModel<?, ?>>> transitions) {
-    this(model, transitions, true);
-  }
-
-  public PlantUMLFormatter(EntityModel model, Map<State, List<TransitionModel<?, ?>>> transitions, boolean hideBuiltin) {
     this.model = model;
-    this.hideBuiltin = hideBuiltin;
-    this.traverser = new Traverser(transitions);
-    this.transitions = transitions;
+    this.transitions = transitions.entrySet().stream().collect(toMap(entry -> entry.getKey().name(), Map.Entry::getValue));
   }
 
   public File formatToFile(String directory) throws IOException {
@@ -74,61 +66,92 @@ public class PlantUMLFormatter {
       @enduml
       """,
       // States
-      transitions.keySet().stream().map(this::state).collect(joining("\n")),
+      transitions.keySet().stream().filter(state -> !state.equals("Intermediate")).map(this::state).collect(joining("\n")),
       // Choices
-      choices(model.initialState(), new HashSet<>()),
+      choices(model.initialState().name(), new HashSet<>()),
       // Transitions
-      transitions(model.initialState(), new HashSet<>())
+        formatTransitionsFrom(
+            model.initialState().name(),
+            this.transitions.get(model.initialState().name()),
+            new HashSet<>()
+        )
     );
   }
 
   AtomicInteger choiceCounter1 = new AtomicInteger();
   AtomicInteger choiceCounter2 = new AtomicInteger();
 
-  private String choices(State state, Set<State> visited) {
+  private String choices(String state, Set<String> visited) {
     if (visited.contains(state)) return "";
     visited.add(state);
     StringBuilder s = new StringBuilder();
     List<TransitionModel<?, ?>> transitionsForState = this.transitions.get(state);
-    if (transitionsForState == null) throw new IllegalStateException(state.name());
+    if (transitionsForState == null) throw new IllegalStateException(state);
     for (TransitionModel<?, ?> transition : transitionsForState) {
-      var targetState = traverser.targetState(state, transition);
-      if (!transition.filters().isEmpty()) {
-        s.append(String.format("state Choice%d <<choice>>\n",  choiceCounter1.incrementAndGet()));
+      s.append(traverseForChoices(transition, visited));
+    }
+    return s.toString();
+  }
+
+  private String traverseForChoices(TransitionModel<?, ?> transition, Set<String> visited) {
+    StringBuilder s = new StringBuilder();
+    if (transition.toState() == null)
+      // Self transitions can't have choices
+      return "";
+    String targetState = transition.toState().name();
+    if (!transition.filters().isEmpty()) {
+      s.append(String.format("state Choice%d <<choice>>\n", choiceCounter1.incrementAndGet()));
+      for (var filter : transition.filters()) {
+        s.append(traverseForChoices(filter.alternative().model(), visited));
       }
+    } else {
       s.append(choices(targetState, visited));
     }
     return s.toString();
   }
 
-  private String transitions(State state, Set<State> visited) {
-    if (visited.contains(state)) return "";
-    visited.add(state);
+  private String formatTransitionsFrom(
+      String sourceState,
+      List<TransitionModel<?, ?>> transitionsFromState,
+      Set<String> visited
+  ) {
+    if (visited.contains(sourceState)) return "";
+    visited.add(sourceState);
+    System.out.println("Formatting transitions from " + sourceState);
     StringBuilder s = new StringBuilder();
-    List<TransitionModel<?, ?>> transitionsForState = this.transitions.get(state);
-    if (transitionsForState == null) throw new IllegalStateException(state.name());
-    for (TransitionModel<?, ?> transition : transitionsForState) {
-      if (hideBuiltin && BuiltinEventTypes.ALL.contains(transition.eventType())) continue;
-      State targetState = traverser.targetState(state, transition);
-      if (!transition.filters().isEmpty()) {
-        String choiceName = "Choice" + choiceCounter2.incrementAndGet(); //choiceName(state, transition);
-        s.append(String.format("%s -down-> %s: %s\n", state.name(), choiceName, transition.eventType().name()));
-        for (var filter : transition.filters()) {
-          s.append(transition(choiceName, traverser.targetState(state, filter.alternative().model()), filter.alternative().model().eventType(), filter.alternative().model()));
-        }
-      } else {
-        s.append(transition(state.name(), targetState, transition.eventType(), transition));
-      }
-      s.append(transitions(targetState, visited));
+    for (TransitionModel<?, ?> transition : transitionsFromState) {
+      s.append(formatTransitionTree(sourceState, visited, transition));
     }
     return s.toString();
   }
 
-  private String transition(String source, State targetState, EventType<?, ?> eventType, TransitionModel<?, ?> transition) {
+  private String formatTransitionTree(String sourceState, Set<String> visited, TransitionModel<?, ?> transition) {
+    StringBuilder s = new StringBuilder();
+    String targetState = transition.toState() != null ? transition.toState().name() : sourceState;
+    if (!transition.filters().isEmpty()) {
+      System.out.println("Formatting transition with choice from " + sourceState);
+      String choiceName = "Choice" + choiceCounter2.incrementAndGet(); //choiceName(state, transition);
+//        s.append(String.format("%s -down-> %s: %s\n", state.name(), choiceName, transition.eventType().name()));
+      s.append(formatTransition(sourceState, choiceName, transition.eventType(), transition));
+      for (var filter : transition.filters()) {
+        s.append(formatTransitionTree(choiceName, visited, filter.alternative().model()));
+        //s.append(formatTransitionsFrom(choiceName, this.transitions.get(targetState), visited));
+      }
+    } else {
+      s.append(formatTransition(sourceState, targetState, transition.eventType(), transition));
+      if (!sourceState.equals(targetState))
+        s.append(formatTransitionsFrom(targetState, this.transitions.get(targetState), visited));
+    }
+    return s.toString();
+  }
+
+  private String formatTransition(String sourceState, String targetState, EventType<?, ?> eventType, TransitionModel<?, ?> transition) {
+    System.out.println("Formatting transition <" + sourceState + " --> " + targetState + ": " + eventType.name() + ">");
     return String.format(
-        "%s --> %s: %s\n",
-        /*state.state().name().equals(STATE_BEGIN) ? "[*]" :*/ source,
-        targetState.name(),
+        "%s %s %s: %s\n",
+        sourceState.equals(STATE_BEGIN) ? "[*]" : sourceState,
+        sourceState.equals(STATE_BEGIN) ? "-right->" : "-->",
+        targetState,
         Stream.of(
             String.format("%s", eventType.name()),
             "f: " + eventType.inputDataType().name() + " → " + eventType.outputDataType().name(),
@@ -137,16 +160,13 @@ public class PlantUMLFormatter {
     );
   }
 
-  private String state(State state) {
-    if (state.name().equals(STATE_BEGIN)) return "";
+  private String state(String state) {
+    if (state.equals(STATE_BEGIN)) return "";
     return String.format(
         """
-        state %s: %s
+        state %s
         """,
-        state.name(),
-        Stream.of(
-            Optional.ofNullable(state.timeout() == State.NEVER_TIMEOUT ? null : state.timeout()).map(timeout -> "timeout: " + timeout.eventType().name() + " after " + timeout.duration().toString()).orElse("")
-        ).filter(not(String::isEmpty)).collect(joining("\\n"))
+        state
     );
   }
 
