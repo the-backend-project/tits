@@ -4,6 +4,7 @@ import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.EntityModels.
 import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.EntityModels.RequestRouting;
 import static com.github.thxmasj.statemachine.http.inbox.TransitionModels.requestDispatchingTransitions;
 import static com.github.thxmasj.statemachine.http.inbox.TransitionModels.requestRoutingTransitions;
+import static com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest.ProcessReference;
 
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.statemachine.database.Client.Config;
@@ -43,6 +44,7 @@ public class Init {
     for (var outbox : outboxes) {
       transitions.put(outbox, outbox.transitions());
     }
+    transitions.put(ProcessReference, HttpOutboxRequest.indexingTransitions);
     return stateMachine(transitions);
   }
 

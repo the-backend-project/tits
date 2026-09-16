@@ -33,6 +33,7 @@ import com.github.thxmasj.statemachine.Tuples.Tuple3;
 import com.github.thxmasj.statemachine.database.EntityGroupNotInitialised;
 import com.github.thxmasj.statemachine.database.EventAlreadyExists;
 import com.github.thxmasj.statemachine.database.MappingFailure;
+import com.github.thxmasj.statemachine.database.Row;
 import com.github.thxmasj.statemachine.database.SecondaryIdAlreadyExists;
 import com.github.thxmasj.statemachine.database.UnknownEntity;
 import com.github.thxmasj.statemachine.database.jdbc.JDBCClient;
@@ -64,6 +65,7 @@ import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -102,18 +104,17 @@ public class StateMachine {
   ) {
     this.traversers = transitions.entrySet().stream().collect(toMap(Entry::getKey, e -> new Traverser(e.getValue())));
     List<EntityModel> entityModels = transitions.keySet().stream().toList();
-    Map<EntityModel, List<EventType<?, ?>>> eventTypes = transitions.entrySet().stream()
-        .collect(toMap(
-            Entry::getKey,
-            e -> e.getValue().values().stream()
-                .flatMap(Collection::stream)
-                .flatMap(t -> Stream.concat(
-                    Mappers.eventTypesFor(t).stream(),
-                    BuiltinEventTypes.ALL.stream()
-                ))
-                .distinct()
-                .toList()
-        ));
+    List<EventType<?, ?>> eventTypes =
+        Stream.concat(
+                BuiltinEventTypes.ALL.stream(),
+                transitions.values()
+                    .stream()
+                    .flatMap(tl -> tl.values().stream())
+                    .flatMap(tl -> tl.stream())
+                    .flatMap(t -> Mappers.eventTypesFor(t).stream())
+            )
+            .distinct()
+            .toList();
     this.delayer = delayer != null ? delayer : _ -> Mono.empty();
     if (schemaDataSource != null) {
       new CreateSchema(entityModels.stream().flatMap(em -> em.secondaryIds().stream()).distinct().toList(), schemaName, role).execute(new JDBCClient(schemaDataSource))
@@ -123,14 +124,14 @@ public class StateMachine {
     this.clock = clock;
     var jdbcClient = new JDBCClient(dataSource);
     this.changeState = new ChangeState(jdbcClient, schemaName, clock);
-    var eventMappers = eventTypes.entrySet().stream().collect(toMap(Entry::getKey, e -> Mappers.eventMapper(e.getKey(), e.getValue(), clock)));
-    this.eventsByEntityId = new EventsByEntityId(dataSource, entityModels, schemaName, eventMappers);
-    this.eventsByLookupId = new EventsByLookupId(dataSource, entityModels, schemaName, eventMappers);
+    BiFunction<EntityId, Row, Event<?>> eventMapper = Mappers.eventMapper(eventTypes, clock);
+    this.eventsByEntityId = new EventsByEntityId(dataSource, entityModels, schemaName, eventMapper);
+    this.eventsByLookupId = new EventsByLookupId(dataSource, entityModels, schemaName, eventMapper);
     this.eventsByLastEntity = new EventsByLastEntity(
         dataSource,
         entityModels,
         schemaName,
-        eventTypes.entrySet().stream().collect(toMap(Entry::getKey, e -> Mappers.eventTypeMapper(e.getValue()))),
+        Mappers.eventTypeMapper(eventTypes),
         clock
     );
     this.lastSecondaryId = new LastSecondaryId(dataSource, entityModels, schemaName);
@@ -570,7 +571,7 @@ public class StateMachine {
       ChangeContext<?> stage1,
       List<IdentityResult<?>> identityResults
   ) {
-    System.out.println("onEvent " + eventType.name() + " with log " + eventLog.events().stream().map(Event::typeName).collect(joining(",")));
+    System.out.println(eventLog.entityModel().name() + ": onEvent " + eventType.name() + " with log " + eventLog.events().stream().map(Event::typeName).collect(joining(",")));
     var now = ZonedDateTime.now(clock);
     var tuple = transitionModel(eventLog, eventType);
     if (tuple.t2() == null) {

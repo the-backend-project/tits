@@ -12,7 +12,7 @@ import com.github.thxmasj.statemachine.SecondaryId;
 import com.github.thxmasj.statemachine.database.Row;
 import com.github.thxmasj.statemachine.database.UnknownEntity;
 import com.github.thxmasj.statemachine.database.jdbc.JDBCRow;
-
+import com.github.thxmasj.statemachine.database.mssql.SchemaNames.Column;
 import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -20,9 +20,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.BiFunction;
-import java.util.stream.Collectors;
 import javax.sql.DataSource;
-import com.github.thxmasj.statemachine.database.mssql.SchemaNames.Column;
 import reactor.core.publisher.Mono;
 
 @SuppressWarnings("StringConcatenationInLoop")
@@ -30,17 +28,17 @@ public class EventsByEntityId {
 
   private final DataSource dataSource;
   private final Map<EntityModel, String> sqls;
-  private final Map<EntityModel, BiFunction<EntityId, Row, Event<?>>> eventMappers;
+  private final BiFunction<EntityId, Row, Event<?>> eventMapper;
 
   public EventsByEntityId(
       DataSource dataSource,
       List<EntityModel> entityModels,
       String schemaName,
-      Map<EntityModel, BiFunction<EntityId, Row, Event<?>>> eventMappers
+      BiFunction<EntityId, Row, Event<?>> eventMapper
   ) {
     this.dataSource = dataSource;
     this.sqls = new HashMap<>();
-    this.eventMappers = eventMappers;
+    this.eventMapper = eventMapper;
     for (var entityModel : entityModels) {
       var names = new SchemaNames(schemaName, entityModel);
       String sql =
@@ -76,7 +74,7 @@ public class EventsByEntityId {
         ResultSet rs = statement.getResultSet();
         List<Event<?>> events = new ArrayList<>();
         while (rs.next()) {
-          events.add(eventMappers.get(entityModel).apply(entityId, new JDBCRow(rs)));
+          events.add(eventMapper.apply(entityId, new JDBCRow(rs)));
         }
         List<SecondaryId<?>> secondaryIds = new ArrayList<>();
         for (var idModel : entityModel.secondaryIds()) {

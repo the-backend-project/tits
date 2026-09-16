@@ -58,7 +58,21 @@ public class CreateSchema {
             CONSTRAINT [pkEvent] PRIMARY KEY (EntityId, EventNumber)
         );
         GRANT INSERT, SELECT ON [{schema}].[Event] TO [{role}];
-        CREATE UNIQUE INDEX ixEntityId_EventNumber ON [{schema}].[Event] (EntityId, EventNumber);
+        --CREATE UNIQUE INDEX ixEntityId_EventNumber ON [{schema}].[Event] (EntityId, EventNumber);
+
+        CREATE TABLE [{schema}].[IndexEvent]
+        (
+            EntityId    UNIQUEIDENTIFIER   NOT NULL,
+            EventNumber SMALLINT           NOT NULL,
+            Type        UNIQUEIDENTIFIER   NOT NULL,
+            Data        VARCHAR(1700)    NOT NULL,
+            --Data        VARBINARY(1700)    NOT NULL,
+            Timestamp   DATETIME2          NOT NULL,
+            CONSTRAINT [pkIndexEvent] PRIMARY KEY (EntityId, EventNumber)
+        );
+        GRANT INSERT, SELECT ON [{schema}].[IndexEvent] TO [{role}];
+        --CREATE UNIQUE INDEX ixEntityId_EventNumber ON [{schema}].[IndexEvent] (EntityId, EventNumber);
+        CREATE INDEX ixData ON [{schema}].[IndexEvent] (Data);
 
         CREATE TABLE [{schema}].[Timeout]
         (

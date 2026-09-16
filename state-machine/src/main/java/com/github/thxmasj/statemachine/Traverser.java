@@ -54,7 +54,7 @@ public class Traverser {
   public Tuple2<State, TransitionModel<?, ?>> accept(EventLog eventLog, EventType<?, ?> eventType) {
     var currentState = currentState(eventLog);
     var availableTransitions = transitions.get(currentState);
-    if (availableTransitions == null) throw new IllegalStateException("No available transitions for current state " + currentState + " on " + eventLog.entityModel().name());
+    if (availableTransitions == null) throw new IllegalStateException("No available transitions for current state " + currentState.name() + " on " + eventLog.entityModel().name());
     var t = findTransitionForTriggeredEvent(eventType, availableTransitions);
     if (t != null && eventType == BuiltinEventTypes.Rollback)
       System.out.println("Using custom rollback transition for entity " + eventLog.entityModel().name() + ": " + t + "\nAll transitions:\n" + transitions.values().stream().flatMap(List::stream).map(Object::toString).collect(joining("\n")));

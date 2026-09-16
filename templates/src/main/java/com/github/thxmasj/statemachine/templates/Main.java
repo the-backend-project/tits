@@ -12,9 +12,8 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.Aggregate.Se
 
 import com.github.thxmasj.statemachine.PlantUMLFormatter;
 import com.github.thxmasj.statemachine.http.outbox.AtLeastOnce;
-import com.github.thxmasj.statemachine.http.outbox.AtMostOnce;
 import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest;
-import com.github.thxmasj.statemachine.templates.cardpayment.PaymentTransitions;
+import com.github.thxmasj.statemachine.templates.cardpayment.DummyPaymentTransitions;
 import com.github.thxmasj.statemachine.templates.cardpayment.SettlementTransitions;
 import java.io.IOException;
 import java.time.Duration;
@@ -32,26 +31,7 @@ public class Main {
     System.out.println(new PlantUMLFormatter(Batch, Batch.transitions()).formatToImage("docs/images/"));
     System.out.println(new PlantUMLFormatter(
         Payment,
-        new PaymentTransitions(
-            null,
-            atMostOnce("Authentication"),
-            atLeastOnce("FailedAuthenticationToAcquirer"),
-            atMostOnce("AuthorisationToAcquirer"),
-            atMostOnce("PreauthorisationToAcquirer"),
-            atLeastOnce("CaptureRequestedTooLateToAcquirer"),
-            atLeastOnce("CaptureToAcquirer"),
-            atMostOnce("RefundAuthorisationToAcquirer"),
-            atLeastOnce("RolledBackAuthorisationRequestToMerchant"),
-            atLeastOnce("RolledBackPreauthorisationRequestToMerchant"),
-            atLeastOnce("ApprovedPreauthorisationToMerchant"),
-            atLeastOnce("FailedAuthorisationToMerchant"),
-            atLeastOnce("ApprovedAuthorisationToMerchant"),
-            atLeastOnce("DeclinedAuthorisationToMerchant"),
-            atLeastOnce("ApprovedCaptureToMerchant"),
-            atLeastOnce("FailedRefundToMerchant"),
-            atLeastOnce("ApprovedRefundToMerchant"),
-            atLeastOnce("DeclinedRefundToMerchant")
-        ).transitions()
+        DummyPaymentTransitions.build().transitions()
     ).formatToImage("docs/images/"));
     System.out.println(new PlantUMLFormatter(
         Settlement,
@@ -60,19 +40,6 @@ public class Main {
             atLeastOnce("approvedCutOffToMerchant")
         ).transitions()
     ).formatToImage("docs/images/"));
-  }
-
-  private static <I, RI> AtMostOnce<I, RI> atMostOnce(String name) {
-    return HttpOutboxRequest.atMostOnce()
-        .name(name)
-        .id(UUID.randomUUID())
-        .<I>messageCreator(_ -> null)
-        .forwarder(null)
-        .contentParser(_ -> valid(null))
-        .isDelivered(_ -> true)
-        .isRejectedByInvalidResponse(_ -> true)
-        .rollbackModel(Main.<RI>atLeastOnce("Rollback" + name))
-        .build();
   }
 
   private static <I> AtLeastOnce<I> atLeastOnce(String name) {
@@ -90,5 +57,6 @@ public class Main {
         .backoffAlgorithm(_ -> Duration.ofSeconds(1))
         .build();
   }
+
 
 }

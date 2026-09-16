@@ -14,13 +14,16 @@ public interface EntityModel {
     return List.of();
   }
 
-  State initialState();
+  State Begin = () -> "Begin";
 
-  static EntityModel of(String name, UUID id, State initialState) {
+  default State initialState() {
+    return Begin;
+  }
+
+  static EntityModel of(String name, UUID id) {
     return new EntityModel() {
       @Override public String name() {return name;}
       @Override public UUID id() {return id;}
-      @Override public State initialState() {return initialState;}
     };
   }
 }

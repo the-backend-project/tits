@@ -1,6 +1,7 @@
 package com.github.thxmasj.statemachine.http.inbox;
 
 import static com.github.thxmasj.statemachine.BuiltinEventTypes.Rollback;
+import static com.github.thxmasj.statemachine.EntityModel.Begin;
 import static com.github.thxmasj.statemachine.EntitySelector.CreationMode.AlwaysCreate;
 import static com.github.thxmasj.statemachine.EntitySelector.CreationMode.CreateIfNotExists;
 import static com.github.thxmasj.statemachine.EntitySelector.entityId;
@@ -25,7 +26,6 @@ import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.Respond;
 import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.RespondBadRequest;
 import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.RollbackMessageId;
 import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.RouteRequest;
-import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.States.Begin;
 import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.States.Completed;
 import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.States.Dispatched;
 import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.States.Rejected;

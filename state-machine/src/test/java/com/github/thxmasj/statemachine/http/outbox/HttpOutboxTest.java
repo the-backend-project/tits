@@ -1,6 +1,7 @@
 package com.github.thxmasj.statemachine.http.outbox;
 
 import static com.github.thxmasj.statemachine.BuiltinEventTypes.Rollback;
+import static com.github.thxmasj.statemachine.EntityModel.Begin;
 import static com.github.thxmasj.statemachine.EntitySelector.entityId;
 import static com.github.thxmasj.statemachine.EntitySelector.newEntityId;
 import static com.github.thxmasj.statemachine.EventTrigger.trigger;
@@ -41,7 +42,6 @@ import reactor.test.StepVerifier;
 public class HttpOutboxTest {
 
   enum States implements State {
-    Begin,
     WaitingForResponse {@Override public Timeout<?> timeout() {return rollbackAfter(Duration.ofSeconds(2));}},
     Done
   }
@@ -178,7 +178,7 @@ public class HttpOutboxTest {
       String path
   ) {
     static ProcessModel create() {
-      EntityModel process = EntityModel.of("Process", UUID.fromString("dda0cc10-3356-4522-8527-ca4f7006c566"), States.Begin);
+      EntityModel process = EntityModel.of("Process", UUID.fromString("dda0cc10-3356-4522-8527-ca4f7006c566"));
       EventType<Void, UUID> doProcess = BasicEventType.of("Do process", UUID.fromString("dbcf351c-b50e-4789-80e9-f52e2be789cd"), Void.class, UUID.class);
       EventType<Void, Void> processed = BasicEventType.of("Processed", UUID.fromString("433d18b2-8429-4615-aeb0-5de2240413ea"));
       EventType<Void, Void> failed = BasicEventType.of("Failed", UUID.fromString("0f4b6aea-a9c2-4b33-b315-844a4e32e45b"));
@@ -218,7 +218,7 @@ public class HttpOutboxTest {
           .build();
 
       Map<State, List<TransitionModel<?, ?>>> processTransitions = Map.of(
-          States.Begin, List.of(
+          Begin, List.of(
               onEvent(doProcess).to(States.WaitingForResponse)
                   .trigger(Exchange.requestDispatched()).on(Exchange).identifiedBy(newEntityId())
                   .reversible(
@@ -255,7 +255,7 @@ public class HttpOutboxTest {
       String path
   ) {
     static ProcessModelWithoutRollback create() {
-      EntityModel process = EntityModel.of("Process", UUID.randomUUID(), States.Begin);
+      EntityModel process = EntityModel.of("Process", UUID.randomUUID());
       EventType<Void, Void> doProcess = BasicEventType.of("Do process", UUID.randomUUID());
       EventType<Void, Void> processed = BasicEventType.of("Processed", UUID.randomUUID());
       EventType<Void, Void> failed = BasicEventType.of("Failed", UUID.randomUUID());
@@ -278,7 +278,7 @@ public class HttpOutboxTest {
           .build();
 
       Map<State, List<TransitionModel<?, ?>>> processTransitions = Map.of(
-          States.Begin, List.of(
+          Begin, List.of(
               onEvent(doProcess).to(States.WaitingForResponse)
                   .trigger(Exchange.requestDispatched()).on(Exchange).identifiedBy(newEntityId())
                   .output()
@@ -309,7 +309,7 @@ public class HttpOutboxTest {
       String path
   ) {
     static ProcessModelWithDefaultInvalidResponseRejection create() {
-      EntityModel process = EntityModel.of("Process", UUID.randomUUID(), States.Begin);
+      EntityModel process = EntityModel.of("Process", UUID.randomUUID());
       EventType<Void, Void> doProcess = BasicEventType.of("Do process", UUID.randomUUID());
       String path = "/" + UUID.randomUUID();
       HttpOutboxRequest<Void> Exchange = HttpOutboxRequest.atMostOnce()
@@ -324,7 +324,7 @@ public class HttpOutboxTest {
           .build();
 
       Map<State, List<TransitionModel<?, ?>>> processTransitions = Map.of(
-          States.Begin, List.of(
+          Begin, List.of(
               onEvent(doProcess).to(States.WaitingForResponse)
                   .trigger(Exchange.requestDispatched()).on(Exchange).identifiedBy(newEntityId())
                   .output()
@@ -355,7 +355,7 @@ public class HttpOutboxTest {
       String path
   ) {
     static ProcessModelWithDefaultInvalidResponseUnknown create() {
-      EntityModel process = EntityModel.of("Process", UUID.randomUUID(), States.Begin);
+      EntityModel process = EntityModel.of("Process", UUID.randomUUID());
       EventType<Void, Void> doProcess = BasicEventType.of("Do process", UUID.randomUUID());
       String path = "/" + UUID.randomUUID();
       HttpOutboxRequest<Void> Exchange = HttpOutboxRequest.atMostOnce()
@@ -370,7 +370,7 @@ public class HttpOutboxTest {
           .build();
 
       Map<State, List<TransitionModel<?, ?>>> processTransitions = Map.of(
-          States.Begin, List.of(
+          Begin, List.of(
               onEvent(doProcess).to(States.WaitingForResponse)
                   .trigger(Exchange.requestDispatched()).on(Exchange).identifiedBy(newEntityId())
                   .output()
@@ -399,7 +399,7 @@ public class HttpOutboxTest {
       HttpOutboxRequest<Void> exchange
   ) {
     static ProcessModelWithDefaultMissingResponse create() {
-      EntityModel process = EntityModel.of("Process", UUID.randomUUID(), States.Begin);
+      EntityModel process = EntityModel.of("Process", UUID.randomUUID());
       String path = "/" + UUID.randomUUID();
       HttpOutboxRequest<Void> exchange = HttpOutboxRequest.atMostOnce()
           .name("ExchangeWithDefaultMissingResponse")

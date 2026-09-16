@@ -1,9 +1,10 @@
 package com.github.thxmasj.statemachine.http.outbox;
 
+import static com.github.thxmasj.statemachine.EntitySelector.entityId;
 import static com.github.thxmasj.statemachine.EntitySelector.entityIdFromSession;
+import static com.github.thxmasj.statemachine.EntitySelector.newEntityId;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
 import static com.github.thxmasj.statemachine.Tuples.tuple;
-import static com.github.thxmasj.statemachine.http.outbox.AtMostOnce.States.Begin;
 import static com.github.thxmasj.statemachine.http.outbox.AtMostOnce.States.Delivered;
 import static com.github.thxmasj.statemachine.http.outbox.AtMostOnce.States.Failed;
 import static com.github.thxmasj.statemachine.http.outbox.AtMostOnce.States.InFlight;
@@ -35,8 +36,6 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.function.Predicate;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 import reactor.core.publisher.Mono;
 
 public final class AtMostOnce<I, RI> implements HttpOutboxRequest<I> {
@@ -237,10 +236,11 @@ public final class AtMostOnce<I, RI> implements HttpOutboxRequest<I> {
     Map<State, List<TransitionModel<?, ?>>> t = Map.of(
         Begin, List.of(
             onEvent(requestDispatched).to(InFlight)
-                .assembleReactive(c -> messageCreator.apply(c).zipWith(Mono.just(c.triggerEvent())))
-                .trigger(forward).with(d -> d.getT1())
+                .assembleReactive(c -> messageCreator.apply(c).zipWith(Mono.just(tuple(c.triggerEvent(), c.log().entityId()))))
+                .trigger(Indexed).with(d -> d.getT2().t1().entityId()).on(ProcessReference).identifiedBy(d -> newEntityId(d.getT2().t2().value()))
+                .trigger(forward).with(d -> d.t1().getT1())
                 .trigger(TimeoutExpired).after(_ -> inflightTimeout)
-                .newIdentifier(ProcessReference, d -> d.getT2())
+//                .newIdentifier(ProcessReference, d -> d.getT2())
                 .output(d -> d.t1().getT1())
         ),
         InFlight, inFlightTransitions,
@@ -249,7 +249,7 @@ public final class AtMostOnce<I, RI> implements HttpOutboxRequest<I> {
         Delivered, rollbackModel != null ? List.of(rollbackModel.requestDispatchedTransition()) : List.of(),
         Unknown, rollbackModel != null ? List.of(rollbackModel.requestDispatchedTransition()) : List.of()
     );
-    this.transitions = rollbackModel != null ? combine(t, rollbackModel.transitions()) : t;
+    this.transitions = rollbackModel != null ? HttpOutboxRequest.combine(t, rollbackModel.inflightTransitions()) : t;
   }
 
   @Override
@@ -263,32 +263,12 @@ public final class AtMostOnce<I, RI> implements HttpOutboxRequest<I> {
   }
 
   @Override
-  public State initialState() {
-    return States.Begin;
-  }
-
-  @Override
   public Map<State, List<TransitionModel<?, ?>>> transitions() {
     return transitions;
   }
 
-  private static Map<State, List<TransitionModel<?, ?>>> combine(
-      Map<State, List<TransitionModel<?, ?>>> m1,
-      Map<State, List<TransitionModel<?, ?>>> m2
-  ) {
-    return Stream.concat(m1.entrySet().stream(), m2.entrySet().stream())
-        .collect(Collectors.toMap(
-            Map.Entry::getKey,
-            Map.Entry::getValue,
-            (_, _) -> {
-              throw new IllegalArgumentException("TransitionModel maps can't be combined - they use the same State key");
-            }
-        ));
-  }
-
   enum States implements State {
     Intermediate,
-    Begin,
     InFlight,
     Failed,
     Delivered,

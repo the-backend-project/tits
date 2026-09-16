@@ -34,6 +34,10 @@ public sealed class EntitySelector permits ById, ByIdFromSession, ByLastInIdGrou
     return _ -> new ById(new EntityId.UUID(UUID.randomUUID()), AlwaysCreate);
   }
 
+  public static ById newEntityId(UUID id) {
+    return new ById(new EntityId.UUID(id), AlwaysCreate);
+  }
+
   public static <T> Function<T, ByIdFromSession> entityIdFromSession() {
     return _ -> new ByIdFromSession();
   }

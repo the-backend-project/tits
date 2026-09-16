@@ -114,7 +114,6 @@ public class PaymentTransitions {
       AtLeastOnce<Tuple5<Authorisation, Merchant, AuthenticationResult, Capture, PaymentToken>> captureRequestedTooLateToAcquirer,
       AtLeastOnce<Tuple7<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, AcquirerResponse, Capture>> captureToAcquirer,
       AtMostOnce<Tuple6<Authorisation,  Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, Refund>, Tuple3<ReversalData, Merchant, AcquirerBatchNumber>> refundAuthorisationToAcquirer,
-
       AtLeastOnce<Tuple3<ReversalData,  Merchant, BatchNumber                  >> rolledBackAuthorisationRequestToMerchant,
       AtLeastOnce<Tuple2<ReversalData,  Merchant                               >> rolledBackPreauthorisationRequestToMerchant,
       AtLeastOnce<Tuple3<Authorisation, Merchant, AcquirerResponse             >> approvedPreauthorisationToMerchant,

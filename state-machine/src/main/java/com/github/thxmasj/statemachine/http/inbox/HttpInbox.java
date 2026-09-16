@@ -1,5 +1,10 @@
 package com.github.thxmasj.statemachine.http.inbox;
 
+import static com.github.thxmasj.statemachine.EntitySelector.CreationMode.AlwaysCreate;
+import static com.github.thxmasj.statemachine.Validated.invalid;
+import static com.github.thxmasj.statemachine.Validated.valid;
+import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.EntityModels.RequestRouting;
+
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.github.thxmasj.statemachine.BasicEventType;
 import com.github.thxmasj.statemachine.EntityId;
@@ -28,12 +33,6 @@ import java.text.ParseException;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Function;
-
-import static com.github.thxmasj.statemachine.EntitySelector.CreationMode.AlwaysCreate;
-import static com.github.thxmasj.statemachine.Validated.invalid;
-import static com.github.thxmasj.statemachine.Validated.valid;
-import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.EntityModels.RequestRouting;
-import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.States.Begin;
 
 public interface HttpInbox {
 
@@ -192,9 +191,6 @@ public interface HttpInbox {
             public UUID id() {return id;}
 
             @Override
-            public State initialState() {return Begin;}
-
-            @Override
             public List<SecondaryIdModel<?>> secondaryIds() {
                 return List.of(
                         MessageId,
@@ -214,7 +210,6 @@ public interface HttpInbox {
     }
 
     enum States implements State {
-        Begin,
         Routed,
         Completed,
         Rejected,

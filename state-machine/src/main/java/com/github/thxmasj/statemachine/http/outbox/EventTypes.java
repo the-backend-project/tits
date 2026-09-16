@@ -24,10 +24,6 @@ public interface EventTypes {
       "Timeout expired",
       UUID.fromString("7ff41071-2411-405d-acf2-c3b66823f17d")
   );
-  EventType<Void, Void> Retry = BasicEventType.of(
-      "Retry",
-      UUID.fromString("61bd64d6-6b65-453e-8d60-7b4e01c5aa53")
-  );
   EventType<Void, Void> ConnectionFailed = BasicEventType.of(
       "Connection failed",
       UUID.fromString("14be9085-1f7c-427c-9963-2c72cdc0888f")

@@ -1,10 +1,11 @@
 package com.github.thxmasj.statemachine.http.outbox;
 
+import static com.github.thxmasj.statemachine.EntitySelector.entityId;
 import static com.github.thxmasj.statemachine.EntitySelector.entityIdFromSession;
+import static com.github.thxmasj.statemachine.EntitySelector.newEntityId;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
 import static com.github.thxmasj.statemachine.Tuples.tuple;
 import static com.github.thxmasj.statemachine.http.outbox.AtLeastOnce.States.Compensating;
-import static com.github.thxmasj.statemachine.http.outbox.AtLeastOnce.States.Begin;
 import static com.github.thxmasj.statemachine.http.outbox.AtLeastOnce.States.Dead;
 import static com.github.thxmasj.statemachine.http.outbox.AtLeastOnce.States.Delivered;
 import static com.github.thxmasj.statemachine.http.outbox.AtLeastOnce.States.InFlight;
@@ -43,8 +44,9 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
   private final String name;
   private final UUID id;
   private final EventType<I, HttpRequestMessage> requestDispatched;
-  private final TransitionModel<I, HttpRequestMessage> requestDispatchedTransition;
+  private final TransitionModel<I, HttpRequestMessage> externalRequestDispatchedTransition;
   private final Map<State, List<TransitionModel<?, ?>>> transitions;
+  private final Map<State, List<TransitionModel<?, ?>>> inflightTransitions;
 
   @Override
   public EventType<I, HttpRequestMessage> requestDispatched() {
@@ -52,7 +54,11 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
   }
 
   public TransitionModel<I, HttpRequestMessage> requestDispatchedTransition() {
-    return requestDispatchedTransition;
+    return externalRequestDispatchedTransition;
+  }
+
+  public Map<State, List<TransitionModel<?, ?>>> inflightTransitions() {
+    return inflightTransitions;
   }
 
   public record RetryContext(
@@ -162,20 +168,12 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
     };
     Function<TransitionContext<Void>, RetryContext> retry = c -> new RetryContext(c.log().created(), c.timestamp(), c.log().count(attemptsAvailable) + 1);
     // NB! This transition is only used by AtMostOnce and does not add the ProcessReference identifier as it will be already added.
-    this.requestDispatchedTransition = onEvent(requestDispatched).to(InFlight)
+    this.externalRequestDispatchedTransition = onEvent(requestDispatched).to(InFlight)
         .assembleReactive(messageCreator)
         .trigger(forward).with(d -> d)
         .trigger(TimeoutExpired).after(_ -> inflightTimeout)
         .output(d -> d);
-    this.transitions = Map.of(
-        Begin, List.of(
-            onEvent(requestDispatched).to(InFlight)
-                .assembleReactive(c -> messageCreator.apply(c).zipWith(Mono.just(c.triggerEvent())))
-                .trigger(forward).with(d -> d.getT1())
-                .trigger(TimeoutExpired).after(_ -> inflightTimeout)
-                .newIdentifier(ProcessReference, d -> d.getT2())
-                .output(d -> d.t1().getT1())
-        ),
+    this.inflightTransitions = Map.of(
         InFlight, List.of(
             onEvent(ConnectionFailed).to(Intermediate)
                 .assemble(retry)
@@ -310,6 +308,26 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
         Dead, List.of(),
         Delivered, List.of()
     );
+    this.transitions = HttpOutboxRequest.combine(
+        Map.of(
+            Begin, List.of(
+                onEvent(requestDispatched).to(InFlight)
+                    .assembleReactive(c -> messageCreator.apply(c).zipWith(Mono.just(tuple(c.triggerEvent(), c.log().entityId(), c.log().entityModel()))))
+                    .trigger(Indexed).with(d -> d.getT2().t1().entityId()).on(ProcessReference).identifiedBy(d -> newEntityId(d.getT2().t2().value()))
+
+                    .trigger(Indexed)
+                    .with(d -> d.t1().getT2().t3().id()) // Id of entity model for this HttpOutboxRequest
+                    .on(EntityType)
+                    // TODO: Entity id already exists in IndexEvent. Create event number 2 somehow?
+                    .identifiedBy(d -> newEntityId(d.t1().getT2().t2().value()))
+
+                    .trigger(forward).with(d -> d.t1().t1().getT1())
+                    .trigger(TimeoutExpired).after(_ -> inflightTimeout)
+                    //.newIdentifier(ProcessReference, d -> d.getT2())
+                    .output(d -> d.t1().t1().getT1())
+            )
+        ), inflightTransitions
+    );
   }
 
   @Override
@@ -323,18 +341,12 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
   }
 
   @Override
-  public State initialState() {
-    return States.Begin;
-  }
-
-  @Override
   public Map<State, List<TransitionModel<?, ?>>> transitions() {
     return transitions;
   }
 
   enum States implements State {
     Intermediate,
-    Begin,
     InFlight,
     Delivered,
     Compensating,

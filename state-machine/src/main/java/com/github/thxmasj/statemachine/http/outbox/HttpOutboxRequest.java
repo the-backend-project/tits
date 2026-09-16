@@ -1,57 +1,21 @@
 package com.github.thxmasj.statemachine.http.outbox;
 
-import com.github.thxmasj.statemachine.EventReference;
+import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
+
+import com.github.thxmasj.statemachine.BasicEventType;
 import com.github.thxmasj.statemachine.EventType;
-import com.github.thxmasj.statemachine.SecondaryId;
+import com.github.thxmasj.statemachine.IndexEntityModel;
 import com.github.thxmasj.statemachine.State;
 import com.github.thxmasj.statemachine.TransitionModelBuilder;
-import com.github.thxmasj.statemachine.database.mssql.SchemaNames.Column;
-import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
+import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
-import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public sealed interface HttpOutboxRequest<I> extends com.github.thxmasj.statemachine.EntityModel permits AtLeastOnce, AtMostOnce {
-
-  SecondaryIdModel<EventReference> ProcessReference = new SecondaryIdModel<>() {
-    @Override
-    public UUID id() {
-      return UUID.fromString("18133749-083b-44a0-a046-bda1d8d3fce7");
-    }
-
-    @Override
-    public String name() {
-      return "ProcessReference";
-    }
-
-    @Override
-    public List<Column> columns() {
-      return List.of(
-          new Column("ProcessId", "UNIQUEIDENTIFIER", r -> ((EventReference)r).entityId()),
-          new Column("EventNumber", "SMALLINT", r -> ((EventReference)r).eventNumber())
-      );
-    }
-
-    @Override
-    public SecondaryId<EventReference> map(ResultSet resultSet) {
-      try {
-        return new SecondaryId<>(
-            this,
-            new EventReference(resultSet.getObject("ProcessId", UUID.class), resultSet.getInt("EventNumber"))
-        );
-      } catch (SQLException e) {
-        throw new RuntimeException(e);
-      }
-    }
-  };
-
-  @Override
-  default List<SecondaryIdModel<?>> secondaryIds() {
-    return List.of(ProcessReference);
-  }
 
   Map<State, List<TransitionModelBuilder.TransitionModel<?, ?>>> transitions();
 
@@ -64,4 +28,41 @@ public sealed interface HttpOutboxRequest<I> extends com.github.thxmasj.statemac
   static AtMostOnceBuilder.NameStep atMostOnce() {
     return AtMostOnceBuilder.create();
   }
+
+  EventType<UUID, UUID> Indexed = BasicEventType.of(
+      "Indexed",
+      UUID.fromString("da7f9a47-67a9-4a0e-affb-865f665a9564"),
+      UUID.class
+  );
+
+  Map<State, List<TransitionModel<?, ?>>> indexingTransitions = Map.of(
+      Begin, List.of(
+          onEvent(Indexed).toSelf().assembleInput().output(d -> d)
+      )
+  );
+
+  IndexEntityModel<UUID> ProcessReference = IndexEntityModel.ofUUID(
+      "ProcessReference",
+      UUID.fromString("c0881c13-173e-4672-a6d9-2cdfa57c8cbe")
+  );
+
+  IndexEntityModel<UUID> EntityType = IndexEntityModel.ofUUID(
+      "EntityType",
+      UUID.fromString("0d7a9644-7810-4e91-a8ae-8f39e0f98c67")
+  );
+
+  static Map<State, List<TransitionModel<?, ?>>> combine(
+      Map<State, List<TransitionModel<?, ?>>> m1,
+      Map<State, List<TransitionModel<?, ?>>> m2
+  ) {
+    return Stream.concat(m1.entrySet().stream(), m2.entrySet().stream())
+        .collect(Collectors.toMap(
+            Map.Entry::getKey,
+            Map.Entry::getValue,
+            (_, _) -> {
+              throw new IllegalArgumentException("TransitionModel maps can't be combined - they use the same State key");
+            }
+        ));
+  }
+
 }

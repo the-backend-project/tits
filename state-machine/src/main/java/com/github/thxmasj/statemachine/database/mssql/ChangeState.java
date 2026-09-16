@@ -9,6 +9,7 @@ import com.github.thxmasj.statemachine.DelayedEvent;
 import com.github.thxmasj.statemachine.EntityId;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.Event;
+import com.github.thxmasj.statemachine.IndexEntityModel;
 import com.github.thxmasj.statemachine.SecondaryId;
 import com.github.thxmasj.statemachine.StateMachine.ProcessResult;
 import com.github.thxmasj.statemachine.database.Client;
@@ -211,6 +212,7 @@ public class ChangeState {
         """ + IntStream.range(0, changes.size()).mapToObj(i -> insertSql(
             i,
             "p" + i + "_",
+            changes.get(i).entityModel(),
             changes.get(i).newEvent(),
             changes.get(i).newSecondaryIds(),
             changes.get(i).delayedEvent()
@@ -240,6 +242,7 @@ public class ChangeState {
   private String insertSql(
       int changeIndex,
       String parameterPrefix,
+      EntityModel entityModel,
       Event<?> event,
       List<SecondaryId<?>> secondaryIds,
       DelayedEvent<?> delayedEvent
@@ -273,10 +276,22 @@ public class ChangeState {
               .replace("{schema}", schema);
     }
 
-    //
-    // 'Normal' event
-    //
-    if (event != null) {
+    if (event != null && entityModel instanceof IndexEntityModel) {
+      sql +=
+          """
+          INSERT INTO [{schema}].[IndexEvent] (
+            EntityId,
+            EventNumber,
+            Type,
+            Timestamp,
+            Data
+          ) VALUES (
+            @entityId{changeIndex},
+            :eventNumber,:type,:timestamp,:data
+          )
+          """.replace("{schema}", schema)
+              .replace("{changeIndex}", String.valueOf(changeIndex));
+    } else if (event != null) {
       sql +=
           """
           DELETE [{schema}].[Timeout] FROM [{schema}].[Timeout] WITH (INDEX([ixEntityId]))

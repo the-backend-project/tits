@@ -31,7 +31,7 @@ import reactor.core.publisher.Mono;
 public class EventsByLastEntity {
 
   private final DataSource dataSource;
-  private final Map<EntityModel, Function<UUID, EventType<?, ?>>> eventTypeMappers;
+  private final Function<UUID, EventType<?, ?>> eventTypeMapper;
   private final Clock clock;
   private final Map<SecondaryIdModel<?>, String> sql;
 
@@ -39,11 +39,11 @@ public class EventsByLastEntity {
       DataSource dataSource,
       List<EntityModel> entityModels,
       String schemaName,
-      Map<EntityModel, Function<UUID, EventType<?, ?>>> eventTypeMappers,
+      Function<UUID, EventType<?, ?>> eventTypeMapper,
       Clock clock
   ) {
     this.dataSource = dataSource;
-    this.eventTypeMappers = eventTypeMappers;
+    this.eventTypeMapper = eventTypeMapper;
     this.clock = clock;
     this.sql = new HashMap<>();
     for (var entityModel : entityModels) {
@@ -150,7 +150,7 @@ public class EventsByLastEntity {
           events.add(new Event<>(
               entityId.value(),
               rs.getInt(1), // EventNumber
-              eventTypeMappers.get(entityModel).apply(UUID.fromString(rs.getString(2))), // Type
+              eventTypeMapper.apply(UUID.fromString(rs.getString(2))), // Type
               rs.getObject(3, LocalDateTime.class), // Timestamp
               clock,
               rs.getString(4) // Data
