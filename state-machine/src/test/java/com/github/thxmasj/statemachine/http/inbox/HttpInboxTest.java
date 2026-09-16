@@ -34,14 +34,13 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.thxmasj.statemachine.BasicEventType;
 import com.github.thxmasj.statemachine.BasicEventType.Rollback.Data;
+import com.github.thxmasj.statemachine.DataType;
 import com.github.thxmasj.statemachine.DelaySpecification;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.Event;
 import com.github.thxmasj.statemachine.EventTrigger;
 import com.github.thxmasj.statemachine.EventType;
-import com.github.thxmasj.statemachine.IncomingResponseValidator.Result.Status;
 import com.github.thxmasj.statemachine.Init;
-import com.github.thxmasj.statemachine.OutgoingRequestCreator;
 import com.github.thxmasj.statemachine.PlantUMLFormatter;
 import com.github.thxmasj.statemachine.State;
 import com.github.thxmasj.statemachine.StateMachine;
@@ -63,10 +62,8 @@ import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.URI;
 import java.time.Duration;
-import java.util.AbstractMap.SimpleImmutableEntry;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.Random;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeAll;
@@ -198,7 +195,7 @@ public class HttpInboxTest {
       ZeroProcessing = BasicEventType.of(
       "ZeroProcessing",
       UUID.fromString("aa70041a-a68f-4bcd-831f-5029eb329a05"),
-      Zero.class
+      DataType.forClass(Zero.class)
   );
   static EventType<Void, Void>
       EventThatIsAlwaysRejected = BasicEventType.of(
@@ -220,7 +217,7 @@ public class HttpInboxTest {
   static EventType<Void, Void> ExternalProcessingDone = BasicEventType.of(
       "ExternalProcessingDone",
       UUID.fromString("464fca06-f872-4e38-a167-5550f5247310"),
-      Void.class
+      DataType.none()
   );
   static EventType<BasicEventType.Rollback.Data, BasicEventType.Rollback.Data>
       Cancel = new BasicEventType.Cancel("Cancel", UUID.fromString("d94c29c8-f113-4dee-921f-1a8e58f916f4"));
@@ -228,20 +225,16 @@ public class HttpInboxTest {
       ExternalProcessing = BasicEventType.of(
       "ExternalProcessing",
       UUID.fromString("12a97e70-58cc-46a8-aed9-f867cfc7375f"),
-      String.class
+      DataType.forString()
   ),
       LongExternalProcessing = BasicEventType.of(
           "LongExternalProcessing",
           UUID.fromString("6ebcbbec-5bbc-4c05-96fd-41ad0bbc097a"),
-          String.class
+          DataType.forString()
       );
   static EventType<Void, Void>
       SwitchOn = BasicEventType.of("SwitchOn", UUID.fromString("5e9a8a9d-6a21-41cf-82dc-857fe1e4c4e0")),
       SwitchOff = BasicEventType.of("SwitchOff", UUID.fromString("8e1483c8-b649-43b8-b352-5094a94c0dad"));
-
-  static <K, V> Entry<K, V> entry(K key, V value) {
-    return new SimpleImmutableEntry<>(key, value);
-  }
 
   static List<HttpRequestRoute<?>> routes = List.of(
       new HttpRequestRoute<>(
@@ -320,52 +313,8 @@ public class HttpInboxTest {
   }
 
 
-  static class ProcessRequest implements OutgoingRequestCreator<Void> {
-
-    private final long processingTime;
-
-    ProcessRequest(long processingTime) {this.processingTime = processingTime;}
-
-    @Override
-    public HttpRequestMessage create(Void data, Context context) {
-      return new HttpRequestMessage(
-          POST,
-          URI.create("http://localhost:" + server.getAddress().getPort() + "/process/" + processingTime)
-      );
-    }
-
-    @Override
-    public UUID id() {
-      return UUID.fromString("e0eadb64-224a-480c-b1a2-aab29927fb7e");
-    }
-
-    @Override
-    public boolean equals(Object obj) {
-      return obj instanceof ProcessRequest other && id().equals(other.id());
-    }
-
-    @Override
-    public int hashCode() {
-      return id().hashCode();
-    }
-  }
-
   private static StateMachine stateMachine;
   private static HttpServer server;
-
-  static Status status(HttpResponseMessage responseMessage) {
-    int c = responseMessage.statusCode();
-    if (c >= 200 && c < 300) {
-      return Status.Ok;
-    } else if (c >= 400 && c < 500) {
-      return Status.PermanentError;
-    } else if (c >= 500 && c < 600) {
-      return Status.TransientError;
-    } else {
-      return Status.PermanentError;
-    }
-  }
-
 
   @BeforeAll
   public static void setUp() throws IOException {

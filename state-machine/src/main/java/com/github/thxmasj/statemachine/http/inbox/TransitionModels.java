@@ -45,7 +45,7 @@ import com.github.thxmasj.statemachine.EntitySelector.ById;
 import com.github.thxmasj.statemachine.EntitySelector.ByIdFromSession;
 import com.github.thxmasj.statemachine.EntitySelector.BySecondaryId;
 import com.github.thxmasj.statemachine.EventType;
-import com.github.thxmasj.statemachine.EventType.DataType;
+import com.github.thxmasj.statemachine.DataType;
 import com.github.thxmasj.statemachine.GuardedTransition;
 import com.github.thxmasj.statemachine.OutgoingRequestCreator.Context;
 import com.github.thxmasj.statemachine.State;
@@ -152,8 +152,8 @@ public interface TransitionModels {
     EventType<Tuple2<HttpRequestMessage, T>, Void> contentRoutingEvent = BasicEventType.of(
         contentRoute.predicateName(),
         contentRoute.dispatchingEventTypeId(),
-        new DataType<>(new TypeReference<>() {}, HttpRequestMessage.class, Object.class),
-        Void.class
+        DataType.unknown(),
+        DataType.none()
     );
     return new GuardedTransition<>(
         d -> d.t2().isValid() && contentRoute.predicate().test(d.t2().validValue()),
@@ -253,7 +253,7 @@ public interface TransitionModels {
                 .output(d -> d.t1().t1()),
             d -> tuple(
                 d.t1().request(),
-                d.t2().rejected().log().one(ResponseEventType.Data.class).response()
+                d.t2().rejected().log().one(ResponseEventType.outputDataType).t1()
             )
         )
         .when(d -> d.t2().isRejected()).then(
@@ -331,7 +331,7 @@ public interface TransitionModels {
 
   private static <T, U> TransitionModel<?, ?> triggerRollbackTransition(ContentRoute<T, U> route, State rejectedState) {
     return onEvent(route.dispatchingEventType()).to(RollingBack)
-        .assemble((input, log) -> tuple(input, log.entityId(), log.one(AcceptRequest).t2(), log.one(ResponseEventType.Data.class).processReference()))
+        .assemble((input, log) -> tuple(input, log.entityId(), log.one(AcceptRequest).t2(), log.one(ResponseEventType.outputDataType).t2()))
         .trigger(Rollback).with(d -> new Data(d.t3().eventNumber() - 1, d.t4().eventNumber(), "HTTP request")).on(route.processType()).identifiedBy(d -> entityId(d.t3().entityId()))
         .when(d -> d.t2().isRejected()).then(
             onEvent(RejectRequest).to(rejectedState)
@@ -389,12 +389,12 @@ public interface TransitionModels {
             customResponses.stream().map(TransitionModels::customResponse).collect(toList()),
             List.of(
                 onEvent(CompleteRequest).to(Completed)
-                    .assemble(c -> new ResponseEventType.Data(createResponseMessage(new Created(), c.input().t2(), c.correlationId(), c.timestamp(), c.input().t1()), c.input().t2()))
-                    .trigger(Respond).with(ResponseEventType.Data::response).on(RequestRouting).identifiedBy(entityIdFromSession())
+                    .assemble(c -> tuple(createResponseMessage(new Created(), c.input().t2(), c.correlationId(), c.timestamp(), c.input().t1()), c.input().t2()))
+                    .trigger(Respond).with(d -> d.t1()).on(RequestRouting).identifiedBy(entityIdFromSession())
                     .output(Tuple2::t1),
                 onEvent(CompleteInvalidRequest).to(Completed)
-                    .assemble(c -> new ResponseEventType.Data(createResponseMessage(new BadRequest(), c.input().t2(), c.correlationId(), c.timestamp(), c.input().t1()), c.input().t2()))
-                    .trigger(Respond).with(ResponseEventType.Data::response).on(RequestRouting).identifiedBy(entityIdFromSession())
+                    .assemble(c -> tuple(createResponseMessage(new BadRequest(), c.input().t2(), c.correlationId(), c.timestamp(), c.input().t1()), c.input().t2()))
+                    .trigger(Respond).with(d -> d.t1()).on(RequestRouting).identifiedBy(entityIdFromSession())
                     .output(Tuple2::t1)
             ),
             routes.stream()
@@ -410,8 +410,8 @@ public interface TransitionModels {
             .collect(toList()),
         RollingBack, List.of(
             onEvent(CompleteRollbackRequest).to(RolledBack)
-                .assemble(c -> new ResponseEventType.Data(createResponseMessage(new Created(), c.input().t2(), c.correlationId(), c.timestamp(), c.input().t1()), c.input().t2()))
-                .trigger(Respond).with(ResponseEventType.Data::response).on(RequestRouting).identifiedBy(entityIdFromSession())
+                .assemble(c -> tuple(createResponseMessage(new Created(), c.input().t2(), c.correlationId(), c.timestamp(), c.input().t1()), c.input().t2()))
+                .trigger(Respond).with(d -> d.t1()).on(RequestRouting).identifiedBy(entityIdFromSession())
                 .output(Tuple2::t1),
             onEvent(CompleteDuplicatedRequest).to(RolledBack)
                 .assemble(TransitionContext::input)
@@ -420,8 +420,8 @@ public interface TransitionModels {
         ),
         Rejected, List.of(
             onEvent(CompleteRequest).to(Completed)
-                .assemble(c -> new ResponseEventType.Data(createResponseMessage(new UnprocessableEntity(), c.input().t2(), c.correlationId(), c.timestamp(), c.input().t1()), c.input().t2()))
-                .trigger(Respond).with(ResponseEventType.Data::response).on(RequestRouting).identifiedBy(entityIdFromSession())
+                .assemble(c -> tuple(createResponseMessage(new UnprocessableEntity(), c.input().t2(), c.correlationId(), c.timestamp(), c.input().t1()), c.input().t2()))
+                .trigger(Respond).with(d -> d.t1()).on(RequestRouting).identifiedBy(entityIdFromSession())
                 .output(Tuple2::t1),
             onEvent(CompleteRejectedRequest).to(Completed)
                 .assembleInput()
@@ -434,14 +434,14 @@ public interface TransitionModels {
         ),
         RejectedRollbackFromCompleted, List.of(
             onEvent(CompleteRollbackRequest).to(Completed)
-                .assemble(c -> new ResponseEventType.Data(createResponseMessage(new UnprocessableEntity(), c.input().t2(), c.correlationId(), c.timestamp(), c.input().t1()), c.input().t2()))
-                .trigger(Respond).with(ResponseEventType.Data::response).on(RequestRouting).identifiedBy(entityIdFromSession())
+                .assemble(c -> tuple(createResponseMessage(new UnprocessableEntity(), c.input().t2(), c.correlationId(), c.timestamp(), c.input().t1()), c.input().t2()))
+                .trigger(Respond).with(d -> d.t1()).on(RequestRouting).identifiedBy(entityIdFromSession())
                 .output(Tuple2::t1)
         ),
         RejectedRollbackFromDispatched, List.of(
             onEvent(CompleteRollbackRequest).to(Dispatched)
-                .assemble(c -> new ResponseEventType.Data(createResponseMessage(new UnprocessableEntity(), c.input().t2(), c.correlationId(), c.timestamp(), c.input().t1()), c.input().t2()))
-                .trigger(Respond).with(ResponseEventType.Data::response).on(RequestRouting).identifiedBy(entityIdFromSession())
+                .assemble(c -> tuple(createResponseMessage(new UnprocessableEntity(), c.input().t2(), c.correlationId(), c.timestamp(), c.input().t1()), c.input().t2()))
+                .trigger(Respond).with(d -> d.t1()).on(RequestRouting).identifiedBy(entityIdFromSession())
                 .output(Tuple2::t1)
         ),
         RolledBack,
@@ -458,7 +458,7 @@ public interface TransitionModels {
                             .assembleInput()
                             .trigger(CompleteDuplicatedRequest).with(Tuple2::t2).on(RequestDispatching).identifiedBy(entityIdFromSession())
                             .output(d -> d.t1().t1()),
-                        d -> tuple(d.t1().request(), d.t3().response())
+                        d -> tuple(d.t1().request(), d.t3().t1())
                     )
                     .otherwise(
                         onEvent(RejectRequest).to(Rejected)
@@ -489,8 +489,8 @@ public interface TransitionModels {
 
   private static <I> TransitionModel<?, ?> customResponse(CustomResponse<I> customResponse) {
     return onEvent(customResponse.event()).to(Completed)
-        .assemble(c -> new ResponseEventType.Data(customResponse.messageCreator().apply(c), c.eventReference()))
-        .trigger(Respond).with(ResponseEventType.Data::response).on(RequestRouting).identifiedBy(entityIdFromSession())
+        .assemble(c -> tuple(customResponse.messageCreator().apply(c), c.eventReference()))
+        .trigger(Respond).with(d -> d.t1()).on(RequestRouting).identifiedBy(entityIdFromSession())
         .output(Tuple2::t1);
   }
 

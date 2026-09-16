@@ -26,8 +26,7 @@ public interface Listener {
       }
       public record Event(
           int number,
-          String type,
-          String data
+          String type
       ) {}
     }
 

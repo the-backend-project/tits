@@ -18,6 +18,7 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.MerchantStat
 import static com.github.thxmasj.statemachine.templates.cardpayment.MerchantState.Suspended;
 import static java.util.Optional.ofNullable;
 
+import com.github.thxmasj.statemachine.DataType;
 import com.github.thxmasj.statemachine.State;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
@@ -47,10 +48,10 @@ public class MerchantTransitions {
                 .trigger(CompleteRequest).with(d -> tuple("", d)).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(),
             onEvent(Update).toSelf()
-                .assemble(c -> tuple(merge(c.log().last(Merchant.class), c.input()), c.eventReference()))
+                .assemble(c -> tuple(merge(c.log().last(DataType.forClass(Merchant.class)), c.input()), c.eventReference()))
                 .trigger(CompleteRequest).with(d -> tuple("", d.t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t1()),
-            onEvent(Get).toSelf().assemble((_, log) -> log.last(Merchant.class)).output(d -> d)
+            onEvent(Get).toSelf().assemble((_, log) -> log.last(DataType.forClass(Merchant.class))).output(d -> d)
         ),
         Suspended, List.of(
             onEvent(Resume).to(Active)
@@ -58,7 +59,7 @@ public class MerchantTransitions {
                 .trigger(CompleteRequest).with(d -> tuple("", d)).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(),
             onEvent(Update).toSelf()
-                .assemble(c -> tuple(merge(c.log().last(Merchant.class), c.input()), c.eventReference()))
+                .assemble(c -> tuple(merge(c.log().last(DataType.forClass(Merchant.class)), c.input()), c.eventReference()))
                 .trigger(CompleteRequest).with(d -> tuple("", d.t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t1()),
             onEvent(Delete).to(Deleted)

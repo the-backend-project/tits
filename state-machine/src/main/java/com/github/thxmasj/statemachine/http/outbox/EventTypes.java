@@ -3,22 +3,24 @@ package com.github.thxmasj.statemachine.http.outbox;
 import static com.github.thxmasj.statemachine.BasicEventType.of;
 
 import com.github.thxmasj.statemachine.BasicEventType;
+import com.github.thxmasj.statemachine.DataType;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.EventType;
+import com.github.thxmasj.statemachine.http.HttpDataType;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import java.util.UUID;
 
 public interface EventTypes {
 
-  EventType<EntityModel, EntityModel> ServiceUnavailable = of("ServiceUnavailable", UUID.fromString("f91e560f-ba7b-4e14-976a-82e592a627f5"), EntityModel.class);
+  EventType<EntityModel, EntityModel> ServiceUnavailable = of("ServiceUnavailable", UUID.fromString("f91e560f-ba7b-4e14-976a-82e592a627f5"), DataType.forClass(EntityModel.class));
   EventType<String, String>
-      InvalidResponse = of("InvalidResponse", UUID.fromString("450679ab-bc60-46cb-bb97-d171c34c2750"), String.class);
+      InvalidResponse = of("InvalidResponse", UUID.fromString("450679ab-bc60-46cb-bb97-d171c34c2750"), DataType.forString());
 
   EventType<HttpResponseMessage, Void> ResponseReceived = BasicEventType.of(
       "Response received",
       UUID.fromString("cd730efa-286d-4e29-b8bf-55df708fe889"),
-      HttpResponseMessage.class,
-      Void.class
+      HttpDataType.forResponse(),
+      DataType.none()
   );
   EventType<Void, Void> TimeoutExpired = BasicEventType.of(
       "Timeout expired",

@@ -4,6 +4,7 @@ import static com.github.thxmasj.statemachine.database.jdbc.PreparedStatementSup
 import static java.util.stream.Collectors.joining;
 
 import com.github.thxmasj.statemachine.database.Client;
+import com.github.thxmasj.statemachine.database.Parameter;
 import com.github.thxmasj.statemachine.database.Row;
 import com.microsoft.sqlserver.jdbc.SQLServerException;
 import java.sql.Connection;
@@ -33,12 +34,12 @@ public class JDBCClient implements Client {
   }
 
   @Override
-  public <T> Mono<T> one(String name, String sql, Map<String, Object> parameters, Function<Row, T> rowMapper) {
+  public <T> Mono<T> one(String name, String sql, Map<String, Parameter<?>> parameters, Function<Row, T> rowMapper) {
     return all(name, sql, parameters, rowMapper).singleOrEmpty();
   }
 
   @Override
-  public <T> Flux<T> all(String name, String sql, Map<String, Object> parameters, Function<Row, T> rowMapper) {
+  public <T> Flux<T> all(String name, String sql, Map<String, Parameter<?>> parameters, Function<Row, T> rowMapper) {
     return Mono.fromCallable(() -> {
           try (
               Connection connection = dataSource.getConnection();
@@ -53,7 +54,7 @@ public class JDBCClient implements Client {
   }
 
   @Override
-  public Mono<Integer> update(String name, String sql, Map<String, Object> parameters) {
+  public Mono<Integer> update(String name, String sql, Map<String, Parameter<?>> parameters) {
     return Mono.fromCallable(() -> {
           try (
               Connection connection = dataSource.getConnection();
@@ -93,7 +94,7 @@ public class JDBCClient implements Client {
     return lastResult;
   }
 
-  private Function<? super Throwable, ? extends Throwable> errorMapper(String queryName, String sql, Map<String, Object> parameters) {
+  private Function<? super Throwable, ? extends Throwable> errorMapper(String queryName, String sql, Map<String, Parameter<?>> parameters) {
     return error -> switch (error) {
       case SQLServerException e when e.getSQLServerError().getErrorNumber() == 2627 -> {
         Matcher primaryKeyViolationMatcher = primaryKeyViolationPattern.matcher(e.getMessage());
@@ -113,8 +114,8 @@ public class JDBCClient implements Client {
     };
   }
 
-  private String errorMessage(String message, String queryName, String sql, Map<String, Object> parameters) {
-    return "Query "+queryName+" failed: " + message + "\nParameters:\n" + parameters.entrySet().stream().map(e -> e.getKey() + "\t" + (e.getValue() != null ? e.getValue().getClass().getSimpleName() : "N/A") + "\t" + e.getValue()).collect(joining("\n")) + "\nSQL:\n" + sql;
+  private String errorMessage(String message, String queryName, String sql, Map<String, Parameter<?>> parameters) {
+    return "Query "+queryName+" failed: " + message + "\nParameters:\n" + parameters.entrySet().stream().map(e -> e.getKey() + "\t" + e.getValue()).collect(joining("\n")) + "\nSQL:\n" + sql;
   }
 
   private static final Pattern duplicateKeyRowPattern = Pattern.compile(

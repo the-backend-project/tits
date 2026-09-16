@@ -47,7 +47,7 @@ public class ChangeState {
     if (event != null) {
       spec.bind("eventNumber", event.eventNumber())
           .bind("type", event.type().id())
-          .bind("data", event.getMarshalledData());
+          .bindNullable("data", byte[].class, event.getMarshalledData());
     }
     for (SecondaryId<?> secondaryId : change.newSecondaryIds()) {
       for (int i = 0; i < secondaryId.model().columns().size(); i++) {
@@ -64,10 +64,14 @@ public class ChangeState {
       spec
           .bind("eventNumber", change.delayedEvent().eventNumber())
           .bind("type", change.delayedEvent().type().id())
-          .bind("data", Event.marshal(change.delayedEvent().data()))
+          .bindNullable("data", byte[].class, marshal(change.delayedEvent()))
           .bind("deadline", deadline.withZoneSameInstant(clock.getZone()).toLocalDateTime())
           .bind("correlationId", correlationId);
     }
+  }
+
+  private static <T> byte[] marshal(DelayedEvent<T> delayedEvent) {
+    return delayedEvent.type().inputDataType().marshal(delayedEvent.data());
   }
 
   public interface Change {

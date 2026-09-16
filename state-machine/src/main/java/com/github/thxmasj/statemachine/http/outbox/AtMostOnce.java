@@ -1,6 +1,5 @@
 package com.github.thxmasj.statemachine.http.outbox;
 
-import static com.github.thxmasj.statemachine.EntitySelector.entityId;
 import static com.github.thxmasj.statemachine.EntitySelector.entityIdFromSession;
 import static com.github.thxmasj.statemachine.EntitySelector.newEntityId;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
@@ -17,9 +16,9 @@ import static com.github.thxmasj.statemachine.http.outbox.EventTypes.TimeoutExpi
 
 import com.github.thxmasj.statemachine.Action;
 import com.github.thxmasj.statemachine.BasicEventType;
+import com.github.thxmasj.statemachine.DataType;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.EventType;
-import com.github.thxmasj.statemachine.EventType.DataType;
 import com.github.thxmasj.statemachine.InputEvent;
 import com.github.thxmasj.statemachine.State;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionContext;
@@ -27,6 +26,7 @@ import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;
 import com.github.thxmasj.statemachine.Validated;
 import com.github.thxmasj.statemachine.http.HttpClient;
+import com.github.thxmasj.statemachine.http.HttpDataType;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import java.net.ConnectException;
@@ -81,7 +81,7 @@ public final class AtMostOnce<I, RI> implements HttpOutboxRequest<I> {
         "Request dispatched",
         UUID.fromString("3f22bfef-dcb4-4560-8b88-6b5040433319"),
         DataType.unknown(),
-        HttpRequestMessage.class
+        HttpDataType.forRequest()
     );
     // Intermediate
     EventType<Tuple2<HttpResponseMessage, R>, Tuple2<HttpResponseMessage, R>> validResponse = BasicEventType.of(
@@ -102,28 +102,28 @@ public final class AtMostOnce<I, RI> implements HttpOutboxRequest<I> {
         "[request accepted]",
         UUID.fromString("0f8fe1c2-2d29-406c-87b5-f9f43a03a54f"),
         DataType.unknown(),
-        HttpResponseMessage.class
+        HttpDataType.forResponse()
     );
     // Leaf
     EventType<Tuple2<HttpResponseMessage, R>, HttpResponseMessage> requestReceivedAndRejected = BasicEventType.of(
         "[request rejected]",
         UUID.fromString("5362567f-792e-4f8a-81d6-3b201d44d3f0"),
         DataType.unknown(),
-        HttpResponseMessage.class
+        HttpDataType.forResponse()
     );
     // Leaf
     EventType<Tuple2<HttpResponseMessage, String>, HttpResponseMessage> invalidResponseAndRejected = BasicEventType.of(
         "[request rejected]",
         UUID.fromString("402f9bf4-855c-4383-ac54-3375f9d156d1"),
         DataType.unknown(),
-        HttpResponseMessage.class
+        HttpDataType.forResponse()
     );
     // Leaf
     EventType<Tuple2<HttpResponseMessage, String>, HttpResponseMessage> invalidResponseAndUnknown = BasicEventType.of(
         "[unknown status]",
         UUID.fromString("ecfb2c9d-178b-4c3e-b09e-c580e09b01b4"),
         DataType.unknown(),
-        HttpResponseMessage.class
+        HttpDataType.forResponse()
     );
     Action<HttpRequestMessage> forward = new Action<>() {
       @Override public String name() {return "Forward";}
@@ -240,7 +240,6 @@ public final class AtMostOnce<I, RI> implements HttpOutboxRequest<I> {
                 .trigger(Indexed).with(d -> d.getT2().t1().entityId()).on(ProcessReference).identifiedBy(d -> newEntityId(d.getT2().t2().value()))
                 .trigger(forward).with(d -> d.t1().getT1())
                 .trigger(TimeoutExpired).after(_ -> inflightTimeout)
-//                .newIdentifier(ProcessReference, d -> d.getT2())
                 .output(d -> d.t1().getT1())
         ),
         InFlight, inFlightTransitions,

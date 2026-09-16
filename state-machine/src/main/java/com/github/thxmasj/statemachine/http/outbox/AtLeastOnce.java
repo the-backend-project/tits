@@ -1,6 +1,5 @@
 package com.github.thxmasj.statemachine.http.outbox;
 
-import static com.github.thxmasj.statemachine.EntitySelector.entityId;
 import static com.github.thxmasj.statemachine.EntitySelector.entityIdFromSession;
 import static com.github.thxmasj.statemachine.EntitySelector.newEntityId;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
@@ -17,8 +16,8 @@ import static com.github.thxmasj.statemachine.http.outbox.EventTypes.TimeoutExpi
 
 import com.github.thxmasj.statemachine.Action;
 import com.github.thxmasj.statemachine.BasicEventType;
+import com.github.thxmasj.statemachine.DataType;
 import com.github.thxmasj.statemachine.EventType;
-import com.github.thxmasj.statemachine.EventType.DataType;
 import com.github.thxmasj.statemachine.InputEvent;
 import com.github.thxmasj.statemachine.State;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionContext;
@@ -26,6 +25,7 @@ import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;
 import com.github.thxmasj.statemachine.Validated;
 import com.github.thxmasj.statemachine.http.HttpClient;
+import com.github.thxmasj.statemachine.http.HttpDataType;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import java.net.ConnectException;
@@ -90,73 +90,73 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
         "Request dispatched",
         UUID.fromString("3f22bfef-dcb4-4560-8b88-6b5040433319"),
         DataType.unknown(),
-        HttpRequestMessage.class
+        HttpDataType.forRequest()
     );
     // Intermediate
     EventType<Tuple2<HttpResponseMessage, R>, Tuple2<HttpResponseMessage, R>> validResponse = BasicEventType.of(
         "[valid response]",
         UUID.fromString("c9fcf4d6-95f8-418f-aa6b-c3d987d3a3c3"),
-        null
+        DataType.unknown()
     );
     // Intermediate
     EventType<Tuple2<HttpResponseMessage, String>, Tuple2<HttpResponseMessage, String>> invalidResponse = BasicEventType.of(
         "[invalid response]",
         UUID.fromString("3bd020c3-caf8-4a9b-a10c-d818f98a6de7"),
-        null
+        DataType.unknown()
     );
     // Intermediate
     EventType<Tuple2<HttpResponseMessage, String>, HttpResponseMessage> invalidResponseAndRejected = BasicEventType.of(
         "[invalid response, request rejected]",
         UUID.fromString("402f9bf4-855c-4383-ac54-3375f9d156d1"),
         DataType.unknown(),
-        HttpResponseMessage.class
+        HttpDataType.forResponse()
     );
     EventType<Tuple2<HttpResponseMessage, R>, HttpResponseMessage> requestReceivedAndRejected = BasicEventType.of(
         "[request rejected]",
         UUID.fromString("5362567f-792e-4f8a-81d6-3b201d44d3f0"),
         DataType.unknown(),
-        HttpResponseMessage.class
+        HttpDataType.forResponse()
     );
     EventType<Void, HttpResponseMessage> requestReceivedAndRejectedTransiently = BasicEventType.of(
         "[request rejected transiently]",
         UUID.fromString("bcdf93f4-657d-4b26-b165-74279a5ea477"),
         DataType.unknown(),
-        HttpResponseMessage.class
+        HttpDataType.forResponse()
     );
     EventType<Tuple2<HttpResponseMessage, R>, HttpResponseMessage> requestReceivedAndRejectedPermanently = BasicEventType.of(
         "[request rejected permanently]",
         UUID.fromString("94b1169f-8e09-45d5-bdff-cae9b146db30"),
         DataType.unknown(),
-        HttpResponseMessage.class
+        HttpDataType.forResponse()
     );
     EventType<Tuple2<HttpResponseMessage, String>, HttpResponseMessage> invalidResponseAndRejectedPermanently = BasicEventType.of(
         "[invalid response, request rejected permanently]",
         UUID.fromString("94eca92d-a229-4aa9-bc02-48260fa1bbf0"),
         DataType.unknown(),
-        HttpResponseMessage.class
+        HttpDataType.forResponse()
     );
     EventType<Void, HttpResponseMessage> invalidResponseAndRejectedTransiently = BasicEventType.of(
         "[invalid response, request rejected transiently]",
         UUID.fromString("9f121370-4b8d-4a08-a7ef-30555c1e1f48"),
         DataType.unknown(),
-        HttpResponseMessage.class
+        HttpDataType.forResponse()
     );
     // Leaf
     EventType<Tuple2<HttpResponseMessage, R>, HttpResponseMessage> requestAccepted = BasicEventType.of(
         "[request accepted]",
         UUID.fromString("0f8fe1c2-2d29-406c-87b5-f9f43a03a54f"),
         DataType.unknown(),
-        HttpResponseMessage.class
+        HttpDataType.forResponse()
     );
     // Leaf
     EventType<Void, HttpResponseMessage> invalidResponseAndUnknown = BasicEventType.of(
         "[invalid response, unknown status]",
         UUID.fromString("ecfb2c9d-178b-4c3e-b09e-c580e09b01b4"),
         DataType.unknown(),
-        HttpResponseMessage.class
+        HttpDataType.forResponse()
     );
     var attemptsExhausted = BasicEventType.of("Attempts exhausted", UUID.fromString("19a29ca5-6021-41e7-b247-74fd3b8389dd"));
-    var attemptsAvailable = BasicEventType.of("Attempts available", UUID.fromString("e6d6331f-5891-4d97-b699-ffe0dcf9d6cb"), RetryContext.class, Void.class);
+    var attemptsAvailable = BasicEventType.of("Attempts available", UUID.fromString("e6d6331f-5891-4d97-b699-ffe0dcf9d6cb"), DataType.forClass(RetryContext.class), DataType.none());
     Action<HttpRequestMessage> forward = new Action<>() {
       @Override public String name() {return "Forward";}
       @Override

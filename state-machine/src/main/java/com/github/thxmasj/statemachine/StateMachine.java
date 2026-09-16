@@ -996,12 +996,10 @@ public class StateMachine {
                 change.delayedEvent() != null ? change.delayedEvent().after() : null,
                 change.newEvent() != null ? new Listener.Change.Event(
                     change.newEvent().eventNumber(),
-                    change.newEvent().type().name(),
-                    change.newEvent().data()
+                    change.newEvent().type().name()
                 ) : (change.delayedEvent() != null ? new Listener.Change.Event(
                     change.delayedEvent().eventNumber(),
-                    change.delayedEvent().type().name(),
-                    Event.marshal(change.delayedEvent().data())
+                    change.delayedEvent().type().name()
                 ) : null),
                 change.newSecondaryIds().stream().map(id -> id.model().name() + ":" + id.data()).toList()
             )

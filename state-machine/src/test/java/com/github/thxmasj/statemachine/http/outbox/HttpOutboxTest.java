@@ -12,11 +12,13 @@ import static com.github.thxmasj.statemachine.Validated.valid;
 import static com.github.thxmasj.statemachine.http.outbox.EventTypes.InvalidResponse;
 import static com.github.thxmasj.statemachine.http.outbox.EventTypes.TimeoutExpired;
 import static com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Method.POST;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import com.github.thxmasj.statemachine.BasicEventType;
 import com.github.thxmasj.statemachine.BasicEventType.Rollback.Data;
+import com.github.thxmasj.statemachine.DataType;
 import com.github.thxmasj.statemachine.DelaySpecification;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.Event;
@@ -137,7 +139,7 @@ public class HttpOutboxTest {
         .assertNext(event -> assertEquals(model.doProcess(), event.type()))
         .assertNext(event -> {
           assertEquals(InvalidResponse, event.type());
-          assertEquals("Invalid response", event.data());
+          assertArrayEquals("Invalid response".getBytes(), event.data());
         })
         .thenCancel().verify();
   }
@@ -150,7 +152,7 @@ public class HttpOutboxTest {
         .assertNext(event -> assertEquals(model.doProcess(), event.type()))
         .assertNext(event -> {
           assertEquals(InvalidResponse, event.type());
-          assertEquals("Invalid response", event.data());
+          assertArrayEquals("Invalid response".getBytes(), event.data());
         })
         .thenCancel().verify();
   }
@@ -179,7 +181,10 @@ public class HttpOutboxTest {
   ) {
     static ProcessModel create() {
       EntityModel process = EntityModel.of("Process", UUID.fromString("dda0cc10-3356-4522-8527-ca4f7006c566"));
-      EventType<Void, UUID> doProcess = BasicEventType.of("Do process", UUID.fromString("dbcf351c-b50e-4789-80e9-f52e2be789cd"), Void.class, UUID.class);
+      EventType<Void, UUID> doProcess = BasicEventType.of(
+          "Do process", UUID.fromString("dbcf351c-b50e-4789-80e9-f52e2be789cd"),
+          DataType.none(), DataType.forUUID()
+      );
       EventType<Void, Void> processed = BasicEventType.of("Processed", UUID.fromString("433d18b2-8429-4615-aeb0-5de2240413ea"));
       EventType<Void, Void> failed = BasicEventType.of("Failed", UUID.fromString("0f4b6aea-a9c2-4b33-b315-844a4e32e45b"));
       EventType<Void, Void> missingResponse = BasicEventType.of("Missing response", UUID.fromString("7cd9c1f1-1ce0-4249-a709-5e11ea2f6404"));

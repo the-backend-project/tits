@@ -2,14 +2,6 @@ package com.github.thxmasj.statemachine;
 
 import static java.util.Objects.requireNonNull;
 
-import com.fasterxml.jackson.annotation.JsonInclude.Include;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import com.github.thxmasj.statemachine.message.http.HttpMessageParser;
-import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
-import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZonedDateTime;
@@ -23,7 +15,7 @@ public final class Event<T> {
   private final Integer eventNumber;
   private final EventType<?, T> type;
   private final ZonedDateTime timestamp;
-  private String data;
+  private byte[] data;
   private T unmarshalledData;
 
   public Event(UUID entityId, Integer eventNumber, EventType<?, T> type, Clock clock) {
@@ -31,12 +23,8 @@ public final class Event<T> {
   }
 
   public Event(UUID entityId, Integer eventNumber, EventType<?, T> type, Clock clock, T data) {
-    this(entityId, eventNumber, type, LocalDateTime.ofInstant(clock.instant(), clock.getZone()), clock, marshal(data));
+    this(entityId, eventNumber, type, LocalDateTime.ofInstant(clock.instant(), clock.getZone()), clock, marshal(type, data));
     this.unmarshalledData = data;
-  }
-
-  public Event(UUID entityId, Integer eventNumber, EventType<?, T> type, Clock clock, String data) {
-    this(entityId, eventNumber, type, LocalDateTime.ofInstant(clock.instant(), clock.getZone()), clock, data);
   }
 
   public Event(UUID entityId, int eventNumber, EventType<?, T> type, ZonedDateTime timestamp) {
@@ -53,11 +41,11 @@ public final class Event<T> {
     this.eventNumber = eventNumber;
     this.type = type;
     this.timestamp = timestamp;
-    this.data = marshal(data);
+    this.data = type.outputDataType().marshal(data);
     this.unmarshalledData = data;
   }
 
-  public Event(UUID entityId, Integer eventNumber, EventType<?, T> type, LocalDateTime timestamp, Clock clock, String data) {
+  public Event(UUID entityId, Integer eventNumber, EventType<?, T> type, LocalDateTime timestamp, Clock clock, byte[] data) {
     this.entityId = entityId;
 //    if (type.outputDataType().value() != Void.class)
 //      requireNonNull(data, "Event type <" + type.name() + "> requires data of type <" + type.outputDataType().value().getName() + ">");
@@ -89,7 +77,7 @@ public final class Event<T> {
     return type.name();
   }
 
-  public String data() {
+  public byte[] data() {
     return data;
   }
 
@@ -100,7 +88,7 @@ public final class Event<T> {
         ", eventNumber=" + eventNumber +
         ", type=" + type +
         ", timestamp=" + timestamp +
-        ", data=" + data +
+        ", data#=" + (data != null ? data.length : 0) +
         '}';
   }
 
@@ -111,9 +99,9 @@ public final class Event<T> {
     return unmarshalledData;
   }
 
-  public String getMarshalledData() {
+  public byte[] getMarshalledData() {
     if (data == null && unmarshalledData != null) {
-      data = marshal(unmarshalledData);
+      data = type.outputDataType().marshal(unmarshalledData);
     }
     return data;
   }
@@ -130,44 +118,46 @@ public final class Event<T> {
     return Stream.concat(list1.stream(), list2.stream()).toList();
   }
 
-  private static final ObjectMapper objectMapper = new ObjectMapper()
-      .registerModule(new JavaTimeModule())
-      .configure(DeserializationFeature.ADJUST_DATES_TO_CONTEXT_TIME_ZONE, false)
-      .setSerializationInclusion(Include.NON_NULL);
+//  private static final ObjectMapper objectMapper = new ObjectMapper()
+//      .registerModule(new JavaTimeModule())
+//      .configure(DeserializationFeature.ADJUST_DATES_TO_CONTEXT_TIME_ZONE, false)
+//      .setSerializationInclusion(Include.NON_NULL);
 
-  public static <T> String marshal(T data) {
-    return switch (data) {
-      case String s -> s;
-      case Number n -> n.toString();
-      case HttpRequestMessage m -> m.message();
-      case HttpResponseMessage m -> m.message();
-      case null -> null;
-      default -> {
-        try {
-          yield objectMapper.writeValueAsString(data);
-        } catch (JsonProcessingException e) {
-          throw new RuntimeException(e);
-        }
-      }
-    };
+  public static <T> byte[] marshal(EventType<?, T> eventType, T data) {
+    return eventType.outputDataType().marshal(data);
+//    return switch (data) {
+//      case String s -> s;
+//      case Number n -> n.toString();
+//      case HttpRequestMessage m -> m.message();
+//      case HttpResponseMessage m -> m.message();
+//      case null -> null;
+//      default -> {
+//        try {
+//          yield objectMapper.writeValueAsString(data);
+//        } catch (JsonProcessingException e) {
+//          throw new RuntimeException(e);
+//        }
+//      }
+//    };
   }
 
-  public static <T> T unmarshal(EventType<?, T> eventType, String data) {
-    if (eventType.outputDataType().value() == String.class)
-      return (T) data;
-    if (eventType.outputDataType().value() == Integer.class)
-      return (T) Integer.valueOf(data);
-    if (eventType.outputDataType().value() == HttpRequestMessage.class)
-      return (T) HttpMessageParser.parseRequest(data);
-    if (eventType.outputDataType().value() == HttpResponseMessage.class)
-      return (T) HttpMessageParser.parseResponse(data);
-    try {
+  public static <T> T unmarshal(EventType<?, T> eventType, byte[] data) {
+    return eventType.outputDataType().unmarshal(data);
+//    if (eventType.outputDataType().value() == String.class)
+//      return (T) data;
+//    if (eventType.outputDataType().value() == Integer.class)
+//      return (T) Integer.valueOf(data);
+//    if (eventType.outputDataType().value() == HttpRequestMessage.class)
+//      return (T) HttpMessageParser.parseRequest(data);
+//    if (eventType.outputDataType().value() == HttpResponseMessage.class)
+//      return (T) HttpMessageParser.parseResponse(data);
+//    try {
 //      return objectMapper.readerFor(eventType.outputDataType().value()).readValue(data);
-      var dataType = eventType.outputDataType();
-      return (dataType.value() != null ? objectMapper.readerFor(dataType.value()) : objectMapper.readerFor(dataType.typeReference())).readValue(data);
-    } catch (Exception e) {
-      throw new RuntimeException("Failed to unmarshal JSON event data for " + eventType.name() + ": " + e.getMessage(), e);
-    }
+//      var dataType = eventType.outputDataType();
+//      return (dataType.value() != null ? objectMapper.readerFor(dataType.value()) : objectMapper.readerFor(dataType.typeReference())).readValue(data);
+//    } catch (Exception e) {
+//      throw new RuntimeException("Failed to unmarshal JSON event data for " + eventType.name() + ": " + e.getMessage(), e);
+//    }
   }
 
 }

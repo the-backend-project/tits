@@ -53,7 +53,8 @@ public class CreateSchema {
             EntityId    UNIQUEIDENTIFIER   NOT NULL,
             EventNumber SMALLINT           NOT NULL,
             Type        UNIQUEIDENTIFIER   NOT NULL,
-            Data        VARCHAR(MAX),
+            Data        VARBINARY(MAX),
+            --Data        VARCHAR(MAX),
             Timestamp   DATETIME2          NOT NULL,
             CONSTRAINT [pkEvent] PRIMARY KEY (EntityId, EventNumber)
         );
@@ -65,8 +66,8 @@ public class CreateSchema {
             EntityId    UNIQUEIDENTIFIER   NOT NULL,
             EventNumber SMALLINT           NOT NULL,
             Type        UNIQUEIDENTIFIER   NOT NULL,
-            Data        VARCHAR(1700)    NOT NULL,
-            --Data        VARBINARY(1700)    NOT NULL,
+            --Data        VARCHAR(1700)    NOT NULL,
+            Data        VARBINARY(1700)    NOT NULL,
             Timestamp   DATETIME2          NOT NULL,
             CONSTRAINT [pkIndexEvent] PRIMARY KEY (EntityId, EventNumber)
         );
@@ -80,7 +81,8 @@ public class CreateSchema {
             EntityModelId UNIQUEIDENTIFIER NOT NULL,
             EventNumber   SMALLINT         NOT NULL,
             Type          UNIQUEIDENTIFIER NOT NULL,
-            Data          VARCHAR(MAX),
+            Data          VARBINARY(MAX),
+            --Data          VARCHAR(MAX),
             Deadline      DATETIME2(2)     NOT NULL,
             CorrelationId VARCHAR(36)      NOT NULL,
             Attempt       INT              NOT NULL

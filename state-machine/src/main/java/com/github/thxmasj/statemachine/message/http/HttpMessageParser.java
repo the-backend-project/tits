@@ -17,7 +17,8 @@ public class HttpMessageParser {
     return new HttpRequestMessage(method, uri, headers, body);
   }
 
-  public static HttpResponseMessage parseResponse(String message) {
+  public static HttpResponseMessage parseResponse(byte[] rawMessage) {
+    String message = new String(rawMessage);
     String statusLine = message.lines().findFirst().orElseThrow();
     var s = statusLine.substring(statusLine.indexOf(" ") + 1);
     int statusCode = Integer.parseInt(s.substring(0, s.indexOf(" ")));

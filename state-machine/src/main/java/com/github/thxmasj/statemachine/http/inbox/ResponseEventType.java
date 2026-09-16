@@ -2,29 +2,26 @@ package com.github.thxmasj.statemachine.http.inbox;
 
 import com.github.thxmasj.statemachine.*;
 import com.github.thxmasj.statemachine.EventReference;
+import com.github.thxmasj.statemachine.Tuples.Tuple2;
+import com.github.thxmasj.statemachine.http.HttpDataType;
 import com.github.thxmasj.statemachine.message.http.*;
 
 import java.util.*;
 
-public class ResponseEventType<I> implements EventType<I, ResponseEventType.Data> {
-
-  public record Data(HttpResponseMessage response, EventReference processReference) {}
+public class ResponseEventType<I> implements EventType<I, Tuple2<HttpResponseMessage, EventReference>> {
 
   private final String name;
   private final UUID id;
   private final DataType<I> inputDataType;
-  private final DataType<Data> outputDataType = new DataType<>(Data.class);
+  public static final DataType<Tuple2<HttpResponseMessage, EventReference>> outputDataType = DataType.forTuple(
+      HttpDataType.forResponse(),
+      DataType.forClass(EventReference.class)
+  );
 
   public ResponseEventType(String name, UUID id, DataType<I> inputDataType) {
     this.name = name;
     this.id = id;
     this.inputDataType = inputDataType;
-  }
-
-  public ResponseEventType(String name, UUID id, Class<I> inputDataType) {
-    this.name = name;
-    this.id = id;
-    this.inputDataType = new DataType<>(inputDataType);
   }
 
   @Override
@@ -43,7 +40,7 @@ public class ResponseEventType<I> implements EventType<I, ResponseEventType.Data
   }
 
   @Override
-  public DataType<Data> outputDataType() {
+  public DataType<Tuple2<HttpResponseMessage, EventReference>> outputDataType() {
     return outputDataType;
   }
 }

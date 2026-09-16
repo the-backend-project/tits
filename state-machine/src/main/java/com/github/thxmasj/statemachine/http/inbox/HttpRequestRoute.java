@@ -40,8 +40,8 @@ public record HttpRequestRoute<T>(
       return BasicEventType.of(
           "Dispatch: " + processEventType.name(),
           dispatchingEventTypeId,
-          new EventType.DataType<>(new TypeReference<>() {}, HttpRequestMessage.class, Object.class),
-          Void.class
+          DataType.unknown(),
+          DataType.none()
       );
     }
 

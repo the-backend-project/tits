@@ -153,7 +153,7 @@ public class EventsByLastEntity {
               eventTypeMapper.apply(UUID.fromString(rs.getString(2))), // Type
               rs.getObject(3, LocalDateTime.class), // Timestamp
               clock,
-              rs.getString(4) // Data
+              rs.getBytes(4) // Data
           ));
         }
         List<SecondaryId<?>> secondaryIds = new ArrayList<>();

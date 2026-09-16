@@ -3,6 +3,7 @@ package com.github.thxmasj.statemachine.http.outbox;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
 
 import com.github.thxmasj.statemachine.BasicEventType;
+import com.github.thxmasj.statemachine.DataType;
 import com.github.thxmasj.statemachine.EventType;
 import com.github.thxmasj.statemachine.IndexEntityModel;
 import com.github.thxmasj.statemachine.State;
@@ -32,7 +33,7 @@ public sealed interface HttpOutboxRequest<I> extends com.github.thxmasj.statemac
   EventType<UUID, UUID> Indexed = BasicEventType.of(
       "Indexed",
       UUID.fromString("da7f9a47-67a9-4a0e-affb-865f665a9564"),
-      UUID.class
+      DataType.forUUID()
   );
 
   Map<State, List<TransitionModel<?, ?>>> indexingTransitions = Map.of(

@@ -5,8 +5,8 @@ import static com.github.thxmasj.statemachine.Validated.invalid;
 import static com.github.thxmasj.statemachine.Validated.valid;
 import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.EntityModels.RequestRouting;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.github.thxmasj.statemachine.BasicEventType;
+import com.github.thxmasj.statemachine.DataType;
 import com.github.thxmasj.statemachine.EntityId;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.EntitySelector;
@@ -15,7 +15,6 @@ import com.github.thxmasj.statemachine.EventReference;
 import com.github.thxmasj.statemachine.EventTrigger;
 import com.github.thxmasj.statemachine.EventTrigger.EventSpec;
 import com.github.thxmasj.statemachine.EventType;
-import com.github.thxmasj.statemachine.EventType.DataType;
 import com.github.thxmasj.statemachine.SecondaryId;
 import com.github.thxmasj.statemachine.State;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionContext;
@@ -24,6 +23,7 @@ import com.github.thxmasj.statemachine.Tuples.Tuple3;
 import com.github.thxmasj.statemachine.Validated;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.Column;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
+import com.github.thxmasj.statemachine.http.HttpDataType;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import com.nimbusds.jwt.SignedJWT;
@@ -38,7 +38,12 @@ public interface HttpInbox {
 
   record RouteId(int metaDataRoute, int contentRoute) {}
 
-  EventType<HttpRequestMessage, Void> RouteRequest = BasicEventType.of("Route request", UUID.fromString("e55c0077-eddd-4840-b880-2bf0ace4468a"), HttpRequestMessage.class, Void.class);
+  EventType<HttpRequestMessage, Void> RouteRequest = BasicEventType.of(
+      "Route request",
+      UUID.fromString("e55c0077-eddd-4840-b880-2bf0ace4468a"),
+      HttpDataType.forRequest(),
+      DataType.none()
+  );
 
   EventTrigger<HttpRequestMessage, HttpRequestMessage, ?> TRIGGER = new EventTrigger<>(
       new EventSpec<>(RouteRequest, Function.identity()),
@@ -49,62 +54,71 @@ public interface HttpInbox {
   EventType<Tuple3<String, EntityId, HttpRequestMessage>, HttpRequestMessage> RejectRequest = BasicEventType.of(
       "Reject request",
       UUID.fromString("46106429-3c44-45cd-be04-5eb341c8f381"),
-      new DataType<>(new TypeReference<>() {}, String.class, EntityId.class, HttpRequestMessage.class),
-      HttpRequestMessage.class
+      DataType.forTuple(DataType.forString(), DataType.forClass(EntityId.class), HttpDataType.forRequest()),
+      HttpDataType.forRequest()
   );
   EventType<Tuple2<HttpRequestMessage, HttpResponseMessage>, HttpRequestMessage> RejectDuplicateRequest = BasicEventType.of(
       "Reject duplicate request",
       UUID.fromString("304f5036-4ae6-406a-9512-f217e34e542b"),
-      new DataType<>(new TypeReference<>() {}, HttpRequestMessage.class, HttpResponseMessage.class),
-      HttpRequestMessage.class
+      DataType.forTuple(HttpDataType.forRequest(), HttpDataType.forResponse()),
+      HttpDataType.forRequest()
   );
   EventType<Tuple2<RoutedRequest<?>, EventReference>, Tuple2<HttpRequestMessage, EventReference>> AcceptRequest = BasicEventType.of(
       "Accept request",
       UUID.fromString("9615c3fb-4f15-47f5-b5d3-6149a6164d70"),
-      new DataType<>(new TypeReference<>() {}, RoutedRequest.class, EventReference.class),
-      new DataType<>(new TypeReference<>() {}, HttpRequestMessage.class, EventReference.class)
+      DataType.unknown(),
+      DataType.forTuple(HttpDataType.forRequest(), DataType.forClass(EventReference.class))
   );
   EventType<Tuple3<String, RoutedRequest<?>, EventReference>, HttpRequestMessage> AcceptRollbackRequest = BasicEventType.of(
       "Accept rollback request",
       UUID.fromString("abd02d03-8bdc-4bea-9135-214f31489965"),
-      new DataType<>(new TypeReference<>() {}, String.class, RoutedRequest.class, EventReference.class),
-      HttpRequestMessage.class
+      DataType.unknown(),
+      HttpDataType.forRequest()
   );
   ResponseEventType<Tuple2<String, EventReference>> CompleteRequest = new ResponseEventType<>(
       "Complete request",
       UUID.fromString("fa608cc7-9a2b-42ec-ab83-5207ab3978a0"),
-      new DataType<>(new TypeReference<>() {}, String.class, EventReference.class)
+      DataType.forTuple(DataType.forString(), DataType.forClass(EventReference.class))
   );
   ResponseEventType<Tuple2<String, EventReference>> CompleteRollbackRequest = new ResponseEventType<>(
       "Complete rollback request",
       UUID.fromString("57fd7951-b922-42ff-99ed-6752f1d23024"),
-      new DataType<>(new TypeReference<>() {}, String.class, EntityId.class)
+      DataType.forTuple(DataType.forString(), DataType.forClass(EventReference.class))
   );
   EventType<HttpResponseMessage, HttpResponseMessage> CompleteDuplicatedRequest = BasicEventType.of(
       "Complete duplicated request",
       UUID.fromString("c448eb33-b5de-4201-9d58-55b9767727b6"),
-      HttpResponseMessage.class,
-      HttpResponseMessage.class
+      HttpDataType.forResponse()
   );
   ResponseEventType<Tuple2<String, EventReference>> CompleteInvalidRequest = new ResponseEventType<>(
       "Complete invalid request",
       UUID.fromString("6bc64696-3b9e-4897-b9d0-de3abf567685"),
-      new DataType<>(new TypeReference<>() {}, String.class, EventReference.class)
+      DataType.forTuple(DataType.forString(), DataType.forClass(EventReference.class))
   );
   EventType<HttpResponseMessage, HttpResponseMessage> CompleteRejectedRequest = BasicEventType.of(
       "Complete rejected request",
       UUID.fromString("887a0173-1847-4e5d-b529-3c25e1f8a5d1"),
-      HttpResponseMessage.class,
-      HttpResponseMessage.class
+      HttpDataType.forResponse(),
+      HttpDataType.forResponse()
   );
-  EventType<String, Void> RejectAsUnroutable = BasicEventType.of("RejectAsUnroutable", UUID.fromString("9b6a57f8-8d3b-46b4-aeef-d8864f19fe13"), String.class, Void.class);
+  EventType<String, Void> RejectAsUnroutable = BasicEventType.of(
+      "RejectAsUnroutable",
+      UUID.fromString("9b6a57f8-8d3b-46b4-aeef-d8864f19fe13"),
+      DataType.forString(),
+      DataType.none()
+  );
   EventType<HttpResponseMessage, HttpResponseMessage> Respond = BasicEventType.of(
       "Respond",
       UUID.fromString("2387a6a5-a483-428d-839f-26b5fe485247"),
-      HttpResponseMessage.class,
-      HttpResponseMessage.class
+      HttpDataType.forResponse(),
+      HttpDataType.forResponse()
   );
-  EventType<String, HttpResponseMessage> RespondBadRequest = BasicEventType.of("RespondBadRequest", UUID.fromString("a8225270-6a22-4f1f-ae17-5b5519d46df1"), String.class, HttpResponseMessage.class);
+  EventType<String, HttpResponseMessage> RespondBadRequest = BasicEventType.of(
+      "RespondBadRequest",
+      UUID.fromString("a8225270-6a22-4f1f-ae17-5b5519d46df1"),
+      DataType.forString(),
+      HttpDataType.forResponse()
+  );
   SecondaryIdModel<MessageId> MessageId = new SecondaryIdModel<>() {
     @Override
     public UUID id() {

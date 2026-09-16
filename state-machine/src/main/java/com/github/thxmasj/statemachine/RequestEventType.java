@@ -18,11 +18,11 @@ public class RequestEventType<I, O> implements EventType<I, O> {
   }
 
   public static <I, O> EventType<I, O> of(String name, UUID id, Class<I> inputDataType, Class<O> outputDataType) {
-    return new RequestEventType<>(name, id, new DataType<>(inputDataType), new DataType<>(outputDataType));
+    return new RequestEventType<>(name, id, DataType.forClass(inputDataType), DataType.forClass(outputDataType));
   }
 
   public static <I, O> EventType<I, O> of(String name, UUID id, DataType<I> inputDataType, Class<O> outputDataType) {
-    return new RequestEventType<>(name, id, inputDataType, new DataType<>(outputDataType));
+    return new RequestEventType<>(name, id, inputDataType, DataType.forClass(outputDataType));
   }
 
   public static <I, O> EventType<I, O> of(String name, UUID id, DataType<I> inputDataType, DataType<O> outputDataType) {
@@ -30,7 +30,7 @@ public class RequestEventType<I, O> implements EventType<I, O> {
   }
 
   public static <T> EventType<T, T> of(String name, UUID id, Class<T> dataType) {
-    return new RequestEventType<>(name, id, new DataType<>(dataType), new DataType<>(dataType));
+    return new RequestEventType<>(name, id, DataType.forClass(dataType), DataType.forClass(dataType));
   }
 
   public static EventType<Void, Void> of(String name, UUID id) {

@@ -1,11 +1,10 @@
 package com.github.thxmasj.statemachine;
 
-import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
-
 import static com.github.thxmasj.statemachine.Event.join;
 import static java.util.Collections.unmodifiableList;
 import static java.util.stream.Collectors.joining;
 
+import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -24,31 +23,21 @@ public record EventLog(
     return events.isEmpty() ? 0 : events.getLast().eventNumber();
   }
 
-  public <T> T one(Class<T> dataType) {
+  public <T> T one(DataType<T> dataType) {
     return effectiveEvents().stream()
-        .filter(e -> dataType.equals(e.type().outputDataType().value()))
-        .map(e -> (T)e.getUnmarshalledData())
+        .filter(e -> dataType.equals(e.type().outputDataType()))
+        .map(e -> dataType.unmarshal(e.data()))
         .filter(e -> e != null)
         .findFirst()
-        .orElseThrow(() -> new NoSuchElementException("one(" + dataType.getSimpleName() + "). Have:\n" + effectiveEvents().stream().map(e -> e.toString()).collect(joining("\n"))));
+        .orElseThrow(() -> new NoSuchElementException("one(" + dataType.name() + "). Have:\n" + effectiveEvents().stream().map(e -> e.toString()).collect(joining("\n"))));
   }
 
-  private <T> T cast(Class<T> dataType, Object o) {
-    try {
-      return dataType.cast(o);
-    } catch (ClassCastException e) {
-      System.out.println("cannot cast to type " + dataType.getSimpleName());
-      throw e;
-    }
-  }
-
-  public <T> T last(Class<T> dataType) {
-    System.out.println("Trying to find data from last event having data of type " + dataType.getSimpleName());
+  public <T> T last(DataType<T> dataType) {
     T result = effectiveEvents().reversed().stream()
-        .filter(e -> dataType.equals(e.type().outputDataType().value()))
-        .map(e -> cast(dataType, e.getUnmarshalledData()))
+        .filter(e -> dataType.equals(e.type().outputDataType()))
+        .map(e -> ((Event<T>)e).getUnmarshalledData())
         .findFirst()
-        .orElseThrow(() -> new NoSuchElementException("last(" + dataType.getSimpleName() + ")"));
+        .orElseThrow(() -> new NoSuchElementException("last(" + dataType.name() + ")"));
     System.out.println("And we found it: " + result);
     return result;
   }
@@ -56,7 +45,7 @@ public record EventLog(
   public <T> T one(EventType<?, T> eventType) {
     return effectiveEvents().stream()
         .filter(e -> e.type().id().equals(eventType.id()))
-        .map(e -> ((Event<T>)e).getUnmarshalledData())
+        .map(e -> eventType.outputDataType().unmarshal(e.data()))
         .findFirst()
         .orElseThrow(() -> new NoSuchElementException(String.format("one(%s) [log: %s] [effective log: %s]",
             eventType.name(),

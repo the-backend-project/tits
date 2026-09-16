@@ -16,11 +16,11 @@ public interface Client {
     return new Query.Builder(this).sql(sql);
   }
 
-  <T> Mono<T> one(String name, String sql, Map<String, Object> parameters, Function<Row, T> rowMapper);
+  <T> Mono<T> one(String name, String sql, Map<String, Parameter<?>> parameters, Function<Row, T> rowMapper);
 
-  <T> Flux<T> all(String name, String sql, Map<String, Object> parameters, Function<Row, T> rowMapper);
+  <T> Flux<T> all(String name, String sql, Map<String, Parameter<?>> parameters, Function<Row, T> rowMapper);
 
-  Mono<Integer> update(String name, String sql, Map<String, Object> parameters);
+  Mono<Integer> update(String name, String sql, Map<String, Parameter<?>> parameters);
 
   record Config(
       @NotBlank String host,
@@ -46,17 +46,17 @@ public interface Client {
   class Query<T> {
 
     private final Client client;
-    private final Map<String, Object> parameters;
+    private final Map<String, Parameter<?>> parameters;
     private final String sql;
     private final String name;
     private Function<Row, T> rowMapper;
 
-    Query(String name, String sql, Map<String, Object> parameters, Client client, Function<Row, T> rowMapper) {
+    Query(String name, String sql, Map<String, Parameter<?>> parameters, Client client, Function<Row, T> rowMapper) {
       this(name, sql, parameters, client);
       this.rowMapper = rowMapper;
     }
 
-    Query(String name, String sql, Map<String, Object> parameters, Client client) {
+    Query(String name, String sql, Map<String, Parameter<?>> parameters, Client client) {
       this.name = name;
       this.sql = sql;
       this.parameters = parameters;
@@ -77,7 +77,7 @@ public interface Client {
 
     public static class Builder {
 
-      private final Map<String, Object> parameters = new HashMap<>();
+      private final Map<String, Parameter<?>> parameters = new HashMap<>();
       private final Client client;
       private String name;
       private String parameterPrefix;
@@ -103,7 +103,12 @@ public interface Client {
       }
 
       public Builder bind(String k, Object v) {
-        parameters.put(parameterPrefix != null ? parameterPrefix + k : k, v);
+        parameters.put(parameterPrefix != null ? parameterPrefix + k : k, new Parameter<>(v.getClass(), v));
+        return this;
+      }
+
+      public <T> Builder bindNullable(String k, Class<T> type, T value) {
+        parameters.put(parameterPrefix != null ? parameterPrefix + k : k, new Parameter<>(type, value));
         return this;
       }
 

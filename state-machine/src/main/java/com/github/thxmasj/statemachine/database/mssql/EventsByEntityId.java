@@ -9,16 +9,20 @@ import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.Event;
 import com.github.thxmasj.statemachine.EventLog;
 import com.github.thxmasj.statemachine.SecondaryId;
+import com.github.thxmasj.statemachine.database.Parameter;
 import com.github.thxmasj.statemachine.database.Row;
 import com.github.thxmasj.statemachine.database.UnknownEntity;
 import com.github.thxmasj.statemachine.database.jdbc.JDBCRow;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.Column;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.function.BiFunction;
 import javax.sql.DataSource;
 import reactor.core.publisher.Mono;
@@ -67,8 +71,8 @@ public class EventsByEntityId {
     String sqlToPrepare = requireNonNull(sqls.get(entityModel), "Unknown model " + entityModel.name());
     return Mono.fromCallable(() -> {
       try (
-          var connection = dataSource.getConnection();
-          var statement = prepare(sqlToPrepare, Map.of("entityId", entityId.value()), connection)
+          Connection connection = dataSource.getConnection();
+          PreparedStatement statement = prepare(sqlToPrepare, Map.of("entityId", new Parameter<>(UUID.class, entityId.value())), connection)
       ) {
         statement.execute();
         ResultSet rs = statement.getResultSet();

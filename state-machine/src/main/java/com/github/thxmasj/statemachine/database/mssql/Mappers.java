@@ -50,7 +50,7 @@ public class Mappers {
             eventType,
             value(row, "Timestamp", LocalDateTime.class),
             clock,
-            nullableString(row, "Data")
+            row.get("Data", byte[].class)
         );
       } catch (Exception e) {
         throw new MappingFailure(e);
@@ -60,10 +60,6 @@ public class Mappers {
 
   private static <T> T value(Row row, String name, Class<T> type) {
         return requireNonNull(row.get(name, type), format("No value for %s", name));
-    }
-
-    private static String nullableString(Row row, String name) {
-        return row.get(name, String.class);
     }
 
 }
