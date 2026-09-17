@@ -10,6 +10,7 @@ import com.github.thxmasj.statemachine.State;
 import com.github.thxmasj.statemachine.TransitionModelBuilder;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
+import com.github.thxmasj.statemachine.message.http.TypedHttpRequest;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -20,7 +21,7 @@ public sealed interface HttpOutboxRequest<I> extends com.github.thxmasj.statemac
 
   Map<State, List<TransitionModelBuilder.TransitionModel<?, ?>>> transitions();
 
-  EventType<I, HttpRequestMessage> requestDispatched();
+  EventType<I, ?> requestDispatched();
 
   static AtLeastOnceBuilder.NameStep atLeastOnce() {
     return AtLeastOnceBuilder.create();
@@ -65,5 +66,11 @@ public sealed interface HttpOutboxRequest<I> extends com.github.thxmasj.statemac
             }
         ));
   }
+
+  static <T> HttpRequestMessage toHttpRequest(TypedHttpRequest<T> request, DataType<T> payloadType) {
+    return new HttpRequestMessage(request.method(), request.uri(), request.headers(), payloadType.marshal(request.payload()));
+  }
+
+
 
 }

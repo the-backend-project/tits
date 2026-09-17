@@ -1,5 +1,6 @@
 package com.github.thxmasj.statemachine.http.outbox;
 
+import com.github.thxmasj.statemachine.DataType;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.EventType;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionContext;
@@ -7,8 +8,9 @@ import com.github.thxmasj.statemachine.Tuples.Tuple2;
 import com.github.thxmasj.statemachine.Validated;
 import com.github.thxmasj.statemachine.http.HttpClient;
 import com.github.thxmasj.statemachine.http.outbox.AtLeastOnce.RetryContext;
-import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
+import com.github.thxmasj.statemachine.message.http.TypedHttpRequest;
+import com.github.thxmasj.statemachine.message.http.TypedHttpResponse;
 import java.time.Duration;
 import java.util.UUID;
 import java.util.function.BiFunction;
@@ -37,89 +39,94 @@ public final class AtLeastOnceBuilder {
 
   public interface IdStep {
 
-    MessageCreatorStep id(UUID id);
+    RequestPayloadTypeStep id(UUID id);
   }
 
-  public interface MessageCreatorStep {
+  public interface RequestPayloadTypeStep {
 
-    default <I> RepeatMessageCreatorStep<I> messageCreator(Function<TransitionContext<I>, HttpRequestMessage> messageCreator) {
+    <RQ> MessageCreatorStep<RQ> requestPayloadType(DataType<RQ> requestPayloadType);
+  }
+
+  public interface MessageCreatorStep<RQ> {
+
+    default <I> RepeatMessageCreatorStep<I, RQ> messageCreator(Function<TransitionContext<I>, TypedHttpRequest<RQ>> messageCreator) {
       return messageCreatorReactive(messageCreator.andThen(Mono::just));
     }
 
-    <I> RepeatMessageCreatorStep<I> messageCreatorReactive(Function<TransitionContext<I>, Mono<HttpRequestMessage>> messageCreator);
+    <I> RepeatMessageCreatorStep<I, RQ> messageCreatorReactive(Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator);
   }
 
   /// Optional: the repeated message defaults to the message of the original attempt.
-  public interface RepeatMessageCreatorStep<I> extends ForwarderStep<I> {
+  public interface RepeatMessageCreatorStep<I, RQ> extends ForwarderStep<I, RQ> {
 
-    ForwarderStep<I> repeatMessageCreator(
-        BiFunction<TransitionContext<Void>, HttpRequestMessage, HttpRequestMessage> repeatMessageCreator
+    ForwarderStep<I, RQ> repeatMessageCreator(
+        BiFunction<TransitionContext<Void>, TypedHttpRequest<RQ>, TypedHttpRequest<RQ>> repeatMessageCreator
     );
   }
 
-  public interface ForwarderStep<I> {
+  public interface ForwarderStep<I, RQ> {
 
-    InflightTimeoutStep<I> forwarder(HttpClient forwarder);
+    InflightTimeoutStep<I, RQ> forwarder(HttpClient forwarder);
   }
 
   /// Optional: the inflight timeout defaults to ten seconds.
-  public interface InflightTimeoutStep<I> extends ProcessModelStep<I> {
+  public interface InflightTimeoutStep<I, RQ> extends ProcessModelStep<I, RQ> {
 
-    ProcessModelStep<I> inflightTimeout(Duration inflightTimeout);
+    ProcessModelStep<I, RQ> inflightTimeout(Duration inflightTimeout);
   }
 
   /// Optional: the process model defaults to none, which is sufficient as long as no callback is given.
-  public interface ProcessModelStep<I> extends ContentParserStep<I> {
+  public interface ProcessModelStep<I, RQ> extends ContentParserStep<I, RQ> {
 
-    ContentParserStep<I> processModel(EntityModel processModel);
+    ContentParserStep<I, RQ> processModel(EntityModel processModel);
   }
 
-  public interface ContentParserStep<I> {
+  public interface ContentParserStep<I, RQ> {
 
-    <R> OnSuccessStep<I, R> contentParser(Function<HttpResponseMessage, Validated<R>> contentParser);
+    <R> OnSuccessStep<I, R, RQ> contentParser(Function<HttpResponseMessage, Validated<R>> contentParser);
   }
 
   /// Optional: the success callback defaults to none.
-  public interface OnSuccessStep<I, R> extends IsDeliveredStep<I, R> {
+  public interface OnSuccessStep<I, R, RQ> extends IsDeliveredStep<I, R, RQ> {
 
-    <S> IsDeliveredStep<I, R> onSuccess(
+    <S> IsDeliveredStep<I, R, RQ> onSuccess(
         EventType<S, ?> eventType,
-        Function<Tuple2<HttpResponseMessage, R>, S> dataAdapter
+        Function<TypedHttpResponse<R>, S> dataAdapter
     );
 
-    IsDeliveredStep<I, R> onSuccess(EventType<Void, ?> eventType);
+    IsDeliveredStep<I, R, RQ> onSuccess(EventType<Void, ?> eventType);
   }
 
-  public interface IsDeliveredStep<I, R> {
+  public interface IsDeliveredStep<I, R, RQ> {
 
-    IsFailureTransientStep<I, R> isDelivered(Predicate<Tuple2<HttpResponseMessage, R>> isDelivered);
+    IsFailureTransientStep<I, R, RQ> isDelivered(Predicate<TypedHttpResponse<R>> isDelivered);
   }
 
-  public interface IsFailureTransientStep<I, R> {
+  public interface IsFailureTransientStep<I, R, RQ> {
 
-    IsRejectedByInvalidResponseStep<I> isFailureTransient(Predicate<Tuple2<HttpResponseMessage, R>> isFailureTransient);
+    IsRejectedByInvalidResponseStep<I, RQ> isFailureTransient(Predicate<TypedHttpResponse<R>> isFailureTransient);
   }
 
-  public interface IsRejectedByInvalidResponseStep<I> {
+  public interface IsRejectedByInvalidResponseStep<I, RQ> {
 
-    IsFailureByInvalidResponseTransientStep<I> isRejectedByInvalidResponse(
+    IsFailureByInvalidResponseTransientStep<I, RQ> isRejectedByInvalidResponse(
         Predicate<Tuple2<HttpResponseMessage, String>> isRejectedByInvalidResponse
     );
   }
 
-  public interface IsFailureByInvalidResponseTransientStep<I> {
+  public interface IsFailureByInvalidResponseTransientStep<I, RQ> {
 
-    IsAttemptAvailableStep<I> isFailureByInvalidResponseTransient(
+    IsAttemptAvailableStep<I, RQ> isFailureByInvalidResponseTransient(
         Predicate<Tuple2<HttpResponseMessage, String>> isFailureByInvalidResponseTransient
     );
   }
 
-  public interface IsAttemptAvailableStep<I> {
+  public interface IsAttemptAvailableStep<I, RQ> {
 
-    BackoffAlgorithmStep<I> isAttemptAvailable(Predicate<RetryContext> isAttemptAvailable);
+    BackoffAlgorithmStep<I, RQ> isAttemptAvailable(Predicate<RetryContext> isAttemptAvailable);
   }
 
-  public interface BackoffAlgorithmStep<I> {
+  public interface BackoffAlgorithmStep<I, RQ> {
 
     BuildStep<I> backoffAlgorithm(Function<RetryContext, Duration> backoffAlgorithm);
   }
@@ -129,7 +136,7 @@ public final class AtLeastOnceBuilder {
     AtLeastOnce<I> build();
   }
 
-  private static final class WithNothing implements NameStep, IdStep, MessageCreatorStep {
+  private static final class WithNothing implements NameStep, IdStep, RequestPayloadTypeStep {
 
     private String name;
     private UUID id;
@@ -141,68 +148,94 @@ public final class AtLeastOnceBuilder {
     }
 
     @Override
-    public MessageCreatorStep id(UUID id) {
+    public RequestPayloadTypeStep id(UUID id) {
       this.id = id;
       return this;
     }
 
     @Override
-    public <I> RepeatMessageCreatorStep<I> messageCreatorReactive(
-        Function<TransitionContext<I>, Mono<HttpRequestMessage>> messageCreator
-    ) {
-      return new WithMessageCreator<>(name, id, messageCreator);
+    public <RQ> MessageCreatorStep<RQ> requestPayloadType(DataType<RQ> requestPayloadType) {
+      return new WithMessageCreatorStep<>(name, id, requestPayloadType);
     }
   }
 
-  private static final class WithMessageCreator<I> implements RepeatMessageCreatorStep<I>,
-      InflightTimeoutStep<I> {
+  private static final class WithMessageCreatorStep<RQ> implements MessageCreatorStep<RQ> {
 
     private final String name;
     private final UUID id;
-    private final Function<TransitionContext<I>, Mono<HttpRequestMessage>> messageCreator;
-    private BiFunction<TransitionContext<Void>, HttpRequestMessage, HttpRequestMessage> repeatMessageCreator =
+    private final DataType<RQ> requestPayloadType;
+
+    private WithMessageCreatorStep(String name, UUID id, DataType<RQ> requestPayloadType) {
+      this.name = name;
+      this.id = id;
+      this.requestPayloadType = requestPayloadType;
+    }
+
+    @Override
+    public <I> RepeatMessageCreatorStep<I, RQ> messageCreatorReactive(
+        Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator
+    ) {
+      return new WithMessageCreator<>(name, id, requestPayloadType, messageCreator);
+    }
+  }
+
+  private static final class WithMessageCreator<I, RQ> implements RepeatMessageCreatorStep<I, RQ>,
+      InflightTimeoutStep<I, RQ> {
+
+    private final String name;
+    private final UUID id;
+    private final DataType<RQ> requestPayloadType;
+    private final Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator;
+    private BiFunction<TransitionContext<Void>, TypedHttpRequest<RQ>, TypedHttpRequest<RQ>> repeatMessageCreator =
         (_, message) -> message;
     private HttpClient forwarder;
     private Duration inflightTimeout = Duration.ofSeconds(10);
     private EntityModel processModel;
 
-    private WithMessageCreator(String name, UUID id, Function<TransitionContext<I>, Mono<HttpRequestMessage>> messageCreator) {
+    private WithMessageCreator(
+        String name,
+        UUID id,
+        DataType<RQ> requestPayloadType,
+        Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator
+    ) {
       this.name = name;
       this.id = id;
+      this.requestPayloadType = requestPayloadType;
       this.messageCreator = messageCreator;
     }
 
     @Override
-    public ForwarderStep<I> repeatMessageCreator(
-        BiFunction<TransitionContext<Void>, HttpRequestMessage, HttpRequestMessage> repeatMessageCreator
+    public ForwarderStep<I, RQ> repeatMessageCreator(
+        BiFunction<TransitionContext<Void>, TypedHttpRequest<RQ>, TypedHttpRequest<RQ>> repeatMessageCreator
     ) {
       this.repeatMessageCreator = repeatMessageCreator;
       return this;
     }
 
     @Override
-    public InflightTimeoutStep<I> forwarder(HttpClient forwarder) {
+    public InflightTimeoutStep<I, RQ> forwarder(HttpClient forwarder) {
       this.forwarder = forwarder;
       return this;
     }
 
     @Override
-    public ProcessModelStep<I> inflightTimeout(Duration inflightTimeout) {
+    public ProcessModelStep<I, RQ> inflightTimeout(Duration inflightTimeout) {
       this.inflightTimeout = inflightTimeout;
       return this;
     }
 
     @Override
-    public ContentParserStep<I> processModel(EntityModel processModel) {
+    public ContentParserStep<I, RQ> processModel(EntityModel processModel) {
       this.processModel = processModel;
       return this;
     }
 
     @Override
-    public <R> OnSuccessStep<I, R> contentParser(Function<HttpResponseMessage, Validated<R>> contentParser) {
+    public <R> OnSuccessStep<I, R, RQ> contentParser(Function<HttpResponseMessage, Validated<R>> contentParser) {
       return new WithContentParser<>(
           name,
           id,
+          requestPayloadType,
           messageCreator,
           repeatMessageCreator,
           forwarder,
@@ -213,21 +246,22 @@ public final class AtLeastOnceBuilder {
     }
   }
 
-  private static final class WithContentParser<I, R> implements OnSuccessStep<I, R>, IsFailureTransientStep<I, R>,
-      IsRejectedByInvalidResponseStep<I>, IsFailureByInvalidResponseTransientStep<I>, IsAttemptAvailableStep<I>,
-      BackoffAlgorithmStep<I>, BuildStep<I> {
+  private static final class WithContentParser<I, R, RQ> implements OnSuccessStep<I, R, RQ>, IsFailureTransientStep<I, R, RQ>,
+      IsRejectedByInvalidResponseStep<I, RQ>, IsFailureByInvalidResponseTransientStep<I, RQ>, IsAttemptAvailableStep<I, RQ>,
+      BackoffAlgorithmStep<I, RQ>, BuildStep<I> {
 
     private final String name;
     private final UUID id;
-    private final Function<TransitionContext<I>, Mono<HttpRequestMessage>> messageCreator;
-    private final BiFunction<TransitionContext<Void>, HttpRequestMessage, HttpRequestMessage> repeatMessageCreator;
+    private final DataType<RQ> requestPayloadType;
+    private final Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator;
+    private final BiFunction<TransitionContext<Void>, TypedHttpRequest<RQ>, TypedHttpRequest<RQ>> repeatMessageCreator;
     private final HttpClient forwarder;
     private final Duration inflightTimeout;
     private final EntityModel processModel;
     private final Function<HttpResponseMessage, Validated<R>> contentParser;
-    private Callback<Tuple2<HttpResponseMessage, R>, ?> onSuccess;
-    private Predicate<Tuple2<HttpResponseMessage, R>> isDelivered;
-    private Predicate<Tuple2<HttpResponseMessage, R>> isFailureTransient;
+    private Callback<TypedHttpResponse<R>, ?> onSuccess;
+    private Predicate<TypedHttpResponse<R>> isDelivered;
+    private Predicate<TypedHttpResponse<R>> isFailureTransient;
     private Predicate<Tuple2<HttpResponseMessage, String>> isRejectedByInvalidResponse;
     private Predicate<Tuple2<HttpResponseMessage, String>> isFailureByInvalidResponseTransient;
     private Predicate<RetryContext> isAttemptAvailable;
@@ -236,8 +270,9 @@ public final class AtLeastOnceBuilder {
     private WithContentParser(
         String name,
         UUID id,
-        Function<TransitionContext<I>, Mono<HttpRequestMessage>> messageCreator,
-        BiFunction<TransitionContext<Void>, HttpRequestMessage, HttpRequestMessage> repeatMessageCreator,
+        DataType<RQ> requestPayloadType,
+        Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator,
+        BiFunction<TransitionContext<Void>, TypedHttpRequest<RQ>, TypedHttpRequest<RQ>> repeatMessageCreator,
         HttpClient forwarder,
         Duration inflightTimeout,
         EntityModel processModel,
@@ -245,6 +280,7 @@ public final class AtLeastOnceBuilder {
     ) {
       this.name = name;
       this.id = id;
+      this.requestPayloadType = requestPayloadType;
       this.messageCreator = messageCreator;
       this.repeatMessageCreator = repeatMessageCreator;
       this.forwarder = forwarder;
@@ -254,35 +290,35 @@ public final class AtLeastOnceBuilder {
     }
 
     @Override
-    public <S> IsDeliveredStep<I, R> onSuccess(
+    public <S> IsDeliveredStep<I, R, RQ> onSuccess(
         EventType<S, ?> eventType,
-        Function<Tuple2<HttpResponseMessage, R>, S> dataAdapter
+        Function<TypedHttpResponse<R>, S> dataAdapter
     ) {
       this.onSuccess = new Callback<>(eventType, dataAdapter);
       return this;
     }
 
     @Override
-    public IsDeliveredStep<I, R> onSuccess(EventType<Void, ?> eventType) {
+    public IsDeliveredStep<I, R, RQ> onSuccess(EventType<Void, ?> eventType) {
       return onSuccess(eventType, _ -> null);
     }
 
     @Override
-    public IsFailureTransientStep<I, R> isDelivered(Predicate<Tuple2<HttpResponseMessage, R>> isDelivered) {
+    public IsFailureTransientStep<I, R, RQ> isDelivered(Predicate<TypedHttpResponse<R>> isDelivered) {
       this.isDelivered = isDelivered;
       return this;
     }
 
     @Override
-    public IsRejectedByInvalidResponseStep<I> isFailureTransient(
-        Predicate<Tuple2<HttpResponseMessage, R>> isFailureTransient
+    public IsRejectedByInvalidResponseStep<I, RQ> isFailureTransient(
+        Predicate<TypedHttpResponse<R>> isFailureTransient
     ) {
       this.isFailureTransient = isFailureTransient;
       return this;
     }
 
     @Override
-    public IsFailureByInvalidResponseTransientStep<I> isRejectedByInvalidResponse(
+    public IsFailureByInvalidResponseTransientStep<I, RQ> isRejectedByInvalidResponse(
         Predicate<Tuple2<HttpResponseMessage, String>> isRejectedByInvalidResponse
     ) {
       this.isRejectedByInvalidResponse = isRejectedByInvalidResponse;
@@ -290,7 +326,7 @@ public final class AtLeastOnceBuilder {
     }
 
     @Override
-    public IsAttemptAvailableStep<I> isFailureByInvalidResponseTransient(
+    public IsAttemptAvailableStep<I, RQ> isFailureByInvalidResponseTransient(
         Predicate<Tuple2<HttpResponseMessage, String>> isFailureByInvalidResponseTransient
     ) {
       this.isFailureByInvalidResponseTransient = isFailureByInvalidResponseTransient;
@@ -298,7 +334,7 @@ public final class AtLeastOnceBuilder {
     }
 
     @Override
-    public BackoffAlgorithmStep<I> isAttemptAvailable(Predicate<RetryContext> isAttemptAvailable) {
+    public BackoffAlgorithmStep<I, RQ> isAttemptAvailable(Predicate<RetryContext> isAttemptAvailable) {
       this.isAttemptAvailable = isAttemptAvailable;
       return this;
     }
@@ -314,6 +350,7 @@ public final class AtLeastOnceBuilder {
       return new AtLeastOnce<>(
           name,
           id,
+          requestPayloadType,
           messageCreator,
           repeatMessageCreator,
           forwarder,

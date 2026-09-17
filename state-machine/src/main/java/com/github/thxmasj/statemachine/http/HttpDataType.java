@@ -28,7 +28,7 @@ public class HttpDataType {
     };
   }
 
-  public static <T> DataType<TypedHttpRequest<T>> forTypedRequest(DataType<T> payloadType) {
+  public static <T> DataType<TypedHttpRequest<T>> forRequest(DataType<T> payloadType) {
     return new DataType<>() {
       @Override
       public String name() {
@@ -38,12 +38,13 @@ public class HttpDataType {
       @Override
       public TypedHttpRequest<T> unmarshal(byte[] value) {
         HttpRequestMessage request = HttpMessageParser.parseRequest(value);
-        return new TypedHttpRequest<>(request, payloadType.unmarshal(request.body()));
+        return new TypedHttpRequest<>(request.method(), request.uri(), request.headers(), payloadType.unmarshal(request.body()));
       }
 
       @Override
       public byte[] marshal(TypedHttpRequest<T> request) {
-        return request.message().toBytes();
+        HttpRequestMessage r = new HttpRequestMessage(request.method(), request.uri(), request.headers(), payloadType.marshal(request.payload()));
+        return r.toBytes();
       }
 
     };
@@ -68,7 +69,7 @@ public class HttpDataType {
     };
   }
 
-  public static <T> DataType<TypedHttpResponse<T>> forTypedResponse(DataType<T> payloadType) {
+  public static <T> DataType<TypedHttpResponse<T>> forResponse(DataType<T> payloadType) {
     return new DataType<>() {
       @Override
       public String name() {

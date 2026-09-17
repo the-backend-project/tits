@@ -30,6 +30,7 @@ import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.statemachine.http.NettyHttpClient;
 import com.github.thxmasj.statemachine.http.NettyHttpClientBuilder;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
+import com.github.thxmasj.statemachine.message.http.TypedHttpRequest;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.URI;
@@ -54,10 +55,20 @@ public class HttpOutboxTest {
     server = Init.httpServer();
   }
 
-  private static HttpRequestMessage requestMessage(String path) {
-    return new HttpRequestMessage(
+  private static <T> TypedHttpRequest<T> requestMessage(String path) {
+    return new TypedHttpRequest<>(
         POST,
-        URI.create("http://localhost:" + server.getAddress().getPort() + path)
+        URI.create("http://localhost:" + server.getAddress().getPort() + path),
+        Map.of(),
+        null
+    );
+  }
+
+  private static <T> TypedHttpRequest<T> requestMessage(String path, T payload) {
+    return TypedHttpRequest.create(
+        POST,
+        URI.create("http://localhost:" + server.getAddress().getPort() + path),
+        payload
     );
   }
 
@@ -109,6 +120,45 @@ public class HttpOutboxTest {
     ).blockFirst();
     assertNotNull(rollback);
     assertEquals(Rollback, rollback.type());
+  }
+
+  @Test
+  public void requestDispatchedOutputDataType() {
+    var exchange = HttpOutboxRequest.atMostOnce()
+        .name("ExchangeWithTypedPayload")
+        .id(UUID.randomUUID())
+        .requestPayloadType(DataType.forString())
+        .responsePayloadType(DataType.forString())
+        .<Void>messageCreator(_ -> requestMessage("/test", "payload"))
+        .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
+        .contentParser(_ -> valid("response"))
+        .isDelivered(_ -> true)
+        .isRejectedByInvalidResponse(_ -> false)
+        .build();
+
+    assertNotNull(exchange.requestDispatched().outputDataType());
+    assertEquals("HTTP request", exchange.requestDispatched().outputDataType().name());
+  }
+
+  @Test
+  public void atLeastOnceRequestDispatchedOutputDataType() {
+    var exchange = HttpOutboxRequest.atLeastOnce()
+        .name("AtLeastOnceWithTypedPayload")
+        .id(UUID.randomUUID())
+        .requestPayloadType(DataType.forString())
+        .<Void>messageCreator(_ -> requestMessage("/test", "payload"))
+        .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
+        .contentParser(_ -> valid("response"))
+        .isDelivered(_ -> true)
+        .isFailureTransient(_ -> true)
+        .isRejectedByInvalidResponse(_ -> false)
+        .isFailureByInvalidResponseTransient(_ -> false)
+        .isAttemptAvailable(_ -> true)
+        .backoffAlgorithm(_ -> Duration.ofSeconds(1))
+        .build();
+
+    assertNotNull(exchange.requestDispatched().outputDataType());
+    assertEquals("HTTP request", exchange.requestDispatched().outputDataType().name());
   }
 
   @Test
@@ -166,7 +216,7 @@ public class HttpOutboxTest {
         .findFirst()
         .orElseThrow();
     assertEquals(1, timeoutTransition.triggers().size());
-    assertEquals(TimeoutExpired, timeoutTransition.triggers().get(0).eventSpec().eventType());
+    assertEquals(TimeoutExpired, timeoutTransition.triggers().getFirst().eventSpec().eventType());
   }
 
   record ProcessModel(
@@ -193,6 +243,8 @@ public class HttpOutboxTest {
       AtMostOnce<Void, Void> Exchange = HttpOutboxRequest.atMostOnce()
           .name("Exchange")
           .id(UUID.fromString("a3778c63-144f-4748-9e8b-cc10ee20db3f"))
+          .requestPayloadType(DataType.none())
+          .responsePayloadType(DataType.none())
           .<Void>messageCreator(_ -> requestMessage(path))
           .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
           .processModel(process)
@@ -203,17 +255,18 @@ public class HttpOutboxTest {
           .contentParser(message -> message.statusCode() == 200 && message.body() == null ? valid((Void) null) : invalid("Invalid response"))
           .onSuccess(processed)
           .onFailure(failed)
-          .isDelivered(r -> r.t1().statusCode() >= 200 && r.t1().statusCode() <= 299)
+          .isDelivered(r -> r.message().statusCode() >= 200 && r.message().statusCode() <= 299)
           .isRejectedByInvalidResponse(r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499)
           .rollbackModel(HttpOutboxRequest.atLeastOnce()
               .name("ExchangeRollback")
               .id(UUID.fromString("fd4959b4-5c14-4b7a-8ea5-b559b94f803c"))
+              .requestPayloadType(DataType.none())
               .<Void>messageCreator(_ -> requestMessage("/rollback"))
               .repeatMessageCreator((_, o) -> o)
               .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
               .contentParser(_ -> valid(null))
-              .isDelivered(r -> r.t1().statusCode() >= 200 && r.t1().statusCode() <= 299)
-              .isFailureTransient(r -> r.t1().statusCode() >= 500 && r.t1().statusCode() <= 599)
+              .isDelivered(r -> r.message().statusCode() >= 200 && r.message().statusCode() <= 299)
+              .isFailureTransient(r -> r.message().statusCode() >= 500 && r.message().statusCode() <= 599)
               .isRejectedByInvalidResponse(r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499)
               .isFailureByInvalidResponseTransient(r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499)
               .isAttemptAvailable(c -> Duration.between(c.enqueueTime(), c.now()).compareTo(Duration.ofHours(5)) < 0)
@@ -268,6 +321,8 @@ public class HttpOutboxTest {
       HttpOutboxRequest<Void> Exchange = HttpOutboxRequest.atMostOnce()
           .name("ExchangeWithoutRollback")
           .id(UUID.fromString("a3778c63-144f-4748-9e8b-cc10ee20db3f"))
+          .requestPayloadType(DataType.none())
+          .responsePayloadType(DataType.none())
           .<Void>messageCreator(_ -> requestMessage(path))
           .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
           .processModel(process)
@@ -275,10 +330,10 @@ public class HttpOutboxTest {
           .onMissingResponse(failed)
           .onInvalidResponseRejection(failed)
           .onInvalidResponseUnknown(failed)
-          .contentParser(_ -> valid((Void) null))
+          .contentParser(_ -> valid(null))
           .onSuccess(processed)
           .onFailure(failed)
-          .isDelivered(r -> r.t1().statusCode() >= 200 && r.t1().statusCode() <= 299)
+          .isDelivered(r -> r.message().statusCode() >= 200 && r.message().statusCode() <= 299)
           .isRejectedByInvalidResponse(r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499)
           .build();
 
@@ -320,6 +375,8 @@ public class HttpOutboxTest {
       HttpOutboxRequest<Void> Exchange = HttpOutboxRequest.atMostOnce()
           .name("ExchangeWithDefaultInvalidResponse")
           .id(UUID.fromString("a3778c63-144f-4748-9e8b-cc10ee20db3f"))
+          .requestPayloadType(DataType.none())
+          .responsePayloadType(DataType.none())
           .<Void>messageCreator(_ -> requestMessage(path))
           .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
           .processModel(process)
@@ -366,6 +423,8 @@ public class HttpOutboxTest {
       HttpOutboxRequest<Void> Exchange = HttpOutboxRequest.atMostOnce()
           .name("ExchangeWithDefaultInvalidResponseUnknown")
           .id(UUID.fromString("a3778c63-144f-4748-9e8b-cc10ee20db3f"))
+          .requestPayloadType(DataType.unknown())
+          .responsePayloadType(DataType.unknown())
           .<Void>messageCreator(_ -> requestMessage(path))
           .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
           .processModel(process)
@@ -409,6 +468,8 @@ public class HttpOutboxTest {
       HttpOutboxRequest<Void> exchange = HttpOutboxRequest.atMostOnce()
           .name("ExchangeWithDefaultMissingResponse")
           .id(UUID.fromString("a3778c63-144f-4748-9e8b-cc10ee20db3f"))
+          .requestPayloadType(DataType.unknown())
+          .responsePayloadType(DataType.unknown())
           .<Void>messageCreator(_ -> requestMessage(path))
           .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
           .processModel(process)

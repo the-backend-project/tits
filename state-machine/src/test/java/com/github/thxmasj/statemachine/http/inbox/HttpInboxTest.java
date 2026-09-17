@@ -51,14 +51,12 @@ import com.github.thxmasj.statemachine.Validated.Valid;
 import com.github.thxmasj.statemachine.http.NettyHttpClient;
 import com.github.thxmasj.statemachine.http.NettyHttpClientBuilder;
 import com.github.thxmasj.statemachine.http.inbox.HttpInbox.RoutedRequest;
-import com.github.thxmasj.statemachine.http.outbox.AtLeastOnce;
-import com.github.thxmasj.statemachine.http.outbox.AtMostOnce;
-import com.github.thxmasj.statemachine.http.outbox.Callback;
 import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest;
 import com.github.thxmasj.statemachine.message.http.HttpMessageParser;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Method;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
+import com.github.thxmasj.statemachine.message.http.TypedHttpRequest;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.URI;
@@ -306,8 +304,8 @@ public class HttpInboxTest {
       )
   );
 
-  private static HttpRequestMessage requestMessage(String path) {
-    return new HttpRequestMessage(
+  private static TypedHttpRequest<Void> requestMessage(String path) {
+    return TypedHttpRequest.create(
         POST,
         URI.create("http://localhost:" + server.getAddress().getPort() + path)
     );
@@ -322,57 +320,60 @@ public class HttpInboxTest {
     server = Init.httpServer();
     Init.addDelayContext(server, "/long-process", Duration.ofSeconds(10));
     Init.addDelayContext(server, "/process", uri -> Duration.ofMillis(Long.parseLong(uri.getPath().substring("/process/".length()))));
-    Process0Outbox = new AtMostOnce<>(
-        "Process0Outbox",
-        UUID.fromString("2c68ffa2-0935-46fd-a032-2647ca51b801"),
-        _ -> Mono.just(requestMessage("/process/0")),
-        new NettyHttpClient(new NettyHttpClientBuilder().build()),
-        Duration.ofSeconds(10),
-        Lamp,
-        new Callback<>(ExternalProcessingDone, _ -> null), // onPeerUnavailable
-        new Callback<>(ExternalProcessingDone, _ -> null), // onMissingResponse
-        new Callback<>(ExternalProcessingDone, _ -> null), // onSuccess
-        new Callback<>(ExternalProcessingDone, _ -> null), // onFailure
-        new Callback<>(ExternalProcessingDone, _ -> null), // onInvalidResponseRejection
-        new Callback<>(ExternalProcessingDone, _ -> null), // onInvalidResponseUnknown
-        message -> message.body() == null ? valid(null) : invalid("Expected empty body"), // contentParser
-        r -> r.t1().statusCode() >= 200 && r.t1().statusCode() <= 299, // successPredicate
-        r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499, // invalidResponseRejectionPredicate
-        new AtLeastOnce<>(
-            "Process0RollbackOutbox",
-            UUID.fromString("513f7e3e-c03e-4016-b5f3-ddb981cb1ffe"),
-            _ -> Mono.just(requestMessage("/rollback")),
-            (_, o) -> o,
-            new NettyHttpClient(new NettyHttpClientBuilder().build()),
-            Duration.ofSeconds(10),
-            null, // processModel
-            null, // onSuccess
-            _ -> valid(null), // contentParser
-            r -> r.t1().statusCode() >= 200 && r.t1().statusCode() <= 299,
-            r -> r.t1().statusCode() >= 500 && r.t1().statusCode() <= 599, // transientFailurePredicate
-            r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499, // invalidResponseRejectionPredicate
-            r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499, // invalidResponseTransientFailurePredicate
-            c -> Duration.between(c.enqueueTime(), c.now()).compareTo(Duration.ofHours(5)) < 0,
-            c -> new DelaySpecification(Duration.ofSeconds(10), Duration.ofMinutes(10), Duration.ofHours(5), 1.5).calculateDelay(c.attemptNumber())
+    Process0Outbox = HttpOutboxRequest.atMostOnce()
+        .name("Process0Outbox")
+        .id(UUID.fromString("2c68ffa2-0935-46fd-a032-2647ca51b801"))
+        .requestPayloadType(DataType.none())
+        .responsePayloadType(DataType.none())
+        .<Void>messageCreatorReactive(_ -> Mono.just(requestMessage("/process/0")))
+        .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
+        .inflightTimeout(Duration.ofSeconds(10))
+        .processModel(Lamp)
+        .onPeerUnavailable(ExternalProcessingDone)
+        .onMissingResponse(ExternalProcessingDone)
+        .onInvalidResponseRejection(ExternalProcessingDone)
+        .onInvalidResponseUnknown(ExternalProcessingDone)
+        .contentParser(message -> message.body() == null ? valid(null) : invalid("Expected empty body"))
+        .onSuccess(ExternalProcessingDone)
+        .onFailure(ExternalProcessingDone)
+        .isDelivered(r -> r.message().statusCode() >= 200 && r.message().statusCode() <= 299)
+        .isRejectedByInvalidResponse(r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499)
+        .rollbackModel(HttpOutboxRequest.atLeastOnce()
+            .name("Process0RollbackOutbox")
+            .id(UUID.fromString("513f7e3e-c03e-4016-b5f3-ddb981cb1ffe"))
+            .requestPayloadType(DataType.none())
+            .<Void>messageCreatorReactive(_ -> Mono.just(requestMessage("/rollback")))
+            .repeatMessageCreator((_, o) -> o)
+            .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
+            .inflightTimeout(Duration.ofSeconds(10))
+            .contentParser(_ -> valid(null))
+            .isDelivered(r -> r.message().statusCode() >= 200 && r.message().statusCode() <= 299)
+            .isFailureTransient(r -> r.message().statusCode() >= 500 && r.message().statusCode() <= 599)
+            .isRejectedByInvalidResponse(r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499)
+            .isFailureByInvalidResponseTransient(r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499)
+            .isAttemptAvailable(c -> Duration.between(c.enqueueTime(), c.now()).compareTo(Duration.ofHours(5)) < 0)
+            .backoffAlgorithm(c -> new DelaySpecification(Duration.ofSeconds(10), Duration.ofMinutes(10), Duration.ofHours(5), 1.5).calculateDelay(c.attemptNumber()))
+            .build()
         )
-    );
-    Process3Outbox = new AtLeastOnce<>(
-        "Process3Outbox",
-        UUID.fromString("2e86f07c-50ed-4922-9839-54dca94be4b6"),
-        _ -> Mono.just(requestMessage("/process/3000")),
-        (_, requestMessage) -> requestMessage,
-        new NettyHttpClient(new NettyHttpClientBuilder().build()),
-        Duration.ofSeconds(10),
-        Lamp,
-        new Callback<>(ExternalProcessingDone, _ -> null),
-        _ -> valid(null), // contentParser
-        r -> r.t1().statusCode() >= 200 && r.t1().statusCode() <= 299,
-        r -> r.t1().statusCode() >= 500 && r.t1().statusCode() <= 599, // transientFailurePredicate
-        r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499, // invalidResponseRejectionPredicate
-        r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499, // invalidResponseTransientFailurePredicate
-        c -> Duration.between(c.enqueueTime(), c.now()).compareTo(Duration.ofHours(5)) < 0,
-        c -> new DelaySpecification(Duration.ofSeconds(10), Duration.ofMinutes(10), Duration.ofHours(5), 1.5).calculateDelay(c.attemptNumber())
-    );
+        .build();
+    Process3Outbox = HttpOutboxRequest.atLeastOnce()
+        .name("Process3Outbox")
+        .id(UUID.fromString("2e86f07c-50ed-4922-9839-54dca94be4b6"))
+        .requestPayloadType(DataType.none())
+        .<Void>messageCreatorReactive(_ -> Mono.just(requestMessage("/process/3000")))
+        .repeatMessageCreator((_, requestMessage) -> requestMessage)
+        .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
+        .inflightTimeout(Duration.ofSeconds(10))
+        .processModel(Lamp)
+        .contentParser(_ -> valid(null))
+        .onSuccess(ExternalProcessingDone)
+        .isDelivered(r -> r.message().statusCode() >= 200 && r.message().statusCode() <= 299)
+        .isFailureTransient(r -> r.message().statusCode() >= 500 && r.message().statusCode() <= 599)
+        .isRejectedByInvalidResponse(r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499)
+        .isFailureByInvalidResponseTransient(r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499)
+        .isAttemptAvailable(c -> Duration.between(c.enqueueTime(), c.now()).compareTo(Duration.ofHours(5)) < 0)
+        .backoffAlgorithm(c -> new DelaySpecification(Duration.ofSeconds(10), Duration.ofMinutes(10), Duration.ofHours(5), 1.5).calculateDelay(c.attemptNumber()))
+        .build();
     stateMachine = Init.stateMachine(
         Lamp,
         lampTransitions(),

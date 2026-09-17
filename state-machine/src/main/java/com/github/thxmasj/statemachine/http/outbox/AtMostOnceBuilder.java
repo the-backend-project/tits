@@ -4,6 +4,7 @@ import static com.github.thxmasj.statemachine.http.outbox.EventTypes.InvalidResp
 import static com.github.thxmasj.statemachine.http.outbox.EventTypes.ServiceUnavailable;
 import static com.github.thxmasj.statemachine.http.outbox.EventTypes.TimeoutExpired;
 
+import com.github.thxmasj.statemachine.DataType;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.EventType;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionContext;
@@ -12,6 +13,8 @@ import com.github.thxmasj.statemachine.Validated;
 import com.github.thxmasj.statemachine.http.HttpClient;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
+import com.github.thxmasj.statemachine.message.http.TypedHttpRequest;
+import com.github.thxmasj.statemachine.message.http.TypedHttpResponse;
 import java.time.Duration;
 import java.util.UUID;
 import java.util.function.Function;
@@ -22,9 +25,9 @@ import reactor.core.publisher.Mono;
 /// returning the next one, so that the order is enforced by the compiler. A step which has a default is optional and
 /// can be skipped, as it also offers the settings of the steps following it.
 ///
-/// The type of the data which the request message is created from is introduced by [MessageCreatorStep], the type of
-/// the parsed response content by [ContentParserStep], and the type of the data which the rollback request message is
-/// created from by [RollbackModelStep].
+/// The type of the request payload is introduced by [RequestPayloadTypeStep], the type of the response payload by
+/// [ResponsePayloadTypeStep], the type of the data which the request message is created from by [MessageCreatorStep],
+/// and the type of the data which the rollback request message is created from by [RollbackModelStep].
 public final class AtMostOnceBuilder {
 
   private AtMostOnceBuilder() {}
@@ -40,118 +43,128 @@ public final class AtMostOnceBuilder {
 
   public interface IdStep {
 
-    MessageCreatorStep id(UUID id);
+    RequestPayloadTypeStep id(UUID id);
   }
 
-  public interface MessageCreatorStep {
+  public interface RequestPayloadTypeStep {
 
-    default <I> ForwarderStep<I> messageCreator(Function<TransitionContext<I>, HttpRequestMessage> messageCreator) {
+    <RQ> ResponsePayloadTypeStep<RQ> requestPayloadType(DataType<RQ> requestPayloadType);
+  }
+
+  public interface ResponsePayloadTypeStep<RQ> {
+
+    <RS> MessageCreatorStep<RQ, RS> responsePayloadType(DataType<RS> responsePayloadType);
+  }
+
+  public interface MessageCreatorStep<RQ, RS> {
+
+    default <I> ForwarderStep<I, RQ, RS> messageCreator(Function<TransitionContext<I>, TypedHttpRequest<RQ>> messageCreator) {
       return messageCreatorReactive(messageCreator.andThen(Mono::just));
     }
 
-    <I> ForwarderStep<I> messageCreatorReactive(Function<TransitionContext<I>, Mono<HttpRequestMessage>> messageCreator);
+    <I> ForwarderStep<I, RQ, RS> messageCreatorReactive(Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator);
   }
 
-  public interface ForwarderStep<I> {
+  public interface ForwarderStep<I, RQ, RS> {
 
-    InflightTimeoutStep<I> forwarder(HttpClient forwarder);
+    InflightTimeoutStep<I, RQ, RS> forwarder(HttpClient forwarder);
   }
 
   /// Optional: the inflight timeout defaults to ten seconds.
-  public interface InflightTimeoutStep<I> extends ProcessModelStep<I> {
+  public interface InflightTimeoutStep<I, RQ, RS> extends ProcessModelStep<I, RQ, RS> {
 
-    ProcessModelStep<I> inflightTimeout(Duration inflightTimeout);
+    ProcessModelStep<I, RQ, RS> inflightTimeout(Duration inflightTimeout);
   }
 
   /// Optional: the process model defaults to none, which is sufficient as long as no callback is given.
-  public interface ProcessModelStep<I> extends OnPeerUnavailableStep<I> {
+  public interface ProcessModelStep<I, RQ, RS> extends OnPeerUnavailableStep<I, RQ, RS> {
 
-    OnPeerUnavailableStep<I> processModel(EntityModel processModel);
+    OnPeerUnavailableStep<I, RQ, RS> processModel(EntityModel processModel);
   }
 
   /// Optional: the peer unavailable callback defaults to ServiceUnavailable.
-  public interface OnPeerUnavailableStep<I> extends OnMissingResponseStep<I> {
+  public interface OnPeerUnavailableStep<I, RQ, RS> extends OnMissingResponseStep<I, RQ, RS> {
 
-    <S> OnMissingResponseStep<I> onPeerUnavailable(EventType<S, ?> eventType, Function<EntityModel, S> dataAdapter);
+    <S> OnMissingResponseStep<I, RQ, RS> onPeerUnavailable(EventType<S, ?> eventType, Function<EntityModel, S> dataAdapter);
 
-    OnMissingResponseStep<I> onPeerUnavailable(EventType<Void, ?> eventType);
+    OnMissingResponseStep<I, RQ, RS> onPeerUnavailable(EventType<Void, ?> eventType);
 
   }
 
   /// Optional: the missing response callback defaults to TimeoutExpired.
-  public interface OnMissingResponseStep<I> extends OnInvalidResponseRejectionStep<I> {
+  public interface OnMissingResponseStep<I, RQ, RS> extends OnInvalidResponseRejectionStep<I, RQ, RS> {
 
-    <S> OnInvalidResponseRejectionStep<I> onMissingResponse(
+    <S> OnInvalidResponseRejectionStep<I, RQ, RS> onMissingResponse(
         EventType<S, ?> eventType,
         Function<EntityModel, S> dataAdapter
     );
 
-    OnInvalidResponseRejectionStep<I> onMissingResponse(EventType<Void, ?> eventType);
+    OnInvalidResponseRejectionStep<I, RQ, RS> onMissingResponse(EventType<Void, ?> eventType);
   }
 
   /// Optional: the invalid response rejection callback defaults to InvalidResponse.
-  public interface OnInvalidResponseRejectionStep<I> extends OnInvalidResponseUnknownStep<I> {
+  public interface OnInvalidResponseRejectionStep<I, RQ, RS> extends OnInvalidResponseUnknownStep<I, RQ, RS> {
 
-    <S> OnInvalidResponseUnknownStep<I> onInvalidResponseRejection(
+    <S> OnInvalidResponseUnknownStep<I, RQ, RS> onInvalidResponseRejection(
         EventType<S, ?> eventType,
         Function<Tuple2<HttpResponseMessage, String>, S> dataAdapter
     );
 
-    OnInvalidResponseUnknownStep<I> onInvalidResponseRejection(EventType<Void, ?> eventType);
+    OnInvalidResponseUnknownStep<I, RQ, RS> onInvalidResponseRejection(EventType<Void, ?> eventType);
   }
 
   /// Optional: the invalid response unknown callback defaults to InvalidResponse.
-  public interface OnInvalidResponseUnknownStep<I> extends ContentParserStep<I> {
+  public interface OnInvalidResponseUnknownStep<I, RQ, RS> extends ContentParserStep<I, RQ, RS> {
 
-    <S> ContentParserStep<I> onInvalidResponseUnknown(
+    <S> ContentParserStep<I, RQ, RS> onInvalidResponseUnknown(
         EventType<S, ?> eventType,
         Function<Tuple2<HttpResponseMessage, String>, S> dataAdapter
     );
 
-    ContentParserStep<I> onInvalidResponseUnknown(EventType<Void, ?> eventType);
+    ContentParserStep<I, RQ, RS> onInvalidResponseUnknown(EventType<Void, ?> eventType);
   }
 
-  public interface ContentParserStep<I> {
+  public interface ContentParserStep<I, RQ, RS> {
 
-    <R> OnSuccessStep<I, R> contentParser(Function<HttpResponseMessage, Validated<R>> contentParser);
+    OnSuccessStep<I, RQ, RS> contentParser(Function<HttpResponseMessage, Validated<RS>> contentParser);
   }
 
   /// Optional: the success callback defaults to none.
-  public interface OnSuccessStep<I, R> extends OnFailureStep<I, R> {
+  public interface OnSuccessStep<I, RQ, RS> extends OnFailureStep<I, RQ, RS> {
 
-    <S> OnFailureStep<I, R> onSuccess(
+    <S> OnFailureStep<I, RQ, RS> onSuccess(
         EventType<S, ?> eventType,
-        Function<Tuple2<HttpResponseMessage, R>, S> dataAdapter
+        Function<TypedHttpResponse<RS>, S> dataAdapter
     );
 
-    OnFailureStep<I, R> onSuccess(EventType<Void, ?> eventType);
+    OnFailureStep<I, RQ, RS> onSuccess(EventType<Void, ?> eventType);
   }
 
   /// Optional: the failure callback defaults to none.
-  public interface OnFailureStep<I, R> extends IsDeliveredStep<I, R> {
+  public interface OnFailureStep<I, RQ, RS> extends IsDeliveredStep<I, RQ, RS> {
 
-    <S> IsDeliveredStep<I, R> onFailure(
+    <S> IsDeliveredStep<I, RQ, RS> onFailure(
         EventType<S, ?> eventType,
-        Function<Tuple2<HttpResponseMessage, R>, S> dataAdapter
+        Function<TypedHttpResponse<RS>, S> dataAdapter
     );
 
-    IsDeliveredStep<I, R> onFailure(EventType<Void, ?> eventType);
+    IsDeliveredStep<I, RQ, RS> onFailure(EventType<Void, ?> eventType);
   }
 
-  public interface IsDeliveredStep<I, R> {
+  public interface IsDeliveredStep<I, RQ, RS> {
 
-    IsRejectedByInvalidResponseStep<I> isDelivered(Predicate<Tuple2<HttpResponseMessage, R>> isDelivered);
+    IsRejectedByInvalidResponseStep<I, RQ, RS> isDelivered(Predicate<TypedHttpResponse<RS>> isDelivered);
   }
 
-  public interface IsRejectedByInvalidResponseStep<I> {
+  public interface IsRejectedByInvalidResponseStep<I, RQ, RS> {
 
-    RollbackModelStep<I> isRejectedByInvalidResponse(
+    RollbackModelStep<I, RQ, RS> isRejectedByInvalidResponse(
         Predicate<Tuple2<HttpResponseMessage, String>> isRejectedByInvalidResponse
     );
   }
 
   /// Optional: the rollback model defaults to none.
-  public interface RollbackModelStep<I> extends BuildStep<I, Void> {
+  public interface RollbackModelStep<I, RQ, RS> extends BuildStep<I, Void> {
 
     <RI> BuildStep<I, RI> rollbackModel(AtLeastOnce<RI> rollbackModel);
 
@@ -163,7 +176,7 @@ public final class AtMostOnceBuilder {
     AtMostOnce<I, RI> build();
   }
 
-  private static final class WithNothing implements NameStep, IdStep, MessageCreatorStep {
+  private static final class WithNothing implements NameStep, IdStep, RequestPayloadTypeStep {
 
     private String name;
     private UUID id;
@@ -175,23 +188,68 @@ public final class AtMostOnceBuilder {
     }
 
     @Override
-    public MessageCreatorStep id(UUID id) {
+    public RequestPayloadTypeStep id(UUID id) {
       this.id = id;
       return this;
     }
 
     @Override
-    public <I> ForwarderStep<I> messageCreatorReactive(Function<TransitionContext<I>, Mono<HttpRequestMessage>> messageCreator) {
-      return new WithMessageCreator<>(name, id, messageCreator);
+    public <RQ> ResponsePayloadTypeStep<RQ> requestPayloadType(DataType<RQ> requestPayloadType) {
+      return new WithRequestPayloadType<>(name, id, requestPayloadType);
     }
   }
 
-  private static final class WithMessageCreator<I> implements ForwarderStep<I>,
-      InflightTimeoutStep<I> {
+  private static final class WithRequestPayloadType<RQ> implements ResponsePayloadTypeStep<RQ> {
 
     private final String name;
     private final UUID id;
-    private final Function<TransitionContext<I>, Mono<HttpRequestMessage>> messageCreator;
+    private final DataType<RQ> requestPayloadType;
+
+    private WithRequestPayloadType(String name, UUID id, DataType<RQ> requestPayloadType) {
+      this.name = name;
+      this.id = id;
+      this.requestPayloadType = requestPayloadType;
+    }
+
+    @Override
+    public <RS> MessageCreatorStep<RQ, RS> responsePayloadType(DataType<RS> responsePayloadType) {
+      return new WithResponsePayloadType<>(name, id, requestPayloadType, responsePayloadType);
+    }
+  }
+
+  private static final class WithResponsePayloadType<RQ, RS> implements MessageCreatorStep<RQ, RS> {
+
+    private final String name;
+    private final UUID id;
+    private final DataType<RQ> requestPayloadType;
+    private final DataType<RS> responsePayloadType;
+
+    private WithResponsePayloadType(
+        String name,
+        UUID id,
+        DataType<RQ> requestPayloadType,
+        DataType<RS> responsePayloadType
+    ) {
+      this.name = name;
+      this.id = id;
+      this.requestPayloadType = requestPayloadType;
+      this.responsePayloadType = responsePayloadType;
+    }
+
+    @Override
+    public <I> ForwarderStep<I, RQ, RS> messageCreatorReactive(Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator) {
+      return new WithMessageCreator<>(name, id, requestPayloadType, responsePayloadType, messageCreator);
+    }
+  }
+
+  private static final class WithMessageCreator<I, RQ, RS> implements ForwarderStep<I, RQ, RS>,
+      InflightTimeoutStep<I, RQ, RS> {
+
+    private final String name;
+    private final UUID id;
+    private final DataType<RQ> requestPayloadType;
+    private final DataType<RS> responsePayloadType;
+    private final Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator;
     private HttpClient forwarder;
     private Duration inflightTimeout = Duration.ofSeconds(10);
     private EntityModel processModel;
@@ -200,32 +258,40 @@ public final class AtMostOnceBuilder {
     private Callback<Tuple2<HttpResponseMessage, String>, ?> onInvalidResponseRejection = new Callback<>(InvalidResponse, Tuple2::t2);
     private Callback<Tuple2<HttpResponseMessage, String>, ?> onInvalidResponseUnknown = new Callback<>(InvalidResponse, Tuple2::t2);
 
-    private WithMessageCreator(String name, UUID id, Function<TransitionContext<I>, Mono<HttpRequestMessage>> messageCreator) {
+    private WithMessageCreator(
+        String name,
+        UUID id,
+        DataType<RQ> requestPayloadType,
+        DataType<RS> responsePayloadType,
+        Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator
+    ) {
       this.name = name;
       this.id = id;
+      this.requestPayloadType = requestPayloadType;
+      this.responsePayloadType = responsePayloadType;
       this.messageCreator = messageCreator;
     }
 
     @Override
-    public InflightTimeoutStep<I> forwarder(HttpClient forwarder) {
+    public InflightTimeoutStep<I, RQ, RS> forwarder(HttpClient forwarder) {
       this.forwarder = forwarder;
       return this;
     }
 
     @Override
-    public ProcessModelStep<I> inflightTimeout(Duration inflightTimeout) {
+    public ProcessModelStep<I, RQ, RS> inflightTimeout(Duration inflightTimeout) {
       this.inflightTimeout = inflightTimeout;
       return this;
     }
 
     @Override
-    public OnPeerUnavailableStep<I> processModel(EntityModel processModel) {
+    public OnPeerUnavailableStep<I, RQ, RS> processModel(EntityModel processModel) {
       this.processModel = processModel;
       return this;
     }
 
     @Override
-    public <S> OnMissingResponseStep<I> onPeerUnavailable(
+    public <S> OnMissingResponseStep<I, RQ, RS> onPeerUnavailable(
         EventType<S, ?> eventType,
         Function<EntityModel, S> dataAdapter
     ) {
@@ -234,13 +300,13 @@ public final class AtMostOnceBuilder {
     }
 
     @Override
-    public OnMissingResponseStep<I> onPeerUnavailable(EventType<Void, ?> eventType) {
+    public OnMissingResponseStep<I, RQ, RS> onPeerUnavailable(EventType<Void, ?> eventType) {
       this.onPeerUnavailable = new Callback<>(eventType, _ -> null);
       return this;
     }
 
     @Override
-    public <S> OnInvalidResponseRejectionStep<I> onMissingResponse(
+    public <S> OnInvalidResponseRejectionStep<I, RQ, RS> onMissingResponse(
         EventType<S, ?> eventType,
         Function<EntityModel, S> dataAdapter
     ) {
@@ -249,13 +315,13 @@ public final class AtMostOnceBuilder {
     }
 
     @Override
-    public OnInvalidResponseRejectionStep<I> onMissingResponse(EventType<Void, ?> eventType) {
+    public OnInvalidResponseRejectionStep<I, RQ, RS> onMissingResponse(EventType<Void, ?> eventType) {
       this.onMissingResponse = new Callback<>(eventType, _ -> null);
       return this;
     }
 
     @Override
-    public <S> OnInvalidResponseUnknownStep<I> onInvalidResponseRejection(
+    public <S> OnInvalidResponseUnknownStep<I, RQ, RS> onInvalidResponseRejection(
         EventType<S, ?> eventType,
         Function<Tuple2<HttpResponseMessage, String>, S> dataAdapter
     ) {
@@ -264,12 +330,12 @@ public final class AtMostOnceBuilder {
     }
 
     @Override
-    public OnInvalidResponseUnknownStep<I> onInvalidResponseRejection(EventType<Void, ?> eventType) {
+    public OnInvalidResponseUnknownStep<I, RQ, RS> onInvalidResponseRejection(EventType<Void, ?> eventType) {
       return onInvalidResponseRejection(eventType, _ -> null);
     }
 
     @Override
-    public <S> ContentParserStep<I> onInvalidResponseUnknown(
+    public <S> ContentParserStep<I, RQ, RS> onInvalidResponseUnknown(
         EventType<S, ?> eventType,
         Function<Tuple2<HttpResponseMessage, String>, S> dataAdapter
     ) {
@@ -278,15 +344,17 @@ public final class AtMostOnceBuilder {
     }
 
     @Override
-    public ContentParserStep<I> onInvalidResponseUnknown(EventType<Void, ?> eventType) {
+    public ContentParserStep<I, RQ, RS> onInvalidResponseUnknown(EventType<Void, ?> eventType) {
       return onInvalidResponseUnknown(eventType, _ -> null);
     }
 
     @Override
-    public <R> OnSuccessStep<I, R> contentParser(Function<HttpResponseMessage, Validated<R>> contentParser) {
+    public OnSuccessStep<I, RQ, RS> contentParser(Function<HttpResponseMessage, Validated<RS>> contentParser) {
       return new WithContentParser<>(
           name,
           id,
+          requestPayloadType,
+          responsePayloadType,
           messageCreator,
           forwarder,
           inflightTimeout,
@@ -300,12 +368,14 @@ public final class AtMostOnceBuilder {
     }
   }
 
-  private static final class WithContentParser<I, R> implements OnSuccessStep<I, R>,
-      IsRejectedByInvalidResponseStep<I>, RollbackModelStep<I> {
+  private static final class WithContentParser<I, RQ, RS> implements OnSuccessStep<I, RQ, RS>,
+      IsRejectedByInvalidResponseStep<I, RQ, RS>, RollbackModelStep<I, RQ, RS> {
 
     private final String name;
     private final UUID id;
-    private final Function<TransitionContext<I>, Mono<HttpRequestMessage>> messageCreator;
+    private final DataType<RQ> requestPayloadType;
+    private final DataType<RS> responsePayloadType;
+    private final Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator;
     private final HttpClient forwarder;
     private final Duration inflightTimeout;
     private final EntityModel processModel;
@@ -313,16 +383,18 @@ public final class AtMostOnceBuilder {
     private final Callback<EntityModel, ?> onMissingResponse;
     private final Callback<Tuple2<HttpResponseMessage, String>, ?> onInvalidResponseRejection;
     private final Callback<Tuple2<HttpResponseMessage, String>, ?> onInvalidResponseUnknown;
-    private final Function<HttpResponseMessage, Validated<R>> contentParser;
-    private Callback<Tuple2<HttpResponseMessage, R>, ?> onSuccess;
-    private Callback<Tuple2<HttpResponseMessage, R>, ?> onFailure;
-    private Predicate<Tuple2<HttpResponseMessage, R>> isDelivered;
+    private final Function<HttpResponseMessage, Validated<RS>> contentParser;
+    private Callback<TypedHttpResponse<RS>, ?> onSuccess;
+    private Callback<TypedHttpResponse<RS>, ?> onFailure;
+    private Predicate<TypedHttpResponse<RS>> isDelivered;
     private Predicate<Tuple2<HttpResponseMessage, String>> isRejectedByInvalidResponse;
 
     private WithContentParser(
         String name,
         UUID id,
-        Function<TransitionContext<I>, Mono<HttpRequestMessage>> messageCreator,
+        DataType<RQ> requestPayloadType,
+        DataType<RS> responsePayloadType,
+        Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator,
         HttpClient forwarder,
         Duration inflightTimeout,
         EntityModel processModel,
@@ -330,10 +402,12 @@ public final class AtMostOnceBuilder {
         Callback<EntityModel, ?> onMissingResponse,
         Callback<Tuple2<HttpResponseMessage, String>, ?> onInvalidResponseRejection,
         Callback<Tuple2<HttpResponseMessage, String>, ?> onInvalidResponseUnknown,
-        Function<HttpResponseMessage, Validated<R>> contentParser
+        Function<HttpResponseMessage, Validated<RS>> contentParser
     ) {
       this.name = name;
       this.id = id;
+      this.requestPayloadType = requestPayloadType;
+      this.responsePayloadType = responsePayloadType;
       this.messageCreator = messageCreator;
       this.forwarder = forwarder;
       this.inflightTimeout = inflightTimeout;
@@ -346,41 +420,41 @@ public final class AtMostOnceBuilder {
     }
 
     @Override
-    public <S> OnFailureStep<I, R> onSuccess(
+    public <S> OnFailureStep<I, RQ, RS> onSuccess(
         EventType<S, ?> eventType,
-        Function<Tuple2<HttpResponseMessage, R>, S> dataAdapter
+        Function<TypedHttpResponse<RS>, S> dataAdapter
     ) {
       this.onSuccess = new Callback<>(eventType, dataAdapter);
       return this;
     }
 
     @Override
-    public OnFailureStep<I, R> onSuccess(EventType<Void, ?> eventType) {
+    public OnFailureStep<I, RQ, RS> onSuccess(EventType<Void, ?> eventType) {
       return onSuccess(eventType, _ -> null);
     }
 
     @Override
-    public <S> IsDeliveredStep<I, R> onFailure(
+    public <S> IsDeliveredStep<I, RQ, RS> onFailure(
         EventType<S, ?> eventType,
-        Function<Tuple2<HttpResponseMessage, R>, S> dataAdapter
+        Function<TypedHttpResponse<RS>, S> dataAdapter
     ) {
       this.onFailure = new Callback<>(eventType, dataAdapter);
       return this;
     }
 
     @Override
-    public IsDeliveredStep<I, R> onFailure(EventType<Void, ?> eventType) {
+    public IsDeliveredStep<I, RQ, RS> onFailure(EventType<Void, ?> eventType) {
       return onFailure(eventType, _ -> null);
     }
 
     @Override
-    public IsRejectedByInvalidResponseStep<I> isDelivered(Predicate<Tuple2<HttpResponseMessage, R>> isDelivered) {
+    public IsRejectedByInvalidResponseStep<I, RQ, RS> isDelivered(Predicate<TypedHttpResponse<RS>> isDelivered) {
       this.isDelivered = isDelivered;
       return this;
     }
 
     @Override
-    public RollbackModelStep<I> isRejectedByInvalidResponse(
+    public RollbackModelStep<I, RQ, RS> isRejectedByInvalidResponse(
         Predicate<Tuple2<HttpResponseMessage, String>> isRejectedByInvalidResponse
     ) {
       this.isRejectedByInvalidResponse = isRejectedByInvalidResponse;
@@ -392,6 +466,8 @@ public final class AtMostOnceBuilder {
       return () -> new AtMostOnce<>(
           name,
           id,
+          requestPayloadType,
+          responsePayloadType,
           messageCreator,
           forwarder,
           inflightTimeout,
@@ -419,4 +495,5 @@ public final class AtMostOnceBuilder {
       return rollbackModel((AtLeastOnce<Void>) null).build();
     }
   }
+
 }

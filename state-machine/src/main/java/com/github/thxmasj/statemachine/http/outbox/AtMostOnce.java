@@ -13,6 +13,7 @@ import static com.github.thxmasj.statemachine.http.outbox.EventTypes.ConnectionD
 import static com.github.thxmasj.statemachine.http.outbox.EventTypes.ConnectionFailed;
 import static com.github.thxmasj.statemachine.http.outbox.EventTypes.ResponseReceived;
 import static com.github.thxmasj.statemachine.http.outbox.EventTypes.TimeoutExpired;
+import static com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest.toHttpRequest;
 
 import com.github.thxmasj.statemachine.Action;
 import com.github.thxmasj.statemachine.BasicEventType;
@@ -36,55 +37,60 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import com.github.thxmasj.statemachine.message.http.TypedHttpRequest;
+import com.github.thxmasj.statemachine.message.http.TypedHttpResponse;
 import reactor.core.publisher.Mono;
 
 public final class AtMostOnce<I, RI> implements HttpOutboxRequest<I> {
 
   private final String name;
   private final UUID id;
-  private final EventType<I, HttpRequestMessage> requestDispatched;
+  private final EventType<I, ?> requestDispatched;
   private final AtLeastOnce<RI> rollbackModel;
 
   @Override
-  public EventType<I, HttpRequestMessage> requestDispatched() {
+  public EventType<I, ?> requestDispatched() {
     return requestDispatched;
   }
 
-  public EventType<RI, HttpRequestMessage> rollbackDispatched() {
+  public EventType<RI, ?> rollbackDispatched() {
     return rollbackModel != null ? rollbackModel.requestDispatched() : null;
   }
 
   private final Map<State, List<TransitionModel<?, ?>>> transitions;
 
-  public <T1, T2, T3, T4, T5, T6, R> AtMostOnce(
+  public <T1, T2, T3, T4, T5, T6, RQ, RS> AtMostOnce(
       String name,
       UUID id,
-      Function<TransitionContext<I>, Mono<HttpRequestMessage>> messageCreator,
+      DataType<RQ> requestPayloadType,
+      DataType<RS> responsePayloadType,
+      Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator,
       HttpClient forwarder,
       Duration inflightTimeout,
       com.github.thxmasj.statemachine.EntityModel processModel,
       Callback<EntityModel, T1> onPeerUnavailable,
       Callback<EntityModel, T2> onMissingResponse,
-      Callback<Tuple2<HttpResponseMessage, R>, T3> onSuccess,
-      Callback<Tuple2<HttpResponseMessage, R>, T4> onFailure,
+      Callback<TypedHttpResponse<RS>, T3> onSuccess,
+      Callback<TypedHttpResponse<RS>, T4> onFailure,
       Callback<Tuple2<HttpResponseMessage, String>, T5> onInvalidResponseRejection,
       Callback<Tuple2<HttpResponseMessage, String>, T6> onInvalidResponseUnknown, // Rollback
-      Function<HttpResponseMessage, Validated<R>> contentParser,
-      Predicate<Tuple2<HttpResponseMessage, R>> isDelivered,
+      Function<HttpResponseMessage, Validated<RS>> contentParser,
+      Predicate<TypedHttpResponse<RS>> isDelivered,
       Predicate<Tuple2<HttpResponseMessage, String>> isRejectedByInvalidResponse,
       AtLeastOnce<RI> rollbackModel
   ) {
     this.name = name;
     this.id = id;
     this.rollbackModel = rollbackModel;
-    this.requestDispatched = BasicEventType.of(
+    EventType<I, TypedHttpRequest<RQ>> requestDispatched = BasicEventType.of(
         "Request dispatched",
         UUID.fromString("3f22bfef-dcb4-4560-8b88-6b5040433319"),
         DataType.unknown(),
-        HttpDataType.forRequest()
+        HttpDataType.forRequest(requestPayloadType)
     );
+    this.requestDispatched = requestDispatched;
     // Intermediate
-    EventType<Tuple2<HttpResponseMessage, R>, Tuple2<HttpResponseMessage, R>> validResponse = BasicEventType.of(
+    EventType<TypedHttpResponse<RS>, TypedHttpResponse<RS>> validResponse = BasicEventType.of(
         "[valid response]",
         UUID.fromString("c9fcf4d6-95f8-418f-aa6b-c3d987d3a3c3"),
         DataType.unknown(),
@@ -98,18 +104,18 @@ public final class AtMostOnce<I, RI> implements HttpOutboxRequest<I> {
         DataType.unknown()
     );
     // Leaf
-    EventType<Tuple2<HttpResponseMessage, R>, HttpResponseMessage> requestAccepted = BasicEventType.of(
+    EventType<TypedHttpResponse<RS>, TypedHttpResponse<RS>> requestAccepted = BasicEventType.of(
         "[request accepted]",
         UUID.fromString("0f8fe1c2-2d29-406c-87b5-f9f43a03a54f"),
         DataType.unknown(),
-        HttpDataType.forResponse()
+        HttpDataType.forResponse(responsePayloadType)
     );
     // Leaf
-    EventType<Tuple2<HttpResponseMessage, R>, HttpResponseMessage> requestReceivedAndRejected = BasicEventType.of(
+    EventType<TypedHttpResponse<RS>, TypedHttpResponse<RS>> requestReceivedAndRejected = BasicEventType.of(
         "[request rejected]",
         UUID.fromString("5362567f-792e-4f8a-81d6-3b201d44d3f0"),
         DataType.unknown(),
-        HttpDataType.forResponse()
+        HttpDataType.forResponse(responsePayloadType)
     );
     // Leaf
     EventType<Tuple2<HttpResponseMessage, String>, HttpResponseMessage> invalidResponseAndRejected = BasicEventType.of(
@@ -181,10 +187,10 @@ public final class AtMostOnce<I, RI> implements HttpOutboxRequest<I> {
                                 .with(onSuccess.dataAdapter())
                                 .on(processModel)
                                 .identifiedBy(entityIdFromSession())
-                                .output(d -> d.t1().t1()) :
+                                .output(d -> d.t1()) :
                             onEvent(requestAccepted).to(Delivered)
                                 .assembleInput()
-                                .output(d -> d.t1())
+                                .output(d -> d)
                     )
                     .otherwise(
                         onFailure != null ?
@@ -194,12 +200,12 @@ public final class AtMostOnce<I, RI> implements HttpOutboxRequest<I> {
                                 .with(onFailure.dataAdapter())
                                 .on(processModel)
                                 .identifiedBy(entityIdFromSession())
-                                .output(d -> d.t1().t1()) :
+                                .output(d -> d.t1()) :
                             onEvent(requestReceivedAndRejected).to(Failed)
                                 .assembleInput()
-                                .output(d -> d.t1())
+                                .output(d -> d)
                     ),
-                d -> tuple(d.t1(), d.t2().validValue())
+                d -> new TypedHttpResponse<>(d.t1(), d.t2().validValue())
             ).otherwise(
                 onEvent(invalidResponse).to(Intermediate)
                     .assembleInput()
@@ -238,7 +244,7 @@ public final class AtMostOnce<I, RI> implements HttpOutboxRequest<I> {
             onEvent(requestDispatched).to(InFlight)
                 .assembleReactive(c -> messageCreator.apply(c).zipWith(Mono.just(tuple(c.triggerEvent(), c.log().entityId()))))
                 .trigger(Indexed).with(d -> d.getT2().t1().entityId()).on(ProcessReference).identifiedBy(d -> newEntityId(d.getT2().t2().value()))
-                .trigger(forward).with(d -> d.t1().getT1())
+                .trigger(forward).with(d -> toHttpRequest(d.t1().getT1(), requestPayloadType))
                 .trigger(TimeoutExpired).after(_ -> inflightTimeout)
                 .output(d -> d.t1().getT1())
         ),

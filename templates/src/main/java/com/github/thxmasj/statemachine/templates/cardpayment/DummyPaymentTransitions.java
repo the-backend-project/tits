@@ -2,6 +2,7 @@ package com.github.thxmasj.statemachine.templates.cardpayment;
 
 import static com.github.thxmasj.statemachine.Validated.valid;
 
+import com.github.thxmasj.statemachine.DataType;
 import com.github.thxmasj.statemachine.http.outbox.AtLeastOnce;
 import com.github.thxmasj.statemachine.http.outbox.AtMostOnce;
 import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest;
@@ -37,6 +38,8 @@ public class DummyPaymentTransitions {
     return HttpOutboxRequest.atMostOnce()
         .name(name)
         .id(UUID.randomUUID())
+        .requestPayloadType(DataType.unknown())
+        .responsePayloadType(DataType.unknown())
         .<I>messageCreator(_ -> null)
         .forwarder(null)
         .contentParser(_ -> valid(null))
@@ -50,6 +53,7 @@ public class DummyPaymentTransitions {
     return HttpOutboxRequest.atLeastOnce()
         .name(name)
         .id(UUID.randomUUID())
+        .requestPayloadType(DataType.none())
         .<I>messageCreator(_ -> null)
         .forwarder(null)
         .contentParser(_ -> valid(null))

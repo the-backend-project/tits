@@ -10,6 +10,7 @@ import static com.github.thxmasj.statemachine.templates.Batching.EntityTypes.Ite
 import static com.github.thxmasj.statemachine.templates.cardpayment.Aggregate.Payment;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Aggregate.Settlement;
 
+import com.github.thxmasj.statemachine.DataType;
 import com.github.thxmasj.statemachine.PlantUMLFormatter;
 import com.github.thxmasj.statemachine.http.outbox.AtLeastOnce;
 import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest;
@@ -46,6 +47,7 @@ public class Main {
     return HttpOutboxRequest.atLeastOnce()
         .name(name)
         .id(UUID.randomUUID())
+        .requestPayloadType(DataType.unknown())
         .<I>messageCreator(_ -> null)
         .forwarder(null)
         .contentParser(_ -> valid(null))
