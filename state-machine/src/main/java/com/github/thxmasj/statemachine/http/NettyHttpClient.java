@@ -4,6 +4,7 @@ import static java.util.stream.Collectors.toMap;
 
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
+import io.netty.buffer.Unpooled;
 import io.netty.handler.codec.http.HttpMethod;
 import java.time.Duration;
 import java.util.Base64;
@@ -11,7 +12,6 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.function.Supplier;
 import reactor.core.publisher.Mono;
-import reactor.netty.ByteBufFlux;
 
 public class NettyHttpClient implements HttpClient {
 
@@ -46,8 +46,8 @@ public class NettyHttpClient implements HttpClient {
           case DELETE -> HttpMethod.DELETE;
         })
         .uri(message.uri())
-        .send(message.body() == null ? Mono.empty() : ByteBufFlux.fromString(Mono.just(message.body())))
-        .response((httpClientResponse, buf) -> buf.aggregate().asString()
+        .send(message.body() == null ? Mono.empty() : Mono.just(Unpooled.wrappedBuffer((message.body()))))
+        .response((httpClientResponse, buf) -> buf.aggregate().asByteArray()
             .map(body -> new HttpResponseMessage(
                     httpClientResponse.status().code(),
                     httpClientResponse.status().reasonPhrase(),

@@ -4,6 +4,8 @@ import com.github.thxmasj.statemachine.DataType;
 import com.github.thxmasj.statemachine.message.http.HttpMessageParser;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
+import com.github.thxmasj.statemachine.message.http.TypedHttpRequest;
+import com.github.thxmasj.statemachine.message.http.TypedHttpResponse;
 
 public class HttpDataType {
 
@@ -16,13 +18,34 @@ public class HttpDataType {
 
       @Override
       public HttpRequestMessage unmarshal(byte[] value) {
-        return HttpMessageParser.parseRequest(new String(value));
+        return HttpMessageParser.parseRequest(value);
       }
 
       @Override
       public byte[] marshal(HttpRequestMessage request) {
-        return request.toString().getBytes();
+        return request.toBytes();
       }
+    };
+  }
+
+  public static <T> DataType<TypedHttpRequest<T>> forTypedRequest(DataType<T> payloadType) {
+    return new DataType<>() {
+      @Override
+      public String name() {
+        return "HTTP request";
+      }
+
+      @Override
+      public TypedHttpRequest<T> unmarshal(byte[] value) {
+        HttpRequestMessage request = HttpMessageParser.parseRequest(value);
+        return new TypedHttpRequest<>(request, payloadType.unmarshal(request.body()));
+      }
+
+      @Override
+      public byte[] marshal(TypedHttpRequest<T> request) {
+        return request.message().toBytes();
+      }
+
     };
   }
 
@@ -40,8 +63,29 @@ public class HttpDataType {
 
       @Override
       public byte[] marshal(HttpResponseMessage response) {
-        return response.message().getBytes();
+        return response.toBytes();
       }
+    };
+  }
+
+  public static <T> DataType<TypedHttpResponse<T>> forTypedResponse(DataType<T> payloadType) {
+    return new DataType<>() {
+      @Override
+      public String name() {
+        return "HTTP response";
+      }
+
+      @Override
+      public TypedHttpResponse<T> unmarshal(byte[] value) {
+        HttpResponseMessage response = HttpMessageParser.parseResponse(value);
+        return new TypedHttpResponse<>(response, payloadType.unmarshal(response.body()));
+      }
+
+      @Override
+      public byte[] marshal(TypedHttpResponse<T> response) {
+        return response.message().toBytes();
+      }
+
     };
   }
 

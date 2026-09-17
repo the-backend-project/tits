@@ -7,7 +7,7 @@ import com.github.thxmasj.statemachine.Validated;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import java.util.function.Function;
 
-public class AnyResponseValidator implements Function<HttpResponseMessage, Validated<String>> {
+public class AnyResponseValidator implements Function<HttpResponseMessage, Validated<byte[]>> {
 
   private final int[] acceptedStatusCodes;
 
@@ -20,7 +20,7 @@ public class AnyResponseValidator implements Function<HttpResponseMessage, Valid
   }
 
   @Override
-  public Validated<String> apply(HttpResponseMessage response) {
+  public Validated<byte[]> apply(HttpResponseMessage response) {
     for (int v : acceptedStatusCodes) {
       if (v == response.statusCode())
         return valid(response.body());

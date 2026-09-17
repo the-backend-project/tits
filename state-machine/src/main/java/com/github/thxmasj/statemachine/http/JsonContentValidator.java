@@ -3,7 +3,6 @@ package com.github.thxmasj.statemachine.http;
 import static java.util.stream.Collectors.joining;
 
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -13,11 +12,12 @@ import com.github.thxmasj.statemachine.Validated.Valid;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
+import java.io.IOException;
 import java.util.Set;
 import java.util.function.Function;
 import org.hibernate.validator.messageinterpolation.ParameterMessageInterpolator;
 
-public class JsonContentValidator<T> implements Function<String, Validated<T>> {
+public class JsonContentValidator<T> implements Function<byte[], Validated<T>> {
 
   private final Class<T> contentType;
   private final boolean validate;
@@ -39,7 +39,7 @@ public class JsonContentValidator<T> implements Function<String, Validated<T>> {
   }
 
   @Override
-  public Validated<T> apply(String content) {
+  public Validated<T> apply(byte[] content) {
     if (contentType == Void.class) {
       return new Valid<>(null);
     } else {
@@ -51,7 +51,7 @@ public class JsonContentValidator<T> implements Function<String, Validated<T>> {
             new Invalid<>(violations.stream()
                 .map(v -> v == null ? "n/a" : v.getPropertyPath() + ": " + v.getMessage())
                 .collect(joining(", ")));
-      } catch (JsonProcessingException e) {
+      } catch (IOException e) {
         return new Invalid<>("Failed to parse content with " + contentType.getName() + ": " + e.getMessage());
       }
     }

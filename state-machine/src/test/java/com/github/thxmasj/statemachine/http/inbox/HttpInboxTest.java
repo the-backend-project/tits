@@ -26,6 +26,7 @@ import static com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Me
 import static com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Method.POST;
 import static com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Method.PUT;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -240,42 +241,42 @@ public class HttpInboxTest {
       new HttpRequestRoute<>(
           m -> m.requestLine().matches("PUT .*/zero/.*"),
           m -> valid(m.body()),
-          List.of(anyContent(null, null, UUID.fromString("7e2c5175-a65d-4795-a285-b0d75e704f5a"), ZeroProcessing, Lamp, (RoutedRequest<String> _) -> new Zero("Hey!"), parseEntityId("PUT .*/zero/(.*)", 1)))
+          List.of(anyContent(null, null, UUID.fromString("7e2c5175-a65d-4795-a285-b0d75e704f5a"), ZeroProcessing, Lamp, (RoutedRequest<byte[]> _) -> new Zero("Hey!"), parseEntityId("PUT .*/zero/(.*)", 1)))
       ),
       new HttpRequestRoute<>(
           m -> m.requestLine().matches("PUT .*/internal/.*"),
           m -> valid(m.body()),
-          List.of(anyContent(parseMessageId("PUT .*/internal/(.*)", 1), null, UUID.fromString("3afa1f14-d4e3-49c4-b6ad-05a733f0b22d"), InternalProcessing, Lamp, (RoutedRequest<String> _) -> null, newEntity()))
+          List.of(anyContent(parseMessageId("PUT .*/internal/(.*)", 1), null, UUID.fromString("3afa1f14-d4e3-49c4-b6ad-05a733f0b22d"), InternalProcessing, Lamp, (RoutedRequest<byte[]> _) -> null, newEntity()))
       ),
       new HttpRequestRoute<>(
           m -> m.requestLine().matches("PUT .*/handledunknown/.*"),
           m -> valid(m.body()),
-          List.of(anyContent(null, null, UUID.fromString("b411fd45-6c87-43aa-a511-df930d654ec7"), InternalProcessing, Lamp, (RoutedRequest<String> _) -> null, (_, _) -> new Valid<>(entityId(UUID.randomUUID())))) // Unknown id
+          List.of(anyContent(null, null, UUID.fromString("b411fd45-6c87-43aa-a511-df930d654ec7"), InternalProcessing, Lamp, (RoutedRequest<byte[]> _) -> null, (_, _) -> new Valid<>(entityId(UUID.randomUUID())))) // Unknown id
       ),
       new HttpRequestRoute<>(
           m -> m.requestLine().matches("PUT .*/handledreject/.*"),
           m -> valid(m.body()),
-          List.of(anyContent(null, null, UUID.fromString("00f910e2-8c22-4403-835d-15e112ac3080"), EventThatIsAlwaysRejected, Lamp, (RoutedRequest<String> _) -> null, newEntity()))
+          List.of(anyContent(null, null, UUID.fromString("00f910e2-8c22-4403-835d-15e112ac3080"), EventThatIsAlwaysRejected, Lamp, (RoutedRequest<byte[]> _) -> null, newEntity()))
       ),
       new HttpRequestRoute<>(
           m -> m.requestLine().matches("PUT .*/complexinternal/.*"),
           m -> valid(m.body()),
-          List.of(anyContent(parseMessageId("PUT .*/complexinternal/(.*)", 1), null, UUID.fromString("84164954-ad85-4b44-9de6-079bf4805df7"), ComplexInternalProcessing, Lamp, (RoutedRequest<String> _) -> null, newEntity()))
+          List.of(anyContent(parseMessageId("PUT .*/complexinternal/(.*)", 1), null, UUID.fromString("84164954-ad85-4b44-9de6-079bf4805df7"), ComplexInternalProcessing, Lamp, (RoutedRequest<byte[]> _) -> null, newEntity()))
       ),
       new HttpRequestRoute<>(
           m -> m.requestLine().matches("PUT .*/external/.*"),
           m -> valid(m.body()),
-          List.of(anyContent(parseMessageId("PUT .*/external/(.*)", 1), null, UUID.fromString("415cfd95-6feb-4106-8d47-fcf41ddcb3d1"), ExternalProcessing, Lamp, (RoutedRequest<String> _) -> null, newEntity()))
+          List.of(anyContent(parseMessageId("PUT .*/external/(.*)", 1), null, UUID.fromString("415cfd95-6feb-4106-8d47-fcf41ddcb3d1"), ExternalProcessing, Lamp, (RoutedRequest<byte[]> _) -> null, newEntity()))
       ),
       new HttpRequestRoute<>(
           m -> m.requestLine().matches("PUT .*/long-external/.*"),
           m -> valid(m.body()),
-          List.of(anyContent(null, null, UUID.fromString("721fedb2-e715-4c4d-a8fb-e2cdb16f86e5"), LongExternalProcessing, Lamp, (RoutedRequest<String> _) -> null, newEntity()))
+          List.of(anyContent(null, null, UUID.fromString("721fedb2-e715-4c4d-a8fb-e2cdb16f86e5"), LongExternalProcessing, Lamp, (RoutedRequest<byte[]> _) -> null, newEntity()))
       ),
       new HttpRequestRoute<>(
           m -> m.requestLine().matches("PUT .*/rejected/.*"),
           m -> valid(m.body()),
-          List.of(anyContent(parseMessageId("PUT .*/rejected/(.*)", 1), null, UUID.fromString("e58f3910-0b01-4f8b-bbf3-c7fde4980197"), EventThatIsAlwaysRejected, Lamp, (RoutedRequest<String> _) -> null, newEntity()))
+          List.of(anyContent(parseMessageId("PUT .*/rejected/(.*)", 1), null, UUID.fromString("e58f3910-0b01-4f8b-bbf3-c7fde4980197"), EventThatIsAlwaysRejected, Lamp, (RoutedRequest<byte[]> _) -> null, newEntity()))
       ),
       new HttpRequestRoute<>(
           m -> m.requestLine().matches("DELETE .*/internal/.*"),
@@ -381,12 +382,12 @@ public class HttpInboxTest {
   }
 
   @Test
-  public void whenInternalProcessRequestThenInternalProcessResponse() throws JsonProcessingException {
+  public void whenInternalProcessRequestThenInternalProcessResponse() throws IOException {
     String messageId = UUID.randomUUID().toString();
     Event<?> responseEvent = onRequest(
         PUT,
         URI.create("/internal/" + messageId),
-        new ObjectMapper().writeValueAsString(new InternalProcess("Hello", 1))
+        new ObjectMapper().writeValueAsBytes(new InternalProcess("Hello", 1))
     );
     HttpResponseMessage response = HttpMessageParser.parseResponse(responseEvent.data());
     assertEquals(201, response.statusCode());
@@ -394,12 +395,12 @@ public class HttpInboxTest {
   }
 
   @Test
-  public void whenZeroingInternalProcessRequestThenAcceptedResponse() throws JsonProcessingException {
+  public void whenZeroingInternalProcessRequestThenAcceptedResponse() throws IOException {
     String messageId = UUID.randomUUID().toString();
     Event<?> responseEvent = onRequest(
         PUT,
         URI.create("/internal/" + messageId),
-        new ObjectMapper().writeValueAsString(new InternalProcess("Hello", 1))
+        new ObjectMapper().writeValueAsBytes(new InternalProcess("Hello", 1))
     );
     HttpResponseMessage response = HttpMessageParser.parseResponse(responseEvent.data());
     assertEquals(201, response.statusCode());
@@ -414,12 +415,12 @@ public class HttpInboxTest {
   }
 
   @Test
-  public void whenCancelInternalProcessRequestThen() throws JsonProcessingException {
+  public void whenCancelInternalProcessRequestThen() throws IOException {
     String messageId = UUID.randomUUID().toString();
     Event<?> responseEvent = onRequest(
         PUT,
         URI.create("/internal/" + messageId),
-        new ObjectMapper().writeValueAsString(new InternalProcess("Hello", 1))
+        new ObjectMapper().writeValueAsBytes(new InternalProcess("Hello", 1))
     );
     HttpResponseMessage response = HttpMessageParser.parseResponse(responseEvent.data());
     assertEquals(201, response.statusCode());
@@ -432,18 +433,18 @@ public class HttpInboxTest {
   }
 
   @Test
-  public void whenComplexInternalProcessRequestThenComplexInternalProcessResponse() throws JsonProcessingException {
+  public void whenComplexInternalProcessRequestThenComplexInternalProcessResponse() throws IOException {
     String messageId = UUID.randomUUID().toString();
-    Event<?> responseEvent = onRequest(PUT, URI.create("/complexinternal/" + messageId), "Hello!");
+    Event<?> responseEvent = onRequest(PUT, URI.create("/complexinternal/" + messageId), "Hello!".getBytes());
     HttpResponseMessage response = HttpMessageParser.parseResponse(responseEvent.data());
     assertEquals(201, response.statusCode());
     assertTrue(ProblemDetail.parse(response.body()).detail().startsWith("Phew! Light is switched on!"));
   }
 
   @Test
-  public void whenRequestIsRejectedDownstreamThenUnprocessableEntityResponse() throws JsonProcessingException {
+  public void whenRequestIsRejectedDownstreamThenUnprocessableEntityResponse() throws IOException {
     String messageId = UUID.randomUUID().toString();
-    Event<?> responseEvent = onRequest(PUT, URI.create("/rejected/" + messageId), "Hello!");
+    Event<?> responseEvent = onRequest(PUT, URI.create("/rejected/" + messageId), "Hello!".getBytes());
     HttpResponseMessage response = HttpMessageParser.parseResponse(responseEvent.data());
     assertEquals(422, response.statusCode());
     ProblemDetail pd = ProblemDetail.parse(response.body());
@@ -452,18 +453,18 @@ public class HttpInboxTest {
   }
 
   @Test
-  public void whenExternalProcessRequestThenExternalProcessResponse() throws JsonProcessingException {
+  public void whenExternalProcessRequestThenExternalProcessResponse() throws IOException {
     String messageId = UUID.randomUUID().toString();
-    Event<?> responseEvent = onRequest(PUT, URI.create("/external/" + messageId), "Hello!");
+    Event<?> responseEvent = onRequest(PUT, URI.create("/external/" + messageId), "Hello!".getBytes());
     HttpResponseMessage response = HttpMessageParser.parseResponse(responseEvent.data());
     assertEquals(201, response.statusCode());
     assertTrue(ProblemDetail.parse(response.body()).detail().startsWith("Light is externally switched on!"));
   }
 
   @Test
-  public void whenUnknownIdThenBadRequest() throws JsonProcessingException {
+  public void whenUnknownIdThenBadRequest() throws IOException {
     String messageId = UUID.randomUUID().toString();
-    Event<?> responseEvent = onRequest(PUT, URI.create("/handledunknown/" + messageId), "Hello!");
+    Event<?> responseEvent = onRequest(PUT, URI.create("/handledunknown/" + messageId), "Hello!".getBytes());
     HttpResponseMessage response = HttpMessageParser.parseResponse(responseEvent.data());
     assertEquals(400, response.statusCode());
     assertEquals("No such entity", ProblemDetail.parse(response.body()).detail());
@@ -471,9 +472,9 @@ public class HttpInboxTest {
 
   @Test
   @Disabled("Sync response (in request/reply session) not possible with reversals triggered by the resolver")
-  public void whenLongExternalProcessRequestThenRollback() throws JsonProcessingException {
+  public void whenLongExternalProcessRequestThenRollback() throws IOException {
     String messageId = UUID.randomUUID().toString();
-    Event<?> responseEvent = onRequest(PUT, URI.create("/long-external/" + messageId), "Hello!");
+    Event<?> responseEvent = onRequest(PUT, URI.create("/long-external/" + messageId), "Hello!".getBytes());
     HttpResponseMessage response = HttpMessageParser.parseResponse(responseEvent.data());
     assertEquals(201, response.statusCode());
     assertTrue(ProblemDetail.parse(response.body()).detail().startsWith("Light is externally switched on!"));
@@ -481,15 +482,15 @@ public class HttpInboxTest {
 
   @Test
   @Disabled("TODO")
-  public void whenOneWayRequestThenTimeout() throws JsonProcessingException {
-    Event<?> responseEvent = onRequest(PUT, URI.create("/oneway/xxx"), "Hello!");
+  public void whenOneWayRequestThenTimeout() throws IOException {
+    Event<?> responseEvent = onRequest(PUT, URI.create("/oneway/xxx"), "Hello!".getBytes());
     HttpResponseMessage response = HttpMessageParser.parseResponse(responseEvent.data());
     assertEquals(201, response.statusCode());
     assertTrue(ProblemDetail.parse(response.body()).detail().startsWith("Light is on!"));
   }
 
   @Test
-  public void whenDuplicateRequestThenRespondWithSameResponse() throws JsonProcessingException {
+  public void whenDuplicateRequestThenRespondWithSameResponse() throws IOException {
     String messageId = UUID.randomUUID().toString();
     InternalProcess body = new InternalProcess("Static", 0);
     HttpResponseMessage response1 = HttpMessageParser.parseResponse(onInternalRequest(messageId, body).data());
@@ -497,11 +498,11 @@ public class HttpInboxTest {
     assertTrue(ProblemDetail.parse(response1.body()).detail().startsWith("Light is on!"));
     HttpResponseMessage response2 = HttpMessageParser.parseResponse(onInternalRequest(messageId, body).data());
     assertEquals(201, response2.statusCode());
-    assertEquals(response1.body(), response2.body());
+    assertArrayEquals(response1.body(), response2.body());
   }
 
   @Test
-  public void whenNonDuplicateRequestWithSameMessageIdThenRespondWithBadRequest() throws JsonProcessingException {
+  public void whenNonDuplicateRequestWithSameMessageIdThenRespondWithBadRequest() throws IOException {
     String messageId = UUID.randomUUID().toString();
     HttpResponseMessage response1 = HttpMessageParser.parseResponse(onInternalRequest(
         messageId,
@@ -517,7 +518,7 @@ public class HttpInboxTest {
   }
 
   @Test
-  public void whenRollbackAfterRequestCompletedThenRespondOk() throws JsonProcessingException {
+  public void whenRollbackAfterRequestCompletedThenRespondOk() throws IOException {
     String messageId = UUID.randomUUID().toString();
     Event<?> responseEvent = onInternalRequest(messageId, new InternalProcess("Hello!", 100));
     HttpResponseMessage response = HttpMessageParser.parseResponse(responseEvent.data());
@@ -529,7 +530,7 @@ public class HttpInboxTest {
   }
 
   @Test
-  public void whenRollbackBeforeRequestThenRespondOk() throws JsonProcessingException {
+  public void whenRollbackBeforeRequestThenRespondOk() throws IOException {
     String messageId = UUID.randomUUID().toString();
     Event<?> rollbackResponseEvent = onRollbackRequest(messageId);
     HttpResponseMessage rollbackResponse = HttpMessageParser.parseResponse(rollbackResponseEvent.data());
@@ -552,7 +553,7 @@ public class HttpInboxTest {
   @JsonIgnoreProperties(ignoreUnknown = true)
   private record ProblemDetail(String type, String title, int status, String detail, String entityId) {
 
-    static ProblemDetail parse(String body) throws JsonProcessingException {
+    static ProblemDetail parse(byte[] body) throws IOException {
       var reader = new ObjectMapper().readerFor(ProblemDetail.class);
       return reader.readValue(body);
     }
@@ -563,15 +564,15 @@ public class HttpInboxTest {
     return onRequest(PUT, URI.create("/internal/" + messageId), asJson(body));
   }
 
-  private <T> String asJson(T value) {
+  private <T> byte[] asJson(T value) {
     try {
-      return new ObjectMapper().writeValueAsString(value);
+      return new ObjectMapper().writeValueAsBytes(value);
     } catch (JsonProcessingException e) {
       throw new RuntimeException(e);
     }
   }
 
-  private Event<?> onRequest(Method method, URI uri, String body) {
+  private Event<?> onRequest(Method method, URI uri, byte[] body) {
     return onRequest(TRIGGER, new HttpRequestMessage(method, uri, Map.of(), body));
   }
 

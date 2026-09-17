@@ -43,9 +43,9 @@ public class HttpResponseCreator implements OutgoingResponseCreator<String> {
     );
   }
 
-  private String json(Map<String, Object> object) {
+  private byte[] json(Map<String, Object> object) {
     try {
-      return jsonWriter.writeValueAsString(object);
+      return jsonWriter.writeValueAsBytes(object);
     } catch (JsonProcessingException e) {
       throw new RuntimeException(e);
     }

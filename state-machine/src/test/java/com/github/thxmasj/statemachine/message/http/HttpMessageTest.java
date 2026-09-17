@@ -1,5 +1,6 @@
 package com.github.thxmasj.statemachine.message.http;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Method;
@@ -11,13 +12,13 @@ public class HttpMessageTest {
 
   @Test
   public void marshallingIsReversible() {
-    String originalBody = "Hello World!";
+    byte[] originalBody = "Hello World!".getBytes();
     HttpRequestMessage original = new HttpRequestMessage(
         Method.POST,
         URI.create("/a/b/c"),
         Map.of("Header1", "value1", "Header2", "value2"),
         originalBody
     );
-    assertEquals(originalBody, HttpMessageParser.parseRequest(original.message()).body());
+    assertArrayEquals(originalBody, HttpMessageParser.parseRequest(original.toBytes()).body());
   }
 }
