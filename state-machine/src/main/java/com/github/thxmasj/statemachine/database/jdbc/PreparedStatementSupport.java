@@ -32,6 +32,7 @@ public class PreparedStatementSupport {
     for (Map.Entry<String, List<Integer>> entry : positions.entrySet()) {
       for (Integer position : entry.getValue()) {
         Parameter<?> parameter = parameters.get(entry.getKey());
+        if (parameter == null) throw new IllegalStateException("Parameter " + entry.getKey() + " not found in " + parameters.keySet());
         if (parameter.value() == null)
           statement.setNull(position + 1, jdbcType(parameter.type()).getVendorTypeNumber());
         else

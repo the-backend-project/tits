@@ -8,6 +8,12 @@ import java.util.function.Function;
 
 public interface State {
 
+  State Intermediate = State.of("Intermediate");
+
+  static State of(String name) {
+    return () -> name;
+  }
+
   Timeout<Void> NEVER_TIMEOUT = new Timeout<>(Duration.ZERO, null, null);
 
   String name();

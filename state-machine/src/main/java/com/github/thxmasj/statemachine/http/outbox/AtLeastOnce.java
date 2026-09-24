@@ -6,7 +6,7 @@ import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.o
 import static com.github.thxmasj.statemachine.Tuples.tuple;
 import static com.github.thxmasj.statemachine.http.outbox.AtLeastOnce.States.Compensating;
 import static com.github.thxmasj.statemachine.http.outbox.AtLeastOnce.States.Dead;
-import static com.github.thxmasj.statemachine.http.outbox.AtLeastOnce.States.Delivered;
+import static com.github.thxmasj.statemachine.http.outbox.AtLeastOnce.States.Accepted;
 import static com.github.thxmasj.statemachine.http.outbox.AtLeastOnce.States.InFlight;
 import static com.github.thxmasj.statemachine.http.outbox.AtLeastOnce.States.Intermediate;
 import static com.github.thxmasj.statemachine.http.outbox.EventTypes.ConnectionDropped;
@@ -74,6 +74,7 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
       String name,
       UUID id,
       DataType<RQ> requestPayloadType,
+      DataType<RS> responsePayloadType,
       Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator,
       BiFunction<TransitionContext<Void>, TypedHttpRequest<RQ>, TypedHttpRequest<RQ>> repeatMessageCreator,
       HttpClient forwarder,
@@ -81,7 +82,7 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
       com.github.thxmasj.statemachine.EntityModel processModel,
       Callback<TypedHttpResponse<RS>, S> onSuccess,
       Function<HttpResponseMessage, Validated<RS>> contentParser,
-      Predicate<TypedHttpResponse<RS>> isDelivered,
+      Predicate<TypedHttpResponse<RS>> isAccepted,
       Predicate<TypedHttpResponse<RS>> isFailureTransient,
       Predicate<Tuple2<HttpResponseMessage, String>> isRejectedByInvalidResponse,
       Predicate<Tuple2<HttpResponseMessage, String>> isFailureByInvalidResponseTransient,
@@ -117,23 +118,23 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
         DataType.unknown(),
         HttpDataType.forResponse()
     );
-    EventType<TypedHttpResponse<RS>, HttpResponseMessage> requestReceivedAndRejected = BasicEventType.of(
+    EventType<TypedHttpResponse<RS>, TypedHttpResponse<RS>> requestReceivedAndRejected = BasicEventType.of(
         "[request rejected]",
         UUID.fromString("5362567f-792e-4f8a-81d6-3b201d44d3f0"),
         DataType.unknown(),
-        HttpDataType.forResponse()
+        HttpDataType.forResponse(responsePayloadType)
     );
-    EventType<Void, HttpResponseMessage> requestReceivedAndRejectedTransiently = BasicEventType.of(
+    EventType<Void, TypedHttpResponse<RS>> requestReceivedAndRejectedTransiently = BasicEventType.of(
         "[request rejected transiently]",
         UUID.fromString("bcdf93f4-657d-4b26-b165-74279a5ea477"),
         DataType.unknown(),
-        HttpDataType.forResponse()
+        HttpDataType.forResponse(responsePayloadType)
     );
-    EventType<TypedHttpResponse<RS>, HttpResponseMessage> requestReceivedAndRejectedPermanently = BasicEventType.of(
+    EventType<TypedHttpResponse<RS>, TypedHttpResponse<RS>> requestReceivedAndRejectedPermanently = BasicEventType.of(
         "[request rejected permanently]",
         UUID.fromString("94b1169f-8e09-45d5-bdff-cae9b146db30"),
         DataType.unknown(),
-        HttpDataType.forResponse()
+        HttpDataType.forResponse(responsePayloadType)
     );
     EventType<Tuple2<HttpResponseMessage, String>, HttpResponseMessage> invalidResponseAndRejectedPermanently = BasicEventType.of(
         "[invalid response, request rejected permanently]",
@@ -148,11 +149,11 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
         HttpDataType.forResponse()
     );
     // Leaf
-    EventType<TypedHttpResponse<RS>, HttpResponseMessage> requestAccepted = BasicEventType.of(
+    EventType<TypedHttpResponse<RS>, TypedHttpResponse<RS>> requestAccepted = BasicEventType.of(
         "[request accepted]",
         UUID.fromString("0f8fe1c2-2d29-406c-87b5-f9f43a03a54f"),
         DataType.unknown(),
-        HttpDataType.forResponse()
+        HttpDataType.forResponse(responsePayloadType)
     );
     // Leaf
     EventType<Void, HttpResponseMessage> invalidResponseAndUnknown = BasicEventType.of(
@@ -162,7 +163,7 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
         HttpDataType.forResponse()
     );
     var attemptsExhausted = BasicEventType.of("Attempts exhausted", UUID.fromString("19a29ca5-6021-41e7-b247-74fd3b8389dd"));
-    var attemptsAvailable = BasicEventType.of("Attempts available", UUID.fromString("e6d6331f-5891-4d97-b699-ffe0dcf9d6cb"), DataType.forClass(RetryContext.class), DataType.none());
+    var attemptsAvailable = BasicEventType.of("Attempts available", UUID.fromString("e6d6331f-5891-4d97-b699-ffe0dcf9d6cb"), DataType.json(RetryContext.class), DataType.none());
     Action<HttpRequestMessage> forward = new Action<>() {
       @Override public String name() {return "Forward";}
       @Override
@@ -220,19 +221,19 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
                 .then(
                     onEvent(validResponse).to(Intermediate)
                         .assembleInput()
-                        .when(isDelivered)
+                        .when(isAccepted)
                         .then(
                             onSuccess != null ?
-                                onEvent(requestAccepted).to(Delivered)
+                                onEvent(requestAccepted).to(Accepted)
                                     .assembleInput()
                                     .trigger(onSuccess.eventType())
                                     .with(onSuccess.dataAdapter())
                                     .on(processModel)
                                     .identifiedBy(entityIdFromSession())
-                                    .output(d -> d.t1().message()) :
-                                onEvent(requestAccepted).to(Delivered)
+                                    .output(d -> d.t1()) :
+                                onEvent(requestAccepted).to(Accepted)
                                     .assembleInput()
-                                    .output(d -> d.message())
+                                    .output(d -> d)
                         )
                         .otherwise(
                             onEvent(requestReceivedAndRejected).to(Intermediate)
@@ -255,10 +256,15 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
                                 .otherwise(
                                     onEvent(requestReceivedAndRejectedPermanently).to(Dead)
                                         .assembleInput()
-                                        .output(d -> d.message())
+                                        .output(d -> d)
                                 )
                         ),
-                    d -> new TypedHttpResponse<>(d.t1(), d.t2().validValue())
+                    d -> TypedHttpResponse.create(
+                        d.t1().statusCode(),
+                        d.t1().reasonPhrase(),
+                        d.t1().headers(),
+                        d.t2().validValue()
+                    )
                 ).otherwise(
                     onEvent(invalidResponse).to(Intermediate)
                         .assembleInput()
@@ -312,7 +318,7 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
             ),
         Intermediate, List.of(),
         Dead, List.of(),
-        Delivered, List.of()
+        Accepted, List.of()
     );
     this.transitions = HttpOutboxRequest.combine(
         Map.of(
@@ -320,17 +326,10 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
                 onEvent(requestDispatched).to(InFlight)
                     .assembleReactive(c -> messageCreator.apply(c).zipWith(Mono.just(tuple(c.triggerEvent(), c.log().entityId(), c.log().entityModel()))))
                     .trigger(Indexed).with(d -> d.getT2().t1().entityId()).on(ProcessReference).identifiedBy(d -> newEntityId(d.getT2().t2().value()))
-
-                    .trigger(Indexed)
-                    .with(d -> d.t1().getT2().t3().id()) // Id of entity model for this HttpOutboxRequest
-                    .on(EntityType)
-                    // TODO: Entity id already exists in IndexEvent. Create event number 2 somehow?
-                    .identifiedBy(d -> newEntityId(d.t1().getT2().t2().value()))
-
-                    .trigger(forward).with(d -> toHttpRequest(d.t1().t1().getT1(), requestPayloadType))
+                    .trigger(forward).with(d -> toHttpRequest(d.t1().getT1(), requestPayloadType))
                     .trigger(TimeoutExpired).after(_ -> inflightTimeout)
                     //.newIdentifier(ProcessReference, d -> d.getT2())
-                    .output(d -> d.t1().t1().getT1())
+                    .output(d -> d.t1().getT1())
             )
         ), inflightTransitions
     );
@@ -352,9 +351,8 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
   }
 
   enum States implements State {
-    Intermediate,
     InFlight,
-    Delivered,
+    Accepted,
     Compensating,
     Dead
   }

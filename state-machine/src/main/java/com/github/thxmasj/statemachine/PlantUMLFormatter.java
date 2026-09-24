@@ -1,5 +1,7 @@
 package com.github.thxmasj.statemachine;
 
+import static com.github.thxmasj.statemachine.EntityModel.Begin;
+import static java.util.Optional.ofNullable;
 import static java.util.function.Predicate.not;
 import static java.util.stream.Collectors.joining;
 import static java.util.stream.Collectors.toMap;
@@ -22,13 +24,12 @@ import net.sourceforge.plantuml.SourceStringReader;
 
 public class PlantUMLFormatter {
 
-  private final static String STATE_BEGIN = "Begin"; // A bit bad to hard code the "Begin" name, as it is by convention only.
   private final EntityModel model;
-  Map<String, List<TransitionModel<?, ?>>> transitions;
+  Map<State, List<TransitionModel<?, ?>>> transitions;
 
   public PlantUMLFormatter(EntityModel model, Map<State, List<TransitionModel<?, ?>>> transitions) {
     this.model = model;
-    this.transitions = transitions.entrySet().stream().collect(toMap(entry -> entry.getKey().name(), Map.Entry::getValue));
+    this.transitions = transitions.entrySet().stream().collect(toMap(entry -> entry.getKey(), Map.Entry::getValue));
   }
 
   public File formatToFile(String directory) throws IOException {
@@ -52,6 +53,10 @@ public class PlantUMLFormatter {
     return file;
   }
 
+  private String stateId(State state) {
+    return state instanceof Choice ? state.name() : state.name()+state.hashCode();
+  }
+
   public String format() {
     return String.format(
       """
@@ -66,13 +71,13 @@ public class PlantUMLFormatter {
       @enduml
       """,
       // States
-      transitions.keySet().stream().filter(state -> !state.equals("Intermediate")).map(this::state).collect(joining("\n")),
+      transitions.keySet().stream().filter(state -> !state.name().equals("Intermediate")).map(state -> state(state)).collect(joining("\n")),
       // Choices
-      choices(model.initialState().name(), new HashSet<>()),
+      choices(Begin, new HashSet<>()),
       // Transitions
         formatTransitionsFrom(
-            model.initialState().name(),
-            this.transitions.get(model.initialState().name()),
+            Begin,
+            this.transitions.get(Begin),
             new HashSet<>()
         )
     );
@@ -81,24 +86,24 @@ public class PlantUMLFormatter {
   AtomicInteger choiceCounter1 = new AtomicInteger();
   AtomicInteger choiceCounter2 = new AtomicInteger();
 
-  private String choices(String state, Set<String> visited) {
+  private String choices(State state, Set<State> visited) {
     if (visited.contains(state)) return "";
     visited.add(state);
     StringBuilder s = new StringBuilder();
     List<TransitionModel<?, ?>> transitionsForState = this.transitions.get(state);
-    if (transitionsForState == null) throw new IllegalStateException(state);
+    if (transitionsForState == null) throw new IllegalStateException(state.toString());
     for (TransitionModel<?, ?> transition : transitionsForState) {
       s.append(traverseForChoices(transition, visited));
     }
     return s.toString();
   }
 
-  private String traverseForChoices(TransitionModel<?, ?> transition, Set<String> visited) {
+  private String traverseForChoices(TransitionModel<?, ?> transition, Set<State> visited) {
     StringBuilder s = new StringBuilder();
     if (transition.toState() == null)
       // Self transitions can't have choices
       return "";
-    String targetState = transition.toState().name();
+    State targetState = transition.toState();
     if (!transition.filters().isEmpty()) {
       s.append(String.format("state Choice%d <<choice>>\n", choiceCounter1.incrementAndGet()));
       for (var filter : transition.filters()) {
@@ -111,13 +116,13 @@ public class PlantUMLFormatter {
   }
 
   private String formatTransitionsFrom(
-      String sourceState,
+      State sourceState,
       List<TransitionModel<?, ?>> transitionsFromState,
-      Set<String> visited
+      Set<State> visited
   ) {
     if (visited.contains(sourceState)) return "";
     visited.add(sourceState);
-    System.out.println("Formatting transitions from " + sourceState);
+    System.out.println("Formatting transitions from " + sourceState.name());
     StringBuilder s = new StringBuilder();
     for (TransitionModel<?, ?> transition : transitionsFromState) {
       s.append(formatTransitionTree(sourceState, visited, transition));
@@ -125,16 +130,19 @@ public class PlantUMLFormatter {
     return s.toString();
   }
 
-  private String formatTransitionTree(String sourceState, Set<String> visited, TransitionModel<?, ?> transition) {
+  private record Choice(String name) implements State {}
+
+  private String formatTransitionTree(State sourceState, Set<State> visited, TransitionModel<?, ?> transition) {
     StringBuilder s = new StringBuilder();
-    String targetState = transition.toState() != null ? transition.toState().name() : sourceState;
+    State targetState = transition.toState() != null ? transition.toState() : sourceState;
     if (!transition.filters().isEmpty()) {
       System.out.println("Formatting transition with choice from " + sourceState);
-      String choiceName = "Choice" + choiceCounter2.incrementAndGet(); //choiceName(state, transition);
+      String choiceName = "Choice" + choiceCounter2.incrementAndGet();
+      State choiceState = new Choice(choiceName); //choiceName(state, transition);
 //        s.append(String.format("%s -down-> %s: %s\n", state.name(), choiceName, transition.eventType().name()));
-      s.append(formatTransition(sourceState, choiceName, transition.eventType(), transition));
+      s.append(formatTransition(sourceState, choiceState, transition.eventType(), transition));
       for (var filter : transition.filters()) {
-        s.append(formatTransitionTree(choiceName, visited, filter.alternative().model()));
+        s.append(formatTransitionTree(choiceState, visited, filter.alternative().model()));
         //s.append(formatTransitionsFrom(choiceName, this.transitions.get(targetState), visited));
       }
     } else {
@@ -145,28 +153,29 @@ public class PlantUMLFormatter {
     return s.toString();
   }
 
-  private String formatTransition(String sourceState, String targetState, EventType<?, ?> eventType, TransitionModel<?, ?> transition) {
+  private String formatTransition(State sourceState, State targetState, EventType<?, ?> eventType, TransitionModel<?, ?> transition) {
     System.out.println("Formatting transition <" + sourceState + " --> " + targetState + ": " + eventType.name() + ">");
     return String.format(
         "%s %s %s: %s\n",
-        sourceState.equals(STATE_BEGIN) ? "[*]" : sourceState,
-        sourceState.equals(STATE_BEGIN) ? "-right->" : "-->",
-        targetState,
+        sourceState.equals(Begin) ? "[*]" : stateId(sourceState),
+        sourceState.equals(Begin) ? "-right->" : "-->",
+        stateId(targetState),
         Stream.of(
             String.format("%s", eventType.name()),
-            "f: " + eventType.inputDataType().name() + " → " + eventType.outputDataType().name(),
-            transition.triggers().stream().map(t -> "<&share>" + t.eventSpec().eventType().name() + "@" + t.entityModel().name()).collect(joining("\\n"))
+            eventType.inputDataType().equals(DataType.none()) && eventType.outputDataType().equals(DataType.none()) ? "" : "f: " + eventType.inputDataType().name() + " → " + eventType.outputDataType().name(),
+            transition.triggers().stream().map(t -> "<&share>" + t.eventSpec().eventType().name() + "@" + ofNullable(t.entityModel()).map(m -> m.name()).orElse("???")).collect(joining("\\n"))
         ).filter(not(String::isEmpty)).collect(joining("\\n"))
     );
   }
 
-  private String state(String state) {
-    if (state.equals(STATE_BEGIN)) return "";
+  private String state(State state) {
+    if (state.equals(Begin)) return "";
     return String.format(
         """
-        state %s
+        state "%s" as %s
         """,
-        state
+        state.name(),
+        stateId(state)
     );
   }
 

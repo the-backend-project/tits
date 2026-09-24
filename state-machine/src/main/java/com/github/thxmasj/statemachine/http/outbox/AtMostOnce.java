@@ -4,7 +4,7 @@ import static com.github.thxmasj.statemachine.EntitySelector.entityIdFromSession
 import static com.github.thxmasj.statemachine.EntitySelector.newEntityId;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
 import static com.github.thxmasj.statemachine.Tuples.tuple;
-import static com.github.thxmasj.statemachine.http.outbox.AtMostOnce.States.Delivered;
+import static com.github.thxmasj.statemachine.http.outbox.AtMostOnce.States.Accepted;
 import static com.github.thxmasj.statemachine.http.outbox.AtMostOnce.States.Failed;
 import static com.github.thxmasj.statemachine.http.outbox.AtMostOnce.States.InFlight;
 import static com.github.thxmasj.statemachine.http.outbox.AtMostOnce.States.Intermediate;
@@ -59,7 +59,7 @@ public final class AtMostOnce<I, RI> implements HttpOutboxRequest<I> {
 
   private final Map<State, List<TransitionModel<?, ?>>> transitions;
 
-  public <T1, T2, T3, T4, T5, T6, RQ, RS> AtMostOnce(
+  public <T1, T2, T3, T4, T5, T6, T7, RQ, RS> AtMostOnce(
       String name,
       UUID id,
       DataType<RQ> requestPayloadType,
@@ -72,10 +72,12 @@ public final class AtMostOnce<I, RI> implements HttpOutboxRequest<I> {
       Callback<EntityModel, T2> onMissingResponse,
       Callback<TypedHttpResponse<RS>, T3> onSuccess,
       Callback<TypedHttpResponse<RS>, T4> onFailure,
+      Callback<TypedHttpResponse<RS>, T7> onValidResponseUnknown, // Rollback
       Callback<Tuple2<HttpResponseMessage, String>, T5> onInvalidResponseRejection,
       Callback<Tuple2<HttpResponseMessage, String>, T6> onInvalidResponseUnknown, // Rollback
       Function<HttpResponseMessage, Validated<RS>> contentParser,
-      Predicate<TypedHttpResponse<RS>> isDelivered,
+      Predicate<TypedHttpResponse<RS>> isAccepted,
+      Predicate<TypedHttpResponse<RS>> isRejected,
       Predicate<Tuple2<HttpResponseMessage, String>> isRejectedByInvalidResponse,
       AtLeastOnce<RI> rollbackModel
   ) {
@@ -93,42 +95,49 @@ public final class AtMostOnce<I, RI> implements HttpOutboxRequest<I> {
     EventType<TypedHttpResponse<RS>, TypedHttpResponse<RS>> validResponse = BasicEventType.of(
         "[valid response]",
         UUID.fromString("c9fcf4d6-95f8-418f-aa6b-c3d987d3a3c3"),
-        DataType.unknown(),
-        DataType.unknown()
+        HttpDataType.forResponse(responsePayloadType),
+        HttpDataType.forResponse(responsePayloadType)
     );
     // Intermediate
     EventType<Tuple2<HttpResponseMessage, String>, Tuple2<HttpResponseMessage, String>> invalidResponse = BasicEventType.of(
         "[invalid response]",
         UUID.fromString("3bd020c3-caf8-4a9b-a10c-d818f98a6de7"),
-        DataType.unknown(),
-        DataType.unknown()
+        DataType.tuple(HttpDataType.forResponse(), DataType.string()),
+        DataType.tuple(HttpDataType.forResponse(), DataType.string())
     );
     // Leaf
     EventType<TypedHttpResponse<RS>, TypedHttpResponse<RS>> requestAccepted = BasicEventType.of(
         "[request accepted]",
         UUID.fromString("0f8fe1c2-2d29-406c-87b5-f9f43a03a54f"),
-        DataType.unknown(),
+        HttpDataType.forResponse(responsePayloadType),
         HttpDataType.forResponse(responsePayloadType)
     );
     // Leaf
-    EventType<TypedHttpResponse<RS>, TypedHttpResponse<RS>> requestReceivedAndRejected = BasicEventType.of(
+    EventType<TypedHttpResponse<RS>, TypedHttpResponse<RS>> validResponseAndRejected = BasicEventType.of(
         "[request rejected]",
         UUID.fromString("5362567f-792e-4f8a-81d6-3b201d44d3f0"),
-        DataType.unknown(),
+        HttpDataType.forResponse(responsePayloadType),
+        HttpDataType.forResponse(responsePayloadType)
+    );
+    // Leaf
+    EventType<TypedHttpResponse<RS>, TypedHttpResponse<RS>> validResponseAndUnknown = BasicEventType.of(
+        "[valid response, unknown status]",
+        UUID.fromString("0059d0cc-e7ec-4f84-beb0-1870d00937d2"),
+        HttpDataType.forResponse(responsePayloadType),
         HttpDataType.forResponse(responsePayloadType)
     );
     // Leaf
     EventType<Tuple2<HttpResponseMessage, String>, HttpResponseMessage> invalidResponseAndRejected = BasicEventType.of(
         "[request rejected]",
         UUID.fromString("402f9bf4-855c-4383-ac54-3375f9d156d1"),
-        DataType.unknown(),
+        DataType.tuple(HttpDataType.forResponse(), DataType.string()),
         HttpDataType.forResponse()
     );
     // Leaf
     EventType<Tuple2<HttpResponseMessage, String>, HttpResponseMessage> invalidResponseAndUnknown = BasicEventType.of(
-        "[unknown status]",
+        "[invalid response, unknown status]",
         UUID.fromString("ecfb2c9d-178b-4c3e-b09e-c580e09b01b4"),
-        DataType.unknown(),
+        DataType.tuple(HttpDataType.forResponse(), DataType.string()),
         HttpDataType.forResponse()
     );
     Action<HttpRequestMessage> forward = new Action<>() {
@@ -178,34 +187,53 @@ public final class AtMostOnce<I, RI> implements HttpOutboxRequest<I> {
             .then(
                 onEvent(validResponse).to(Intermediate)
                     .assembleInput()
-                    .when(isDelivered)
+                    .when(isAccepted)
                     .then(
                         onSuccess != null ?
-                            onEvent(requestAccepted).to(Delivered)
+                            onEvent(requestAccepted).to(Accepted)
                                 .assembleInput()
                                 .trigger(onSuccess.eventType())
                                 .with(onSuccess.dataAdapter())
                                 .on(processModel)
                                 .identifiedBy(entityIdFromSession())
                                 .output(d -> d.t1()) :
-                            onEvent(requestAccepted).to(Delivered)
+                            onEvent(requestAccepted).to(Accepted)
                                 .assembleInput()
                                 .output(d -> d)
                     )
-                    .otherwise(
+                    .when(isRejected)
+                    .then(
                         onFailure != null ?
-                            onEvent(requestReceivedAndRejected).to(Failed)
+                            onEvent(validResponseAndRejected).to(Failed)
                                 .assembleInput()
                                 .trigger(onFailure.eventType())
                                 .with(onFailure.dataAdapter())
                                 .on(processModel)
                                 .identifiedBy(entityIdFromSession())
                                 .output(d -> d.t1()) :
-                            onEvent(requestReceivedAndRejected).to(Failed)
+                            onEvent(validResponseAndRejected).to(Failed)
+                                .assembleInput()
+                                .output(d -> d)
+                    )
+                    .otherwise(
+                        onValidResponseUnknown != null ?
+                            onEvent(validResponseAndUnknown).to(Unknown)
+                                .assembleInput()
+                                .trigger(onValidResponseUnknown.eventType())
+                                .with(onValidResponseUnknown.dataAdapter())
+                                .on(processModel)
+                                .identifiedBy(entityIdFromSession())
+                                .output(d -> d.t1()) :
+                            onEvent(validResponseAndUnknown).to(Unknown)
                                 .assembleInput()
                                 .output(d -> d)
                     ),
-                d -> new TypedHttpResponse<>(d.t1(), d.t2().validValue())
+                d -> TypedHttpResponse.create(
+                    d.t1().statusCode(),
+                    d.t1().reasonPhrase(),
+                    d.t1().headers(),
+                    d.t2().validValue()
+                )
             ).otherwise(
                 onEvent(invalidResponse).to(Intermediate)
                     .assembleInput()
@@ -251,7 +279,7 @@ public final class AtMostOnce<I, RI> implements HttpOutboxRequest<I> {
         InFlight, inFlightTransitions,
         Intermediate, List.of(),
         Failed, List.of(),
-        Delivered, rollbackModel != null ? List.of(rollbackModel.requestDispatchedTransition()) : List.of(),
+        Accepted, rollbackModel != null ? List.of(rollbackModel.requestDispatchedTransition()) : List.of(),
         Unknown, rollbackModel != null ? List.of(rollbackModel.requestDispatchedTransition()) : List.of()
     );
     this.transitions = rollbackModel != null ? HttpOutboxRequest.combine(t, rollbackModel.inflightTransitions()) : t;
@@ -273,10 +301,9 @@ public final class AtMostOnce<I, RI> implements HttpOutboxRequest<I> {
   }
 
   enum States implements State {
-    Intermediate,
     InFlight,
     Failed,
-    Delivered,
+    Accepted,
     Unknown
   }
 }

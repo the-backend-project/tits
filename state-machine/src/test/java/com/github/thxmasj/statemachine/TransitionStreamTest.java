@@ -3,7 +3,6 @@ package com.github.thxmasj.statemachine;
 import static com.github.thxmasj.statemachine.EntitySelector.entityId;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
 import static com.github.thxmasj.statemachine.TransitionStreamTest.Entities.Lamp;
-import static com.github.thxmasj.statemachine.TransitionStreamTest.States.Off;
 import static com.github.thxmasj.statemachine.TransitionStreamTest.States.On;
 
 import java.util.UUID;
@@ -17,12 +16,6 @@ public class TransitionStreamTest {
       public UUID id() {
         return UUID.fromString("59d3158c-7b2a-4312-a293-325858c2673f");
       }
-
-      @Override
-      public State initialState() {
-        return Off;
-      }
-
     }
   }
   enum States implements State {Off, On}

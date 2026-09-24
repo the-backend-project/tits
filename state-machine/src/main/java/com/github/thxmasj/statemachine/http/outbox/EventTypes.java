@@ -4,7 +4,6 @@ import static com.github.thxmasj.statemachine.BasicEventType.of;
 
 import com.github.thxmasj.statemachine.BasicEventType;
 import com.github.thxmasj.statemachine.DataType;
-import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.EventType;
 import com.github.thxmasj.statemachine.http.HttpDataType;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
@@ -12,9 +11,9 @@ import java.util.UUID;
 
 public interface EventTypes {
 
-  EventType<EntityModel, EntityModel> ServiceUnavailable = of("ServiceUnavailable", UUID.fromString("f91e560f-ba7b-4e14-976a-82e592a627f5"), DataType.forClass(EntityModel.class));
+  EventType<Void, Void> ServiceUnavailable = of("ServiceUnavailable", UUID.fromString("f91e560f-ba7b-4e14-976a-82e592a627f5"));
   EventType<String, String>
-      InvalidResponse = of("InvalidResponse", UUID.fromString("450679ab-bc60-46cb-bb97-d171c34c2750"), DataType.forString());
+      InvalidResponse = of("InvalidResponse", UUID.fromString("450679ab-bc60-46cb-bb97-d171c34c2750"), DataType.string());
 
   EventType<HttpResponseMessage, Void> ResponseReceived = BasicEventType.of(
       "Response received",

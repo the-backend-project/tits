@@ -16,14 +16,11 @@ public interface EntityModel {
 
   State Begin = () -> "Begin";
 
-  default State initialState() {
-    return Begin;
-  }
-
   static EntityModel of(String name, UUID id) {
     return new EntityModel() {
       @Override public String name() {return name;}
       @Override public UUID id() {return id;}
+      @Override public String toString() {return name;}
     };
   }
 }

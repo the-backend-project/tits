@@ -54,20 +54,20 @@ public interface HttpInbox {
   EventType<Tuple3<String, EntityId, HttpRequestMessage>, HttpRequestMessage> RejectRequest = BasicEventType.of(
       "Reject request",
       UUID.fromString("46106429-3c44-45cd-be04-5eb341c8f381"),
-      DataType.forTuple(DataType.forString(), DataType.forClass(EntityId.class), HttpDataType.forRequest()),
+      DataType.tuple(DataType.string(), DataType.json(EntityId.class), HttpDataType.forRequest()),
       HttpDataType.forRequest()
   );
   EventType<Tuple2<HttpRequestMessage, HttpResponseMessage>, HttpRequestMessage> RejectDuplicateRequest = BasicEventType.of(
       "Reject duplicate request",
       UUID.fromString("304f5036-4ae6-406a-9512-f217e34e542b"),
-      DataType.forTuple(HttpDataType.forRequest(), HttpDataType.forResponse()),
+      DataType.tuple(HttpDataType.forRequest(), HttpDataType.forResponse()),
       HttpDataType.forRequest()
   );
   EventType<Tuple2<RoutedRequest<?>, EventReference>, Tuple2<HttpRequestMessage, EventReference>> AcceptRequest = BasicEventType.of(
       "Accept request",
       UUID.fromString("9615c3fb-4f15-47f5-b5d3-6149a6164d70"),
       DataType.unknown(),
-      DataType.forTuple(HttpDataType.forRequest(), DataType.forClass(EventReference.class))
+      DataType.tuple(HttpDataType.forRequest(), DataType.json(EventReference.class))
   );
   EventType<Tuple3<String, RoutedRequest<?>, EventReference>, HttpRequestMessage> AcceptRollbackRequest = BasicEventType.of(
       "Accept rollback request",
@@ -78,12 +78,12 @@ public interface HttpInbox {
   ResponseEventType<Tuple2<String, EventReference>> CompleteRequest = new ResponseEventType<>(
       "Complete request",
       UUID.fromString("fa608cc7-9a2b-42ec-ab83-5207ab3978a0"),
-      DataType.forTuple(DataType.forString(), DataType.forClass(EventReference.class))
+      DataType.tuple(DataType.string(), DataType.json(EventReference.class))
   );
   ResponseEventType<Tuple2<String, EventReference>> CompleteRollbackRequest = new ResponseEventType<>(
       "Complete rollback request",
       UUID.fromString("57fd7951-b922-42ff-99ed-6752f1d23024"),
-      DataType.forTuple(DataType.forString(), DataType.forClass(EventReference.class))
+      DataType.tuple(DataType.string(), DataType.json(EventReference.class))
   );
   EventType<HttpResponseMessage, HttpResponseMessage> CompleteDuplicatedRequest = BasicEventType.of(
       "Complete duplicated request",
@@ -93,7 +93,7 @@ public interface HttpInbox {
   ResponseEventType<Tuple2<String, EventReference>> CompleteInvalidRequest = new ResponseEventType<>(
       "Complete invalid request",
       UUID.fromString("6bc64696-3b9e-4897-b9d0-de3abf567685"),
-      DataType.forTuple(DataType.forString(), DataType.forClass(EventReference.class))
+      DataType.tuple(DataType.string(), DataType.json(EventReference.class))
   );
   EventType<HttpResponseMessage, HttpResponseMessage> CompleteRejectedRequest = BasicEventType.of(
       "Complete rejected request",
@@ -104,7 +104,7 @@ public interface HttpInbox {
   EventType<String, Void> RejectAsUnroutable = BasicEventType.of(
       "RejectAsUnroutable",
       UUID.fromString("9b6a57f8-8d3b-46b4-aeef-d8864f19fe13"),
-      DataType.forString(),
+      DataType.string(),
       DataType.none()
   );
   EventType<HttpResponseMessage, HttpResponseMessage> Respond = BasicEventType.of(
@@ -116,7 +116,7 @@ public interface HttpInbox {
   EventType<String, HttpResponseMessage> RespondBadRequest = BasicEventType.of(
       "RespondBadRequest",
       UUID.fromString("a8225270-6a22-4f1f-ae17-5b5519d46df1"),
-      DataType.forString(),
+      DataType.string(),
       HttpDataType.forResponse()
   );
   SecondaryIdModel<MessageId> MessageId = new SecondaryIdModel<>() {
@@ -218,8 +218,6 @@ public interface HttpInbox {
             @Override
             public UUID id() {return id;}
 
-            @Override
-            public State initialState() {return Begin;}
         }
     }
 

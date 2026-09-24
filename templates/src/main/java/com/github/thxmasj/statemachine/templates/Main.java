@@ -1,6 +1,5 @@
 package com.github.thxmasj.statemachine.templates;
 
-import static com.github.thxmasj.statemachine.Validated.valid;
 import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.EntityModels.RequestDispatching;
 import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.EntityModels.RequestRouting;
 import static com.github.thxmasj.statemachine.http.inbox.TransitionModels.requestDispatchingTransitions;
@@ -9,55 +8,33 @@ import static com.github.thxmasj.statemachine.templates.Batching.EntityTypes.Bat
 import static com.github.thxmasj.statemachine.templates.Batching.EntityTypes.Item;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Aggregate.Payment;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Aggregate.Settlement;
+import static com.github.thxmasj.statemachine.templates.cardpayment.DummyTransitions.atLeastOnce;
+import static com.github.thxmasj.statemachine.templates.cardpayment.DummyTransitions.atMostOnce;
 
-import com.github.thxmasj.statemachine.DataType;
 import com.github.thxmasj.statemachine.PlantUMLFormatter;
-import com.github.thxmasj.statemachine.http.outbox.AtLeastOnce;
-import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest;
-import com.github.thxmasj.statemachine.templates.cardpayment.DummyPaymentTransitions;
-import com.github.thxmasj.statemachine.templates.cardpayment.SettlementTransitions;
+import com.github.thxmasj.statemachine.templates.cardpayment.DummyTransitions;
 import java.io.IOException;
-import java.time.Duration;
 import java.util.List;
-import java.util.UUID;
 
 public class Main {
 
   static void main() throws IOException {
     var atLeastOnce = atLeastOnce("AtLeastOnce");
     System.out.println(new PlantUMLFormatter(atLeastOnce, atLeastOnce.transitions()).formatToImage("docs/images/"));
+    var atMostOnce = atMostOnce("AtMostOnce");
+    System.out.println(new PlantUMLFormatter(atMostOnce, atMostOnce.transitions()).formatToFile("docs/images/"));
     System.out.println(new PlantUMLFormatter(RequestRouting, requestRoutingTransitions(List.of())).formatToImage("docs/images/"));
     System.out.println(new PlantUMLFormatter(RequestDispatching, requestDispatchingTransitions(List.of(), List.of())).formatToImage("docs/images/"));
     System.out.println(new PlantUMLFormatter(Item, Item.transitions()).formatToImage("docs/images/"));
     System.out.println(new PlantUMLFormatter(Batch, Batch.transitions()).formatToImage("docs/images/"));
     System.out.println(new PlantUMLFormatter(
         Payment,
-        DummyPaymentTransitions.build().transitions()
+        DummyTransitions.payment().transitions()
     ).formatToImage("docs/images/"));
     System.out.println(new PlantUMLFormatter(
         Settlement,
-        new SettlementTransitions(
-            atLeastOnce("ReconciliationToAcquirer"),
-            atLeastOnce("approvedCutOffToMerchant")
-        ).transitions()
+        DummyTransitions.settlement().transitions()
     ).formatToImage("docs/images/"));
-  }
-
-  private static <I> AtLeastOnce<I> atLeastOnce(String name) {
-    return HttpOutboxRequest.atLeastOnce()
-        .name(name)
-        .id(UUID.randomUUID())
-        .requestPayloadType(DataType.unknown())
-        .<I>messageCreator(_ -> null)
-        .forwarder(null)
-        .contentParser(_ -> valid(null))
-        .isDelivered(_ -> true)
-        .isFailureTransient(_ -> true)
-        .isRejectedByInvalidResponse(_ -> true)
-        .isFailureByInvalidResponseTransient(_ -> true)
-        .isAttemptAvailable(_ -> true)
-        .backoffAlgorithm(_ -> Duration.ofSeconds(1))
-        .build();
   }
 
 

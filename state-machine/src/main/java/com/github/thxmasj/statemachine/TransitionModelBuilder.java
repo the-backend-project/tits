@@ -63,7 +63,7 @@ public class TransitionModelBuilder<I, T, O> {
     public String description() {
       if (reversal)
         return "<reversal>";
-      return String.format("%s -> %s", eventType.name(), to != null ? to : "<self>");
+      return String.format("%s -> %s", eventType.name(), to != null ? to.name() : "<self>");
     }
 
   }
@@ -166,7 +166,8 @@ public class TransitionModelBuilder<I, T, O> {
 
     record TriggerChangeContext<T, O1>(
         ChangeContext<ProcessResult<O1>> previous,
-        ChangeContext<T> outer
+        ChangeContext<T> outer,
+        EventTrigger<T, ?, O1> eventTrigger
     ) implements ChangeContext<Tuple2<T, ProcessResult<O1>>> {
 
       @Override
@@ -175,7 +176,7 @@ public class TransitionModelBuilder<I, T, O> {
       }
 
       @Override public String toString() {
-        return "Trigger (outer: " + outer + ")";
+        return "Trigger: " + eventTrigger.eventSpec().eventType().name() + "@" + eventTrigger.entityModel().name();
       }
 
     }
@@ -845,7 +846,16 @@ public class TransitionModelBuilder<I, T, O> {
   private <I1, O1> TransitionModelBuilder<I, Tuple2<T, ProcessResult<O1>>, O> trigger(EventTrigger<T, I1, O1> eventTrigger) {
     Function<Mono<ChangeContext<T>>, Mono<ChangeContext<Tuple2<T, ProcessResult<O1>>>>> f =
         changeContext -> changeContext
-            .flatMap(c -> c.initialChangeContext().stateMachine().calculateTriggeredEvent(eventTrigger, c, c.stepOutput(), false)
+            .flatMap(c -> c.initialChangeContext().stateMachine().calculateTriggeredEvent(
+                        eventTrigger,
+                        c,
+                        c.stepOutput(),
+                        false,
+                        new EventReference(
+                            c.initialChangeContext().log().entityId().value(),
+                            c.initialChangeContext().eventNumber()
+                        )
+                    )
                     .onErrorResume(
                         CircularChange.class,
                         e -> Mono.just(new PendingChangeContext<>(
@@ -867,7 +877,7 @@ public class TransitionModelBuilder<I, T, O> {
                             ProcessResult.unknownId(eventTrigger.eventSpec().eventType(), e)
                         ))
                     )
-                .map(output -> new TriggerChangeContext<>(output, c))
+                .map(output -> new TriggerChangeContext<>(output, c, eventTrigger))
             );
     var eventTriggers = join(modelContext.triggers, eventTrigger);
     return new TransitionModelBuilder<>(
@@ -990,7 +1000,7 @@ public class TransitionModelBuilder<I, T, O> {
 
     @Override
     public String toString() {
-      return String.format("onEvent(%s).to(%s)", (modelContext.eventType != null ? modelContext.eventType.name() : "N/A") , modelContext.to != null ? modelContext.to : "<self>");
+      return String.format("onEvent(%s).to(%s)", (modelContext.eventType != null ? modelContext.eventType.name() : "N/A") , modelContext.to != null ? modelContext.to.name() : "<self>");
     }
 
     TransitionModel(
@@ -1010,7 +1020,7 @@ public class TransitionModelBuilder<I, T, O> {
     }
 
     public Mono<OutputChangeContext<O>> calculate(InitialChangeContext<I> initialChangeContext) {
-      log(modelContext, "calculate [" + eventType().name() + "] on [" + initialChangeContext.log().entityModel().name() + "]");
+      log(modelContext, "calculate [" + eventType().name() + "] on [" + initialChangeContext.log().entityModel().name() + "] (input: " + initialChangeContext.input() + ")");
       return chain.apply(Mono.just(initialChangeContext));
     }
 

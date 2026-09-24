@@ -34,7 +34,7 @@ public sealed interface HttpOutboxRequest<I> extends com.github.thxmasj.statemac
   EventType<UUID, UUID> Indexed = BasicEventType.of(
       "Indexed",
       UUID.fromString("da7f9a47-67a9-4a0e-affb-865f665a9564"),
-      DataType.forUUID()
+      DataType.uuid()
   );
 
   Map<State, List<TransitionModel<?, ?>>> indexingTransitions = Map.of(
@@ -48,11 +48,6 @@ public sealed interface HttpOutboxRequest<I> extends com.github.thxmasj.statemac
       UUID.fromString("c0881c13-173e-4672-a6d9-2cdfa57c8cbe")
   );
 
-  IndexEntityModel<UUID> EntityType = IndexEntityModel.ofUUID(
-      "EntityType",
-      UUID.fromString("0d7a9644-7810-4e91-a8ae-8f39e0f98c67")
-  );
-
   static Map<State, List<TransitionModel<?, ?>>> combine(
       Map<State, List<TransitionModel<?, ?>>> m1,
       Map<State, List<TransitionModel<?, ?>>> m2
@@ -61,7 +56,8 @@ public sealed interface HttpOutboxRequest<I> extends com.github.thxmasj.statemac
         .collect(Collectors.toMap(
             Map.Entry::getKey,
             Map.Entry::getValue,
-            (_, _) -> {
+            (a, b) -> {
+              if (a.isEmpty() && b.isEmpty()) return a;
               throw new IllegalArgumentException("TransitionModel maps can't be combined - they use the same State key");
             }
         ));

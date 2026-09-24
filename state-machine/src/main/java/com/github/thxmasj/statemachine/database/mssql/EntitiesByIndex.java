@@ -3,10 +3,13 @@ package com.github.thxmasj.statemachine.database.mssql;
 import com.github.thxmasj.statemachine.EntityId;
 import com.github.thxmasj.statemachine.Event;
 import com.github.thxmasj.statemachine.EventLog;
+import com.github.thxmasj.statemachine.EventType;
 import com.github.thxmasj.statemachine.IndexEntityModel;
+import com.github.thxmasj.statemachine.database.Parameter;
 import com.github.thxmasj.statemachine.database.Row;
 import com.github.thxmasj.statemachine.database.jdbc.JDBCRow;
 import java.sql.ResultSet;
+import java.time.Clock;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -18,6 +21,8 @@ import javax.sql.DataSource;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import static com.github.thxmasj.statemachine.database.jdbc.PreparedStatementSupport.prepare;
+
 public class EntitiesByIndex {
 
   private final DataSource dataSource;
@@ -27,10 +32,11 @@ public class EntitiesByIndex {
   public EntitiesByIndex(
       DataSource dataSource,
       String schemaName,
-      BiFunction<EntityId, Row, Event<?>> eventMapper
+      List<EventType<?, ?>> eventTypes,
+      Clock clock
   ) {
     this.dataSource = dataSource;
-    this.eventMapper = eventMapper;
+    this.eventMapper = Mappers.eventMapper(eventTypes, clock);
     this.sql = String.format(
         """
         SELECT
@@ -41,7 +47,7 @@ public class EntitiesByIndex {
           e.Data
         FROM [{schema}].Event e
           INNER JOIN [{schema}].IndexEvent ie ON e.EntityId=ie.EntityId
-        WHERE ie.Data=@value
+        WHERE ie.Data=:value
         ORDER BY e.EntityId, e.EventNumber;
         """
             .replace("{schema}", schemaName)
@@ -50,8 +56,10 @@ public class EntitiesByIndex {
 
   public <T> Flux<EventLog> execute(IndexEntityModel<T> model, T key) {
     return Mono.fromCallable(() -> {
-          try (var connection = dataSource.getConnection(); var statement = connection.prepareStatement(sql)) {
-            statement.setString(1, model.marshal(key));
+          try (
+              var connection = dataSource.getConnection();
+              var statement = prepare(sql, Map.of("value", new Parameter<>(byte[].class, model.marshal(key))), connection);
+          ) {
             statement.execute();
             ResultSet rs = statement.getResultSet();
             Map<UUID, List<Event<?>>> eventsByEntityId = new HashMap<>();

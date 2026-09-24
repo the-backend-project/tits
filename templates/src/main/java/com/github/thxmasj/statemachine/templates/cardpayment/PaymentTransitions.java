@@ -1,12 +1,13 @@
 package com.github.thxmasj.statemachine.templates.cardpayment;
 
-import static com.github.thxmasj.statemachine.BuiltinEventTypes.RequestUndelivered;
+import static com.github.thxmasj.statemachine.EntityModel.Begin;
 import static com.github.thxmasj.statemachine.EntitySelector.CreationMode.CreateIfNotExists;
 import static com.github.thxmasj.statemachine.EntitySelector.entityId;
 import static com.github.thxmasj.statemachine.EntitySelector.entityIdFromSession;
 import static com.github.thxmasj.statemachine.EntitySelector.lastInIdGroup;
 import static com.github.thxmasj.statemachine.EntitySelector.newEntityId;
 import static com.github.thxmasj.statemachine.EntitySelector.secondaryId;
+import static com.github.thxmasj.statemachine.State.Intermediate;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel.mergeModels;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.assemble;
@@ -15,12 +16,14 @@ import static com.github.thxmasj.statemachine.Tuples.tuple;
 import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.CompleteInvalidRequest;
 import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.CompleteRequest;
 import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.EntityModels.RequestDispatching;
+import static com.github.thxmasj.statemachine.http.outbox.EventTypes.ServiceUnavailable;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Aggregate.Settlement;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Identifiers.AcquirerBatchNumber;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Identifiers.BatchNumber;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Identifiers.MerchantId;
 import static com.github.thxmasj.statemachine.templates.cardpayment.MerchantEvent.Get;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AcquirerDeclined;
+import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AcquirerResponded;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthenticationUnavailable;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthorisationApproved;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Cancel;
@@ -49,7 +52,6 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.AuthenticationFailed;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.AuthorisationFailed;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.Authorised;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.Begin;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.Preauthorised;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.ProcessingAuthentication;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.ProcessingAuthorisation;
@@ -369,7 +371,7 @@ public class PaymentTransitions {
                             .trigger(CompleteRequest).with(d -> tuple("", d.t1().t5())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                             .reversible(
                                 assemble((log, rollbackType) -> {
-                                  var paymentData = log.one(ValidPaymentRequest);
+                                  Tuple2<Authorisation, Merchant> paymentData = log.one(ValidPaymentRequest);
                                   AcquirerResponse acquirerResponse = log.lastIfExists(PreauthorisationApproved).orElse(null);
                                   UUID acquirerRequestId = log.one(Preauthorisation).requestId();
                                   return tuple(
@@ -399,44 +401,69 @@ public class PaymentTransitions {
                     )
             ),
             ProcessingAuthorisation, List.of(
-                onEvent(PreauthorisationApproved).to(Preauthorised)
-                    .assemble(((input, log) -> tuple(log.one(ValidPaymentRequest).t1(), log.one(ValidPaymentRequest).t2(), input)))
-                    .trigger(approvedPreauthorisationToMerchant.requestDispatched()).with(d -> d).on(approvedPreauthorisationToMerchant).identifiedBy(newEntityId())
-//                    .trigger(approvedPreauthorisation()).with(d -> d).to(Queues.Merchant).guaranteed()
-                    .output(d -> d.t1().t3()),
-                onEvent(RequestUndelivered).to(AuthorisationFailed)
+                onEvent(AcquirerResponded).to(Intermediate)
+                    .assemble((input, log) -> tuple(input, log.oneIfExists(Preauthorisation).isPresent()))
+                    .when(d -> "00".equals(d.t1().responseCode()) && d.t2())
+                    .then(
+                        onEvent(PreauthorisationApproved).to(Preauthorised)
+                            .assemble(((input, log) -> tuple(log.one(ValidPaymentRequest).t1(), log.one(ValidPaymentRequest).t2(), input)))
+                            .trigger(approvedPreauthorisationToMerchant.requestDispatched()).with(d -> d).on(approvedPreauthorisationToMerchant).identifiedBy(newEntityId())
+                            .output(d -> d.t1().t3()),
+                        d -> d.t1()
+                    )
+                    .when(d -> "00".equals(d.t1().responseCode()) && !d.t2())
+                    .then(
+                        onEvent(AuthorisationApproved).to(Authorised)
+                            .assemble((input, log) -> tuple(
+                                log.one(ValidPaymentRequest).t1(),
+                                log.one(ValidPaymentRequest).t2(),
+                                input
+                            ))
+                            .trigger(GetBatchNumber)
+                            .with(d -> new AcquirerBatchNumber(d.t1().merchantId(), d.t3().batchNumber()))
+                            .on(Settlement)
+                            .identifiedBy(
+                                d -> secondaryId(
+                                    AcquirerBatchNumber,
+                                    new AcquirerBatchNumber(d.t1().merchantId(), d.t3().batchNumber()),
+                                    CreateIfNotExists
+                                )
+                            )
+                            .trigger(MerchantCredit)
+                            .with(d -> d.t1().t1().amount().requested())
+                            .on(Settlement)
+                            .identifiedBy(d -> entityId(d.t2().accepted().event().entityId()))
+                            .trigger(approvedAuthorisationToMerchant.requestDispatched())
+                            .with(d -> tuple(
+                                d.t1().t1().t1(),
+                                d.t1().t1().t2(),
+                                d.t1().t2().accepted().event().getUnmarshalledData(),
+                                d.t1().t1().t3()
+                            ))
+                            .on(approvedAuthorisationToMerchant)
+                            .identifiedBy(newEntityId())
+                            .reversible(
+                                assemble((log, _) -> log.one(ValidPaymentRequest).t1())
+                                    .trigger(MerchantCreditReversed).with(d -> d.amount().requested()).on(Settlement)
+                                    .identifiedBy(d -> lastInIdGroup(BatchNumber, d.merchantId()))
+                            )
+                            .output(d -> d.t1().t1().t1().t3()),
+                        d -> d.t1()
+                    )
+                    .otherwise(
+                        onEvent(AcquirerDeclined).to(AuthorisationFailed)
+                            .assemble((input, log) -> tuple(log.one(ValidPaymentRequest).t1(), log.one(ValidPaymentRequest).t2(), input))
+                            .trigger(declinedAuthorisationToMerchant.requestDispatched()).with(d -> d).on(declinedAuthorisationToMerchant).identifiedBy(newEntityId())
+                            .output(d -> d.t1().t3()),
+                        d -> d.t1()
+                    ),
+                onEvent(ServiceUnavailable).to(AuthorisationFailed)
                     .assemble((_, log) -> tuple(
                         log.one(ValidPaymentRequest).t1(),
                         log.one(ValidPaymentRequest).t2()
                     ))
                     .trigger(failedAuthorisationToMerchant.requestDispatched()).with(d -> d).on(failedAuthorisationToMerchant).identifiedBy(newEntityId())
-//                    .trigger(failedAuthorisation()).with(d -> d).to(Queues.Merchant).guaranteed()
-                    .output(),
-                onEvent(AuthorisationApproved).to(Authorised)
-                    .assemble((input, log) -> tuple(log.one(ValidPaymentRequest).t1(), log.one(ValidPaymentRequest).t2(), input))
-                    .trigger(GetBatchNumber).with(d -> new AcquirerBatchNumber(d.t1().merchantId(), d.t3().batchNumber())).on(Settlement)
-                        .identifiedBy(
-                            d -> secondaryId(AcquirerBatchNumber, new AcquirerBatchNumber(d.t1().merchantId(), d.t3().batchNumber()), CreateIfNotExists)
-                        )
-                    .trigger(MerchantCredit).with(d -> d.t1().t1().amount().requested()).on(Settlement)
-                        .identifiedBy(d -> entityId(d.t2().accepted().event().entityId()))
-                    .trigger(approvedAuthorisationToMerchant.requestDispatched())
-                    .with(d -> tuple(d.t1().t1().t1(), d.t1().t1().t2(), d.t1().t2().accepted().event().getUnmarshalledData(), d.t1().t1().t3()))
-                    .on(approvedAuthorisationToMerchant)
-                    .identifiedBy(newEntityId())
-//                    .trigger(approvedAuthorisation()).with(d -> tuple(d.t1().t1().t1(), d.t1().t1().t2(), d.t1().t2().accepted().event().getUnmarshalledData(), d.t1().t1().t3())).to(
-//                        Queues.Merchant).guaranteed()
-                    .reversible(
-                        assemble((log, _) -> log.one(ValidPaymentRequest).t1())
-                            .trigger(MerchantCreditReversed).with(d -> d.amount().requested()).on(Settlement)
-                            .identifiedBy(d -> lastInIdGroup(BatchNumber, d.merchantId()))
-                    )
-                    .output(d -> d.t1().t1().t1().t3()),
-                onEvent(AcquirerDeclined).to(AuthorisationFailed)
-                    .assemble((input, log) -> tuple(log.one(ValidPaymentRequest).t1(), log.one(ValidPaymentRequest).t2(), input))
-                    .trigger(declinedAuthorisationToMerchant.requestDispatched()).with(d -> d).on(declinedAuthorisationToMerchant).identifiedBy(newEntityId())
-//                    .trigger(declinedAuthorisation()).with(d -> d).to(Queues.Merchant).guaranteed()
-                    .output(d -> d.t1().t3())
+                    .output()
             ),
             AuthenticationFailed, List.of(),
             AuthorisationFailed, List.of(),
@@ -640,18 +667,18 @@ public class PaymentTransitions {
                 )
                 .otherwise(
                     onEvent(DeclinedRefund).toSelf()
-                        .assemble(TransitionContext::eventReference)
+                        .assemble(c -> tuple(c.input(), c.eventReference()))
                         .trigger(CompleteInvalidRequest)
-                        .with(d -> tuple("Refund amount too large", d))
+                        .with(d -> tuple("Refund amount too large", d.t2()))
                         .on(RequestDispatching)
                         .identifiedBy(entityIdFromSession())
-                        .output(),
+                        .output(d -> d.t1().t1()),
                     RefundRequestData::refundData
                 )
         ),
         processingState,
         List.of(
-            onEvent(RequestUndelivered).to(anchor)
+            onEvent(ServiceUnavailable).to(anchor)
                 .assemble((_, log) -> log.one(ValidPaymentRequest))
                 .trigger(failedRefundToMerchant.requestDispatched())
                 .with(d -> d)

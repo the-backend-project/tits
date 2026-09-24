@@ -1,5 +1,6 @@
 package com.github.thxmasj.statemachine;
 
+import static com.github.thxmasj.statemachine.EntityModel.Begin;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.rollbackOn;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.statusOn;
 import static com.github.thxmasj.statemachine.Tuples.tuple;
@@ -20,16 +21,7 @@ public class Traverser {
 
   public State currentState(EventLog eventLog) {
     var effectiveEvents = eventLog.effectiveEvents();
-//    System.out.printf(
-//        """
-//        Traverser.currentState:
-//        Effective events: %s
-//        Actual events:    %s
-//        """,
-//        effectiveEvents.stream().map(Event::typeName).collect(joining(", ")),
-//        eventLog.events().stream().map(Event::typeName).collect(joining(", "))
-//    );
-    State currentState = eventLog.entityModel().initialState();
+    State currentState = Begin;
     if (effectiveEvents.isEmpty()) {
       return currentState;
     }
@@ -38,6 +30,17 @@ public class Traverser {
       lastTransition = findTransitionForLoggedEvent(loggedEvent, currentState);
       currentState = targetState(currentState, lastTransition);
     }
+    System.out.printf(
+        """
+        Traverser.currentState for %s: %s
+        Effective events: %s
+        Actual events:    %s
+        """,
+        eventLog.entityModel().name(),
+        currentState.name(),
+        effectiveEvents.stream().map(e -> e.type().name() + "/" + e.type().id()).collect(joining(", ")),
+        eventLog.events().stream().map(Event::typeName).collect(joining(", "))
+    );
     return currentState;
   }
 
@@ -80,7 +83,7 @@ public class Traverser {
     if (events.isEmpty()) {
       throw new IllegalStateException("Event log is empty");
     }
-    State state = eventLog.entityModel().initialState();
+    State state = Begin;
     for (var event : events) {
       if (event.eventNumber() == eventNumber) {
         return findTransitionForLoggedEvent(event.type(), state);

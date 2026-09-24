@@ -6,7 +6,6 @@ import com.github.thxmasj.statemachine.State;
 import java.time.Duration;
 
 public enum PaymentState implements State {
-  Begin,
   Rejected,
   ProcessingAuthentication,
   AuthenticationFailed,

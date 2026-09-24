@@ -1,5 +1,6 @@
 package com.github.thxmasj.statemachine.templates.cardpayment;
 
+import static com.github.thxmasj.statemachine.EntityModel.Begin;
 import static com.github.thxmasj.statemachine.EntitySelector.entityIdFromSession;
 import static com.github.thxmasj.statemachine.EntitySelector.newEntityId;
 import static com.github.thxmasj.statemachine.EntitySelector.secondaryId;
@@ -12,7 +13,6 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.Identifiers.
 import static com.github.thxmasj.statemachine.templates.cardpayment.Identifiers.BatchNumber;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Identifiers.MerchantId;
 import static com.github.thxmasj.statemachine.templates.cardpayment.MerchantEvent.Get;
-import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.Begin;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.Error;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.Open;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.ProcessingSettlement;

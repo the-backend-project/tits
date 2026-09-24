@@ -1,6 +1,7 @@
 package com.github.thxmasj.statemachine.http.inbox;
 
 import static com.github.thxmasj.statemachine.BuiltinEventTypes.Rollback;
+import static com.github.thxmasj.statemachine.EntityModel.Begin;
 import static com.github.thxmasj.statemachine.EntitySelector.entityId;
 import static com.github.thxmasj.statemachine.EntitySelector.entityIdFromSession;
 import static com.github.thxmasj.statemachine.EntitySelector.newEntityId;
@@ -95,11 +96,6 @@ public class HttpInboxTest {
         return UUID.fromString("59d3158c-7b2a-4312-a293-325858c2673f");
       }
 
-      @Override
-      public State initialState() {
-        return Off;
-      }
-
     }
   }
 
@@ -108,6 +104,33 @@ public class HttpInboxTest {
 
   private static Map<State, List<TransitionModel<?, ?>>> lampTransitions() {
     return Map.of(
+        Begin, List.of(
+            onEvent(InternalProcessing).to(On)
+                .assemble(TransitionContext::eventReference)
+                .trigger(Process0Outbox.requestDispatched()).on(Process0Outbox).identifiedBy(newEntityId())
+                //.trigger(new ProcessRequest(0)).with(_ -> null).to(DeviceListener).guaranteed()
+                .trigger(CompleteRequest).with(d -> tuple("Light is on! " + random.nextLong(), d.t1())).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                .output(),
+            onEvent(ComplexInternalProcessing).to(Processing)
+                .assemble(d -> d)
+                .trigger(ComplexInternalProcessingDone).on(Lamp).identifiedBy(entityIdFromSession())
+                .output(),
+            onEvent(ExternalProcessing).to(Processing)
+                .assembleInput()
+                .trigger(Process0Outbox.requestDispatched()).on(Process0Outbox).identifiedBy(newEntityId())
+                .output(),
+            onEvent(LongExternalProcessing).to(Processing)
+                .assembleInput()
+                .trigger(Process3Outbox.requestDispatched()).on(Process3Outbox).identifiedBy(newEntityId())
+                .reversible(
+                    assemble((log, rollbackType) -> "")
+                        // NB: Response in request/reply session not possible with reversals triggered by the resolver
+                        //.trigger(ComplexInternalProcessResponse).with(_ -> "Failed to switch on light! :(((").on(inboxExchange).identifiedBy(entityIdFromSession())
+                        .trigger(Process0Outbox.requestDispatched()).on(Process0Outbox).identifiedBy(newEntityId())
+                )
+                .output(),
+            onEvent(SwitchOn).to(On).output()
+        ),
         On, List.of(
             onEvent(InternalProcessing).to(Off).assembleInput().output(d -> d),
             onEvent(SwitchOff).to(Off).output(),
@@ -134,37 +157,15 @@ public class HttpInboxTest {
             onEvent(ExternalProcessing).to(Processing)
                 .assembleInput()
                 .trigger(Process0Outbox.requestDispatched()).on(Process0Outbox).identifiedBy(newEntityId())
-                //.trigger(new ProcessRequest(0)).with(_ -> null).to(DeviceListener).guaranteed()
-//                .responseValidator((_, _, _, _) -> Mono.just(new Result(
-//                    Status.Ok,
-//                    "Ok",
-//                    new InputEvent<>(ExternalProcessingDone, null)
-//                )))
                 .output(),
             onEvent(LongExternalProcessing).to(Processing)
                 .assembleInput()
                 .trigger(Process3Outbox.requestDispatched()).on(Process3Outbox).identifiedBy(newEntityId())
-//                .trigger(new ProcessRequest(LONG_EXTERNAL_PROCESSING))
-//                .with(_ -> null)
-//                .to(DeviceListener)
-//                .guaranteed()
-//                .responseValidator((_, _, _, _) -> Mono.just(new Result(
-//                    Status.Ok,
-//                    "Ok",
-//                    new InputEvent<>(ExternalProcessingDone, null)
-//                )))
                 .reversible(
                     assemble((log, rollbackType) -> "")
                         // NB: Response in request/reply session not possible with reversals triggered by the resolver
                         //.trigger(ComplexInternalProcessResponse).with(_ -> "Failed to switch on light! :(((").on(inboxExchange).identifiedBy(entityIdFromSession())
                         .trigger(Process0Outbox.requestDispatched()).on(Process0Outbox).identifiedBy(newEntityId())
-                        //.trigger(new ProcessRequest(0)).with(_ -> null).to(DeviceListener).guaranteed()
-//                        .responseValidator((_, _, _, _) -> Mono.just(new Result(
-//                            Status.Ok,
-//                            "Ok",
-//                            new InputEvent<>(ExternalProcessingDone, null)
-//                        )))
-//                        .complete()
                 )
                 .output(),
             onEvent(SwitchOn).to(On).output()
@@ -194,7 +195,7 @@ public class HttpInboxTest {
       ZeroProcessing = BasicEventType.of(
       "ZeroProcessing",
       UUID.fromString("aa70041a-a68f-4bcd-831f-5029eb329a05"),
-      DataType.forClass(Zero.class)
+      DataType.json(Zero.class)
   );
   static EventType<Void, Void>
       EventThatIsAlwaysRejected = BasicEventType.of(
@@ -224,12 +225,12 @@ public class HttpInboxTest {
       ExternalProcessing = BasicEventType.of(
       "ExternalProcessing",
       UUID.fromString("12a97e70-58cc-46a8-aed9-f867cfc7375f"),
-      DataType.forString()
+      DataType.string()
   ),
       LongExternalProcessing = BasicEventType.of(
           "LongExternalProcessing",
           UUID.fromString("6ebcbbec-5bbc-4c05-96fd-41ad0bbc097a"),
-          DataType.forString()
+          DataType.string()
       );
   static EventType<Void, Void>
       SwitchOn = BasicEventType.of("SwitchOn", UUID.fromString("5e9a8a9d-6a21-41cf-82dc-857fe1e4c4e0")),
@@ -336,19 +337,21 @@ public class HttpInboxTest {
         .contentParser(message -> message.body() == null ? valid(null) : invalid("Expected empty body"))
         .onSuccess(ExternalProcessingDone)
         .onFailure(ExternalProcessingDone)
-        .isDelivered(r -> r.message().statusCode() >= 200 && r.message().statusCode() <= 299)
+        .isAccepted(r -> r.statusCode() >= 200 && r.statusCode() <= 299)
+        .isRejected(r -> r.statusCode() >= 400 && r.statusCode() <= 499)
         .isRejectedByInvalidResponse(r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499)
         .rollbackModel(HttpOutboxRequest.atLeastOnce()
             .name("Process0RollbackOutbox")
             .id(UUID.fromString("513f7e3e-c03e-4016-b5f3-ddb981cb1ffe"))
             .requestPayloadType(DataType.none())
+            .responsePayloadType(DataType.none())
             .<Void>messageCreatorReactive(_ -> Mono.just(requestMessage("/rollback")))
             .repeatMessageCreator((_, o) -> o)
             .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
             .inflightTimeout(Duration.ofSeconds(10))
             .contentParser(_ -> valid(null))
-            .isDelivered(r -> r.message().statusCode() >= 200 && r.message().statusCode() <= 299)
-            .isFailureTransient(r -> r.message().statusCode() >= 500 && r.message().statusCode() <= 599)
+            .isAccepted(r -> r.statusCode() >= 200 && r.statusCode() <= 299)
+            .isFailureTransient(r -> r.statusCode() >= 500 && r.statusCode() <= 599)
             .isRejectedByInvalidResponse(r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499)
             .isFailureByInvalidResponseTransient(r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499)
             .isAttemptAvailable(c -> Duration.between(c.enqueueTime(), c.now()).compareTo(Duration.ofHours(5)) < 0)
@@ -360,6 +363,7 @@ public class HttpInboxTest {
         .name("Process3Outbox")
         .id(UUID.fromString("2e86f07c-50ed-4922-9839-54dca94be4b6"))
         .requestPayloadType(DataType.none())
+        .responsePayloadType(DataType.none())
         .<Void>messageCreatorReactive(_ -> Mono.just(requestMessage("/process/3000")))
         .repeatMessageCreator((_, requestMessage) -> requestMessage)
         .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
@@ -367,8 +371,8 @@ public class HttpInboxTest {
         .processModel(Lamp)
         .contentParser(_ -> valid(null))
         .onSuccess(ExternalProcessingDone)
-        .isDelivered(r -> r.message().statusCode() >= 200 && r.message().statusCode() <= 299)
-        .isFailureTransient(r -> r.message().statusCode() >= 500 && r.message().statusCode() <= 599)
+        .isAccepted(r -> r.statusCode() >= 200 && r.statusCode() <= 299)
+        .isFailureTransient(r -> r.statusCode() >= 500 && r.statusCode() <= 599)
         .isRejectedByInvalidResponse(r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499)
         .isFailureByInvalidResponseTransient(r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499)
         .isAttemptAvailable(c -> Duration.between(c.enqueueTime(), c.now()).compareTo(Duration.ofHours(5)) < 0)
@@ -449,7 +453,7 @@ public class HttpInboxTest {
     HttpResponseMessage response = HttpMessageParser.parseResponse(responseEvent.data());
     assertEquals(422, response.statusCode());
     ProblemDetail pd = ProblemDetail.parse(response.body());
-    assertThat(pd.detail()).matches("\\[EventThatIsAlwaysRejected] on \\[Lamp]/.{36} rejected for state \\[Off]");
+    assertThat(pd.detail()).matches("\\[EventThatIsAlwaysRejected] on \\[Lamp]/.{36} rejected for state \\[Begin]");
     assertEquals(422, pd.status());
   }
 

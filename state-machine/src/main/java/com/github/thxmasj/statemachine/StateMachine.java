@@ -1,6 +1,5 @@
 package com.github.thxmasj.statemachine;
 
-import static com.github.thxmasj.statemachine.BuiltinEventTypes.Rollback;
 import static com.github.thxmasj.statemachine.Tuples.tuple;
 import static java.time.Duration.ofHours;
 import static java.time.Duration.ofMinutes;
@@ -10,12 +9,10 @@ import static java.util.stream.Collectors.joining;
 import static java.util.stream.Collectors.toList;
 import static java.util.stream.Collectors.toMap;
 
-import com.github.thxmasj.statemachine.BasicEventType.Rollback.Data;
 import com.github.thxmasj.statemachine.EntitySelector.ById;
 import com.github.thxmasj.statemachine.EntitySelector.ByIdFromSession;
 import com.github.thxmasj.statemachine.EntitySelector.ByLastInIdGroup;
 import com.github.thxmasj.statemachine.EntitySelector.BySecondaryId;
-import com.github.thxmasj.statemachine.IncomingResponseValidator.Context;
 import com.github.thxmasj.statemachine.OutboxWorker.ForwardStatus;
 import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Accepted;
 import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Completed;
@@ -57,7 +54,6 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -136,7 +132,7 @@ public class StateMachine {
     );
     this.lastSecondaryId = new LastSecondaryId(dataSource, entityModels, schemaName);
     this.moveToDLQ = new MoveToDLQ(jdbcClient, schemaName);
-    this.nextDeadline = new NextDeadline(jdbcClient, clock, entityModels, schemaName);
+    this.nextDeadline = new NextDeadline(jdbcClient, eventTypes, clock, entityModels, schemaName);
     this.listener = listener;
     // TODO: Differentiate delay spec per queue
 //    var backoff = new DelaySpecification(ofSeconds(10), ofSeconds(20), ofSeconds(100), 1.5);
@@ -187,6 +183,10 @@ public class StateMachine {
 
   public enum ResolverStatus {Ok, Empty, Error}
 
+  private <T> InputEvent<T> inputEvent(Deadline<T> deadline) {
+    return new InputEvent<>(deadline.eventType(), deadline.data());
+  }
+
   /**
    * Resolve a state that has reached its deadline, as indicated by its timeout value.
    */
@@ -194,11 +194,14 @@ public class StateMachine {
     var backoff = new DelaySpecification(ofSeconds(10), ofMinutes(10), ofHours(5), 1.5);
     return nextDeadline.execute(backoff)
         .doOnNext(d -> System.out.println(ZonedDateTime.now() + ": Next deadline: " + d))
-        .zipWhen(deadline -> eventsByEntityId.execute(deadline.entityModel(), deadline.entityId()))
+        .zipWhen(deadline -> eventsByEntityId.execute(deadline.entityModel(), deadline.entityId())
+            .switchIfEmpty(Mono.error(new RuntimeException("Unknown entity " + deadline.entityId().value() + " for delayed event")))
+        )
         .flatMap(deadlineAndEventLog -> {
-          Deadline deadline = deadlineAndEventLog.getT1();
+          Deadline<?> deadline = deadlineAndEventLog.getT1();
           EventLog eventLog = deadlineAndEventLog.getT2();
-          if (eventLog.events().getLast().eventNumber() != deadline.eventNumber()) {
+          if (eventLog.events().getLast().eventNumber() + 1 != deadline.eventNumber()) {
+            System.out.println("Deadline's event number (" + deadline.eventNumber() + ") + 1 != event log's last number (" + eventLog.events().getLast().eventNumber() + ")");
             // Race! The state has already been resolved by another resolver or incoming request. Which is OK!
             return Mono.just(ResolverStatus.Ok);
           }
@@ -208,7 +211,7 @@ public class StateMachine {
           if (currentState == null)
             return Mono.error(new RuntimeException(
                 "Invalid event log: " + eventLog.events().stream().map(Event::typeName).collect(joining(","))));
-          InputEvent<?> event = currentState.timeout().event(deadline.eventNumber());
+          InputEvent<?> event = inputEvent(deadline);  //currentState.timeout().event(deadline.eventNumber());
           System.out.println("resolveState with: " + event);
           return onEvent(
               deadline.correlationId(),
@@ -240,8 +243,7 @@ public class StateMachine {
 //                    }
                     // This is a bug.
                     // - Rejection should not happen unless model is wrong. TODO: sanitize
-                    case ProcessResult<?> r -> Mono.error(new IllegalStateException(
-                        "Unexpected result for state resolving: " + r.getClass().getSimpleName()));
+                    case ProcessResult<?> r -> Mono.error(new IllegalStateException("Unexpected result for state resolving: " + r));
                   }
               ).contextWrite(Correlation.contextOf(deadline.correlationId()));
         })
@@ -269,39 +271,6 @@ public class StateMachine {
 //        )
 //    );
 //  }
-
-  private static class IncomingResponseContext<DATA_TYPE> implements Context<DATA_TYPE> {
-
-    private final int currentEventNumber;
-    private final int startOfSessionEventNumber;
-
-    private IncomingResponseContext(int currentEventNumber, int startOfSessionEventNumber) {
-      this.currentEventNumber = currentEventNumber;
-      this.startOfSessionEventNumber = startOfSessionEventNumber;
-    }
-
-    @Override
-    public InputEvent<String> requestUndelivered(String cause) {
-      return new InputEvent<>(BuiltinEventTypes.RequestUndelivered, cause);
-    }
-
-    @Override
-    public InputEvent<DATA_TYPE> validResponse(EventType<DATA_TYPE, ?> eventType, DATA_TYPE data) {
-      return new InputEvent<>(eventType, data);
-    }
-
-    @Override
-    public InputEvent<String> invalidResponse(String cause) {
-      return new InputEvent<>(com.github.thxmasj.statemachine.http.outbox.EventTypes.InvalidResponse, cause);
-    }
-
-    @Override
-    public InputEvent<Data> rollback(String cause) {
-      return new InputEvent<>(
-          Rollback, new Data(startOfSessionEventNumber - 1, currentEventNumber - 1, "Response validator triggered rollback of session (starting with event number " + startOfSessionEventNumber + "): " + cause)
-      );
-    }
-  }
 
   public sealed interface IdentityResult<T> permits IdentityResult.Accepted, IdentityResult.Rejected {
 
@@ -578,7 +547,7 @@ public class StateMachine {
       System.out.println("onEvent " + eventType.name() + ": No transition model found");
       return Mono.just(ProcessResult.rejected(
           eventType,
-          new RejectedEvent(eventType, eventLog.entityModel(), eventLog.entityId(), tuple.t3())
+          new RejectedEvent(eventType, eventLog, tuple.t3())
       ));
     }
     if (tuple.t3() != null) {
@@ -685,7 +654,13 @@ public class StateMachine {
   }
 
   private <T, I, O> Mono<? extends ChangeContext<? extends ProcessResult<?>>> calculatePendingChange(PendingChangeContext<T, I, O> p, ChangeContext<?> previous) {
-    return calculateTriggeredEvent(p.stepOutput().trigger(), previous, p.stepOutput().inputData(), true);
+    return calculateTriggeredEvent(
+        p.stepOutput().trigger(),
+        previous,
+        p.stepOutput().inputData(),
+        true,
+        new EventReference(p.initialChangeContext().log().entityId().value(), p.initialChangeContext().eventNumber())
+    );
   }
 
 
@@ -805,7 +780,8 @@ public class StateMachine {
       EventTrigger<T, I, O> eventTrigger,
       ChangeContext<?> tail,
       T data,
-      boolean skipCircularCheck
+      boolean skipCircularCheck,
+      EventReference triggerEvent
   ) {
     I adaptedData = eventTrigger.eventSpec().inputAdapter() != null ? eventTrigger.eventSpec().inputAdapter().apply(data) : null;
     return Mono.deferContextual(ctx -> {
@@ -833,8 +809,7 @@ public class StateMachine {
                 return tuple;
               throw new RejectedEvent(
                   eventTrigger.eventSpec().eventType(),
-                  eventTrigger.entityModel(),
-                  tuple.t1().entityId(),
+                  tuple.t1(),
                   tuple.t3()
               );
             })
@@ -852,10 +827,7 @@ public class StateMachine {
                 new InitialChangeContext<>(
                     null,
                     tail,
-                    new EventReference(
-                        tail.initialChangeContext().log().entityId().value(),
-                        tail.initialChangeContext().eventNumber()
-                    ),
+                    triggerEvent,
                     tuple.t2(),
                     tuple.t3(),
                     tuple.t1().lastEventNumber() + 1,
@@ -927,15 +899,16 @@ public class StateMachine {
       this.currentState = null;
     }
 
-    public RejectedEvent(EventType<?, ?> eventType, EntityModel entityModel, EntityId entityId, State currentState) {
+    public RejectedEvent(EventType<?, ?> eventType, EventLog eventLog, State currentState) {
       super(String.format(
-          "%s for state [%s]",
-          prefixMessage(eventType, entityModel, entityId),
-          currentState != null ? currentState.name() : "<no current state>"
+          "%s for state [%s] (%s)",
+          prefixMessage(eventType, eventLog.entityModel(), eventLog.entityId()),
+          currentState != null ? currentState.name() : "<no current state>",
+          eventLog.events().stream().map(e -> e.type().name()).collect(joining(", "))
       ));
       this.eventType = eventType;
-      this.entityModel = entityModel;
-      this.entityId = entityId;
+      this.entityModel = eventLog.entityModel();
+      this.entityId = eventLog.entityId();
       this.currentState = currentState;
     }
 

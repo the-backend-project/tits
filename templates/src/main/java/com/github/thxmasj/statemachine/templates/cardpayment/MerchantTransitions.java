@@ -1,5 +1,6 @@
 package com.github.thxmasj.statemachine.templates.cardpayment;
 
+import static com.github.thxmasj.statemachine.EntityModel.Begin;
 import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.CompleteRequest;
 import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.EntityModels.RequestDispatching;
 import static com.github.thxmasj.statemachine.EntitySelector.entityIdFromSession;
@@ -13,7 +14,6 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.MerchantEven
 import static com.github.thxmasj.statemachine.templates.cardpayment.MerchantEvent.Suspend;
 import static com.github.thxmasj.statemachine.templates.cardpayment.MerchantEvent.Update;
 import static com.github.thxmasj.statemachine.templates.cardpayment.MerchantState.Active;
-import static com.github.thxmasj.statemachine.templates.cardpayment.MerchantState.Begin;
 import static com.github.thxmasj.statemachine.templates.cardpayment.MerchantState.Deleted;
 import static com.github.thxmasj.statemachine.templates.cardpayment.MerchantState.Suspended;
 import static java.util.Optional.ofNullable;
@@ -48,10 +48,10 @@ public class MerchantTransitions {
                 .trigger(CompleteRequest).with(d -> tuple("", d)).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(),
             onEvent(Update).toSelf()
-                .assemble(c -> tuple(merge(c.log().last(DataType.forClass(Merchant.class)), c.input()), c.eventReference()))
+                .assemble(c -> tuple(merge(c.log().last(DataType.json(Merchant.class)), c.input()), c.eventReference()))
                 .trigger(CompleteRequest).with(d -> tuple("", d.t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t1()),
-            onEvent(Get).toSelf().assemble((_, log) -> log.last(DataType.forClass(Merchant.class))).output(d -> d)
+            onEvent(Get).toSelf().assemble((_, log) -> log.last(DataType.json(Merchant.class))).output(d -> d)
         ),
         Suspended, List.of(
             onEvent(Resume).to(Active)
@@ -59,7 +59,7 @@ public class MerchantTransitions {
                 .trigger(CompleteRequest).with(d -> tuple("", d)).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(),
             onEvent(Update).toSelf()
-                .assemble(c -> tuple(merge(c.log().last(DataType.forClass(Merchant.class)), c.input()), c.eventReference()))
+                .assemble(c -> tuple(merge(c.log().last(DataType.json(Merchant.class)), c.input()), c.eventReference()))
                 .trigger(CompleteRequest).with(d -> tuple("", d.t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t1()),
             onEvent(Delete).to(Deleted)

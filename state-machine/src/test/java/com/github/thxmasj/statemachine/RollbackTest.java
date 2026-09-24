@@ -1,6 +1,7 @@
 package com.github.thxmasj.statemachine;
 
 import static com.github.thxmasj.statemachine.BuiltinEventTypes.Rollback;
+import static com.github.thxmasj.statemachine.EntityModel.Begin;
 import static com.github.thxmasj.statemachine.EntitySelector.entityId;
 import static com.github.thxmasj.statemachine.EntitySelector.newEntityId;
 import static com.github.thxmasj.statemachine.EventTrigger.trigger;
@@ -36,8 +37,6 @@ public class RollbackTest {
   enum Entities implements EntityModel {
     Pacman {
       @Override public UUID id() {return UUID.fromString("15f23da6-19be-460d-8af4-ffdbd600fc51");}
-      @Override public State initialState() {return Stopped;}
-
       @Override
       public List<SecondaryIdModel<?>> secondaryIds() {
         return List.of(SpeedId);
@@ -45,7 +44,6 @@ public class RollbackTest {
     },
     Speed {
       @Override public UUID id() {return UUID.fromString("6adad2d0-dd57-4d6b-932c-add277eb0cae");}
-      @Override public State initialState() {return Zero;}
     }
   }
 
@@ -88,6 +86,16 @@ public class RollbackTest {
   private final static StateMachine eventListener = Init.stateMachine(
       Map.of(
           Pacman, Map.of(
+              Begin, List.of(
+                  onEvent(Forward).to(Moving)
+                      .trigger(Increase).on(Speed).identifiedBy(newEntityId())
+                      .newIdentifier(SpeedId, d -> d.t2().accepted().event().entityId())
+                      .reversible(
+                          assemble((log, _) -> log.id(SpeedId))
+                              .trigger(Decrease).on(Speed).identifiedBy(EntitySelector::entityId)
+                      )
+                      .output()
+              ),
               Stopped, List.of(
                   onEvent(Forward).to(Moving)
                       .trigger(Increase).on(Speed).identifiedBy(newEntityId())
@@ -124,6 +132,9 @@ public class RollbackTest {
               Dead, List.of()
           ),
           Speed, Map.of(
+              Begin, List.of(
+                  onEvent(Increase).to(Slow).output()
+              ),
               Zero, List.of(
                   onEvent(Increase).to(Slow).output()
               ),
@@ -152,7 +163,7 @@ public class RollbackTest {
                     .zipWhen(rollbackEvent -> eventListener.onStatus(entityId(rollbackEvent.entityId()), Pacman))
             )
         )
-        .expectNextMatches(t -> t.getT1().type() == Rollback && t.getT1().eventNumber() == 2 && t.getT2() == Stopped)
+        .expectNextMatches(t -> t.getT1().type() == Rollback && t.getT1().eventNumber() == 2 && t.getT2() == Begin)
         .thenCancel().verify();
   }
 
@@ -165,7 +176,7 @@ public class RollbackTest {
             .next()
             .zipWhen(rollbackEvent -> eventListener.onStatus(entityId(rollbackEvent.entityId()), Pacman))
         )
-        .expectNextMatches(t -> t.getT1().type() == Rollback && t.getT1().eventNumber() == 3 && t.getT2() == Stopped)
+        .expectNextMatches(t -> t.getT1().type() == Rollback && t.getT1().eventNumber() == 3 && t.getT2() == Begin)
         .thenCancel().verify();
   }
 

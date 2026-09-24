@@ -11,7 +11,6 @@ import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionContext;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;
 import com.github.thxmasj.statemachine.Validated;
 import com.github.thxmasj.statemachine.http.HttpClient;
-import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import com.github.thxmasj.statemachine.message.http.TypedHttpRequest;
 import com.github.thxmasj.statemachine.message.http.TypedHttpResponse;
@@ -141,19 +140,35 @@ public final class AtMostOnceBuilder {
   }
 
   /// Optional: the failure callback defaults to none.
-  public interface OnFailureStep<I, RQ, RS> extends IsDeliveredStep<I, RQ, RS> {
+  public interface OnFailureStep<I, RQ, RS> extends OnValidResponseUnknownStep<I, RQ, RS> {
 
-    <S> IsDeliveredStep<I, RQ, RS> onFailure(
+    <S> OnValidResponseUnknownStep<I, RQ, RS> onFailure(
         EventType<S, ?> eventType,
         Function<TypedHttpResponse<RS>, S> dataAdapter
     );
 
-    IsDeliveredStep<I, RQ, RS> onFailure(EventType<Void, ?> eventType);
+    OnValidResponseUnknownStep<I, RQ, RS> onFailure(EventType<Void, ?> eventType);
   }
 
-  public interface IsDeliveredStep<I, RQ, RS> {
+  /// Optional: the valid response unknown callback defaults to none.
+  public interface OnValidResponseUnknownStep<I, RQ, RS> extends IsAcceptedStep<I, RQ, RS> {
 
-    IsRejectedByInvalidResponseStep<I, RQ, RS> isDelivered(Predicate<TypedHttpResponse<RS>> isDelivered);
+    <S> IsAcceptedStep<I, RQ, RS> onValidResponseUnknown(
+        EventType<S, ?> eventType,
+        Function<TypedHttpResponse<RS>, S> dataAdapter
+    );
+
+    IsAcceptedStep<I, RQ, RS> onValidResponseUnknown(EventType<Void, ?> eventType);
+  }
+
+  public interface IsAcceptedStep<I, RQ, RS> {
+
+    IsRejectedStep<I, RQ, RS> isAccepted(Predicate<TypedHttpResponse<RS>> isAccepted);
+  }
+
+  public interface IsRejectedStep<I, RQ, RS> {
+
+    IsRejectedByInvalidResponseStep<I, RQ, RS> isRejected(Predicate<TypedHttpResponse<RS>> isRejected);
   }
 
   public interface IsRejectedByInvalidResponseStep<I, RQ, RS> {
@@ -253,7 +268,7 @@ public final class AtMostOnceBuilder {
     private HttpClient forwarder;
     private Duration inflightTimeout = Duration.ofSeconds(10);
     private EntityModel processModel;
-    private Callback<EntityModel, ?> onPeerUnavailable = new Callback<>(ServiceUnavailable, d -> d);
+    private Callback<EntityModel, ?> onPeerUnavailable = new Callback<>(ServiceUnavailable, _ -> null);
     private Callback<EntityModel, ?> onMissingResponse = new Callback<>(TimeoutExpired, _ -> null);
     private Callback<Tuple2<HttpResponseMessage, String>, ?> onInvalidResponseRejection = new Callback<>(InvalidResponse, Tuple2::t2);
     private Callback<Tuple2<HttpResponseMessage, String>, ?> onInvalidResponseUnknown = new Callback<>(InvalidResponse, Tuple2::t2);
@@ -369,7 +384,8 @@ public final class AtMostOnceBuilder {
   }
 
   private static final class WithContentParser<I, RQ, RS> implements OnSuccessStep<I, RQ, RS>,
-      IsRejectedByInvalidResponseStep<I, RQ, RS>, RollbackModelStep<I, RQ, RS> {
+      OnFailureStep<I, RQ, RS>, OnValidResponseUnknownStep<I, RQ, RS>, IsAcceptedStep<I, RQ, RS>,
+      IsRejectedStep<I, RQ, RS>, IsRejectedByInvalidResponseStep<I, RQ, RS>, RollbackModelStep<I, RQ, RS> {
 
     private final String name;
     private final UUID id;
@@ -386,7 +402,9 @@ public final class AtMostOnceBuilder {
     private final Function<HttpResponseMessage, Validated<RS>> contentParser;
     private Callback<TypedHttpResponse<RS>, ?> onSuccess;
     private Callback<TypedHttpResponse<RS>, ?> onFailure;
-    private Predicate<TypedHttpResponse<RS>> isDelivered;
+    private Callback<TypedHttpResponse<RS>, ?> onValidResponseUnknown;
+    private Predicate<TypedHttpResponse<RS>> isAccepted;
+    private Predicate<TypedHttpResponse<RS>> isRejected;
     private Predicate<Tuple2<HttpResponseMessage, String>> isRejectedByInvalidResponse;
 
     private WithContentParser(
@@ -434,7 +452,7 @@ public final class AtMostOnceBuilder {
     }
 
     @Override
-    public <S> IsDeliveredStep<I, RQ, RS> onFailure(
+    public <S> OnValidResponseUnknownStep<I, RQ, RS> onFailure(
         EventType<S, ?> eventType,
         Function<TypedHttpResponse<RS>, S> dataAdapter
     ) {
@@ -443,13 +461,33 @@ public final class AtMostOnceBuilder {
     }
 
     @Override
-    public IsDeliveredStep<I, RQ, RS> onFailure(EventType<Void, ?> eventType) {
+    public OnValidResponseUnknownStep<I, RQ, RS> onFailure(EventType<Void, ?> eventType) {
       return onFailure(eventType, _ -> null);
     }
 
     @Override
-    public IsRejectedByInvalidResponseStep<I, RQ, RS> isDelivered(Predicate<TypedHttpResponse<RS>> isDelivered) {
-      this.isDelivered = isDelivered;
+    public <S> IsAcceptedStep<I, RQ, RS> onValidResponseUnknown(
+        EventType<S, ?> eventType,
+        Function<TypedHttpResponse<RS>, S> dataAdapter
+    ) {
+      this.onValidResponseUnknown = new Callback<>(eventType, dataAdapter);
+      return this;
+    }
+
+    @Override
+    public IsAcceptedStep<I, RQ, RS> onValidResponseUnknown(EventType<Void, ?> eventType) {
+      return onValidResponseUnknown(eventType, _ -> null);
+    }
+
+    @Override
+    public IsRejectedStep<I, RQ, RS> isAccepted(Predicate<TypedHttpResponse<RS>> isAccepted) {
+      this.isAccepted = isAccepted;
+      return this;
+    }
+
+    @Override
+    public IsRejectedByInvalidResponseStep<I, RQ, RS> isRejected(Predicate<TypedHttpResponse<RS>> isRejected) {
+      this.isRejected = isRejected;
       return this;
     }
 
@@ -476,10 +514,12 @@ public final class AtMostOnceBuilder {
           onMissingResponse,
           onSuccess,
           onFailure,
+          onValidResponseUnknown,
           onInvalidResponseRejection,
           onInvalidResponseUnknown,
           contentParser,
-          isDelivered,
+          isAccepted,
+          isRejected,
           isRejectedByInvalidResponse,
           rollbackModel
       );

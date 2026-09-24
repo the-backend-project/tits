@@ -73,7 +73,7 @@ public class BasicEventType<I, O> implements EventType<I, O> {
 
   public static class Rollback extends BasicEventType<Data, Data> {
     public Rollback(String name, UUID id) {
-      super(name, id, DataType.forClass(Data.class), DataType.forClass(Data.class));
+      super(name, id, DataType.json(Data.class), DataType.json(Data.class));
     }
 
     public record Data(

@@ -2,7 +2,6 @@ package com.github.thxmasj.statemachine;
 
 import static com.github.thxmasj.statemachine.EventTriggerTest.Entities.Apple;
 import static com.github.thxmasj.statemachine.EventTriggerTest.Entities.Banana;
-import static com.github.thxmasj.statemachine.EventTriggerTest.States.Begin;
 
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import java.util.HashMap;
@@ -21,21 +20,11 @@ public class EventTriggerTest {
         public UUID id() {
             return UUID.fromString("29d5e5d6-a9d6-4899-9083-8444a5fe4cd2");
         }
-
-        @Override
-        public State initialState() {
-            return Begin;
-        }
     },
     Banana {
       @Override
       public UUID id() {
         return UUID.fromString("f01199a0-d2f0-4cc3-8c05-b44e0da7c3d1");
-      }
-
-      @Override
-      public State initialState() {
-        return Begin;
       }
     }
 
