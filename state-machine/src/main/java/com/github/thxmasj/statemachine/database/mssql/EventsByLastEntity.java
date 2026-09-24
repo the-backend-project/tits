@@ -31,7 +31,6 @@ import reactor.core.publisher.Mono;
 public class EventsByLastEntity {
 
   private final DataSource dataSource;
-  private final Function<UUID, EventType<?, ?>> eventTypeMapper;
   private final Clock clock;
   private final Map<SecondaryIdModel<?>, String> sql;
 
@@ -39,11 +38,9 @@ public class EventsByLastEntity {
       DataSource dataSource,
       List<EntityModel> entityModels,
       String schemaName,
-      Function<UUID, EventType<?, ?>> eventTypeMapper,
       Clock clock
   ) {
     this.dataSource = dataSource;
-    this.eventTypeMapper = eventTypeMapper;
     this.clock = clock;
     this.sql = new HashMap<>();
     for (var entityModel : entityModels) {
@@ -118,7 +115,7 @@ public class EventsByLastEntity {
     }
   }
 
-  public Mono<EventLog> execute(EntityModel entityModel, SecondaryIdModel<?> idModel, Object entityGroup, int lastPosition) {
+  public Mono<EventLog> execute(EntityModel entityModel, List<EventType<?, ?>> eventTypes, SecondaryIdModel<?> idModel, Object entityGroup, int lastPosition) {
     Objects.requireNonNull(entityModel);
     Objects.requireNonNull(entityGroup);
     String sqlToPrepare = sql.get(idModel);
@@ -150,7 +147,7 @@ public class EventsByLastEntity {
           events.add(new Event<>(
               entityId.value(),
               rs.getInt(1), // EventNumber
-              eventTypeMapper.apply(UUID.fromString(rs.getString(2))), // Type
+              Mappers.eventTypeMapper(eventTypes).apply(UUID.fromString(rs.getString(2))), // Type
               rs.getObject(3, LocalDateTime.class), // Timestamp
               clock,
               rs.getBytes(4) // Data

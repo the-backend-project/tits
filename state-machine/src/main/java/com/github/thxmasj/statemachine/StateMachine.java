@@ -1,6 +1,7 @@
 package com.github.thxmasj.statemachine;
 
 import static com.github.thxmasj.statemachine.Tuples.tuple;
+import static com.github.thxmasj.statemachine.database.mssql.Mappers.eventTypesFor;
 import static java.time.Duration.ofHours;
 import static java.time.Duration.ofMinutes;
 import static java.time.Duration.ofSeconds;
@@ -30,7 +31,6 @@ import com.github.thxmasj.statemachine.Tuples.Tuple3;
 import com.github.thxmasj.statemachine.database.EntityGroupNotInitialised;
 import com.github.thxmasj.statemachine.database.EventAlreadyExists;
 import com.github.thxmasj.statemachine.database.MappingFailure;
-import com.github.thxmasj.statemachine.database.Row;
 import com.github.thxmasj.statemachine.database.SecondaryIdAlreadyExists;
 import com.github.thxmasj.statemachine.database.UnknownEntity;
 import com.github.thxmasj.statemachine.database.jdbc.JDBCClient;
@@ -41,7 +41,6 @@ import com.github.thxmasj.statemachine.database.mssql.EventsByEntityId;
 import com.github.thxmasj.statemachine.database.mssql.EventsByLastEntity;
 import com.github.thxmasj.statemachine.database.mssql.EventsByLookupId;
 import com.github.thxmasj.statemachine.database.mssql.LastSecondaryId;
-import com.github.thxmasj.statemachine.database.mssql.Mappers;
 import com.github.thxmasj.statemachine.database.mssql.MoveToDLQ;
 import com.github.thxmasj.statemachine.database.mssql.NextDeadline;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
@@ -61,7 +60,6 @@ import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -87,6 +85,7 @@ public class StateMachine {
   private final MoveToDLQ moveToDLQ;
   private final NextDeadline nextDeadline;
   private final Map<EntityModel, Traverser> traversers;
+  private final Map<EntityModel, List<EventType<?, ?>>> eventTypesByEntityModel;
 
   public StateMachine(
       Function<List<String>, Mono<Void>> delayer,
@@ -100,6 +99,15 @@ public class StateMachine {
   ) {
     this.traversers = transitions.entrySet().stream().collect(toMap(Entry::getKey, e -> new Traverser(e.getValue())));
     List<EntityModel> entityModels = transitions.keySet().stream().toList();
+    this.eventTypesByEntityModel = transitions.entrySet().stream()
+        .collect(toMap(
+            e -> e.getKey(),
+            e -> Stream.concat(
+                    BuiltinEventTypes.ALL.stream(),
+                    e.getValue().values().stream().flatMap(tl -> tl.stream()).flatMap(t -> eventTypesFor(t).stream())
+                )
+                .distinct().toList()
+        ));
     List<EventType<?, ?>> eventTypes =
         Stream.concat(
                 BuiltinEventTypes.ALL.stream(),
@@ -107,7 +115,7 @@ public class StateMachine {
                     .stream()
                     .flatMap(tl -> tl.values().stream())
                     .flatMap(tl -> tl.stream())
-                    .flatMap(t -> Mappers.eventTypesFor(t).stream())
+                    .flatMap(t -> eventTypesFor(t).stream())
             )
             .distinct()
             .toList();
@@ -120,14 +128,12 @@ public class StateMachine {
     this.clock = clock;
     var jdbcClient = new JDBCClient(dataSource);
     this.changeState = new ChangeState(jdbcClient, schemaName, clock);
-    BiFunction<EntityId, Row, Event<?>> eventMapper = Mappers.eventMapper(eventTypes, clock);
-    this.eventsByEntityId = new EventsByEntityId(dataSource, entityModels, schemaName, eventMapper);
-    this.eventsByLookupId = new EventsByLookupId(dataSource, entityModels, schemaName, eventMapper);
+    this.eventsByEntityId = new EventsByEntityId(dataSource, entityModels, schemaName, clock);
+    this.eventsByLookupId = new EventsByLookupId(dataSource, entityModels, schemaName, clock);
     this.eventsByLastEntity = new EventsByLastEntity(
         dataSource,
         entityModels,
         schemaName,
-        Mappers.eventTypeMapper(eventTypes),
         clock
     );
     this.lastSecondaryId = new LastSecondaryId(dataSource, entityModels, schemaName);
@@ -194,7 +200,7 @@ public class StateMachine {
     var backoff = new DelaySpecification(ofSeconds(10), ofMinutes(10), ofHours(5), 1.5);
     return nextDeadline.execute(backoff)
         .doOnNext(d -> System.out.println(ZonedDateTime.now() + ": Next deadline: " + d))
-        .zipWhen(deadline -> eventsByEntityId.execute(deadline.entityModel(), deadline.entityId())
+        .zipWhen(deadline -> eventsByEntityId.execute(deadline.entityModel(), eventTypesByEntityModel.get(deadline.entityModel()), deadline.entityId())
             .switchIfEmpty(Mono.error(new RuntimeException("Unknown entity " + deadline.entityId().value() + " for delayed event")))
         )
         .flatMap(deadlineAndEventLog -> {
@@ -422,7 +428,7 @@ public class StateMachine {
   }
 
   private Mono<EventLog> eventLogByEntityId(EntityModel entityModel, EntityId entityId) {
-    return eventsByEntityId.execute(entityModel, entityId);
+    return eventsByEntityId.execute(entityModel, eventTypesByEntityModel.get(entityModel), entityId);
   }
 
   public <T> Mono<SecondaryId<T>> next(SecondaryIdModel<T> idModel, Object idGroup) {
@@ -613,7 +619,7 @@ public class StateMachine {
 //        )
         .onErrorResume(
             SecondaryIdAlreadyExists.class,
-            e -> eventsByLookupId.execute(e.change().entityModel(), e.secondaryId())
+            e -> eventsByLookupId.execute(e.change().entityModel(), eventTypesByEntityModel.get(e.change().entityModel()), e.secondaryId())
                 .map(originalLog -> IdentityResult.rejected(e.secondaryId(), originalLog))
                 .flatMap(identityResult -> onEvent(
                     correlationId,
@@ -698,31 +704,31 @@ public class StateMachine {
         EntityId entityId = s.id();
         yield switch (s.creationMode()) {
           case NeverCreate -> Mono.justOrEmpty(logFromNestedChanges(entityId, changeContext))
-              .switchIfEmpty(eventsByEntityId.execute(entityModel, entityId));
+              .switchIfEmpty(eventsByEntityId.execute(entityModel, eventTypesByEntityModel.get(entityModel), entityId));
           case CreateIfNotExists -> Mono.justOrEmpty(logFromNestedChanges(entityId, changeContext))
-              .switchIfEmpty(eventsByEntityId.execute(entityModel, entityId))
+              .switchIfEmpty(eventsByEntityId.execute(entityModel, eventTypesByEntityModel.get(entityModel), entityId))
               .onErrorResume(UnknownEntity.class, _ -> Mono.just(emptyEventLog(entityModel, entityId)));
           case AlwaysCreate -> Mono.just(emptyEventLog(entityModel, s.id()));
         };
       }
       case BySecondaryId<?> selector -> switch (selector.creationMode()) {
-        case NeverCreate -> eventsByLookupId.execute(entityModel, secondaryId(selector))
+        case NeverCreate -> eventsByLookupId.execute(entityModel, eventTypesByEntityModel.get(entityModel), secondaryId(selector))
             .onErrorResume(
                 UnknownEntity.class,
                 e -> selector.fallback() != null ? eventLog(selector.fallback(), entityModel, changeContext)
                     : Mono.error(e)
             );
-        case CreateIfNotExists -> eventsByLookupId.execute(entityModel, secondaryId(selector))
+        case CreateIfNotExists -> eventsByLookupId.execute(entityModel, eventTypesByEntityModel.get(entityModel), secondaryId(selector))
             .onErrorResume(UnknownEntity.class, _ -> Mono.just(emptyEventLog(entityModel)));
         case AlwaysCreate -> Mono.just(emptyEventLog(entityModel));
       };
       case ByLastInIdGroup<?> s -> switch (s.creationMode()) {
         case AlwaysCreate -> throw new IllegalStateException("Unexpected value: " + s.creationMode());
         case CreateIfNotExists ->
-            eventsByLastEntity.execute(entityModel, s.model(), s.group(), s.lastPosition())
+            eventsByLastEntity.execute(entityModel, eventTypesByEntityModel.get(entityModel), s.model(), s.group(), s.lastPosition())
                 .onErrorResume(EntityGroupNotInitialised.class, _ -> Mono.just(emptyEventLog(entityModel)));
         case NeverCreate ->
-            eventsByLastEntity.execute(entityModel, s.model(), s.group(), s.lastPosition());
+            eventsByLastEntity.execute(entityModel, eventTypesByEntityModel.get(entityModel), s.model(), s.group(), s.lastPosition());
       };
       case EntitySelector s -> throw new IllegalStateException("Unexpected value: " + s);
     };

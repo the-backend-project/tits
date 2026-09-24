@@ -8,22 +8,22 @@ import com.github.thxmasj.statemachine.EntityId;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.Event;
 import com.github.thxmasj.statemachine.EventLog;
+import com.github.thxmasj.statemachine.EventType;
 import com.github.thxmasj.statemachine.SecondaryId;
 import com.github.thxmasj.statemachine.database.Parameter;
-import com.github.thxmasj.statemachine.database.Row;
 import com.github.thxmasj.statemachine.database.UnknownEntity;
 import com.github.thxmasj.statemachine.database.jdbc.JDBCRow;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.Column;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.time.Clock;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.function.BiFunction;
 import javax.sql.DataSource;
 import reactor.core.publisher.Mono;
 
@@ -32,17 +32,17 @@ public class EventsByEntityId {
 
   private final DataSource dataSource;
   private final Map<EntityModel, String> sqls;
-  private final BiFunction<EntityId, Row, Event<?>> eventMapper;
+  private final Clock clock;
 
   public EventsByEntityId(
       DataSource dataSource,
       List<EntityModel> entityModels,
       String schemaName,
-      BiFunction<EntityId, Row, Event<?>> eventMapper
+      Clock clock
   ) {
     this.dataSource = dataSource;
+    this.clock = clock;
     this.sqls = new HashMap<>();
-    this.eventMapper = eventMapper;
     for (var entityModel : entityModels) {
       var names = new SchemaNames(schemaName, entityModel);
       String sql =
@@ -67,7 +67,7 @@ public class EventsByEntityId {
     }
   }
 
-  public Mono<EventLog> execute(EntityModel entityModel, EntityId entityId) {
+  public Mono<EventLog> execute(EntityModel entityModel, List<EventType<?, ?>> eventTypes, EntityId entityId) {
     String sqlToPrepare = requireNonNull(sqls.get(entityModel), "Unknown model " + entityModel.name());
     return Mono.fromCallable(() -> {
       try (
@@ -78,7 +78,7 @@ public class EventsByEntityId {
         ResultSet rs = statement.getResultSet();
         List<Event<?>> events = new ArrayList<>();
         while (rs.next()) {
-          events.add(eventMapper.apply(entityId, new JDBCRow(rs)));
+          events.add(Mappers.eventMapper(eventTypes, clock).apply(entityId, new JDBCRow(rs)));
         }
         List<SecondaryId<?>> secondaryIds = new ArrayList<>();
         for (var idModel : entityModel.secondaryIds()) {
