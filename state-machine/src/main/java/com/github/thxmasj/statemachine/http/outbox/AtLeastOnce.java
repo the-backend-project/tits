@@ -1,12 +1,12 @@
 package com.github.thxmasj.statemachine.http.outbox;
 
-import static com.github.thxmasj.statemachine.EntitySelector.entityIdFromSession;
+import static com.github.thxmasj.statemachine.EntitySelector.entityId;
 import static com.github.thxmasj.statemachine.EntitySelector.newEntityId;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
 import static com.github.thxmasj.statemachine.Tuples.tuple;
+import static com.github.thxmasj.statemachine.http.outbox.AtLeastOnce.States.Accepted;
 import static com.github.thxmasj.statemachine.http.outbox.AtLeastOnce.States.Compensating;
 import static com.github.thxmasj.statemachine.http.outbox.AtLeastOnce.States.Dead;
-import static com.github.thxmasj.statemachine.http.outbox.AtLeastOnce.States.Accepted;
 import static com.github.thxmasj.statemachine.http.outbox.AtLeastOnce.States.InFlight;
 import static com.github.thxmasj.statemachine.http.outbox.AtLeastOnce.States.Intermediate;
 import static com.github.thxmasj.statemachine.http.outbox.EventTypes.ConnectionDropped;
@@ -91,11 +91,11 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
   ) {
     this.name = name;
     this.id = id;
-    EventType<I, TypedHttpRequest<RQ>> requestDispatched = BasicEventType.of(
-        "Request dispatched",
+    EventType<I, Tuple2<TypedHttpRequest<RQ>, UUID>> requestDispatched = BasicEventType.of(
+        "Request dispatched ALO",
         UUID.fromString("3f22bfef-dcb4-4560-8b88-6b5040433319"),
         DataType.unknown(),
-        HttpDataType.forRequest(requestPayloadType)
+        DataType.tuple(HttpDataType.forRequest(requestPayloadType), DataType.uuid())
     );
     this.requestDispatched = requestDispatched;
     // Intermediate
@@ -176,10 +176,10 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
     Function<TransitionContext<Void>, RetryContext> retry = c -> new RetryContext(c.log().created(), c.timestamp(), c.log().count(attemptsAvailable) + 1);
     // NB! This transition is only used by AtMostOnce and does not add the ProcessReference identifier as it will be already added.
     this.externalRequestDispatchedTransition = onEvent(requestDispatched).to(InFlight)
-        .assembleReactive(messageCreator)
-        .trigger(forward).with(d -> toHttpRequest(d, requestPayloadType))
+        .assembleReactive(c -> messageCreator.apply(c).zipWith(Mono.just(c.triggerEvent())))
+        .trigger(forward).with(d -> toHttpRequest(d.getT1(), requestPayloadType))
         .trigger(TimeoutExpired).after(_ -> inflightTimeout)
-        .output(d -> d);
+        .output(d -> tuple(d.getT1(), d.getT2().entityId()));
     this.inflightTransitions = Map.of(
         InFlight, List.of(
             onEvent(ConnectionFailed).to(Intermediate)
@@ -225,12 +225,12 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
                         .then(
                             onSuccess != null ?
                                 onEvent(requestAccepted).to(Accepted)
-                                    .assembleInput()
+                                    .assemble(c -> tuple(c.input(), c.log().one(requestDispatched).t2()))
                                     .trigger(onSuccess.eventType())
-                                    .with(onSuccess.dataAdapter())
+                                    .with(d -> onSuccess.dataAdapter().apply(d.t1()))
                                     .on(processModel)
-                                    .identifiedBy(entityIdFromSession())
-                                    .output(d -> d.t1()) :
+                                    .identifiedBy(d -> entityId(d.t2()))
+                                    .output(d -> d.t1().t1()) :
                                 onEvent(requestAccepted).to(Accepted)
                                     .assembleInput()
                                     .output(d -> d)
@@ -312,7 +312,7 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
         ),
         Compensating, List.of(
             onEvent(TimeoutExpired).to(InFlight)
-                .assemble(c -> repeatMessageCreator.apply(c, c.log().one(requestDispatched)))
+                .assemble(c -> repeatMessageCreator.apply(c, c.log().one(requestDispatched).t1()))
                 .trigger(forward).with(d -> toHttpRequest(d, requestPayloadType))
                 .output()
             ),
@@ -329,7 +329,7 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
                     .trigger(forward).with(d -> toHttpRequest(d.t1().getT1(), requestPayloadType))
                     .trigger(TimeoutExpired).after(_ -> inflightTimeout)
                     //.newIdentifier(ProcessReference, d -> d.getT2())
-                    .output(d -> d.t1().getT1())
+                    .output(d -> tuple(d.t1().getT1(), d.t1().getT2().t1().entityId()))
             )
         ), inflightTransitions
     );

@@ -87,6 +87,8 @@ public final class Event<T> {
         "entityId=" + entityId +
         ", eventNumber=" + eventNumber +
         ", type=" + type +
+        ", typeInput=" + type.inputDataType().name() +
+        ", typeOutput=" + type.outputDataType().name() +
         ", timestamp=" + timestamp +
         ", data#=" + (data != null ? data.length : 0) +
         '}';

@@ -1,5 +1,6 @@
 package com.github.thxmasj.statemachine.http.outbox;
 
+import static com.github.thxmasj.statemachine.EntitySelector.entityId;
 import static com.github.thxmasj.statemachine.EntitySelector.entityIdFromSession;
 import static com.github.thxmasj.statemachine.EntitySelector.newEntityId;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
@@ -84,11 +85,11 @@ public final class AtMostOnce<I, RI> implements HttpOutboxRequest<I> {
     this.name = name;
     this.id = id;
     this.rollbackModel = rollbackModel;
-    EventType<I, TypedHttpRequest<RQ>> requestDispatched = BasicEventType.of(
-        "Request dispatched",
+    EventType<I, Tuple2<TypedHttpRequest<RQ>, UUID>> requestDispatched = BasicEventType.of(
+        "Request dispatched AMO",
         UUID.fromString("3f22bfef-dcb4-4560-8b88-6b5040433319"),
         DataType.unknown(),
-        HttpDataType.forRequest(requestPayloadType)
+        DataType.tuple(HttpDataType.forRequest(requestPayloadType), DataType.uuid())
     );
     this.requestDispatched = requestDispatched;
     // Intermediate
@@ -174,11 +175,11 @@ public final class AtMostOnce<I, RI> implements HttpOutboxRequest<I> {
             onEvent(ConnectionDropped).to(Unknown).output(),
         onMissingResponse != null ?
             onEvent(TimeoutExpired).to(Unknown)
-                .assemble(c -> c.log().entityModel())
+                .assemble(c -> tuple(c.log().entityModel(), c.log().one(requestDispatched).t2()))
                 .trigger(onMissingResponse.eventType())
-                .with(onMissingResponse.dataAdapter())
+                .with(d -> onMissingResponse.dataAdapter().apply(d.t1()))
                 .on(processModel)
-                .identifiedBy(entityIdFromSession())
+                .identifiedBy(d -> entityId(d.t2()))
                 .output() :
             onEvent(TimeoutExpired).to(Unknown).output(),
         onEvent(ResponseReceived).to(Intermediate)
@@ -274,7 +275,7 @@ public final class AtMostOnce<I, RI> implements HttpOutboxRequest<I> {
                 .trigger(Indexed).with(d -> d.getT2().t1().entityId()).on(ProcessReference).identifiedBy(d -> newEntityId(d.getT2().t2().value()))
                 .trigger(forward).with(d -> toHttpRequest(d.t1().getT1(), requestPayloadType))
                 .trigger(TimeoutExpired).after(_ -> inflightTimeout)
-                .output(d -> d.t1().getT1())
+                .output(d -> tuple(d.t1().getT1(), d.t1().getT2().t1().entityId()))
         ),
         InFlight, inFlightTransitions,
         Intermediate, List.of(),

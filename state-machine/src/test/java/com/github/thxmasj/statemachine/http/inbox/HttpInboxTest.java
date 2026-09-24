@@ -453,7 +453,7 @@ public class HttpInboxTest {
     HttpResponseMessage response = HttpMessageParser.parseResponse(responseEvent.data());
     assertEquals(422, response.statusCode());
     ProblemDetail pd = ProblemDetail.parse(response.body());
-    assertThat(pd.detail()).matches("\\[EventThatIsAlwaysRejected] on \\[Lamp]/.{36} rejected for state \\[Begin]");
+    assertThat(pd.detail()).matches("\\[EventThatIsAlwaysRejected] on \\[Lamp]/.{36} rejected for state \\[Begin].*");
     assertEquals(422, pd.status());
   }
 
