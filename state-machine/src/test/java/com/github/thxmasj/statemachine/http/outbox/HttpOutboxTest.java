@@ -25,7 +25,6 @@ import com.github.thxmasj.statemachine.DataType;
 import com.github.thxmasj.statemachine.DelaySpecification;
 import com.github.thxmasj.statemachine.EntityId;
 import com.github.thxmasj.statemachine.EntityModel;
-import com.github.thxmasj.statemachine.EntitySelector;
 import com.github.thxmasj.statemachine.Event;
 import com.github.thxmasj.statemachine.EventLog;
 import com.github.thxmasj.statemachine.EventReference;
@@ -33,7 +32,6 @@ import com.github.thxmasj.statemachine.EventType;
 import com.github.thxmasj.statemachine.Init;
 import com.github.thxmasj.statemachine.State;
 import com.github.thxmasj.statemachine.StateMachine;
-import com.github.thxmasj.statemachine.TransitionModelBuilder;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.InitialChangeContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.TriggerChangeContext;
@@ -43,6 +41,7 @@ import com.github.thxmasj.statemachine.http.NettyHttpClient;
 import com.github.thxmasj.statemachine.http.NettyHttpClientBuilder;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import com.github.thxmasj.statemachine.message.http.TypedHttpRequest;
+import com.github.thxmasj.statemachine.message.http.TypedHttpResponse;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.URI;
@@ -175,6 +174,107 @@ public class HttpOutboxTest {
 
     assertNotNull(exchange.requestDispatched().outputDataType());
     assertEquals("(HTTP request<string>, uuid)", exchange.requestDispatched().outputDataType().name());
+  }
+
+  @Test
+  public void atMostOnceWithRequestAwareContentParser() {
+    var exchange = HttpOutboxRequest.atMostOnce()
+        .name("ExchangeWithRequestAwareContentParser")
+        .id(UUID.randomUUID())
+        .requestPayloadType(DataType.string())
+        .responsePayloadType(DataType.string())
+        .<Void>messageCreator(_ -> requestMessage("/test", "request-payload"))
+        .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
+        .contentParser((req, res) -> valid(req.payload() + " -> " + res.statusCode()))
+        .isAccepted(_ -> true)
+        .isRejected(_ -> false)
+        .isRejectedByInvalidResponse(_ -> false)
+        .build();
+
+    assertNotNull(exchange.requestDispatched().outputDataType());
+    assertEquals("(HTTP request<string>, uuid)", exchange.requestDispatched().outputDataType().name());
+  }
+
+  @Test
+  public void atLeastOnceWithRequestAwareContentParser() {
+    var exchange = HttpOutboxRequest.atLeastOnce()
+        .name("AtLeastOnceWithRequestAwareContentParser")
+        .id(UUID.randomUUID())
+        .requestPayloadType(DataType.string())
+        .responsePayloadType(DataType.string())
+        .<Void>messageCreator(_ -> requestMessage("/test", "request-payload"))
+        .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
+        .contentParser((req, res) -> valid(req.payload() + " -> " + res.statusCode()))
+        .isAccepted(_ -> true)
+        .isFailureTransient(_ -> true)
+        .isRejectedByInvalidResponse(_ -> false)
+        .isFailureByInvalidResponseTransient(_ -> false)
+        .isAttemptAvailable(_ -> true)
+        .backoffAlgorithm(_ -> Duration.ofSeconds(1))
+        .build();
+
+    assertNotNull(exchange.requestDispatched().outputDataType());
+    assertEquals("(HTTP request<string>, uuid)", exchange.requestDispatched().outputDataType().name());
+  }
+
+  @Test
+  public void successfulExchangeWithRequestAwareContentParser() {
+    EntityModel process = EntityModel.of("Process", UUID.randomUUID());
+    EventType<Void, Void> doProcess = BasicEventType.of("Do process", UUID.randomUUID());
+    EventType<String, String> processed = BasicEventType.of("Processed", UUID.randomUUID(), DataType.string(), DataType.string());
+    EventType<Void, Void> failed = BasicEventType.of("Failed", UUID.randomUUID());
+    String path = "/" + UUID.randomUUID();
+    HttpOutboxRequest<Void> exchange = HttpOutboxRequest.atMostOnce()
+        .name("ExchangeWithRequestAwareContentParser")
+        .id(UUID.fromString("a3778c63-144f-4748-9e8b-cc10ee20db3f"))
+        .requestPayloadType(DataType.string())
+        .responsePayloadType(DataType.string())
+        .<Void>messageCreator(_ -> requestMessage(path, "hello"))
+        .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
+        .processModel(process)
+        .onPeerUnavailable(failed)
+        .onMissingResponse(failed)
+        .onInvalidResponseRejection(failed)
+        .onInvalidResponseUnknown(failed)
+        .contentParser((req, res) -> valid(req.payload() + ":" + res.statusCode()))
+        .onSuccess(processed, TypedHttpResponse::payload)
+        .onFailure(failed)
+        .isAccepted(r -> r.statusCode() >= 200 && r.statusCode() <= 299)
+        .isRejected(r -> r.statusCode() >= 400 && r.statusCode() <= 499)
+        .isRejectedByInvalidResponse(r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499)
+        .build();
+
+    Map<State, List<TransitionModel<?, ?>>> processTransitions = Map.of(
+        Begin, List.of(
+            onEvent(doProcess).to(States.WaitingForResponse)
+                .trigger(exchange.requestDispatched()).on(exchange).identifiedBy(newEntityId())
+                .output()
+        ),
+        States.WaitingForResponse, List.of(
+            onEvent(processed).to(States.Done)
+                .assembleInput()
+                .output(d -> d),
+            onEvent(failed).to(States.Done)
+                .output()
+        ),
+        States.Done, List.of()
+    );
+
+    var machine = Init.stateMachine(
+        process,
+        processTransitions,
+        List.of(),
+        List.of(exchange)
+    );
+
+    Init.addOkContext(server, path);
+    StepVerifier.create(machine.onEvent(trigger(doProcess, process)))
+        .assertNext(event -> assertEquals(doProcess, event.type()))
+        .assertNext(event -> {
+          assertEquals(processed, event.type());
+          assertArrayEquals("hello:200".getBytes(), event.data());
+        })
+        .thenCancel().verify();
   }
 
   @Test

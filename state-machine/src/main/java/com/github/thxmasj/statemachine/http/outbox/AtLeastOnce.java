@@ -82,6 +82,7 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
       com.github.thxmasj.statemachine.EntityModel processModel,
       Callback<TypedHttpResponse<RS>, S> onSuccess,
       Function<HttpResponseMessage, Validated<RS>> contentParser,
+      BiFunction<TypedHttpRequest<RQ>, HttpResponseMessage, Validated<RS>> requestAwareContentParser,
       Predicate<TypedHttpResponse<RS>> isAccepted,
       Predicate<TypedHttpResponse<RS>> isFailureTransient,
       Predicate<Tuple2<HttpResponseMessage, String>> isRejectedByInvalidResponse,
@@ -216,7 +217,15 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
                 )
                 .otherwise(onEvent(attemptsExhausted).to(Dead).output(), _ -> null),
             onEvent(ResponseReceived).to(Intermediate)
-                .assemble(c -> tuple(c.input(), contentParser.apply(c.input())))
+                .assemble(c -> tuple(
+                    c.input(),
+                    requestAwareContentParser != null ?
+                        requestAwareContentParser.apply(
+                            c.log().last(requestDispatched).t1(), // NB: Using last as this transition might be a follow-up rollback on AtMostOnce
+                            c.input()
+                        ) :
+                        contentParser.apply(c.input())
+                ))
                 .when(d -> d.t2().isValid())
                 .then(
                     onEvent(validResponse).to(Intermediate)
@@ -348,6 +357,11 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
   @Override
   public Map<State, List<TransitionModel<?, ?>>> transitions() {
     return transitions;
+  }
+
+  @Override
+  public String toString() {
+    return name;
   }
 
   enum States implements State {

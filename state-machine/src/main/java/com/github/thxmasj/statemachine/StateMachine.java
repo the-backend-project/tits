@@ -207,7 +207,7 @@ public class StateMachine {
           Deadline<?> deadline = deadlineAndEventLog.getT1();
           EventLog eventLog = deadlineAndEventLog.getT2();
           if (eventLog.events().getLast().eventNumber() + 1 != deadline.eventNumber()) {
-            System.out.println("Deadline's event number (" + deadline.eventNumber() + ") + 1 != event log's last number (" + eventLog.events().getLast().eventNumber() + ")");
+            System.out.println("Deadline's event number (" + deadline.eventNumber() + ") != event log's last number (" + eventLog.events().getLast().eventNumber() + ") + 1");
             // Race! The state has already been resolved by another resolver or incoming request. Which is OK!
             return Mono.just(ResolverStatus.Ok);
           }
@@ -228,6 +228,7 @@ public class StateMachine {
               .flatMap(processResult -> switch (processResult) {
                     // State is resolved and deadline already deleted by the change triggered by this event.
                     case Accepted<?> _ -> Mono.just(ResolverStatus.Ok);
+                    case Completed<?> _ -> Mono.just(ResolverStatus.Ok);
                     // State is resolved and deadline already deleted by the change triggered by the racing event.
                     //case Raced<?> _ -> Mono.just(ResolverStatus.Ok);
                     // Need to retry. Deadline was already modified when reading.
@@ -976,9 +977,10 @@ public class StateMachine {
                 change.newEvent() != null ? new Listener.Change.Event(
                     change.newEvent().eventNumber(),
                     change.newEvent().type().name()
-                ) : (change.delayedEvent() != null ? new Listener.Change.Event(
+                ) : (change.delayedEvent() != null ? new Listener.Change.DelayedEvent(
                     change.delayedEvent().eventNumber(),
-                    change.delayedEvent().type().name()
+                    change.delayedEvent().type().name(),
+                    change.delayedEvent().after()
                 ) : null),
                 change.newSecondaryIds().stream().map(id -> id.model().name() + ":" + id.data()).toList()
             )

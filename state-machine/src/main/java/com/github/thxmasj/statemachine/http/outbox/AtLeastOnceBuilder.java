@@ -89,6 +89,10 @@ public final class AtLeastOnceBuilder {
   public interface ContentParserStep<I, RQ, RS> {
 
     OnSuccessStep<I, RQ, RS> contentParser(Function<HttpResponseMessage, Validated<RS>> contentParser);
+
+    OnSuccessStep<I, RQ, RS> contentParser(
+        BiFunction<TypedHttpRequest<RQ>, HttpResponseMessage, Validated<RS>> contentParser
+    );
   }
 
   /// Optional: the success callback defaults to none.
@@ -275,6 +279,26 @@ public final class AtLeastOnceBuilder {
           forwarder,
           inflightTimeout,
           processModel,
+          contentParser,
+          null
+      );
+    }
+
+    @Override
+    public OnSuccessStep<I, RQ, RS> contentParser(
+        BiFunction<TypedHttpRequest<RQ>, HttpResponseMessage, Validated<RS>> contentParser
+    ) {
+      return new WithContentParser<>(
+          name,
+          id,
+          requestPayloadType,
+          responsePayloadType,
+          messageCreator,
+          repeatMessageCreator,
+          forwarder,
+          inflightTimeout,
+          processModel,
+          null,
           contentParser
       );
     }
@@ -294,6 +318,7 @@ public final class AtLeastOnceBuilder {
     private final Duration inflightTimeout;
     private final EntityModel processModel;
     private final Function<HttpResponseMessage, Validated<RS>> contentParser;
+    private final BiFunction<TypedHttpRequest<RQ>, HttpResponseMessage, Validated<RS>> requestAwareContentParser;
     private Callback<TypedHttpResponse<RS>, ?> onSuccess;
     private Predicate<TypedHttpResponse<RS>> isAccepted;
     private Predicate<TypedHttpResponse<RS>> isFailureTransient;
@@ -312,7 +337,8 @@ public final class AtLeastOnceBuilder {
         HttpClient forwarder,
         Duration inflightTimeout,
         EntityModel processModel,
-        Function<HttpResponseMessage, Validated<RS>> contentParser
+        Function<HttpResponseMessage, Validated<RS>> contentParser,
+        BiFunction<TypedHttpRequest<RQ>, HttpResponseMessage, Validated<RS>> requestAwareContentParser
     ) {
       this.name = name;
       this.id = id;
@@ -324,6 +350,7 @@ public final class AtLeastOnceBuilder {
       this.inflightTimeout = inflightTimeout;
       this.processModel = processModel;
       this.contentParser = contentParser;
+      this.requestAwareContentParser = requestAwareContentParser;
     }
 
     @Override
@@ -396,6 +423,7 @@ public final class AtLeastOnceBuilder {
           processModel,
           onSuccess,
           contentParser,
+          requestAwareContentParser,
           isAccepted,
           isFailureTransient,
           isRejectedByInvalidResponse,

@@ -318,7 +318,13 @@ public class ChangeState {
               .replace("{changeIndex}", String.valueOf(changeIndex));
     }
 
-    if (delayedEvent != null)
+    if (delayedEvent != null) {
+      sql +=
+          """
+          DELETE [{schema}].[Timeout] FROM [{schema}].[Timeout] WITH (INDEX([ixEntityId]))
+          WHERE EntityId=@entityId{changeIndex} AND EventNumber=:eventNumber - 1;
+          """.replace("{changeIndex}", String.valueOf(changeIndex))
+              .replace("{schema}", schema);
       sql +=
           """
           INSERT INTO [{schema}].[Timeout] (
@@ -342,6 +348,7 @@ public class ChangeState {
           );
           """.replace("{changeIndex}", String.valueOf(changeIndex))
               .replace("{schema}", schema);
+    }
     // Remove comments
     sql = sql.lines().map(line -> line.replaceAll("--.*", "")).collect(joining("\n")) + "\n";
     return sql.replaceAll(":([a-zA-Z0-9_]+)", ":" + parameterPrefix + "$1");
@@ -412,7 +419,8 @@ public class ChangeState {
             indexViolation.duplicateKey(),
             new SchemaNames(schema, tuple.t1().entityModel()).idTableName(tuple.t2().model())
         ))
-        .findFirst().orElseThrow();
+        .findFirst()
+        .orElseThrow(() -> new RuntimeException("Failed to map index violation exception: " + indexViolation, indexViolation));
   }
 
 }

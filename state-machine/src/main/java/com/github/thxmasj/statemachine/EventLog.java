@@ -23,6 +23,23 @@ public record EventLog(
     return events.isEmpty() ? 0 : events.getLast().eventNumber();
   }
 
+  public <T> T number(int number, EventType<?, T> eventType) {
+    return events()
+        .stream()
+        .filter(event -> event.eventNumber() == number)
+        .findFirst()
+        .map(e -> eventType.outputDataType().unmarshal(e.data()))
+        .orElseThrow(() -> new NoSuchElementException("number(" + number + ", " + eventType.name() + "). Have:\n" + effectiveEvents().stream().map(e -> e.toString()).collect(joining("\n"))));
+  }
+
+  public <T> Optional<T> numberIfExists(int number, EventType<?, T> eventType) {
+    return events()
+        .stream()
+        .filter(event -> event.eventNumber() == number)
+        .findFirst()
+        .map(e -> eventType.outputDataType().unmarshal(e.data()));
+  }
+
   public <T> T one(DataType<T> dataType) {
     return effectiveEvents().stream()
         .filter(e -> dataType.equals(e.type().outputDataType()))

@@ -16,6 +16,7 @@ import com.github.thxmasj.statemachine.message.http.TypedHttpRequest;
 import com.github.thxmasj.statemachine.message.http.TypedHttpResponse;
 import java.time.Duration;
 import java.util.UUID;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import reactor.core.publisher.Mono;
@@ -126,6 +127,10 @@ public final class AtMostOnceBuilder {
   public interface ContentParserStep<I, RQ, RS> {
 
     OnSuccessStep<I, RQ, RS> contentParser(Function<HttpResponseMessage, Validated<RS>> contentParser);
+
+    OnSuccessStep<I, RQ, RS> contentParser(
+        BiFunction<TypedHttpRequest<RQ>, HttpResponseMessage, Validated<RS>> contentParser
+    );
   }
 
   /// Optional: the success callback defaults to none.
@@ -378,6 +383,28 @@ public final class AtMostOnceBuilder {
           onMissingResponse,
           onInvalidResponseRejection,
           onInvalidResponseUnknown,
+          contentParser,
+          null
+      );
+    }
+
+    public OnSuccessStep<I, RQ, RS> contentParser(
+        BiFunction<TypedHttpRequest<RQ>, HttpResponseMessage, Validated<RS>> contentParser
+    ) {
+      return new WithContentParser<>(
+          name,
+          id,
+          requestPayloadType,
+          responsePayloadType,
+          messageCreator,
+          forwarder,
+          inflightTimeout,
+          processModel,
+          onPeerUnavailable,
+          onMissingResponse,
+          onInvalidResponseRejection,
+          onInvalidResponseUnknown,
+          null,
           contentParser
       );
     }
@@ -400,6 +427,7 @@ public final class AtMostOnceBuilder {
     private final Callback<Tuple2<HttpResponseMessage, String>, ?> onInvalidResponseRejection;
     private final Callback<Tuple2<HttpResponseMessage, String>, ?> onInvalidResponseUnknown;
     private final Function<HttpResponseMessage, Validated<RS>> contentParser;
+    private final BiFunction<TypedHttpRequest<RQ>, HttpResponseMessage, Validated<RS>> requestAwareContentParser;
     private Callback<TypedHttpResponse<RS>, ?> onSuccess;
     private Callback<TypedHttpResponse<RS>, ?> onFailure;
     private Callback<TypedHttpResponse<RS>, ?> onValidResponseUnknown;
@@ -420,7 +448,8 @@ public final class AtMostOnceBuilder {
         Callback<EntityModel, ?> onMissingResponse,
         Callback<Tuple2<HttpResponseMessage, String>, ?> onInvalidResponseRejection,
         Callback<Tuple2<HttpResponseMessage, String>, ?> onInvalidResponseUnknown,
-        Function<HttpResponseMessage, Validated<RS>> contentParser
+        Function<HttpResponseMessage, Validated<RS>> contentParser,
+        BiFunction<TypedHttpRequest<RQ>, HttpResponseMessage, Validated<RS>> requestAwareContentParser
     ) {
       this.name = name;
       this.id = id;
@@ -435,6 +464,7 @@ public final class AtMostOnceBuilder {
       this.onInvalidResponseRejection = onInvalidResponseRejection;
       this.onInvalidResponseUnknown = onInvalidResponseUnknown;
       this.contentParser = contentParser;
+      this.requestAwareContentParser = requestAwareContentParser;
     }
 
     @Override
@@ -518,6 +548,7 @@ public final class AtMostOnceBuilder {
           onInvalidResponseRejection,
           onInvalidResponseUnknown,
           contentParser,
+          requestAwareContentParser,
           isAccepted,
           isRejected,
           isRejectedByInvalidResponse,

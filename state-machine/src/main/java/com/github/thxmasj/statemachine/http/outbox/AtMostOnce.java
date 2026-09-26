@@ -36,6 +36,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import com.github.thxmasj.statemachine.message.http.TypedHttpRequest;
@@ -77,6 +78,7 @@ public final class AtMostOnce<I, RI> implements HttpOutboxRequest<I> {
       Callback<Tuple2<HttpResponseMessage, String>, T5> onInvalidResponseRejection,
       Callback<Tuple2<HttpResponseMessage, String>, T6> onInvalidResponseUnknown, // Rollback
       Function<HttpResponseMessage, Validated<RS>> contentParser,
+      BiFunction<TypedHttpRequest<RQ>, HttpResponseMessage, Validated<RS>> requestAwareContentParser,
       Predicate<TypedHttpResponse<RS>> isAccepted,
       Predicate<TypedHttpResponse<RS>> isRejected,
       Predicate<Tuple2<HttpResponseMessage, String>> isRejectedByInvalidResponse,
@@ -147,7 +149,7 @@ public final class AtMostOnce<I, RI> implements HttpOutboxRequest<I> {
       public Mono<InputEvent<?>> execute(HttpRequestMessage data) {
         return forwarder.exchange(data)
             .<InputEvent<?>>map(response -> new InputEvent<>(ResponseReceived, response))
-            .onErrorResume(ConnectException.class, e -> Mono.just(new InputEvent<>(ConnectionFailed, null)));
+            .onErrorResume(ConnectException.class, _ -> Mono.just(new InputEvent<>(ConnectionFailed, null)));
       }
     };
     List<TransitionModel<?, ?>> inFlightTransitions = new java.util.ArrayList<>();
@@ -183,7 +185,15 @@ public final class AtMostOnce<I, RI> implements HttpOutboxRequest<I> {
                 .output() :
             onEvent(TimeoutExpired).to(Unknown).output(),
         onEvent(ResponseReceived).to(Intermediate)
-            .assemble(c -> tuple(c.input(), contentParser.apply(c.input())))
+            .assemble(c -> tuple(
+                c.input(),
+                requestAwareContentParser != null ?
+                    requestAwareContentParser.apply(
+                        c.log().one(requestDispatched).t1(),
+                        c.input()
+                    ) :
+                    contentParser.apply(c.input())
+            ))
             .when(d -> d.t2().isValid())
             .then(
                 onEvent(validResponse).to(Intermediate)
@@ -299,6 +309,11 @@ public final class AtMostOnce<I, RI> implements HttpOutboxRequest<I> {
   @Override
   public Map<State, List<TransitionModel<?, ?>>> transitions() {
     return transitions;
+  }
+
+  @Override
+  public String toString() {
+    return name;
   }
 
   enum States implements State {
