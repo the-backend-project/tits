@@ -7,14 +7,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectWriter;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import com.github.thxmasj.statemachine.EntityId;
-import com.github.thxmasj.statemachine.OutgoingRequestCreator.Context;
-import com.github.thxmasj.statemachine.OutgoingResponseCreator;
 import java.time.ZonedDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.UUID;
 
-public class HttpResponseCreator implements OutgoingResponseCreator<String> {
+public class HttpResponseCreator {
 
   private static final ObjectWriter jsonWriter = new ObjectMapper()
       .registerModule(new JavaTimeModule())
@@ -30,16 +28,17 @@ public class HttpResponseCreator implements OutgoingResponseCreator<String> {
     this.reasonPhrase = reasonPhrase;
   }
 
-  @Override
   public HttpResponseMessage create(
       String data,
-      Context context
+      UUID entityId,
+      ZonedDateTime timestamp,
+      String correlationId
   ) {
     return new HttpResponseMessage(
         statusCode,
         reasonPhrase,
-        headers(context.correlationId(), data),
-        json(body(context.entityId(), data, context.timestamp()))
+        headers(correlationId, data),
+        json(body(entityId, data, timestamp))
     );
   }
 
@@ -58,13 +57,13 @@ public class HttpResponseCreator implements OutgoingResponseCreator<String> {
     );
   }
 
-  protected Map<String, Object> body(EntityId entityId, String detail, ZonedDateTime timestamp) {
+  protected Map<String, Object> body(UUID entityId, String detail, ZonedDateTime timestamp) {
     var map = new LinkedHashMap<String, Object>(5);
     map.put("type", "about:blank");
     map.put("title", reasonPhrase);
     map.put("status", statusCode);
     map.put("detail", detail);
-    if (entityId != null) map.put("entityId", entityId.value());
+    if (entityId != null) map.put("entityId", entityId);
     map.put("timestamp", timestamp);
     return map;
   }

@@ -31,6 +31,10 @@ public class Init {
   private static final DataSource dataSource = new DataSourceBuilder(databaseConfig("testlogin", "Please_hide_me!")).build();
   private static final DataSource migrationDataSource = new DataSourceBuilder(databaseConfig("sa", "A_Str0ng_Required_Password")).build();
 
+  public static DataSource dataSource() {
+    return dataSource;
+  }
+
   public static StateMachine stateMachine(
       EntityModel entityModel,
       Map<State, List<TransitionModel<?, ?>>> processTransitions,
@@ -49,6 +53,7 @@ public class Init {
   }
 
   public static StateMachine stateMachine(
+      String schemaName,
       Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions
   ) {
     return new StateMachine(
@@ -56,11 +61,17 @@ public class Init {
         transitions,
         dataSource,
         migrationDataSource,
-        UUID.randomUUID().toString(), // schema name
+        schemaName,
         "Test", // role
         Clock.systemUTC(),
         new Logger("Test")
     );
+  }
+
+  public static StateMachine stateMachine(
+      Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions
+  ) {
+    return stateMachine(UUID.randomUUID().toString(), transitions);
   }
 
   public static HttpServer httpServer() throws IOException {

@@ -48,6 +48,14 @@ public class CreateSchema {
         CREATE TABLE [{schema}].[Metadata] (Checksum BIGINT NOT NULL)
         INSERT INTO [{schema}].[Metadata] (Checksum) VALUES ({checksum})
 
+        CREATE TABLE [{schema}].[Entity]
+        (
+            EntityId      UNIQUEIDENTIFIER NOT NULL,
+            EntityModelId UNIQUEIDENTIFIER NOT NULL,
+            CONSTRAINT [pkEntity] PRIMARY KEY (EntityId)
+        );
+        GRANT INSERT, SELECT ON [{schema}].[Entity] TO [{role}];
+
         CREATE TABLE [{schema}].[Event]
         (
             EntityId    UNIQUEIDENTIFIER   NOT NULL,

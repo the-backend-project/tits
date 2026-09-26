@@ -38,15 +38,15 @@ import static java.util.stream.Collectors.toList;
 
 import com.github.thxmasj.statemachine.BasicEventType;
 import com.github.thxmasj.statemachine.BasicEventType.Rollback.Data;
+import com.github.thxmasj.statemachine.DataType;
 import com.github.thxmasj.statemachine.EntityId;
 import com.github.thxmasj.statemachine.EntitySelector;
 import com.github.thxmasj.statemachine.EntitySelector.ById;
 import com.github.thxmasj.statemachine.EntitySelector.ByIdFromSession;
 import com.github.thxmasj.statemachine.EntitySelector.BySecondaryId;
+import com.github.thxmasj.statemachine.EventReference;
 import com.github.thxmasj.statemachine.EventType;
-import com.github.thxmasj.statemachine.DataType;
 import com.github.thxmasj.statemachine.GuardedTransition;
-import com.github.thxmasj.statemachine.OutgoingRequestCreator.Context;
 import com.github.thxmasj.statemachine.State;
 import com.github.thxmasj.statemachine.StateMachine.ProcessResult;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionContext;
@@ -54,7 +54,6 @@ import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;
 import com.github.thxmasj.statemachine.Validated;
 import com.github.thxmasj.statemachine.http.inbox.HttpInbox.CustomResponse;
-import com.github.thxmasj.statemachine.EventReference;
 import com.github.thxmasj.statemachine.http.inbox.HttpInbox.MessageId;
 import com.github.thxmasj.statemachine.http.inbox.HttpInbox.RouteId;
 import com.github.thxmasj.statemachine.http.inbox.HttpInbox.RoutedRequest;
@@ -517,22 +516,10 @@ public interface TransitionModels {
       String data
   ) {
     return responseCreator.create(
-        data, new Context() {
-          @Override
-          public EntityId entityId() {
-            return eventReference != null ? new EntityId.UUID(eventReference.entityId()) : null;
-          }
-
-          @Override
-          public String correlationId() {
-            return correlationId;
-          }
-
-          @Override
-          public ZonedDateTime timestamp() {
-            return timestamp;
-          }
-        }
+        data,
+        eventReference != null ? eventReference.entityId() : null,
+        timestamp,
+        correlationId
     );
   }
 }

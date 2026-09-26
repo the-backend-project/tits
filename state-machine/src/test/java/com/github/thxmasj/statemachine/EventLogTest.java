@@ -41,4 +41,17 @@ public class EventLogTest {
     assertEquals(List.of(), log.effectiveEvents());
   }
 
+  @Test
+  public void eventLogPreservesEntityModel() {
+    EntityModel model = EntityModel.of("TestModel", randomUUID());
+    EntityId entityId = new EntityId.UUID(randomUUID());
+    List<Event<?>> events = List.of(
+        new Event<>(entityId.value(), 1, new BasicEventType.DataLess("Test1", randomUUID()), Clock.systemUTC())
+    );
+    EventLog log = new EventLog(model, entityId, List.of(), events);
+    assertEquals(model, log.entityModel());
+    assertEquals(entityId, log.entityId());
+    assertEquals(events, log.events());
+  }
+
 }

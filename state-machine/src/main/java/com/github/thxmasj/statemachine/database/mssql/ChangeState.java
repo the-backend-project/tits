@@ -296,6 +296,19 @@ public class ChangeState {
           """.replace("{schema}", schema)
               .replace("{changeIndex}", String.valueOf(changeIndex));
     } else if (event != null) {
+      if (event.eventNumber() == 1) {
+        sql +=
+            """
+            INSERT INTO [{schema}].[Entity] (
+              EntityId,
+              EntityModelId
+            ) VALUES (
+              @entityId{changeIndex},
+              :entityModelId
+            );
+            """.replace("{schema}", schema)
+                .replace("{changeIndex}", String.valueOf(changeIndex));
+      }
       sql +=
           """
           DELETE [{schema}].[Timeout] FROM [{schema}].[Timeout] WITH (INDEX([ixEntityId]))
@@ -363,7 +376,18 @@ public class ChangeState {
 
   private Function<PrimaryKeyConstraintViolation, Throwable> primaryKeyConstraintViolationMapper(List<Change> changes) {
     return pkViolation -> {
-      if (pkViolation.tableName().equals("Event")) {
+      if (pkViolation.tableName().equals("Entity")) {
+        try {
+          EntityId entityId = new EntityId.UUID(UUID.fromString(pkViolation.duplicateKey().trim()));
+          return new EventAlreadyExists(
+              entityId,
+              1,
+              changes
+          );
+        } catch (Exception e) {
+          return new EventAlreadyExists(pkViolation.duplicateKey());
+        }
+      } else if (pkViolation.tableName().equals("Event")) {
         try {
           EntityId entityId = new EntityId.UUID(UUID.fromString(pkViolation.duplicateKey().split(",")[0]));
           int eventNumber = Integer.parseInt(pkViolation.duplicateKey().split(",")[1].trim());
