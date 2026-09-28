@@ -7,6 +7,7 @@ import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.http.outbox.AtLeastOnce;
 import com.github.thxmasj.statemachine.http.outbox.AtMostOnce;
 import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest;
+import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequestContract;
 import java.time.Duration;
 import java.util.UUID;
 
@@ -22,24 +23,33 @@ public class DummyTransitions {
   public static PaymentTransitions payment() {
     return new PaymentTransitions(
         null,
-        atMostOnce("Authentication"),
-        atLeastOnce("FailedAuthenticationToAcquirer"),
-        atMostOnce("AuthorisationToAcquirer"),
-        atMostOnce("PreauthorisationToAcquirer"),
-        atLeastOnce("CaptureRequestedTooLateToAcquirer"),
-        atLeastOnce("CaptureToAcquirer"),
-        atMostOnce("RefundAuthorisationToAcquirer"),
-        atLeastOnce("RolledBackAuthorisationRequestToMerchant"),
-        atLeastOnce("RolledBackPreauthorisationRequestToMerchant"),
-        atLeastOnce("ApprovedPreauthorisationToMerchant"),
-        atLeastOnce("FailedAuthorisationToMerchant"),
-        atLeastOnce("ApprovedAuthorisationToMerchant"),
-        atLeastOnce("DeclinedAuthorisationToMerchant"),
-        atLeastOnce("ApprovedCaptureToMerchant"),
-        atLeastOnce("FailedRefundToMerchant"),
-        atLeastOnce("ApprovedRefundToMerchant"),
-        atLeastOnce("DeclinedRefundToMerchant")
+        outgoingRequest(),
+        null,
+        outgoingRequest(),
+        outgoingRequest(),
+        outgoingRequest(),
+        outgoingRequest(),
+        outgoingRequest(),
+        outgoingRequest(),
+        outgoingRequest(),
+        outgoingRequest(),
+        null,
+        outgoingRequest(),
+        outgoingRequest(),
+        outgoingRequest(),
+        outgoingRequest(),
+        outgoingRequest(),
+        outgoingRequest(),
+        outgoingRequest(),
+        outgoingRequest(),
+        outgoingRequest(),
+        outgoingRequest(),
+        null
     );
+  }
+
+  public static <I, RQ, RS, S> HttpOutboxRequestContract<I, RQ, RS, S> outgoingRequest() {
+    return new HttpOutboxRequestContract<>(_ -> null, DataType.json(null), DataType.json(null), (_, _) -> valid(null), _ -> true, _ -> false, _ -> null, _ -> null);
   }
 
   record Request() {}

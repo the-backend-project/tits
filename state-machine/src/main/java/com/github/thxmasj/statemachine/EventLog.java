@@ -26,7 +26,7 @@ public record EventLog(
   public <T> T number(int number, EventType<?, T> eventType) {
     return events()
         .stream()
-        .filter(event -> event.eventNumber() == number)
+        .filter(e -> e.eventNumber() == number && eventType.equals(e.type()))
         .findFirst()
         .map(e -> eventType.outputDataType().unmarshal(e.data()))
         .orElseThrow(() -> new NoSuchElementException("number(" + number + ", " + eventType.name() + "). Have:\n" + effectiveEvents().stream().map(e -> e.toString()).collect(joining("\n"))));
@@ -35,7 +35,7 @@ public record EventLog(
   public <T> Optional<T> numberIfExists(int number, EventType<?, T> eventType) {
     return events()
         .stream()
-        .filter(event -> event.eventNumber() == number)
+        .filter(e -> e.eventNumber() == number && eventType.equals(e.type()))
         .findFirst()
         .map(e -> eventType.outputDataType().unmarshal(e.data()));
   }

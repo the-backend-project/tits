@@ -633,7 +633,7 @@ public class StateMachine {
         );
   }
 
-  private String chainToString(ChangeContext<?> tail) {
+  public static String chainToString(ChangeContext<?> tail) {
     StringBuilder b = new StringBuilder();
     for (ChangeContext<?> c = tail; c != null; c = c.previous()) {
       b.append(c).append("\n");

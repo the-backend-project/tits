@@ -330,7 +330,7 @@ public interface TransitionModels {
   private static <T, U> TransitionModel<?, ?> triggerRollbackTransition(ContentRoute<T, U> route, State rejectedState) {
     return onEvent(route.dispatchingEventType()).to(RollingBack)
         .assemble((input, log) -> tuple(input, log.entityId(), log.one(AcceptRequest).t2(), log.one(ResponseEventType.outputDataType).t2()))
-        .trigger(Rollback).with(d -> new Data(d.t3().eventNumber() - 1, d.t4().eventNumber(), "HTTP request")).on(route.processType()).identifiedBy(d -> entityId(d.t3().entityId()))
+        .trigger(Rollback).with(d -> new Data(d.t3().eventNumber() - 1, "HTTP request")).on(route.processType()).identifiedBy(d -> entityId(d.t3().entityId()))
         .when(d -> d.t2().isRejected()).then(
             onEvent(RejectRequest).to(rejectedState)
                 .assembleInput()

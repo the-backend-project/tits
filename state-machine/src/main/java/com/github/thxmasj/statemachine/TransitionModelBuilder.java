@@ -1,5 +1,6 @@
 package com.github.thxmasj.statemachine;
 
+import static com.github.thxmasj.statemachine.StateMachine.chainToString;
 import static com.github.thxmasj.statemachine.Tuples.tuple;
 import static java.util.Collections.unmodifiableList;
 import static java.util.Optional.ofNullable;
@@ -95,6 +96,7 @@ public class TransitionModelBuilder<I, T, O> {
     }
 
     default InitialChangeContext<?> initialChangeContext() {
+      System.out.println("Finding initial change context for " +  this);
       try {
         int depth = this instanceof ChangeContext.OutputChangeContext<?> ? 0 : 1;
         for (ChangeContext<?> c = this; c != null; c = c.previous()) {
@@ -106,7 +108,7 @@ public class TransitionModelBuilder<I, T, O> {
       } catch (Exception e) {
         throw new IllegalStateException("Failed to find initial change context: " + e);
       }
-      throw new IllegalStateException("No initial context");
+      throw new IllegalStateException("No initial context. We have: " + chainToString(this));
     }
 
     default InitialChangeContext<?> initialChangeContext(EntityModel entityModel) {
@@ -160,7 +162,7 @@ public class TransitionModelBuilder<I, T, O> {
         T stepOutput
     ) implements ChangeContext<T> {
       @Override public String toString() {
-        return "Assembled";
+        return "Assembled" + this.hashCode();
       }
     }
 
@@ -290,7 +292,7 @@ public class TransitionModelBuilder<I, T, O> {
       @Override public String toString() {
         return "Output:" + switch (stepOutput) {
           case Accepted<?> a -> "Accepted:" + a.entityModel().name() + "/" + a.event().entityId() + "/" + a.event().typeName() + "/" + a.event().eventNumber();
-          case Rejected<?> r -> "Rejected:" + r.exception().entityModel().name() + "/" + r.exception().entityId().value() + r.eventType().name() + ":" + r.exception().getMessage();
+          case Rejected<?> r -> "Rejected" + (r.isHandled() ? "[Handled]" : "[Unhandled]") + ":" + r.exception().entityModel().name() + "/" + r.exception().entityId().value() + r.eventType().name() + ":" + r.exception().getMessage();
           case Completed<?> c -> "Completed:" + c.choiceResult();
           case UnknownId<?> u -> "UnknownId:type=" + u.exception().secondaryId().model() + "/ev=" + u.eventType().name();
           case Pending<?, ?, ?> p -> "Pending:" + p.exception().entityModel() + "/" + p.exception().entityId().value() + ":" + p.exception().getMessage();
@@ -314,7 +316,7 @@ public class TransitionModelBuilder<I, T, O> {
         ProcessResult.Rejected<O> stepOutput
     ) implements ChangeContext<ProcessResult<O>> {
       @Override public String toString() {
-        return "Rejected:" + stepOutput.exception().getMessage();
+        return "Rejected" + (stepOutput.isHandled() ? "[Handled]" : "[Unhandled]") + ":" + stepOutput.exception().getMessage();
       }
     }
 
@@ -946,10 +948,14 @@ public class TransitionModelBuilder<I, T, O> {
         builderFunction.andThen(a -> a.map(b -> {
 //              if (!(b instanceof ChoiceChangeContext) || !(b.previous() instanceof OutputChangeContext))
 //                throw new IllegalStateException("Expected current ChangeContext to be ChoiceChangeContext (is " + b.getClass().getSimpleName() + ") or previous ChangeContext to be OutputChangeContext (is " + b.previous().getClass().getSimpleName() + ")");
+              if (!(b.previous() instanceof OutputChangeContext) && !(b.previous() instanceof PendingChangeContext)) {
+                throw new IllegalStateException("Previous step should be output or pending");
+              }
               return new OutputChangeContext<>(
                   b,
                   ProcessResult.completed(
-                      ((OutputChangeContext<?>)b.previous()).stepOutput(),
+                      b.previous() instanceof OutputChangeContext<?> o ? o.stepOutput() : (b.previous() instanceof PendingChangeContext<?, ?, ?> p ? p.stepOutput() : null),
+//                      ((OutputChangeContext<?>)b.previous()).stepOutput(),
                       b.initialChangeContext().log().entityId(),
                       b.initialChangeContext().eventNumber(),
                       b.initialChangeContext().log().entityModel()

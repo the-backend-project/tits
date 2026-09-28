@@ -51,6 +51,7 @@ import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Function;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import reactor.test.StepVerifier;
@@ -129,7 +130,7 @@ public class HttpOutboxTest {
     var unknown = unknownExchange(model);
     var rollback = model.machine().onEvent(
         trigger(Rollback, model.process(), unknown.entityId()),
-        new Data(0, unknown.eventNumber(), "Technical")
+        new Data(0, "Technical")
     ).blockFirst();
     assertNotNull(rollback);
     assertEquals(Rollback, rollback.type());
@@ -776,6 +777,57 @@ public class HttpOutboxTest {
       return new ProcessModelWithDefaultMissingResponse(process, exchange);
     }
 
+  }
+
+  @Test
+  public void contractWithContentParser() {
+    HttpOutboxRequestContract<Void, String, String, Void> contract = HttpOutboxRequestContract.<Void, String, String, Void>builder()
+        .messageCreator(_ -> requestMessage("/test", "hello"))
+        .requestPayloadType(DataType.string())
+        .responsePayloadType(DataType.string())
+        .contentParser((req, response) -> valid(req.payload() + ":" + new String(response.body())))
+        .build();
+
+    assertNotNull(contract.contentParser());
+    assertEquals("hello:test", contract.contentParser().apply(
+        requestMessage("/test", "hello"),
+        new HttpResponseMessage(200, "OK", Map.of(), "test".getBytes())
+    ).validValue());
+
+    HttpOutboxRequestContract<Void, String, String, Void> unaryContract = HttpOutboxRequestContract.<Void, String, String, Void>builder()
+        .messageCreator(_ -> requestMessage("/test", "hello"))
+        .requestPayloadType(DataType.string())
+        .responsePayloadType(DataType.string())
+        .contentParser(response -> valid(new String(response.body())))
+        .build();
+
+    assertNotNull(unaryContract.contentParser());
+    assertEquals("test", unaryContract.contentParser().apply(
+        requestMessage("/test", "hello"),
+        new HttpResponseMessage(200, "OK", Map.of(), "test".getBytes())
+    ).validValue());
+
+    HttpOutboxRequestContract<Void, String, String, String> contractWithAdapters = HttpOutboxRequestContract.<Void, String, String, String>builder()
+        .messageCreator(_ -> requestMessage("/test", "hello"))
+        .requestPayloadType(DataType.string())
+        .responsePayloadType(DataType.string())
+        .responseAdapter(res -> "success:" + res.payload())
+        .failureAdapter(res -> "failure:" + res.payload())
+        .build();
+
+    assertEquals("success:ok", contractWithAdapters.responseAdapter().apply(new TypedHttpResponse<>(200, "OK", Map.of(), "ok")));
+    assertEquals("failure:err", ((Function<TypedHttpResponse<String>, String>) contractWithAdapters.failureAdapter()).apply(new TypedHttpResponse<>(400, "Bad Request", Map.of(), "err")));
+
+    HttpOutboxRequestContract<Void, String, String, Void> contractWithRepeat = HttpOutboxRequestContract.<Void, String, String, Void>builder()
+        .messageCreator(_ -> requestMessage("/test", "hello"))
+        .requestPayloadType(DataType.string())
+        .responsePayloadType(DataType.string())
+        .repeatMessageCreator(msg -> requestMessage("/repeat", msg.payload() + "-repeated"))
+        .build();
+
+    assertNotNull(contractWithRepeat.repeatMessageCreator());
+    assertEquals("/repeat", contractWithRepeat.repeatMessageCreator().apply(null, requestMessage("/test", "hello")).uri().getPath());
+    assertEquals("hello-repeated", contractWithRepeat.repeatMessageCreator().apply(null, requestMessage("/test", "hello")).payload());
   }
 
 }
