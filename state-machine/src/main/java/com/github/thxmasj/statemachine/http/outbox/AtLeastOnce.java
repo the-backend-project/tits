@@ -18,6 +18,7 @@ import static com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest.toHt
 import com.github.thxmasj.statemachine.Action;
 import com.github.thxmasj.statemachine.BasicEventType;
 import com.github.thxmasj.statemachine.DataType;
+import com.github.thxmasj.statemachine.EventLog;
 import com.github.thxmasj.statemachine.EventType;
 import com.github.thxmasj.statemachine.InputEvent;
 import com.github.thxmasj.statemachine.State;
@@ -50,6 +51,14 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
   private final TransitionModel<I, ?> externalRequestDispatchedTransition;
   private final Map<State, List<TransitionModel<?, ?>>> transitions;
   private final Map<State, List<TransitionModel<?, ?>>> inflightTransitions;
+  private final EventType<RetryContext, Void> attemptsAvailable = BasicEventType.of(
+      "Attempts available",
+      UUID.fromString("e6d6331f-5891-4d97-b699-ffe0dcf9d6cb"),
+      DataType.json(RetryContext.class),
+      DataType.none()
+  );
+
+
 
   @Override
   public EventType<I, ?> requestDispatched() {
@@ -164,7 +173,6 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
         HttpDataType.forResponse()
     );
     var attemptsExhausted = BasicEventType.of("Attempts exhausted", UUID.fromString("19a29ca5-6021-41e7-b247-74fd3b8389dd"));
-    var attemptsAvailable = BasicEventType.of("Attempts available", UUID.fromString("e6d6331f-5891-4d97-b699-ffe0dcf9d6cb"), DataType.json(RetryContext.class), DataType.none());
     Action<HttpRequestMessage> forward = new Action<>() {
       @Override public String name() {return "Forward";}
       @Override
@@ -174,7 +182,7 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
             .onErrorResume(ConnectException.class, _ -> Mono.just(new InputEvent<>(ConnectionFailed, null)));
       }
     };
-    Function<TransitionContext<Void>, RetryContext> retry = c -> new RetryContext(c.log().created(), c.timestamp(), c.log().count(attemptsAvailable) + 1);
+    Function<TransitionContext<Void>, RetryContext> retry = c -> new RetryContext(c.log().created(), c.timestamp(), attempts(c.log()) + 1);
     // NB! This transition is only used by AtMostOnce and does not add the ProcessReference identifier as it will be already added.
     this.externalRequestDispatchedTransition = onEvent(requestDispatched).to(InFlight)
         .assembleReactive(c -> messageCreator.apply(c).zipWith(Mono.just(c.triggerEvent())))
@@ -342,6 +350,10 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
             )
         ), inflightTransitions
     );
+  }
+
+  public long attempts(EventLog log) {
+    return log.count(attemptsAvailable);
   }
 
   @Override

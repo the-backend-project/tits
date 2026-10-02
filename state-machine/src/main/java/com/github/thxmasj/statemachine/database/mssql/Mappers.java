@@ -2,6 +2,7 @@ package com.github.thxmasj.statemachine.database.mssql;
 
 import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
+import static java.util.stream.Collectors.joining;
 import static java.util.stream.Collectors.toMap;
 
 import com.github.thxmasj.statemachine.EntityId;
@@ -42,7 +43,12 @@ public class Mappers {
     return (entityId, row) -> {
       UUID eventTypeId = row.get("Type", UUID.class);
       EventType<?, ?> eventType = eventTypeMapper.apply(eventTypeId);
-      if (eventType == null) throw new MappingFailure(format("No event type for type id %s", eventTypeId));
+      if (eventType == null)
+        throw new MappingFailure(format(
+            "No event type for type id %s. Have:\n%s",
+            eventTypeId,
+            eventTypes.stream().map(t -> t.id() + " -> " + t.name()).collect(joining("\n"))
+        ));
       try {
         return new Event<>(
             entityId.value(),
