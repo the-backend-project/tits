@@ -36,14 +36,14 @@ public sealed abstract class HttpMessage permits HttpRequestMessage, HttpRespons
 
   @Override
   public String toString() {
-    return toString(head());
+    return toString(startLine());
   }
 
   public byte[] toBytes() {
-    return toBytes(head());
+    return toBytes(startLine());
   }
 
-  public abstract String head();
+  public abstract String startLine();
 
   protected String toString(String head) {
     return new String(toBytes(head));
@@ -64,7 +64,7 @@ public sealed abstract class HttpMessage permits HttpRequestMessage, HttpRespons
   }
 
   protected boolean equals(HttpMessage other) {
-    return Objects.equals(head(), other.head()) && Arrays.equals(body, other.body);
+    return Arrays.equals(toBytes(), other.toBytes());
   }
 
   private static byte[] concat(byte[]... arrays) {
@@ -81,7 +81,7 @@ public sealed abstract class HttpMessage permits HttpRequestMessage, HttpRespons
 
   @Override
   public int hashCode() {
-    return Objects.hash(head(), Arrays.hashCode(body()));
+    return Objects.hash(startLine(), Arrays.hashCode(body()));
   }
 
 }

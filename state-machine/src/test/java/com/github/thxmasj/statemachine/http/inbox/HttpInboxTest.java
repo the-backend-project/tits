@@ -322,8 +322,6 @@ public class HttpInboxTest {
     Init.addDelayContext(server, "/long-process", Duration.ofSeconds(10));
     Init.addDelayContext(server, "/process", uri -> Duration.ofMillis(Long.parseLong(uri.getPath().substring("/process/".length()))));
     Process0Outbox = HttpOutboxRequest.atMostOnce()
-        .name("Process0Outbox")
-        .id(UUID.fromString("2c68ffa2-0935-46fd-a032-2647ca51b801"))
         .requestPayloadType(DataType.none())
         .responsePayloadType(DataType.none())
         .<Void>messageCreatorReactive(_ -> Mono.just(requestMessage("/process/0")))
@@ -341,8 +339,6 @@ public class HttpInboxTest {
         .isRejected(r -> r.statusCode() >= 400 && r.statusCode() <= 499)
         .isRejectedByInvalidResponse(r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499)
         .rollbackModel(HttpOutboxRequest.atLeastOnce()
-            .name("Process0RollbackOutbox")
-            .id(UUID.fromString("513f7e3e-c03e-4016-b5f3-ddb981cb1ffe"))
             .requestPayloadType(DataType.none())
             .responsePayloadType(DataType.none())
             .<Void>messageCreatorReactive(_ -> Mono.just(requestMessage("/rollback")))
@@ -356,12 +352,10 @@ public class HttpInboxTest {
             .isFailureByInvalidResponseTransient(r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499)
             .isAttemptAvailable(c -> Duration.between(c.enqueueTime(), c.now()).compareTo(Duration.ofHours(5)) < 0)
             .backoffAlgorithm(c -> new DelaySpecification(Duration.ofSeconds(10), Duration.ofMinutes(10), Duration.ofHours(5), 1.5).calculateDelay(c.attemptNumber()))
-            .build()
+            .build("Process0RollbackOutbox", UUID.fromString("513f7e3e-c03e-4016-b5f3-ddb981cb1ffe"))
         )
-        .build();
+        .build("Process0Outbox", UUID.fromString("2c68ffa2-0935-46fd-a032-2647ca51b801"));
     Process3Outbox = HttpOutboxRequest.atLeastOnce()
-        .name("Process3Outbox")
-        .id(UUID.fromString("2e86f07c-50ed-4922-9839-54dca94be4b6"))
         .requestPayloadType(DataType.none())
         .responsePayloadType(DataType.none())
         .<Void>messageCreatorReactive(_ -> Mono.just(requestMessage("/process/3000")))
@@ -377,7 +371,7 @@ public class HttpInboxTest {
         .isFailureByInvalidResponseTransient(r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499)
         .isAttemptAvailable(c -> Duration.between(c.enqueueTime(), c.now()).compareTo(Duration.ofHours(5)) < 0)
         .backoffAlgorithm(c -> new DelaySpecification(Duration.ofSeconds(10), Duration.ofMinutes(10), Duration.ofHours(5), 1.5).calculateDelay(c.attemptNumber()))
-        .build();
+        .build("Process3Outbox", UUID.fromString("2e86f07c-50ed-4922-9839-54dca94be4b6"));
     stateMachine = Init.stateMachine(
         Lamp,
         lampTransitions(),

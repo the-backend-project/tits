@@ -1,6 +1,5 @@
 package com.github.thxmasj.statemachine.templates.cardpayment;
 
-import static com.github.thxmasj.statemachine.BuiltinEventTypes.Rollback;
 import static com.github.thxmasj.statemachine.EntityModel.Begin;
 import static com.github.thxmasj.statemachine.EntitySelector.CreationMode.CreateIfNotExists;
 import static com.github.thxmasj.statemachine.EntitySelector.entityId;
@@ -19,9 +18,6 @@ import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.CompleteReque
 import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.EntityModels.RequestDispatching;
 import static com.github.thxmasj.statemachine.http.outbox.EventTypes.InvalidResponse;
 import static com.github.thxmasj.statemachine.http.outbox.EventTypes.ServiceUnavailable;
-import static com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest.atLeastOnce;
-import static com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest.atMostOnce;
-import static com.github.thxmasj.statemachine.templates.cardpayment.Aggregate.Payment;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Aggregate.Settlement;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Identifiers.AcquirerBatchNumber;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Identifiers.BatchNumber;
@@ -70,14 +66,8 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEv
 import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.MerchantDebitReversed;
 import static com.github.thxmasj.statemachine.templates.cardpayment.validators.ValidatedAmount.validateAmount;
 import static com.github.thxmasj.statemachine.templates.cardpayment.validators.ValidatedTransactionTime.validateTransactionTime;
-import static java.time.Duration.ofHours;
-import static java.time.Duration.ofMinutes;
-import static java.time.Duration.ofSeconds;
 
-import com.github.thxmasj.statemachine.BasicEventType.Rollback.Data;
-import com.github.thxmasj.statemachine.DelaySpecification;
 import com.github.thxmasj.statemachine.EntityModel;
-import com.github.thxmasj.statemachine.EventType;
 import com.github.thxmasj.statemachine.State;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
@@ -87,14 +77,11 @@ import com.github.thxmasj.statemachine.Tuples.Tuple4;
 import com.github.thxmasj.statemachine.Tuples.Tuple5;
 import com.github.thxmasj.statemachine.Tuples.Tuple6;
 import com.github.thxmasj.statemachine.Tuples.Tuple7;
-import com.github.thxmasj.statemachine.Validated;
-import com.github.thxmasj.statemachine.http.HttpClient;
 import com.github.thxmasj.statemachine.http.outbox.AtLeastOnce;
 import com.github.thxmasj.statemachine.http.outbox.AtLeastOnceBuilder;
 import com.github.thxmasj.statemachine.http.outbox.AtMostOnce;
 import com.github.thxmasj.statemachine.http.outbox.AtMostOnceBuilder;
-import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequestContract;
-import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
+import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest;
 import com.github.thxmasj.statemachine.templates.cardpayment.AuthenticationDataCreator.AuthenticationData;
 import com.github.thxmasj.statemachine.templates.cardpayment.CaptureRequestDataCreator.CaptureRequestData;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AcquirerAuthorisation;
@@ -114,7 +101,6 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.function.BiFunction;
 import java.util.function.Function;
 
 public class PaymentTransitions {
@@ -122,7 +108,62 @@ public class PaymentTransitions {
   private final Map<State, List<TransitionModel<?, ?>>> transitions;
   private final Function<String, PaymentToken> tokenDecrypter;
   private final List<EntityModel> outboxRequestModels;
-  
+
+  // To acquirer
+  private final AtMostOnce<Tuple4<Authorisation, Merchant, AuthenticationResult, PaymentToken>, Tuple2<ReversalData, Merchant>> preauthorisation;
+  private final AtMostOnce<Tuple5<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber>, Tuple3<ReversalData, Merchant, AcquirerBatchNumber>> authorisation;
+  private final AtLeastOnce<Tuple7<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, AcquirerResponse, Capture>> capture;
+  private final AtMostOnce<Tuple6<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, Refund>, Tuple3<ReversalData, Merchant, AcquirerBatchNumber>> refund;
+  private final AtLeastOnce<Tuple4<Authorisation, Merchant, FailedAuthenticationResult, PaymentToken>> failedAuthentication;
+  private final AtLeastOnce<Tuple5<Authorisation, Merchant, AuthenticationResult, Capture, PaymentToken>> captureRequestedTooLate;
+
+  // To merchant
+  private final AtLeastOnce<Tuple3<ReversalData, Merchant, BatchNumber>> rolledBackAuthorisationRequest;
+  private final AtLeastOnce<Tuple2<ReversalData, Merchant>> rolledBackPreauthorisationRequest;
+  private final AtLeastOnce<Tuple3<Authorisation, Merchant, AcquirerResponse>> approvedPreauthorisation;
+  private final AtLeastOnce<Tuple2<Authorisation, Merchant>> failedAuthorisation;
+  private final AtLeastOnce<Tuple4<Authorisation, Merchant, BatchNumber, AcquirerResponse>> approvedAuthorisation;
+  private final AtLeastOnce<Tuple3<Authorisation, Merchant, AcquirerResponse>> declinedAuthorisation;
+  private final AtLeastOnce<Tuple4<Authorisation, Merchant, BatchNumber, AcquirerResponse>> approvedCapture;
+  private final AtLeastOnce<Tuple2<Authorisation, Merchant>> failedRefund;
+  private final AtLeastOnce<Tuple5<Authorisation, Merchant, AcquirerResponse, BatchNumber, Refund>> approvedRefund;
+  private final AtLeastOnce<Tuple3<Authorisation, Merchant, AcquirerResponse>> declinedRefund;
+
+  public AtMostOnce<Tuple5<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber>, Tuple3<ReversalData, Merchant, AcquirerBatchNumber>> authorisation() {
+    return authorisation;
+  }
+
+  public AtMostOnce<Tuple4<Authorisation, Merchant, AuthenticationResult, PaymentToken>, Tuple2<ReversalData, Merchant>> preauthorisation() {
+    return preauthorisation;
+  }
+
+  public List<HttpOutboxRequest<?>> acquirerOutboxRequestModels() {
+    return List.of(authorisation, preauthorisation, capture, refund, failedAuthentication, captureRequestedTooLate);
+  }
+
+  public AtLeastOnce<Tuple4<Authorisation, Merchant, BatchNumber, AcquirerResponse>> approvedCapture() {
+    return approvedCapture;
+  }
+
+  public List<HttpOutboxRequest<?>> merchantRefundRequestModels() {
+    return List.of(approvedRefund, declinedRefund, failedRefund);
+  }
+
+  public List<HttpOutboxRequest<?>> merchantOutboxRequestModels() {
+    return List.of(
+        rolledBackAuthorisationRequest,
+        rolledBackPreauthorisationRequest,
+        approvedPreauthorisation,
+        failedAuthorisation,
+        approvedAuthorisation,
+        declinedAuthorisation,
+        approvedCapture,
+        failedRefund,
+        approvedRefund,
+        declinedRefund
+    );
+  }
+
   public Map<State, List<TransitionModel<?, ?>>> transitions() {
     return transitions;  
   }
@@ -133,160 +174,126 @@ public class PaymentTransitions {
 
   public PaymentTransitions(
       Function<String, PaymentToken> tokenDecrypter,
-      HttpOutboxRequestContract<AuthenticationData, ?, ?, ?> authentication,
-      HttpClient authenticatorClient,
-
-      HttpOutboxRequestContract<Tuple5<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber>, ?, ?, ?> authorisation,
-      HttpOutboxRequestContract<Tuple3<ReversalData, Merchant, AcquirerBatchNumber>, ?, ?, ?> authorisationReversal,
-      HttpOutboxRequestContract<Tuple4<Authorisation, Merchant, FailedAuthenticationResult, PaymentToken>, ?, ?, ?> failedAuthentication,
-      HttpOutboxRequestContract<Tuple4<Authorisation, Merchant, AuthenticationResult, PaymentToken>, ?, ?, ?> preauthorisation,
-      HttpOutboxRequestContract<Tuple2<ReversalData, Merchant>, ?, ?, ?> preauthorisationReversal,
-      HttpOutboxRequestContract<Tuple5<Authorisation, Merchant, AuthenticationResult, Capture, PaymentToken>, ?, ?, ?> captureRequestedTooLate,
-      HttpOutboxRequestContract<Tuple7<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, AcquirerResponse, Capture>, ?, ?, ?> capture,
-      HttpOutboxRequestContract<Tuple6<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, Refund>, ?, ?, ?> refundAuthorisation,
-      HttpClient paymentBaltusClient,
-
-      HttpOutboxRequestContract<Tuple3<ReversalData, Merchant, BatchNumber>, ?, ?, ?> rolledBackAuthorisationRequest,
-      HttpOutboxRequestContract<Tuple2<ReversalData, Merchant>, ?, ?, ?> rolledBackPreauthorisationRequest,
-      HttpOutboxRequestContract<Tuple3<Authorisation, Merchant, AcquirerResponse>, ?, ?, ?> approvedPreauthorisation,
-      HttpOutboxRequestContract<Tuple2<Authorisation, Merchant>, ?, ?, ?> failedAuthorisation,
-      HttpOutboxRequestContract<Tuple4<Authorisation, Merchant, BatchNumber, AcquirerResponse>, ?, ?, ?> approvedAuthorisation,
-      HttpOutboxRequestContract<Tuple3<Authorisation, Merchant, AcquirerResponse>, ?, ?, ?> declinedAuthorisation,
-      HttpOutboxRequestContract<Tuple4<Authorisation, Merchant, BatchNumber, AcquirerResponse>, ?, ?, ?> approvedCapture,
-      HttpOutboxRequestContract<Tuple2<Authorisation, Merchant>, ?, ?, ?> failedRefund,
-      HttpOutboxRequestContract<Tuple5<Authorisation, Merchant, AcquirerResponse, BatchNumber, Refund>, ?, ?, ?> approvedRefund,
-      HttpOutboxRequestContract<Tuple3<Authorisation, Merchant, AcquirerResponse>, ?, ?, ?> declinedRefund,
-      HttpClient merchantClient
+      AtMostOnceBuilder.BuildStep<AuthenticationData, Void> authentication,
+      AtMostOnceBuilder.BuildStep<Tuple5<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber>, Tuple3<ReversalData, Merchant, AcquirerBatchNumber>> authorisation,
+      AtLeastOnceBuilder.BuildStep<Tuple4<Authorisation, Merchant, FailedAuthenticationResult, PaymentToken>> failedAuthentication,
+      AtMostOnceBuilder.BuildStep<Tuple4<Authorisation, Merchant, AuthenticationResult, PaymentToken>, Tuple2<ReversalData, Merchant>> preauthorisation,
+      AtLeastOnceBuilder.BuildStep<Tuple5<Authorisation, Merchant, AuthenticationResult, Capture, PaymentToken>> captureRequestedTooLate,
+      AtLeastOnceBuilder.BuildStep<Tuple7<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, AcquirerResponse, Capture>> capture,
+      AtMostOnceBuilder.BuildStep<Tuple6<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, Refund>, Tuple3<ReversalData, Merchant, AcquirerBatchNumber>> refundAuthorisation,
+      AtLeastOnceBuilder.BuildStep<Tuple3<ReversalData, Merchant, BatchNumber>> rolledBackAuthorisationRequest,
+      AtLeastOnceBuilder.BuildStep<Tuple2<ReversalData, Merchant>> rolledBackPreauthorisationRequest,
+      AtLeastOnceBuilder.BuildStep<Tuple3<Authorisation, Merchant, AcquirerResponse>> approvedPreauthorisation,
+      AtLeastOnceBuilder.BuildStep<Tuple2<Authorisation, Merchant>> failedAuthorisation,
+      AtLeastOnceBuilder.BuildStep<Tuple4<Authorisation, Merchant, BatchNumber, AcquirerResponse>> approvedAuthorisation,
+      AtLeastOnceBuilder.BuildStep<Tuple3<Authorisation, Merchant, AcquirerResponse>> declinedAuthorisation,
+      AtLeastOnceBuilder.BuildStep<Tuple4<Authorisation, Merchant, BatchNumber, AcquirerResponse>> approvedCapture,
+      AtLeastOnceBuilder.BuildStep<Tuple2<Authorisation, Merchant>> failedRefund,
+      AtLeastOnceBuilder.BuildStep<Tuple5<Authorisation, Merchant, AcquirerResponse, BatchNumber, Refund>> approvedRefund,
+      AtLeastOnceBuilder.BuildStep<Tuple3<Authorisation, Merchant, AcquirerResponse>> declinedRefund
   ) {
     this.tokenDecrypter = tokenDecrypter;
 
-    AtMostOnce<AuthenticationData, Void> authenticationToValidator = buildAuthentication(
-        authentication,
-        authenticatorClient
+    AtMostOnce<AuthenticationData, Void> authenticationToValidator = authentication.build(
+        UUID.fromString("28f371c6-fdec-4466-a1a6-6ea98bd33900"),
+        "Authentication"
     );
 
-    AtMostOnce<Tuple5<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber>, Tuple3<ReversalData, Merchant, AcquirerBatchNumber>> authorisationToAcquirer = buildAtMostOnce(
-        "Authorisation",
+    AtMostOnce<Tuple5<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber>, Tuple3<ReversalData, Merchant, AcquirerBatchNumber>> authorisationToAcquirer = authorisation.build(
         UUID.fromString("2282e583-8136-4a21-8ac5-138200503659"),
-        authorisation,
-        paymentBaltusClient,
-        AcquirerResponded,
-        acquirerAdvice("unused", UUID.randomUUID(), authorisationReversal, paymentBaltusClient, null, List.of("00", "25")),
-        2
+        "Authorisation"
     );
+    this.authorisation = authorisationToAcquirer;
 
-    AtLeastOnce<Tuple4<Authorisation, Merchant, FailedAuthenticationResult, PaymentToken>> failedAuthenticationToAcquirer = nonFinancialAdviceToAcquirer(
-        "FailedAuthentication",
+    AtLeastOnce<Tuple4<Authorisation, Merchant, FailedAuthenticationResult, PaymentToken>> failedAuthenticationToAcquirer = failedAuthentication.build(
         UUID.fromString("1ae0db33-3264-4c11-805c-5edeb8f31f40"),
-        failedAuthentication,
-        paymentBaltusClient
+        "FailedAuthentication"
     );
+    this.failedAuthentication = failedAuthenticationToAcquirer;
 
-    AtMostOnce<Tuple4<Authorisation, Merchant, AuthenticationResult, PaymentToken>, Tuple2<ReversalData, Merchant>> preauthorisationToAcquirer = buildAtMostOnce(
-        "Preauthorisation",
+    AtMostOnce<Tuple4<Authorisation, Merchant, AuthenticationResult, PaymentToken>, Tuple2<ReversalData, Merchant>> preauthorisationToAcquirer = preauthorisation.build(
         UUID.fromString("cd95f390-8cb3-4fa5-b791-171b87fd22b1"),
-        preauthorisation,
-        paymentBaltusClient,
-        AcquirerResponded,
-        acquirerAdvice("unused", UUID.fromString("1282cb9d-eb8c-416f-9ce0-9d936e1f9af9"), preauthorisationReversal, paymentBaltusClient, null, List.of("00", "25")),
-        2
+        "Preauthorisation"
     );
+    this.preauthorisation = preauthorisationToAcquirer;
 
-    AtLeastOnce<Tuple5<Authorisation, Merchant, AuthenticationResult, Capture, PaymentToken>> captureRequestedTooLateToAcquirer = nonFinancialAdviceToAcquirer(
-        "CaptureRequestedTooLate",
+    AtLeastOnce<Tuple5<Authorisation, Merchant, AuthenticationResult, Capture, PaymentToken>> captureRequestedTooLateToAcquirer = captureRequestedTooLate.build(
         UUID.fromString("54830ddd-2dbf-4c06-bd6d-fa371f6a3f94"),
-        captureRequestedTooLate,
-        paymentBaltusClient
+        "CaptureRequestedTooLate"
     );
+    this.captureRequestedTooLate = captureRequestedTooLateToAcquirer;
 
-    AtLeastOnce<Tuple7<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, AcquirerResponse, Capture>> captureToAcquirer = acquirerAdvice(
-        "Capture",
+    AtLeastOnce<Tuple7<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, AcquirerResponse, Capture>> captureToAcquirer = capture.build(
         UUID.fromString("3f339f30-30ba-4d15-b259-0c5cc10167ad"),
-        capture,
-        paymentBaltusClient,
-        CaptureApproved,
-        List.of("00", "86")
+        "Capture"
     );
+    this.capture = captureToAcquirer;
 
-    AtMostOnce<Tuple6<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, Refund>, Tuple3<ReversalData, Merchant, AcquirerBatchNumber>> refundAuthorisationToAcquirer = buildAtMostOnce(
-        "RefundAuthorisation",
+    AtMostOnce<Tuple6<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, Refund>, Tuple3<ReversalData, Merchant, AcquirerBatchNumber>> refundAuthorisationToAcquirer = refundAuthorisation.build(
         UUID.fromString("81617061-5cab-4305-87cf-e96b8157944e"),
-        refundAuthorisation,
-        paymentBaltusClient,
-        RefundApproved,
-        acquirerAdvice("unused", UUID.randomUUID(), authorisationReversal, paymentBaltusClient, null, List.of("00", "25")),
-        1
+        "RefundAuthorisation"
     );
+    this.refund = refundAuthorisationToAcquirer;
 
-    AtLeastOnce<Tuple3<ReversalData, Merchant, BatchNumber>> rolledBackAuthorisationRequestToMerchant = merchantCallback(
-        "RolledBackAuthorisation",
+    AtLeastOnce<Tuple3<ReversalData, Merchant, BatchNumber>> rolledBackAuthorisationRequestToMerchant = rolledBackAuthorisationRequest.build(
         UUID.fromString("1f0857b0-0308-4512-9aaf-8b0bf1eca6b0"),
-        rolledBackAuthorisationRequest,
-        merchantClient
+        "RolledBackAuthorisation"
     );
+    this.rolledBackAuthorisationRequest = rolledBackAuthorisationRequestToMerchant;
 
-    AtLeastOnce<Tuple2<ReversalData, Merchant>> rolledBackPreauthorisationRequestToMerchant = merchantCallback(
-        "RolledBackPreauthorisation",
+    AtLeastOnce<Tuple2<ReversalData, Merchant>> rolledBackPreauthorisationRequestToMerchant = rolledBackPreauthorisationRequest.build(
         UUID.fromString("e08ec9d0-aeb1-4f6b-9c19-89d9aaf0ae61"),
-        rolledBackPreauthorisationRequest,
-        merchantClient
+        "RolledBackPreauthorisation"
     );
+    this.rolledBackPreauthorisationRequest = rolledBackPreauthorisationRequestToMerchant;
 
-    AtLeastOnce<Tuple3<Authorisation, Merchant, AcquirerResponse>> approvedPreauthorisationToMerchant = merchantCallback(
-        "ApprovedPreauthorisation",
+    AtLeastOnce<Tuple3<Authorisation, Merchant, AcquirerResponse>> approvedPreauthorisationToMerchant = approvedPreauthorisation.build(
         UUID.fromString("7fff869f-860d-4023-b745-c0eaea2c7fa7"),
-        approvedPreauthorisation,
-        merchantClient
+        "ApprovedPreauthorisation"
     );
+    this.approvedPreauthorisation = approvedPreauthorisationToMerchant;
 
-    AtLeastOnce<Tuple2<Authorisation, Merchant>> failedAuthorisationToMerchant = merchantCallback(
-        "FailedAuthorisation",
+    AtLeastOnce<Tuple2<Authorisation, Merchant>> failedAuthorisationToMerchant = failedAuthorisation.build(
         UUID.fromString("1b4acdd6-ba06-43a1-be5a-4a06aff824a4"),
-        failedAuthorisation,
-        merchantClient
+        "FailedAuthorisation"
     );
+    this.failedAuthorisation = failedAuthorisationToMerchant;
 
-    AtLeastOnce<Tuple4<Authorisation, Merchant, BatchNumber, AcquirerResponse>> approvedAuthorisationToMerchant = merchantCallback(
-        "ApprovedAuthorisation",
+    AtLeastOnce<Tuple4<Authorisation, Merchant, BatchNumber, AcquirerResponse>> approvedAuthorisationToMerchant = approvedAuthorisation.build(
         UUID.fromString("76aa4bc4-836c-4809-8a9d-a2c202719dff"),
-        approvedAuthorisation,
-        merchantClient
+        "ApprovedAuthorisation"
     );
+    this.approvedAuthorisation = approvedAuthorisationToMerchant;
 
-    AtLeastOnce<Tuple3<Authorisation, Merchant, AcquirerResponse>> declinedAuthorisationToMerchant = merchantCallback(
-        "DeclinedAuthorisation",
+    AtLeastOnce<Tuple3<Authorisation, Merchant, AcquirerResponse>> declinedAuthorisationToMerchant = declinedAuthorisation.build(
         UUID.fromString("e800bdae-5168-47a3-a0c1-0fc9ce887da5"),
-        declinedAuthorisation,
-        merchantClient
+        "DeclinedAuthorisation"
     );
+    this.declinedAuthorisation = declinedAuthorisationToMerchant;
 
-    AtLeastOnce<Tuple4<Authorisation, Merchant, BatchNumber, AcquirerResponse>> approvedCaptureToMerchant = merchantCallback(
-        "ApprovedCapture",
+    AtLeastOnce<Tuple4<Authorisation, Merchant, BatchNumber, AcquirerResponse>> approvedCaptureToMerchant = approvedCapture.build(
         UUID.fromString("15340ab4-f9fd-4d84-b39d-16ca92208822"),
-        approvedCapture,
-        merchantClient
+        "ApprovedCapture"
     );
+    this.approvedCapture = approvedCaptureToMerchant;
 
-    AtLeastOnce<Tuple2<Authorisation, Merchant>> failedRefundToMerchant = merchantCallback(
-        "FailedRefund",
+    AtLeastOnce<Tuple2<Authorisation, Merchant>> failedRefundToMerchant = failedRefund.build(
         UUID.fromString("33290023-0297-46cd-8c77-1177776ac787"),
-        failedRefund,
-        merchantClient
+        "FailedRefund"
     );
+    this.failedRefund = failedRefundToMerchant;
 
-    AtLeastOnce<Tuple5<Authorisation, Merchant, AcquirerResponse, BatchNumber, Refund>> approvedRefundToMerchant = merchantCallback(
-        "ApprovedRefund",
+    AtLeastOnce<Tuple5<Authorisation, Merchant, AcquirerResponse, BatchNumber, Refund>> approvedRefundToMerchant = approvedRefund.build(
         UUID.fromString("11599dfa-9786-4808-99df-8dc129116acd"),
-        approvedRefund,
-        merchantClient
+        "ApprovedRefund"
     );
+    this.approvedRefund = approvedRefundToMerchant;
 
-    AtLeastOnce<Tuple3<Authorisation, Merchant, AcquirerResponse>> declinedRefundToMerchant = merchantCallback(
-        "DeclinedRefund",
+    AtLeastOnce<Tuple3<Authorisation, Merchant, AcquirerResponse>> declinedRefundToMerchant = declinedRefund.build(
         UUID.fromString("40293af3-954d-4731-9cd9-82346bd07c37"),
-        declinedRefund,
-        merchantClient
+        "DeclinedRefund"
     );
+    this.declinedRefund = declinedRefundToMerchant;
 
     this.outboxRequestModels = List.of(
         authenticationToValidator,
@@ -912,194 +919,6 @@ public class PaymentTransitions {
                 .output(d -> d.t1().t3())
         )
     );
-  }
-
-  @SuppressWarnings({"unchecked", "rawtypes"})
-  private <I, RQ, RS> AtMostOnce<I, Void> buildAuthentication(
-      HttpOutboxRequestContract<I, RQ, RS, ?> authentication,
-      HttpClient forwarder
-  ) {
-    AtMostOnceBuilder.ContentParserStep<I, RQ, RS> parserStep = atMostOnce().name("Authentication")
-        .id(UUID.fromString("28f371c6-fdec-4466-a1a6-6ea98bd33900"))
-        .requestPayloadType(authentication.requestPayloadType())
-        .responsePayloadType(authentication.responsePayloadType())
-        .messageCreatorReactive(authentication.messageCreator())
-        .forwarder(forwarder)
-        .inflightTimeout(ofSeconds(10))
-        .processModel(Payment)
-        .onPeerUnavailable(AuthenticationUnavailable)
-        .onMissingResponse(AuthenticationUnavailable)
-        .onInvalidResponseRejection(AuthenticationUnavailable)
-        .onInvalidResponseUnknown(AuthenticationUnavailable);
-
-    AtMostOnceBuilder.OnSuccessStep<I, RQ, RS> successStep = applyContentParser(parserStep, authentication);
-
-    AtMostOnceBuilder.OnFailureStep<I, RQ, RS> failureStep = successStep.onSuccess(
-        PaymentEvent.Authorisation,
-        authentication.responseAdapter() != null ? (Function) authentication.responseAdapter() : _ -> null
-    );
-
-    AtMostOnceBuilder.OnValidResponseUnknownStep<I, RQ, RS> validUnknownStep = failureStep.onFailure(
-        PaymentEvent.AuthenticationFailed,
-        authentication.failureAdapter() != null ? (Function) authentication.failureAdapter() : _ -> null
-    );
-
-    return validUnknownStep
-        .isAccepted(authentication.isAccepted() != null ? authentication.isAccepted() : _ -> true)
-        .isRejected(authentication.isRejected() != null ? authentication.isRejected() : _ -> false)
-        .isRejectedByInvalidResponse(_ -> true)
-        .build();
-  }
-
-  @SuppressWarnings({"unchecked", "rawtypes"})
-  private <I, RI, RQ, RS, S> AtMostOnce<I, RI> buildAtMostOnce(
-      String name,
-      UUID id,
-      HttpOutboxRequestContract<I, RQ, RS, S> request,
-      HttpClient forwarder,
-      EventType<AcquirerResponse, AcquirerResponse> callbackEvent,
-      AtLeastOnce<RI> rollbackModel,
-      int numberOfEventsToRollback
-  ) {
-    AtMostOnceBuilder.ContentParserStep<I, RQ, RS> parserStep = atMostOnce().name(name)
-        .id(id)
-        .requestPayloadType(request.requestPayloadType())
-        .responsePayloadType(request.responsePayloadType())
-        .messageCreatorReactive(request.messageCreator())
-        .forwarder(forwarder)
-        .inflightTimeout(Duration.ofMillis(6600))
-        .processModel(Payment)
-        .onMissingResponse(Rollback, d -> new Data(-numberOfEventsToRollback, d.name() + ": No response"))
-        .onInvalidResponseUnknown(Rollback, d -> new Data(-numberOfEventsToRollback, d.t2()));
-
-    AtMostOnceBuilder.OnSuccessStep<I, RQ, RS> step = applyContentParser(parserStep, request);
-
-    AtMostOnceBuilder.OnFailureStep<I, RQ, RS> failureStep = step;
-    if (callbackEvent != null && request.responseAdapter() != null) {
-      failureStep = step.onSuccess(callbackEvent, (Function) request.responseAdapter());
-    }
-
-    return failureStep
-        .onFailure(ServiceUnavailable)
-        .onValidResponseUnknown(Rollback, d -> new Data(-numberOfEventsToRollback, d.reasonPhrase()))
-        .isAccepted(request.isAccepted() != null ? request.isAccepted() : _ -> true)
-        .isRejected(request.isRejected() != null ? request.isRejected() : _ -> false)
-        .isRejectedByInvalidResponse(d -> List.of(400, 404).contains(d.t1().statusCode()))
-        .rollbackModel(rollbackModel)
-        .build();
-  }
-
-  private <T, RQ, RS, S> AtLeastOnce<T> nonFinancialAdviceToAcquirer(
-      String name,
-      UUID id,
-      HttpOutboxRequestContract<T, RQ, RS, S> request,
-      HttpClient forwarder
-  ) {
-    return acquirerAdvice(name, id, request, forwarder, null, List.of("00", "86"));
-  }
-
-  @SuppressWarnings({"unchecked", "rawtypes"})
-  private <T, RQ, RS, S> AtLeastOnce<T> acquirerAdvice(
-      String name,
-      UUID id,
-      HttpOutboxRequestContract<T, RQ, RS, S> request,
-      HttpClient forwarder,
-      EventType<AcquirerResponse, AcquirerResponse> callbackEvent,
-      List<String> acceptedResponseCodes
-  ) {
-    AtLeastOnceBuilder.RepeatMessageCreatorStep<T, RQ, RS> builderStep = atLeastOnce().name(name)
-        .id(id)
-        .requestPayloadType(request.requestPayloadType())
-        .responsePayloadType(request.responsePayloadType())
-        .messageCreatorReactive(request.messageCreator());
-
-    AtLeastOnceBuilder.ForwarderStep<T, RQ, RS> forwarderStep = builderStep;
-    if (request.repeatMessageCreator() != null) {
-      forwarderStep = builderStep.repeatMessageCreator((BiFunction) request.repeatMessageCreator());
-    }
-
-    AtLeastOnceBuilder.ContentParserStep<T, RQ, RS> parserStep = forwarderStep
-        .forwarder(forwarder)
-        .inflightTimeout(Duration.ofMillis(6600))
-        .processModel(Payment);
-
-    AtLeastOnceBuilder.OnSuccessStep<T, RQ, RS> successStep = applyContentParser(parserStep, request);
-    AtLeastOnceBuilder.IsAcceptedStep<T, RQ, RS> builder = successStep;
-    if (callbackEvent != null && request.responseAdapter() != null) {
-      builder = successStep.onSuccess(
-          callbackEvent, (Function) request.responseAdapter()
-      );
-    }
-    return builder
-        .isAccepted(request.isAccepted() != null ? request.isAccepted() : _ -> true)
-        .isFailureTransient(request.isRejected() != null ? request.isRejected() : _ -> false)
-        .isRejectedByInvalidResponse(d -> List.of(400, 404).contains(d.t1().statusCode()))
-        .isFailureByInvalidResponseTransient(d -> d.t1().statusCode() >= 500 && d.t1().statusCode() <= 599)
-        .isAttemptAvailable(c -> Duration.between(c.enqueueTime(), c.now()).compareTo(ofHours(5)) < 0)
-        .backoffAlgorithm(c -> new DelaySpecification(ofSeconds(10), ofMinutes(10), ofHours(5), 1.5).calculateDelay(c.attemptNumber()))
-        .build();
-  }
-
-  private <T> AtLeastOnce<T> merchantCallback(
-      String name,
-      UUID id,
-      HttpOutboxRequestContract<T, ?, ?, ?> request,
-      HttpClient forwarder
-  ) {
-    return buildMerchantCallback(name, id, request, forwarder);
-  }
-
-  @SuppressWarnings({"unchecked", "rawtypes"})
-  private <T, RQ, RS> AtLeastOnce<T> buildMerchantCallback(
-      String name,
-      UUID id,
-      HttpOutboxRequestContract<T, RQ, RS, ?> request,
-      HttpClient forwarder
-  ) {
-    AtLeastOnceBuilder.RepeatMessageCreatorStep<T, RQ, RS> builderStep = atLeastOnce().name(name)
-        .id(id)
-        .requestPayloadType(request.requestPayloadType())
-        .responsePayloadType(request.responsePayloadType())
-        .messageCreatorReactive(request.messageCreator());
-
-    AtLeastOnceBuilder.ForwarderStep<T, RQ, RS> forwarderStep = builderStep;
-    if (request.repeatMessageCreator() != null) {
-      forwarderStep = builderStep.repeatMessageCreator((BiFunction) request.repeatMessageCreator());
-    }
-
-    AtLeastOnceBuilder.ContentParserStep<T, RQ, RS> parserStep = forwarderStep
-        .forwarder(forwarder)
-        .inflightTimeout(Duration.ofMillis(10000))
-        .processModel(Payment);
-
-    return applyContentParser(parserStep, request)
-        .isAccepted(request.isAccepted() != null ? request.isAccepted() : _ -> true)
-        .isFailureTransient(request.isRejected() != null ? request.isRejected() : _ -> false)
-        .isRejectedByInvalidResponse(d -> List.of(400, 404).contains(d.t1().statusCode()))
-        .isFailureByInvalidResponseTransient(d -> d.t1().statusCode() >= 500 && d.t1().statusCode() <= 599)
-        .isAttemptAvailable(c -> Duration.between(c.enqueueTime(), c.now()).compareTo(ofHours(5)) < 0)
-        .backoffAlgorithm(c -> new DelaySpecification(ofSeconds(10), ofMinutes(10), ofHours(5), 1.5).calculateDelay(c.attemptNumber()))
-        .build();
-  }
-
-  private static <I, RQ, RS> AtMostOnceBuilder.OnSuccessStep<I, RQ, RS> applyContentParser(
-      AtMostOnceBuilder.ContentParserStep<I, RQ, RS> step,
-      HttpOutboxRequestContract<I, RQ, RS, ?> request
-  ) {
-    if (request.contentParser() != null) {
-      return step.contentParser(request.contentParser());
-    }
-    return step.contentParser((Function<HttpResponseMessage, Validated<RS>>) (_ -> Validated.valid(null)));
-  }
-
-  private static <T, RQ, RS> AtLeastOnceBuilder.OnSuccessStep<T, RQ, RS> applyContentParser(
-      AtLeastOnceBuilder.ContentParserStep<T, RQ, RS> step,
-      HttpOutboxRequestContract<T, RQ, RS, ?> request
-  ) {
-    if (request.contentParser() != null) {
-      return step.contentParser(request.contentParser());
-    }
-    return step.contentParser((Function<HttpResponseMessage, Validated<RS>>) (_ -> Validated.valid(null)));
   }
 
   private Function<TransitionContext<Refund>, RefundRequestData> refundAssembler() {

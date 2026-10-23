@@ -1,9 +1,12 @@
 package com.github.thxmasj.statemachine.http.outbox;
 
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
+import static com.github.thxmasj.statemachine.database.mssql.Mappers.eventTypesFor;
 
 import com.github.thxmasj.statemachine.BasicEventType;
+import com.github.thxmasj.statemachine.BuiltinEventTypes;
 import com.github.thxmasj.statemachine.DataType;
+import com.github.thxmasj.statemachine.EventLog;
 import com.github.thxmasj.statemachine.EventType;
 import com.github.thxmasj.statemachine.IndexEntityModel;
 import com.github.thxmasj.statemachine.State;
@@ -11,8 +14,10 @@ import com.github.thxmasj.statemachine.TransitionModelBuilder;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.TypedHttpRequest;
+import com.github.thxmasj.statemachine.message.http.TypedHttpResponse;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -21,13 +26,30 @@ public sealed interface HttpOutboxRequest<I> extends com.github.thxmasj.statemac
 
   Map<State, List<TransitionModelBuilder.TransitionModel<?, ?>>> transitions();
 
+  default List<EventType<?, ?>> eventTypes() {
+    return transitions().values()
+        .stream()
+        .flatMap(tl -> tl.stream())
+        .flatMap(t -> eventTypesFor(t).stream())
+        .distinct()
+        .toList();
+  }
+
   EventType<I, ?> requestDispatched();
 
-  static AtLeastOnceBuilder.NameStep atLeastOnce() {
+  DataType<?> requestPayloadType();
+
+  DataType<?> responsePayloadType();
+
+  TypedHttpRequest<?> request(EventLog log);
+
+  TypedHttpResponse<?> response(EventLog log);
+
+  static AtLeastOnceBuilder.RequestPayloadTypeStep atLeastOnce() {
     return AtLeastOnceBuilder.create();
   }
 
-  static AtMostOnceBuilder.NameStep atMostOnce() {
+  static AtMostOnceBuilder.RequestPayloadTypeStep atMostOnce() {
     return AtMostOnceBuilder.create();
   }
 

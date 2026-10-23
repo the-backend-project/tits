@@ -96,7 +96,7 @@ public class TransitionModelBuilder<I, T, O> {
     }
 
     default InitialChangeContext<?> initialChangeContext() {
-      System.out.println("Finding initial change context for " +  this);
+      //System.out.println("Finding initial change context for " +  this);
       try {
         int depth = this instanceof ChangeContext.OutputChangeContext<?> ? 0 : 1;
         for (ChangeContext<?> c = this; c != null; c = c.previous()) {
@@ -189,7 +189,8 @@ public class TransitionModelBuilder<I, T, O> {
     ) implements ChangeContext<T> {
       @Override public String toString() {
         return "Delayed trigger: " + delayedEvent.entityModel().name() + "/" + delayedEvent.type().name() + "/"
-            + delayedEvent.entityId() + "/" + delayedEvent.eventNumber() + " after " + delayedEvent.after();
+            + delayedEvent.entityId() + "/" + delayedEvent.eventNumber() + " after " + delayedEvent.after()
+            + " (now is " + previous.initialChangeContext().timestamp() + ")";
       }
 
       @Override
@@ -1026,7 +1027,7 @@ public class TransitionModelBuilder<I, T, O> {
     }
 
     public Mono<OutputChangeContext<O>> calculate(InitialChangeContext<I> initialChangeContext) {
-      log(modelContext, "calculate [" + eventType().name() + "] on [" + initialChangeContext.log().entityModel().name() + "] (input: " + initialChangeContext.input() + ")");
+      log(modelContext, "calculate [" + eventType().name() + "] on [" + initialChangeContext.log().entityModel().name() + ":" + initialChangeContext.log().entityId().value() + "] (input: " + initialChangeContext.input() + ")");
       return chain.apply(Mono.just(initialChangeContext));
     }
 
@@ -1061,6 +1062,10 @@ public class TransitionModelBuilder<I, T, O> {
 
     public List<EventTrigger<?, ?, ?>> triggers() {
       return modelContext.triggers();
+    }
+
+    public List<Action<?>> actions() {
+      return modelContext.actions();
     }
   }
 

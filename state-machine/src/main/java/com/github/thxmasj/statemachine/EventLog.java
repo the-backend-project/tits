@@ -55,7 +55,6 @@ public record EventLog(
         .map(e -> ((Event<T>)e).getUnmarshalledData())
         .findFirst()
         .orElseThrow(() -> new NoSuchElementException("last(" + dataType.name() + ")"));
-    System.out.println("And we found it: " + result);
     return result;
   }
 
@@ -64,10 +63,10 @@ public record EventLog(
         .filter(e -> e.type().id().equals(eventType.id()))
         .map(e -> eventType.outputDataType().unmarshal(e.data()))
         .findFirst()
-        .orElseThrow(() -> new NoSuchElementException(String.format("one(%s) [log: %s] [effective log: %s]",
+        .orElseThrow(() -> new NoSuchElementException(String.format("one(%s) on %s [log: %s]",
             eventType.name(),
-            events.stream().map(Event::typeName).collect(joining(",")),
-            effectiveEvents().stream().map(Event::typeName).collect(joining(","))
+            entityModel.name(),
+            events.stream().map(Event::typeName).collect(joining(","))
         )));
   }
 
@@ -120,6 +119,10 @@ public record EventLog(
 
   public long count(EventType<?, ?> eventType) {
     return all(eventType).size();
+  }
+
+  public boolean exists(EventType<?, ?> eventType) {
+    return events().stream().anyMatch(e -> e.type().id().equals(eventType.id()));
   }
 
   public List<Event<?>> subLog(int fromEventNumber) {

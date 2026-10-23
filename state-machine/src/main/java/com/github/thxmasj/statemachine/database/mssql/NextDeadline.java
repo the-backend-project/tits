@@ -91,6 +91,7 @@ public class NextDeadline {
 
   public Mono<? extends Deadline<?>> execute(DelaySpecification backoff) {
     return databaseClient.sql(sql)
+        .name("NextDeadline")
         .bind("now", ZonedDateTime.now(clock).toLocalDateTime())
         .bind("maximumBackoff", backoff.maximum().toSeconds())
         .bind("minimumBackoff", backoff.minimum().toSeconds())

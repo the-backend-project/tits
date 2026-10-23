@@ -1,5 +1,8 @@
 package com.github.thxmasj.statemachine.database.mssql;
 
+import static com.github.thxmasj.statemachine.database.jdbc.PreparedStatementSupport.prepare;
+import static java.util.Collections.unmodifiableList;
+
 import com.github.thxmasj.statemachine.EntityId;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.Event;
@@ -12,11 +15,11 @@ import com.github.thxmasj.statemachine.database.jdbc.JDBCRow;
 import java.sql.ResultSet;
 import java.time.Clock;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.UUID;
 import java.util.function.BiFunction;
 import java.util.function.Function;
@@ -24,8 +27,6 @@ import java.util.stream.Collectors;
 import javax.sql.DataSource;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-
-import static com.github.thxmasj.statemachine.database.jdbc.PreparedStatementSupport.prepare;
 
 public class EntitiesByIndex {
 
@@ -36,7 +37,7 @@ public class EntitiesByIndex {
 
   public EntitiesByIndex(
       DataSource dataSource,
-      List<EntityModel> entityModels,
+      List<? extends EntityModel> entityModels,
       String schemaName,
       List<EventType<?, ?>> eventTypes,
       Clock clock
@@ -76,15 +77,16 @@ public class EntitiesByIndex {
             while (rs.next()) {
               UUID entityId = rs.getObject("EntityId", UUID.class);
               UUID entityModelId = rs.getObject("EntityModelId", UUID.class);
+              if (!entityModels.containsKey(entityModelId)) continue;
               entityModelIdByEntityId.putIfAbsent(entityId, entityModelId);
               eventsByEntityId.computeIfAbsent(entityId, _ -> new ArrayList<>()).add(eventMapper.apply(new EntityId.UUID(entityId), new JDBCRow(rs)));
             }
             rs.close();
             List<EventLog> eventLogs = new ArrayList<>();
-            for (var entry : eventsByEntityId.entrySet()) {
+            for (Entry<UUID, List<Event<?>>> entry : eventsByEntityId.entrySet()) {
               UUID modelId = entityModelIdByEntityId.get(entry.getKey());
-              EntityModel entityModel = modelId != null ? entityModels.get(modelId) : null;
-              eventLogs.add(new EventLog(entityModel, new EntityId.UUID(entry.getKey()), List.of(), Collections.unmodifiableList(entry.getValue())));
+              EntityModel entityModel = entityModels.get(modelId);
+              eventLogs.add(new EventLog(entityModel, new EntityId.UUID(entry.getKey()), List.of(), unmodifiableList(entry.getValue())));
             }
             return eventLogs;
           }

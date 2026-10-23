@@ -32,18 +32,8 @@ public final class AtMostOnceBuilder {
 
   private AtMostOnceBuilder() {}
 
-  static NameStep create() {
+  static RequestPayloadTypeStep create() {
     return new WithNothing();
-  }
-
-  public interface NameStep {
-
-    IdStep name(String name);
-  }
-
-  public interface IdStep {
-
-    RequestPayloadTypeStep id(UUID id);
   }
 
   public interface RequestPayloadTypeStep {
@@ -188,85 +178,64 @@ public final class AtMostOnceBuilder {
 
     <RI> BuildStep<I, RI> rollbackModel(AtLeastOnce<RI> rollbackModel);
 
+    <RI> BuildStep<I, RI> rollbackModel(AtLeastOnceBuilder.SuperModelStep<RI> rollbackModelBuilder);
+
     <RI> BuildStep<I, RI> rollbackModel(AtLeastOnceBuilder.BuildStep<RI> rollbackModelBuilder);
   }
 
   public interface BuildStep<I, RI> {
 
-    AtMostOnce<I, RI> build();
+    default AtMostOnce<I, RI> build(UUID id, String name) {
+      return build(name, id);
+    }
+
+    AtMostOnce<I, RI> build(String name, UUID id);
   }
 
-  private static final class WithNothing implements NameStep, IdStep, RequestPayloadTypeStep {
-
-    private String name;
-    private UUID id;
-
-    @Override
-    public IdStep name(String name) {
-      this.name = name;
-      return this;
-    }
-
-    @Override
-    public RequestPayloadTypeStep id(UUID id) {
-      this.id = id;
-      return this;
-    }
+  private static final class WithNothing implements RequestPayloadTypeStep {
 
     @Override
     public <RQ> ResponsePayloadTypeStep<RQ> requestPayloadType(DataType<RQ> requestPayloadType) {
-      return new WithRequestPayloadType<>(name, id, requestPayloadType);
+      return new WithRequestPayloadType<>(requestPayloadType);
     }
   }
 
   private static final class WithRequestPayloadType<RQ> implements ResponsePayloadTypeStep<RQ> {
 
-    private final String name;
-    private final UUID id;
     private final DataType<RQ> requestPayloadType;
 
-    private WithRequestPayloadType(String name, UUID id, DataType<RQ> requestPayloadType) {
-      this.name = name;
-      this.id = id;
+    private WithRequestPayloadType(DataType<RQ> requestPayloadType) {
       this.requestPayloadType = requestPayloadType;
     }
 
     @Override
     public <RS> MessageCreatorStep<RQ, RS> responsePayloadType(DataType<RS> responsePayloadType) {
-      return new WithResponsePayloadType<>(name, id, requestPayloadType, responsePayloadType);
+      return new WithResponsePayloadType<>(requestPayloadType, responsePayloadType);
     }
   }
 
   private static final class WithResponsePayloadType<RQ, RS> implements MessageCreatorStep<RQ, RS> {
 
-    private final String name;
-    private final UUID id;
     private final DataType<RQ> requestPayloadType;
     private final DataType<RS> responsePayloadType;
 
     private WithResponsePayloadType(
-        String name,
-        UUID id,
         DataType<RQ> requestPayloadType,
         DataType<RS> responsePayloadType
     ) {
-      this.name = name;
-      this.id = id;
       this.requestPayloadType = requestPayloadType;
       this.responsePayloadType = responsePayloadType;
     }
 
     @Override
     public <I> ForwarderStep<I, RQ, RS> messageCreatorReactive(Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator) {
-      return new WithMessageCreator<>(name, id, requestPayloadType, responsePayloadType, messageCreator);
+      return new WithMessageCreator<>(requestPayloadType, responsePayloadType, messageCreator);
     }
   }
 
   private static final class WithMessageCreator<I, RQ, RS> implements ForwarderStep<I, RQ, RS>,
       InflightTimeoutStep<I, RQ, RS> {
 
-    private final String name;
-    private final UUID id;
     private final DataType<RQ> requestPayloadType;
     private final DataType<RS> responsePayloadType;
     private final Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator;
@@ -279,14 +248,10 @@ public final class AtMostOnceBuilder {
     private Callback<Tuple2<HttpResponseMessage, String>, ?> onInvalidResponseUnknown = new Callback<>(InvalidResponse, Tuple2::t2);
 
     private WithMessageCreator(
-        String name,
-        UUID id,
         DataType<RQ> requestPayloadType,
         DataType<RS> responsePayloadType,
         Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator
     ) {
-      this.name = name;
-      this.id = id;
       this.requestPayloadType = requestPayloadType;
       this.responsePayloadType = responsePayloadType;
       this.messageCreator = messageCreator;
@@ -371,8 +336,6 @@ public final class AtMostOnceBuilder {
     @Override
     public OnSuccessStep<I, RQ, RS> contentParser(Function<HttpResponseMessage, Validated<RS>> contentParser) {
       return new WithContentParser<>(
-          name,
-          id,
           requestPayloadType,
           responsePayloadType,
           messageCreator,
@@ -392,8 +355,6 @@ public final class AtMostOnceBuilder {
         BiFunction<TypedHttpRequest<RQ>, HttpResponseMessage, Validated<RS>> contentParser
     ) {
       return new WithContentParser<>(
-          name,
-          id,
           requestPayloadType,
           responsePayloadType,
           messageCreator,
@@ -414,8 +375,6 @@ public final class AtMostOnceBuilder {
       OnFailureStep<I, RQ, RS>, OnValidResponseUnknownStep<I, RQ, RS>, IsAcceptedStep<I, RQ, RS>,
       IsRejectedStep<I, RQ, RS>, IsRejectedByInvalidResponseStep<I, RQ, RS>, RollbackModelStep<I, RQ, RS> {
 
-    private final String name;
-    private final UUID id;
     private final DataType<RQ> requestPayloadType;
     private final DataType<RS> responsePayloadType;
     private final Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator;
@@ -436,8 +395,6 @@ public final class AtMostOnceBuilder {
     private Predicate<Tuple2<HttpResponseMessage, String>> isRejectedByInvalidResponse;
 
     private WithContentParser(
-        String name,
-        UUID id,
         DataType<RQ> requestPayloadType,
         DataType<RS> responsePayloadType,
         Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator,
@@ -451,8 +408,6 @@ public final class AtMostOnceBuilder {
         Function<HttpResponseMessage, Validated<RS>> contentParser,
         BiFunction<TypedHttpRequest<RQ>, HttpResponseMessage, Validated<RS>> requestAwareContentParser
     ) {
-      this.name = name;
-      this.id = id;
       this.requestPayloadType = requestPayloadType;
       this.responsePayloadType = responsePayloadType;
       this.messageCreator = messageCreator;
@@ -531,7 +486,7 @@ public final class AtMostOnceBuilder {
 
     @Override
     public <RI> BuildStep<I, RI> rollbackModel(AtLeastOnce<RI> rollbackModel) {
-      return () -> new AtMostOnce<>(
+      return (name, id) -> new AtMostOnce<>(
           name,
           id,
           requestPayloadType,
@@ -557,13 +512,65 @@ public final class AtMostOnceBuilder {
     }
 
     @Override
-    public <RI> BuildStep<I, RI> rollbackModel(AtLeastOnceBuilder.BuildStep<RI> rollbackModelBuilder) {
-      return rollbackModel(rollbackModelBuilder.build());
+    public <RI> BuildStep<I, RI> rollbackModel(AtLeastOnceBuilder.SuperModelStep<RI> rollbackModelBuilder) {
+      return (name, id) -> new AtMostOnce<>(
+          name,
+          id,
+          requestPayloadType,
+          responsePayloadType,
+          messageCreator,
+          forwarder,
+          inflightTimeout,
+          processModel,
+          onPeerUnavailable,
+          onMissingResponse,
+          onSuccess,
+          onFailure,
+          onValidResponseUnknown,
+          onInvalidResponseRejection,
+          onInvalidResponseUnknown,
+          contentParser,
+          requestAwareContentParser,
+          isAccepted,
+          isRejected,
+          isRejectedByInvalidResponse,
+          superModel -> rollbackModelBuilder.superModel(superModel).build(name + "Rollback", UUID.randomUUID())
+      );
     }
 
     @Override
-    public AtMostOnce<I, Void> build() {
-      return rollbackModel((AtLeastOnce<Void>) null).build();
+    public <RI> BuildStep<I, RI> rollbackModel(AtLeastOnceBuilder.BuildStep<RI> rollbackModelBuilder) {
+      if (rollbackModelBuilder instanceof AtLeastOnceBuilder.SuperModelStep<RI> superModelStep) {
+        return rollbackModel(superModelStep);
+      }
+      return (name, id) -> new AtMostOnce<>(
+          name,
+          id,
+          requestPayloadType,
+          responsePayloadType,
+          messageCreator,
+          forwarder,
+          inflightTimeout,
+          processModel,
+          onPeerUnavailable,
+          onMissingResponse,
+          onSuccess,
+          onFailure,
+          onValidResponseUnknown,
+          onInvalidResponseRejection,
+          onInvalidResponseUnknown,
+          contentParser,
+          requestAwareContentParser,
+          isAccepted,
+          isRejected,
+          isRejectedByInvalidResponse,
+          rollbackModelBuilder.build(name + "Rollback", UUID.randomUUID())
+      );
+    }
+
+    @Override
+    public AtMostOnce<I, Void> build(String name, UUID id) {
+      return rollbackModel((AtLeastOnce<Void>) null).build(name, id);
     }
   }
 

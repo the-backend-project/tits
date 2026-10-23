@@ -4,6 +4,7 @@ import com.github.thxmasj.statemachine.BasicEventType;
 import com.github.thxmasj.statemachine.BasicEventType.ReadOnly;
 import com.github.thxmasj.statemachine.DataType;
 import com.github.thxmasj.statemachine.EventType;
+import com.github.thxmasj.statemachine.templates.cardpayment.AcquirerResponse.ReconciliationValues;
 import java.util.UUID;
 
 public interface SettlementEvent {
@@ -18,8 +19,8 @@ public interface SettlementEvent {
       BasicEventType.of("Reconcile", UUID.fromString("79bba5bd-d813-43ad-8d3e-5597efe24853"), DataType.json(AcquirerResponse.class), DataType.none());
   EventType<AcquirerResponse, Void> InBalance =
       BasicEventType.of("InBalance", UUID.fromString("95a4e74c-e3ec-49a3-976e-28d14f0e41f6"), DataType.json(AcquirerResponse.class), DataType.none());
-  EventType<AcquirerResponse, Void> OutOfBalance =
-      BasicEventType.of("OutOfBalance", UUID.fromString("2ea23e6e-e11b-4fd9-88e6-8a8f18c9c086"), DataType.json(AcquirerResponse.class), DataType.none());
+  EventType<OutOfBalance, OutOfBalance> OutOfBalance =
+      BasicEventType.of("OutOfBalance", UUID.fromString("2ea23e6e-e11b-4fd9-88e6-8a8f18c9c086"), DataType.json(OutOfBalance.class));
   EventType<Void, Void> Timeout =
       BasicEventType.of("Timeout", UUID.fromString("4a4038cd-4120-4512-9850-b9eb8274969c"));
   EventType<Long, Long> MerchantCreditReversed =
@@ -34,5 +35,6 @@ public interface SettlementEvent {
       BasicEventType.of("GetBatchNumber", UUID.fromString("ad4a9ec8-d0e6-44ce-bef3-d2bd20709005"), DataType.json(AcquirerBatchNumber.class), DataType.json(BatchNumber.class));
 
   record CutOff(String merchantId, long batchNumber, String merchantAggregatorId, String merchantAggregatorBaseUrl) {}
+  record OutOfBalance(ReconciliationValues ours, ReconciliationValues theirs) {}
 
 }

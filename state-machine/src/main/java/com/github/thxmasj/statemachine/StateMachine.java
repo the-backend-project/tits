@@ -37,6 +37,7 @@ import com.github.thxmasj.statemachine.database.jdbc.JDBCClient;
 import com.github.thxmasj.statemachine.database.mssql.ChangeState;
 import com.github.thxmasj.statemachine.database.mssql.ChangeState.Change;
 import com.github.thxmasj.statemachine.database.mssql.CreateSchema;
+import com.github.thxmasj.statemachine.database.mssql.DeleteExpiredDeadline;
 import com.github.thxmasj.statemachine.database.mssql.EventsByEntityId;
 import com.github.thxmasj.statemachine.database.mssql.EventsByLastEntity;
 import com.github.thxmasj.statemachine.database.mssql.EventsByLookupId;
@@ -84,8 +85,18 @@ public class StateMachine {
   private final LastSecondaryId lastSecondaryId;
   private final MoveToDLQ moveToDLQ;
   private final NextDeadline nextDeadline;
+  private final DeleteExpiredDeadline deleteExpiredDeadline;
   private final Map<EntityModel, Traverser> traversers;
   private final Map<EntityModel, List<EventType<?, ?>>> eventTypesByEntityModel;
+
+  public StateMachine(
+      Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions,
+      DataSource dataSource,
+      String schemaName,
+      boolean withResolving
+  ) {
+    this(null, transitions, dataSource, null, schemaName, null, Clock.systemUTC(), null, withResolving);
+  }
 
   public StateMachine(
       Function<List<String>, Mono<Void>> delayer,
@@ -96,6 +107,20 @@ public class StateMachine {
       String role,
       Clock clock,
       Listener listener
+  ) {
+    this(delayer, transitions, dataSource, schemaDataSource, schemaName, role, clock, listener, true);
+  }
+
+  public StateMachine(
+      Function<List<String>, Mono<Void>> delayer,
+      Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions,
+      DataSource dataSource,
+      DataSource schemaDataSource,
+      String schemaName,
+      String role,
+      Clock clock,
+      Listener listener,
+      boolean withResolving
   ) {
     this.traversers = transitions.entrySet().stream().collect(toMap(Entry::getKey, e -> new Traverser(e.getValue())));
     List<EntityModel> entityModels = transitions.keySet().stream().toList();
@@ -139,22 +164,22 @@ public class StateMachine {
     this.lastSecondaryId = new LastSecondaryId(dataSource, entityModels, schemaName);
     this.moveToDLQ = new MoveToDLQ(jdbcClient, schemaName);
     this.nextDeadline = new NextDeadline(jdbcClient, eventTypes, clock, entityModels, schemaName);
+    this.deleteExpiredDeadline = new DeleteExpiredDeadline(jdbcClient, schemaName);
     this.listener = listener;
-    // TODO: Differentiate delay spec per queue
-//    var backoff = new DelaySpecification(ofSeconds(10), ofSeconds(20), ofSeconds(100), 1.5);
-//    var processBackedOff = new ProcessBackedOff(jdbcClient, schemaName, clock, backoff);
-    Looper<ResolverStatus> resolverLooper = new Looper<>(
-        "ResolverWorker",
-        false,
-        () -> resolveState().flux().switchIfEmpty(Flux.just(ResolverStatus.Empty)),
-        status -> switch (status) {
-          case Ok -> Duration.ZERO;
-          case Empty -> ofSeconds(1);
-          case Error -> ofSeconds(10);
-        }
-    );
-    resolverLooper.loop();
-    workers.add(resolverLooper);
+    if (withResolving) {
+      Looper<ResolverStatus> resolverLooper = new Looper<>(
+          "ResolverWorker",
+          false,
+          () -> resolveState().flux().switchIfEmpty(Flux.just(ResolverStatus.Empty)),
+          status -> switch (status) {
+            case Ok -> Duration.ZERO;
+            case Empty -> ofSeconds(1);
+            case Error -> ofSeconds(10);
+          }
+      );
+      resolverLooper.loop();
+      workers.add(resolverLooper);
+    }
 //    for (var entityModel : entityModels) {
 //      if (entityModel instanceof HttpOutbox.EntityModel queue) {
 //        var looper = new OutboxWorker(
@@ -207,9 +232,9 @@ public class StateMachine {
           Deadline<?> deadline = deadlineAndEventLog.getT1();
           EventLog eventLog = deadlineAndEventLog.getT2();
           if (eventLog.events().getLast().eventNumber() + 1 != deadline.eventNumber()) {
-            System.out.println("Deadline's event number (" + deadline.eventNumber() + ") != event log's last number (" + eventLog.events().getLast().eventNumber() + ") + 1");
+            System.out.println("Deleting scheduled event: Event number (" + deadline.eventNumber() + ") != event log's last number (" + eventLog.events().getLast().eventNumber() + ") + 1");
             // Race! The state has already been resolved by another resolver or incoming request. Which is OK!
-            return Mono.just(ResolverStatus.Ok);
+            return deleteExpiredDeadline.execute(deadline.entityId().value(), deadline.eventNumber()).map(_ -> ResolverStatus.Ok);
           }
           System.out.println("Deadline eventNumber: " + deadline.eventNumber() + ", log's last event number: "
               + eventLog.lastEventNumber());
@@ -255,7 +280,7 @@ public class StateMachine {
               ).contextWrite(Correlation.contextOf(deadline.correlationId()));
         })
         .onErrorReturn(MappingFailure.class, ResolverStatus.Error)
-        .doOnError(listener::processNextDeadlineFailed)
+        .doOnError(e -> { if (listener != null) listener.processNextDeadlineFailed(e); })
         .onErrorReturn(ResolverStatus.Error)
         .switchIfEmpty(Mono.just(ResolverStatus.Empty));
   }
@@ -460,6 +485,7 @@ public class StateMachine {
                     .contextWrite(ctx -> ctx.put("RS/" + log.entityId().value(), responseSink))
                     .thenMany(responseSink.asFlux())
                     .doOnNext(e -> System.out.println("onEvent output: " + e.type().name() + " (#" + e.eventNumber() + ")"))
+                    .doOnError(e -> {System.out.println("onEvent Z ERROR: " + e);e.printStackTrace();})
                     .retryWhen(RetrySpec.fixedDelay(3, Duration.ofMillis(500))
                         .filter(e -> e instanceof EventAlreadyExists)
                         // Avoid the "Thundering Herd" problem
@@ -480,7 +506,8 @@ public class StateMachine {
       EventLog eventLog,
       ChangeContext<?> requestChangeContext
   ) {
-    return onEvent(correlationId, inputEvent.eventType(), inputEvent.data(), eventLog, requestChangeContext, List.of());
+    return onEvent(correlationId, inputEvent.eventType(), inputEvent.data(), eventLog, requestChangeContext, List.of())
+        .doOnError(e -> System.out.println("onEvent X ERROR: " + e));
   }
 
   private List<Change> changes(@NotNull ChangeContext<?> tail) {
@@ -681,7 +708,7 @@ public class StateMachine {
       T inputData,
       ChangeContext<?> changeContext
   ) {
-    System.out.println("Finding log for " + eventTrigger.eventSpec().eventType().name() + " on " + eventTrigger.entityModel().name());
+    //System.out.println("Finding log for " + eventTrigger.eventSpec().eventType().name() + " on " + eventTrigger.entityModel().name());
     return eventTrigger.createEntity() ?
         Mono.just(emptyEventLog(eventTrigger.entityModel())) :
         eventLog(eventTrigger.entitySelectors().getFirst().apply(inputData), eventTrigger.entityModel(), changeContext);
@@ -692,7 +719,7 @@ public class StateMachine {
       EntityModel entityModel,
       @Nullable ChangeContext<?> changeContext
   ) {
-    System.out.println("Finding event log for " + entityModel.name() + " with selector " + entitySelector);
+    //System.out.println("Finding event log for " + entityModel.name() + " with selector " + entitySelector);
     return switch (entitySelector) {
       case EntitySelector.ByIdFromSession _ -> {
         EventLog log = logFromChangeContext(changeContext, entityModel);
@@ -763,11 +790,11 @@ public class StateMachine {
           && stepOutput instanceof Accepted<?>(Event<?> event, _)
           && event.entityId().equals(entityId.value())
           && !(previous instanceof ChoiceChangeContext)) {
-        System.out.println("Found log from change context for entity id " + entityId.value() + ":\n" + chainToString(changeContext));
+        //System.out.println("Found log from change context for entity id " + entityId.value() + ":\n" + chainToString(changeContext));
         return c.initialChangeContext().log().withNewEvent(event);
       }
     }
-    System.out.println("Did not find log from change context for entity id " + entityId.value());
+    //System.out.println("Did not find log from change context for entity id " + entityId.value());
     return null;
   }
 
@@ -1032,7 +1059,7 @@ public class StateMachine {
                     ).thenReturn(x)
                 )
                 .doOnNext(_ -> {
-                  if (!changes.isEmpty()) {
+                  if (!changes.isEmpty() && listener != null) {
                     listener.changeAccepted(correlationId, toListenerFormat(changes));
                   }
                 })
@@ -1068,6 +1095,18 @@ public class StateMachine {
                 stage1,
                 List.of()
             )
+            .doOnError(e -> System.out.println("onEvent ERROR for " + triggerResult.eventType().name() + " on " + actionTrigger.eventLog().entityModel().name() + ":" + actionTrigger.eventLog().entityId().value() + ": " + e))
+            .retryWhen(RetrySpec.fixedDelay(3, Duration.ofMillis(500))
+                .filter(e -> e instanceof EventAlreadyExists)
+                // Avoid the "Thundering Herd" problem
+                .jitter(1.0)
+                .doAfterRetry(signal -> System.out.println(
+                    System.currentTimeMillis() + ": Retried (" + signal.totalRetries() + ") due to "
+                        + signal.failure().getMessage()))
+                // Rethrow the exception on exhaustion so it can be handled downstream
+                .onRetryExhaustedThrow((_, signal) -> signal.failure())
+            )
+
         );
   }
 

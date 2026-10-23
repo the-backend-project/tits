@@ -53,7 +53,7 @@ public final class HttpRequestMessage extends HttpMessage {
   }
 
   @Override
-  public String head() {
+  public String startLine() {
     return String.format("%s %s", method, uri.toString());
   }
 

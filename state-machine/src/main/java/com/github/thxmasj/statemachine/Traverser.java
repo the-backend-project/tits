@@ -10,6 +10,7 @@ import static java.util.stream.Collectors.joining;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -62,11 +63,19 @@ public class Traverser {
     if (t != null && eventType == BuiltinEventTypes.Rollback)
       System.out.println("Using custom rollback transition for entity " + eventLog.entityModel().name() + ": " + t + "\nAll transitions:\n" + transitions.values().stream().flatMap(List::stream).map(Object::toString).collect(joining("\n")));
     if (t == null && eventType == BuiltinEventTypes.Rollback && eventType instanceof BasicEventType.Rollback rollback)
-      //t = onEvent(rollback).toSelf().assembleInput().output(d -> d);
       t = rollbackOn(rollback);
     else if (t == null && eventType == BuiltinEventTypes.Status)
       t = statusOn();
     return tuple(currentState, t);
+  }
+
+  public State targetState(EventType<?, ?>... eventTypes) {
+    var currentState = Begin;
+    for (var eventType : eventTypes) {
+      var t = findTransitionForLoggedEvent(eventType, currentState);
+      currentState = t.toState();
+    }
+    return currentState;
   }
 
 //  public TransitionModel<?, ?> accept(State currentState, EventType<?, ?> eventType) {

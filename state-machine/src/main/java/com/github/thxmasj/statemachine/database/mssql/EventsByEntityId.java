@@ -90,7 +90,7 @@ public class EventsByEntityId {
         rs.close();
         if (events.isEmpty() && secondaryIds.isEmpty())
           throw new UnknownEntity(entityModel, entityId);
-        System.out.println("Found event log for " + entityModel.name() + "/" + entityId.value() + ": " + events.stream().map(e -> e.typeName()).collect(joining(", ")));
+        //System.out.println("Found event log for " + entityModel.name() + "/" + entityId.value() + ": " + events.stream().map(e -> e.typeName()).collect(joining(", ")));
         return new EventLog(entityModel, entityId, secondaryIds, Collections.unmodifiableList(events));
       }
     });

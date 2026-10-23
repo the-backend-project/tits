@@ -15,14 +15,15 @@ import com.github.thxmasj.statemachine.PlantUMLFormatter;
 import com.github.thxmasj.statemachine.templates.cardpayment.DummyTransitions;
 import java.io.IOException;
 import java.util.List;
+import java.util.UUID;
 
 public class Main {
 
   static void main() throws IOException {
-    var atLeastOnce = atLeastOnce("AtLeastOnce");
+    var atLeastOnce = atLeastOnce().build(UUID.randomUUID(), "AtLeastOnce");
     System.out.println(new PlantUMLFormatter(atLeastOnce, atLeastOnce.transitions()).formatToImage("docs/images/"));
-    var atMostOnce = atMostOnce("AtMostOnce");
-    System.out.println(new PlantUMLFormatter(atMostOnce, atMostOnce.transitions()).formatToFile("docs/images/"));
+    var atMostOnce = atMostOnce().build(UUID.randomUUID(), "AtMostOnce");
+    System.out.println(new PlantUMLFormatter(atMostOnce, atMostOnce.transitions()).formatToImage("docs/images/"));
     System.out.println(new PlantUMLFormatter(RequestRouting, requestRoutingTransitions(List.of())).formatToImage("docs/images/"));
     System.out.println(new PlantUMLFormatter(RequestDispatching, requestDispatchingTransitions(List.of(), List.of())).formatToImage("docs/images/"));
     System.out.println(new PlantUMLFormatter(Item, Item.transitions()).formatToImage("docs/images/"));

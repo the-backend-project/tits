@@ -17,6 +17,8 @@ import static com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Me
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.github.thxmasj.statemachine.BasicEventType;
@@ -139,8 +141,6 @@ public class HttpOutboxTest {
   @Test
   public void requestDispatchedOutputDataType() {
     var exchange = HttpOutboxRequest.atMostOnce()
-        .name("ExchangeWithTypedPayload")
-        .id(UUID.randomUUID())
         .requestPayloadType(DataType.string())
         .responsePayloadType(DataType.string())
         .<Void>messageCreator(_ -> requestMessage("/test", "payload"))
@@ -149,7 +149,7 @@ public class HttpOutboxTest {
         .isAccepted(_ -> true)
         .isRejected(_ -> false)
         .isRejectedByInvalidResponse(_ -> false)
-        .build();
+        .build("ExchangeWithTypedPayload", UUID.randomUUID());
 
     assertNotNull(exchange.requestDispatched().outputDataType());
     assertEquals("(HTTP request<string>, uuid)", exchange.requestDispatched().outputDataType().name());
@@ -158,8 +158,6 @@ public class HttpOutboxTest {
   @Test
   public void atLeastOnceRequestDispatchedOutputDataType() {
     var exchange = HttpOutboxRequest.atLeastOnce()
-        .name("AtLeastOnceWithTypedPayload")
-        .id(UUID.randomUUID())
         .requestPayloadType(DataType.string())
         .responsePayloadType(DataType.string())
         .<Void>messageCreator(_ -> requestMessage("/test", "payload"))
@@ -171,17 +169,127 @@ public class HttpOutboxTest {
         .isFailureByInvalidResponseTransient(_ -> false)
         .isAttemptAvailable(_ -> true)
         .backoffAlgorithm(_ -> Duration.ofSeconds(1))
-        .build();
+        .build("AtLeastOnceWithTypedPayload", UUID.randomUUID());
 
     assertNotNull(exchange.requestDispatched().outputDataType());
     assertEquals("(HTTP request<string>, uuid)", exchange.requestDispatched().outputDataType().name());
   }
 
   @Test
+  public void atLeastOnceWithSuperModel() {
+    var superModel = HttpOutboxRequest.atMostOnce()
+        .requestPayloadType(DataType.string())
+        .responsePayloadType(DataType.string())
+        .<Void>messageCreator(_ -> requestMessage("/super", "payload"))
+        .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
+        .contentParser(_ -> valid("response"))
+        .isAccepted(_ -> true)
+        .isRejected(_ -> false)
+        .isRejectedByInvalidResponse(_ -> false)
+        .build("SuperModel", UUID.randomUUID());
+
+    var exchange = HttpOutboxRequest.atLeastOnce()
+        .requestPayloadType(DataType.string())
+        .responsePayloadType(DataType.string())
+        .<Void>messageCreator(_ -> requestMessage("/test", "payload"))
+        .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
+        .contentParser(_ -> valid("response"))
+        .isAccepted(_ -> true)
+        .isFailureTransient(_ -> true)
+        .isRejectedByInvalidResponse(_ -> false)
+        .isFailureByInvalidResponseTransient(_ -> false)
+        .isAttemptAvailable(_ -> true)
+        .backoffAlgorithm(_ -> Duration.ofSeconds(1))
+        .superModel(superModel)
+        .build("AtLeastOnceWithSuperModel", UUID.randomUUID());
+
+    assertSame(superModel, exchange.superModel());
+  }
+
+  @Test
+  public void atLeastOnceWithoutSuperModel() {
+    var exchange = HttpOutboxRequest.atLeastOnce()
+        .requestPayloadType(DataType.string())
+        .responsePayloadType(DataType.string())
+        .<Void>messageCreator(_ -> requestMessage("/test", "payload"))
+        .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
+        .contentParser(_ -> valid("response"))
+        .isAccepted(_ -> true)
+        .isFailureTransient(_ -> true)
+        .isRejectedByInvalidResponse(_ -> false)
+        .isFailureByInvalidResponseTransient(_ -> false)
+        .isAttemptAvailable(_ -> true)
+        .backoffAlgorithm(_ -> Duration.ofSeconds(1))
+        .build("AtLeastOnceWithoutSuperModel", UUID.randomUUID());
+
+    assertNull(exchange.superModel());
+  }
+
+  @Test
+  public void rollbackModelBuilderReceivesSuperModel() {
+    var rollbackModelBuilder = HttpOutboxRequest.atLeastOnce()
+        .requestPayloadType(DataType.string())
+        .responsePayloadType(DataType.string())
+        .<Void>messageCreator(_ -> requestMessage("/rollback", "payload"))
+        .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
+        .contentParser(_ -> valid("response"))
+        .isAccepted(_ -> true)
+        .isFailureTransient(_ -> true)
+        .isRejectedByInvalidResponse(_ -> false)
+        .isFailureByInvalidResponseTransient(_ -> false)
+        .isAttemptAvailable(_ -> true)
+        .backoffAlgorithm(_ -> Duration.ofSeconds(1));
+
+    var superModel = HttpOutboxRequest.atMostOnce()
+        .requestPayloadType(DataType.string())
+        .responsePayloadType(DataType.string())
+        .<Void>messageCreator(_ -> requestMessage("/super", "payload"))
+        .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
+        .contentParser(_ -> valid("response"))
+        .isAccepted(_ -> true)
+        .isRejected(_ -> false)
+        .isRejectedByInvalidResponse(_ -> false)
+        .rollbackModel(rollbackModelBuilder)
+        .build("SuperModel", UUID.randomUUID());
+
+    assertNotNull(superModel.rollbackModel());
+    assertSame(superModel, superModel.rollbackModel().superModel());
+  }
+
+  @Test
+  public void rollbackModelBuildStepReceivesSuperModel() {
+    AtLeastOnceBuilder.BuildStep<Void> rollbackModelBuilder = HttpOutboxRequest.atLeastOnce()
+        .requestPayloadType(DataType.string())
+        .responsePayloadType(DataType.string())
+        .<Void>messageCreator(_ -> requestMessage("/rollback", "payload"))
+        .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
+        .contentParser(_ -> valid("response"))
+        .isAccepted(_ -> true)
+        .isFailureTransient(_ -> true)
+        .isRejectedByInvalidResponse(_ -> false)
+        .isFailureByInvalidResponseTransient(_ -> false)
+        .isAttemptAvailable(_ -> true)
+        .backoffAlgorithm(_ -> Duration.ofSeconds(1));
+
+    var superModel = HttpOutboxRequest.atMostOnce()
+        .requestPayloadType(DataType.string())
+        .responsePayloadType(DataType.string())
+        .<Void>messageCreator(_ -> requestMessage("/super", "payload"))
+        .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
+        .contentParser(_ -> valid("response"))
+        .isAccepted(_ -> true)
+        .isRejected(_ -> false)
+        .isRejectedByInvalidResponse(_ -> false)
+        .rollbackModel(rollbackModelBuilder)
+        .build("SuperModel", UUID.randomUUID());
+
+    assertNotNull(superModel.rollbackModel());
+    assertSame(superModel, superModel.rollbackModel().superModel());
+  }
+
+  @Test
   public void atMostOnceWithRequestAwareContentParser() {
     var exchange = HttpOutboxRequest.atMostOnce()
-        .name("ExchangeWithRequestAwareContentParser")
-        .id(UUID.randomUUID())
         .requestPayloadType(DataType.string())
         .responsePayloadType(DataType.string())
         .<Void>messageCreator(_ -> requestMessage("/test", "request-payload"))
@@ -190,7 +298,7 @@ public class HttpOutboxTest {
         .isAccepted(_ -> true)
         .isRejected(_ -> false)
         .isRejectedByInvalidResponse(_ -> false)
-        .build();
+        .build("ExchangeWithRequestAwareContentParser", UUID.randomUUID());
 
     assertNotNull(exchange.requestDispatched().outputDataType());
     assertEquals("(HTTP request<string>, uuid)", exchange.requestDispatched().outputDataType().name());
@@ -199,8 +307,6 @@ public class HttpOutboxTest {
   @Test
   public void atLeastOnceWithRequestAwareContentParser() {
     var exchange = HttpOutboxRequest.atLeastOnce()
-        .name("AtLeastOnceWithRequestAwareContentParser")
-        .id(UUID.randomUUID())
         .requestPayloadType(DataType.string())
         .responsePayloadType(DataType.string())
         .<Void>messageCreator(_ -> requestMessage("/test", "request-payload"))
@@ -212,7 +318,7 @@ public class HttpOutboxTest {
         .isFailureByInvalidResponseTransient(_ -> false)
         .isAttemptAvailable(_ -> true)
         .backoffAlgorithm(_ -> Duration.ofSeconds(1))
-        .build();
+        .build("AtLeastOnceWithRequestAwareContentParser", UUID.randomUUID());
 
     assertNotNull(exchange.requestDispatched().outputDataType());
     assertEquals("(HTTP request<string>, uuid)", exchange.requestDispatched().outputDataType().name());
@@ -226,8 +332,6 @@ public class HttpOutboxTest {
     EventType<Void, Void> failed = BasicEventType.of("Failed", UUID.randomUUID());
     String path = "/" + UUID.randomUUID();
     HttpOutboxRequest<Void> exchange = HttpOutboxRequest.atMostOnce()
-        .name("ExchangeWithRequestAwareContentParser")
-        .id(UUID.fromString("a3778c63-144f-4748-9e8b-cc10ee20db3f"))
         .requestPayloadType(DataType.string())
         .responsePayloadType(DataType.string())
         .<Void>messageCreator(_ -> requestMessage(path, "hello"))
@@ -243,7 +347,7 @@ public class HttpOutboxTest {
         .isAccepted(r -> r.statusCode() >= 200 && r.statusCode() <= 299)
         .isRejected(r -> r.statusCode() >= 400 && r.statusCode() <= 499)
         .isRejectedByInvalidResponse(r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499)
-        .build();
+        .build("ExchangeWithRequestAwareContentParser", UUID.fromString("a3778c63-144f-4748-9e8b-cc10ee20db3f"));
 
     Map<State, List<TransitionModel<?, ?>>> processTransitions = Map.of(
         Begin, List.of(
@@ -390,8 +494,6 @@ public class HttpOutboxTest {
     EntityModel process = EntityModel.of("Process", UUID.fromString("dda0cc10-3356-4522-8527-ca4f7006c566"));
     EventType<Void, Void> processed = BasicEventType.of("Processed", UUID.fromString("433d18b2-8429-4615-aeb0-5de2240413ea"));
     AtLeastOnce<Void> alo = HttpOutboxRequest.atLeastOnce()
-        .name("ALOExchange")
-        .id(UUID.randomUUID())
         .requestPayloadType(DataType.none())
         .responsePayloadType(DataType.none())
         .<Void>messageCreator(_ -> requestMessage("/test"))
@@ -406,7 +508,7 @@ public class HttpOutboxTest {
         .isFailureByInvalidResponseTransient(_ -> false)
         .isAttemptAvailable(_ -> false)
         .backoffAlgorithm(_ -> Duration.ofSeconds(1))
-        .build();
+        .build("ALOExchange", UUID.randomUUID());
 
     var machine = Init.stateMachine(process, Map.of(Begin, List.of(onEvent(processed).to(States.Done).output())), List.of(), List.of(alo));
 
@@ -449,8 +551,6 @@ public class HttpOutboxTest {
   public void atLeastOnceBeginRequestDispatchedOutputsTriggerEntityId() {
     EntityModel process = EntityModel.of("Process", UUID.fromString("dda0cc10-3356-4522-8527-ca4f7006c566"));
     AtLeastOnce<Void> alo = HttpOutboxRequest.atLeastOnce()
-        .name("ALOExchange")
-        .id(UUID.randomUUID())
         .requestPayloadType(DataType.none())
         .responsePayloadType(DataType.none())
         .<Void>messageCreator(_ -> requestMessage("/test"))
@@ -464,7 +564,7 @@ public class HttpOutboxTest {
         .isFailureByInvalidResponseTransient(_ -> false)
         .isAttemptAvailable(_ -> false)
         .backoffAlgorithm(_ -> Duration.ofSeconds(1))
-        .build();
+        .build("ALOExchange", UUID.randomUUID());
 
     var machine = Init.stateMachine(process, Map.of(Begin, List.of()), List.of(), List.of(alo));
 
@@ -530,8 +630,6 @@ public class HttpOutboxTest {
       EventType<Void, Void> unknown = BasicEventType.of("Unknown", UUID.fromString("46cf31dd-56ed-41cb-b2ca-501930a23e44"));
       String path = "/" + UUID.randomUUID();
       AtMostOnce<Void, Void> Exchange = HttpOutboxRequest.atMostOnce()
-          .name("Exchange")
-          .id(UUID.fromString("a3778c63-144f-4748-9e8b-cc10ee20db3f"))
           .requestPayloadType(DataType.none())
           .responsePayloadType(DataType.none())
           .<Void>messageCreator(_ -> requestMessage(path))
@@ -549,8 +647,6 @@ public class HttpOutboxTest {
           .isRejected(r -> r.statusCode() >= 400 && r.statusCode() <= 499)
           .isRejectedByInvalidResponse(r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499)
           .rollbackModel(HttpOutboxRequest.atLeastOnce()
-              .name("ExchangeRollback")
-              .id(UUID.fromString("fd4959b4-5c14-4b7a-8ea5-b559b94f803c"))
               .requestPayloadType(DataType.none())
               .responsePayloadType(DataType.none())
               .<Void>messageCreator(_ -> requestMessage("/rollback"))
@@ -563,9 +659,9 @@ public class HttpOutboxTest {
               .isFailureByInvalidResponseTransient(r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499)
               .isAttemptAvailable(c -> Duration.between(c.enqueueTime(), c.now()).compareTo(Duration.ofHours(5)) < 0)
               .backoffAlgorithm(c -> new DelaySpecification(Duration.ofSeconds(10), Duration.ofMinutes(10), Duration.ofHours(5), 1.5).calculateDelay(c.attemptNumber()))
-              .build()
+              .build("ExchangeRollback", UUID.fromString("fd4959b4-5c14-4b7a-8ea5-b559b94f803c"))
           )
-          .build();
+          .build("Exchange", UUID.fromString("a3778c63-144f-4748-9e8b-cc10ee20db3f"));
 
       Map<State, List<TransitionModel<?, ?>>> processTransitions = Map.of(
           Begin, List.of(
@@ -612,8 +708,6 @@ public class HttpOutboxTest {
       EventType<Void, Void> failed = BasicEventType.of("Failed", UUID.randomUUID());
       String path = "/" + UUID.randomUUID();
       HttpOutboxRequest<Void> Exchange = HttpOutboxRequest.atMostOnce()
-          .name("ExchangeWithoutRollback")
-          .id(UUID.fromString("a3778c63-144f-4748-9e8b-cc10ee20db3f"))
           .requestPayloadType(DataType.none())
           .responsePayloadType(DataType.none())
           .<Void>messageCreator(_ -> requestMessage(path))
@@ -629,7 +723,7 @@ public class HttpOutboxTest {
           .isAccepted(r -> r.statusCode() >= 200 && r.statusCode() <= 299)
           .isRejected(r -> r.statusCode() >= 400 && r.statusCode() <= 499)
           .isRejectedByInvalidResponse(r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499)
-          .build();
+          .build("ExchangeWithoutRollback", UUID.fromString("a3778c63-144f-4748-9e8b-cc10ee20db3f"));
 
       Map<State, List<TransitionModel<?, ?>>> processTransitions = Map.of(
           Begin, List.of(
@@ -667,8 +761,6 @@ public class HttpOutboxTest {
       EventType<Void, Void> doProcess = BasicEventType.of("Do process", UUID.randomUUID());
       String path = "/" + UUID.randomUUID();
       HttpOutboxRequest<Void> Exchange = HttpOutboxRequest.atMostOnce()
-          .name("ExchangeWithDefaultInvalidResponse")
-          .id(UUID.fromString("a3778c63-144f-4748-9e8b-cc10ee20db3f"))
           .requestPayloadType(DataType.none())
           .responsePayloadType(DataType.none())
           .<Void>messageCreator(_ -> requestMessage(path))
@@ -678,7 +770,7 @@ public class HttpOutboxTest {
           .isAccepted(_ -> false)
           .isRejected(_ -> false)
           .isRejectedByInvalidResponse(_ -> true)
-          .build();
+          .build("ExchangeWithDefaultInvalidResponse", UUID.fromString("a3778c63-144f-4748-9e8b-cc10ee20db3f"));
 
       Map<State, List<TransitionModel<?, ?>>> processTransitions = Map.of(
           Begin, List.of(
@@ -716,8 +808,6 @@ public class HttpOutboxTest {
       EventType<Void, Void> doProcess = BasicEventType.of("Do process", UUID.randomUUID());
       String path = "/" + UUID.randomUUID();
       HttpOutboxRequest<Void> Exchange = HttpOutboxRequest.atMostOnce()
-          .name("ExchangeWithDefaultInvalidResponseUnknown")
-          .id(UUID.fromString("a3778c63-144f-4748-9e8b-cc10ee20db3f"))
           .requestPayloadType(DataType.unknown())
           .responsePayloadType(DataType.unknown())
           .<Void>messageCreator(_ -> requestMessage(path))
@@ -727,7 +817,7 @@ public class HttpOutboxTest {
           .isAccepted(_ -> false)
           .isRejected(_ -> false)
           .isRejectedByInvalidResponse(_ -> false)
-          .build();
+          .build("ExchangeWithDefaultInvalidResponseUnknown", UUID.fromString("a3778c63-144f-4748-9e8b-cc10ee20db3f"));
 
       Map<State, List<TransitionModel<?, ?>>> processTransitions = Map.of(
           Begin, List.of(
@@ -762,8 +852,6 @@ public class HttpOutboxTest {
       EntityModel process = EntityModel.of("Process", UUID.randomUUID());
       String path = "/" + UUID.randomUUID();
       HttpOutboxRequest<Void> exchange = HttpOutboxRequest.atMostOnce()
-          .name("ExchangeWithDefaultMissingResponse")
-          .id(UUID.fromString("a3778c63-144f-4748-9e8b-cc10ee20db3f"))
           .requestPayloadType(DataType.unknown())
           .responsePayloadType(DataType.unknown())
           .<Void>messageCreator(_ -> requestMessage(path))
@@ -773,61 +861,10 @@ public class HttpOutboxTest {
           .isAccepted(_ -> true)
           .isRejected(_ -> false)
           .isRejectedByInvalidResponse(_ -> false)
-          .build();
+          .build("ExchangeWithDefaultMissingResponse", UUID.fromString("a3778c63-144f-4748-9e8b-cc10ee20db3f"));
       return new ProcessModelWithDefaultMissingResponse(process, exchange);
     }
 
-  }
-
-  @Test
-  public void contractWithContentParser() {
-    HttpOutboxRequestContract<Void, String, String, Void> contract = HttpOutboxRequestContract.<Void, String, String, Void>builder()
-        .messageCreator(_ -> requestMessage("/test", "hello"))
-        .requestPayloadType(DataType.string())
-        .responsePayloadType(DataType.string())
-        .contentParser((req, response) -> valid(req.payload() + ":" + new String(response.body())))
-        .build();
-
-    assertNotNull(contract.contentParser());
-    assertEquals("hello:test", contract.contentParser().apply(
-        requestMessage("/test", "hello"),
-        new HttpResponseMessage(200, "OK", Map.of(), "test".getBytes())
-    ).validValue());
-
-    HttpOutboxRequestContract<Void, String, String, Void> unaryContract = HttpOutboxRequestContract.<Void, String, String, Void>builder()
-        .messageCreator(_ -> requestMessage("/test", "hello"))
-        .requestPayloadType(DataType.string())
-        .responsePayloadType(DataType.string())
-        .contentParser(response -> valid(new String(response.body())))
-        .build();
-
-    assertNotNull(unaryContract.contentParser());
-    assertEquals("test", unaryContract.contentParser().apply(
-        requestMessage("/test", "hello"),
-        new HttpResponseMessage(200, "OK", Map.of(), "test".getBytes())
-    ).validValue());
-
-    HttpOutboxRequestContract<Void, String, String, String> contractWithAdapters = HttpOutboxRequestContract.<Void, String, String, String>builder()
-        .messageCreator(_ -> requestMessage("/test", "hello"))
-        .requestPayloadType(DataType.string())
-        .responsePayloadType(DataType.string())
-        .responseAdapter(res -> "success:" + res.payload())
-        .failureAdapter(res -> "failure:" + res.payload())
-        .build();
-
-    assertEquals("success:ok", contractWithAdapters.responseAdapter().apply(new TypedHttpResponse<>(200, "OK", Map.of(), "ok")));
-    assertEquals("failure:err", ((Function<TypedHttpResponse<String>, String>) contractWithAdapters.failureAdapter()).apply(new TypedHttpResponse<>(400, "Bad Request", Map.of(), "err")));
-
-    HttpOutboxRequestContract<Void, String, String, Void> contractWithRepeat = HttpOutboxRequestContract.<Void, String, String, Void>builder()
-        .messageCreator(_ -> requestMessage("/test", "hello"))
-        .requestPayloadType(DataType.string())
-        .responsePayloadType(DataType.string())
-        .repeatMessageCreator(msg -> requestMessage("/repeat", msg.payload() + "-repeated"))
-        .build();
-
-    assertNotNull(contractWithRepeat.repeatMessageCreator());
-    assertEquals("/repeat", contractWithRepeat.repeatMessageCreator().apply(null, requestMessage("/test", "hello")).uri().getPath());
-    assertEquals("hello-repeated", contractWithRepeat.repeatMessageCreator().apply(null, requestMessage("/test", "hello")).payload());
   }
 
 }

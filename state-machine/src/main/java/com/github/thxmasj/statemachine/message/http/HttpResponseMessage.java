@@ -38,7 +38,7 @@ public final class HttpResponseMessage extends HttpMessage {
   }
 
   @Override
-  public String head() {
+  public String startLine() {
     return String.format("HTTP/1.1 %d %s", statusCode, reasonPhrase);
   }
 

@@ -28,18 +28,8 @@ public final class AtLeastOnceBuilder {
 
   private AtLeastOnceBuilder() {}
 
-  static NameStep create() {
+  static RequestPayloadTypeStep create() {
     return new WithNothing();
-  }
-
-  public interface NameStep {
-
-    IdStep name(String name);
-  }
-
-  public interface IdStep {
-
-    RequestPayloadTypeStep id(UUID id);
   }
 
   public interface RequestPayloadTypeStep {
@@ -109,6 +99,8 @@ public final class AtLeastOnceBuilder {
   public interface IsAcceptedStep<I, RQ, RS> {
 
     IsFailureTransientStep<I, RQ, RS> isAccepted(Predicate<TypedHttpResponse<RS>> isAccepted);
+
+    IsFailureTransientStep<I, RQ, RS> isRollbackAccepted(Predicate<Tuple2<TypedHttpResponse<RS>, Boolean>> isRollbackAccepted);
   }
 
   public interface IsFailureTransientStep<I, RQ, RS> {
@@ -137,70 +129,55 @@ public final class AtLeastOnceBuilder {
 
   public interface BackoffAlgorithmStep<I, RQ, RS> {
 
-    BuildStep<I> backoffAlgorithm(Function<RetryContext, Duration> backoffAlgorithm);
+    SuperModelStep<I> backoffAlgorithm(Function<RetryContext, Duration> backoffAlgorithm);
+  }
+
+  /// Optional: the super model defaults to none.
+  public interface SuperModelStep<I> extends BuildStep<I> {
+
+    BuildStep<I> superModel(AtMostOnce<?, ?> superModel);
   }
 
   public interface BuildStep<I> {
 
-    AtLeastOnce<I> build();
+    default AtLeastOnce<I> build(UUID id, String name) {
+      return build(name, id);
+    }
+
+    AtLeastOnce<I> build(String name, UUID id);
   }
 
-  private static final class WithNothing implements NameStep, IdStep, RequestPayloadTypeStep {
-
-    private String name;
-    private UUID id;
-
-    @Override
-    public IdStep name(String name) {
-      this.name = name;
-      return this;
-    }
-
-    @Override
-    public RequestPayloadTypeStep id(UUID id) {
-      this.id = id;
-      return this;
-    }
+  private static final class WithNothing implements RequestPayloadTypeStep {
 
     @Override
     public <RQ> ResponsePayloadTypeStep<RQ> requestPayloadType(DataType<RQ> requestPayloadType) {
-      return new WithRequestPayloadType<>(name, id, requestPayloadType);
+      return new WithRequestPayloadType<>(requestPayloadType);
     }
   }
 
   private static final class WithRequestPayloadType<RQ> implements ResponsePayloadTypeStep<RQ> {
 
-    private final String name;
-    private final UUID id;
     private final DataType<RQ> requestPayloadType;
 
-    private WithRequestPayloadType(String name, UUID id, DataType<RQ> requestPayloadType) {
-      this.name = name;
-      this.id = id;
+    private WithRequestPayloadType(DataType<RQ> requestPayloadType) {
       this.requestPayloadType = requestPayloadType;
     }
 
     @Override
     public <RS> MessageCreatorStep<RQ, RS> responsePayloadType(DataType<RS> responsePayloadType) {
-      return new WithResponsePayloadType<>(name, id, requestPayloadType, responsePayloadType);
+      return new WithResponsePayloadType<>(requestPayloadType, responsePayloadType);
     }
   }
 
   private static final class WithResponsePayloadType<RQ, RS> implements MessageCreatorStep<RQ, RS> {
 
-    private final String name;
-    private final UUID id;
     private final DataType<RQ> requestPayloadType;
     private final DataType<RS> responsePayloadType;
 
     private WithResponsePayloadType(
-        String name,
-        UUID id,
         DataType<RQ> requestPayloadType,
         DataType<RS> responsePayloadType
     ) {
-      this.name = name;
-      this.id = id;
       this.requestPayloadType = requestPayloadType;
       this.responsePayloadType = responsePayloadType;
     }
@@ -209,15 +186,13 @@ public final class AtLeastOnceBuilder {
     public <I> RepeatMessageCreatorStep<I, RQ, RS> messageCreatorReactive(
         Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator
     ) {
-      return new WithMessageCreator<>(name, id, requestPayloadType, responsePayloadType, messageCreator);
+      return new WithMessageCreator<>(requestPayloadType, responsePayloadType, messageCreator);
     }
   }
 
   private static final class WithMessageCreator<I, RQ, RS> implements RepeatMessageCreatorStep<I, RQ, RS>,
       InflightTimeoutStep<I, RQ, RS> {
 
-    private final String name;
-    private final UUID id;
     private final DataType<RQ> requestPayloadType;
     private final DataType<RS> responsePayloadType;
     private final Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator;
@@ -228,14 +203,10 @@ public final class AtLeastOnceBuilder {
     private EntityModel processModel;
 
     private WithMessageCreator(
-        String name,
-        UUID id,
         DataType<RQ> requestPayloadType,
         DataType<RS> responsePayloadType,
         Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator
     ) {
-      this.name = name;
-      this.id = id;
       this.requestPayloadType = requestPayloadType;
       this.responsePayloadType = responsePayloadType;
       this.messageCreator = messageCreator;
@@ -270,8 +241,6 @@ public final class AtLeastOnceBuilder {
     @Override
     public OnSuccessStep<I, RQ, RS> contentParser(Function<HttpResponseMessage, Validated<RS>> contentParser) {
       return new WithContentParser<>(
-          name,
-          id,
           requestPayloadType,
           responsePayloadType,
           messageCreator,
@@ -289,8 +258,6 @@ public final class AtLeastOnceBuilder {
         BiFunction<TypedHttpRequest<RQ>, HttpResponseMessage, Validated<RS>> contentParser
     ) {
       return new WithContentParser<>(
-          name,
-          id,
           requestPayloadType,
           responsePayloadType,
           messageCreator,
@@ -306,10 +273,8 @@ public final class AtLeastOnceBuilder {
 
   private static final class WithContentParser<I, RQ, RS> implements OnSuccessStep<I, RQ, RS>, IsFailureTransientStep<I, RQ, RS>,
       IsRejectedByInvalidResponseStep<I, RQ, RS>, IsFailureByInvalidResponseTransientStep<I, RQ, RS>, IsAttemptAvailableStep<I, RQ, RS>,
-      BackoffAlgorithmStep<I, RQ, RS>, BuildStep<I> {
+      BackoffAlgorithmStep<I, RQ, RS>, SuperModelStep<I>, BuildStep<I> {
 
-    private final String name;
-    private final UUID id;
     private final DataType<RQ> requestPayloadType;
     private final DataType<RS> responsePayloadType;
     private final Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator;
@@ -321,15 +286,15 @@ public final class AtLeastOnceBuilder {
     private final BiFunction<TypedHttpRequest<RQ>, HttpResponseMessage, Validated<RS>> requestAwareContentParser;
     private Callback<TypedHttpResponse<RS>, ?> onSuccess;
     private Predicate<TypedHttpResponse<RS>> isAccepted;
+    private Predicate<Tuple2<TypedHttpResponse<RS>, Boolean>> isRollbackAccepted;
     private Predicate<TypedHttpResponse<RS>> isFailureTransient;
     private Predicate<Tuple2<HttpResponseMessage, String>> isRejectedByInvalidResponse;
     private Predicate<Tuple2<HttpResponseMessage, String>> isFailureByInvalidResponseTransient;
     private Predicate<RetryContext> isAttemptAvailable;
     private Function<RetryContext, Duration> backoffAlgorithm;
+    private AtMostOnce<?, ?> superModel;
 
     private WithContentParser(
-        String name,
-        UUID id,
         DataType<RQ> requestPayloadType,
         DataType<RS> responsePayloadType,
         Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator,
@@ -340,8 +305,6 @@ public final class AtLeastOnceBuilder {
         Function<HttpResponseMessage, Validated<RS>> contentParser,
         BiFunction<TypedHttpRequest<RQ>, HttpResponseMessage, Validated<RS>> requestAwareContentParser
     ) {
-      this.name = name;
-      this.id = id;
       this.requestPayloadType = requestPayloadType;
       this.responsePayloadType = responsePayloadType;
       this.messageCreator = messageCreator;
@@ -370,6 +333,12 @@ public final class AtLeastOnceBuilder {
     @Override
     public IsFailureTransientStep<I, RQ, RS> isAccepted(Predicate<TypedHttpResponse<RS>> isAccepted) {
       this.isAccepted = isAccepted;
+      return this;
+    }
+
+    @Override
+    public IsFailureTransientStep<I, RQ, RS> isRollbackAccepted(Predicate<Tuple2<TypedHttpResponse<RS>, Boolean>> isRollbackAccepted) {
+      this.isRollbackAccepted = isRollbackAccepted;
       return this;
     }
 
@@ -404,13 +373,19 @@ public final class AtLeastOnceBuilder {
     }
 
     @Override
-    public BuildStep<I> backoffAlgorithm(Function<RetryContext, Duration> backoffAlgorithm) {
+    public SuperModelStep<I> backoffAlgorithm(Function<RetryContext, Duration> backoffAlgorithm) {
       this.backoffAlgorithm = backoffAlgorithm;
       return this;
     }
 
     @Override
-    public AtLeastOnce<I> build() {
+    public BuildStep<I> superModel(AtMostOnce<?, ?> superModel) {
+      this.superModel = superModel;
+      return this;
+    }
+
+    @Override
+    public AtLeastOnce<I> build(String name, UUID id) {
       return new AtLeastOnce<>(
           name,
           id,
@@ -425,11 +400,13 @@ public final class AtLeastOnceBuilder {
           contentParser,
           requestAwareContentParser,
           isAccepted,
+          isRollbackAccepted,
           isFailureTransient,
           isRejectedByInvalidResponse,
           isFailureByInvalidResponseTransient,
           isAttemptAvailable,
-          backoffAlgorithm
+          backoffAlgorithm,
+          superModel
       );
     }
   }
