@@ -227,6 +227,10 @@ public interface TransitionModels {
     );
   }
 
+  private static <T, U> boolean compareRequests(HttpRequestMessage newRequest, HttpRequestMessage oldRequest, ContentRoute<T, U> route) {
+    return route.normalizer().apply(newRequest).equals(route.normalizer().apply(oldRequest));
+  }
+
   private static <T, U> TransitionModel<?, ?> dispatchChoiceTransition(ContentRoute<T, U> route) {
     return onEvent(route.dispatchingEventType()).to(Dispatched)
         .assembleInput()
@@ -244,7 +248,7 @@ public interface TransitionModels {
                 .output(d -> d.t1().t3()),
             d -> tuple("Rolled back", d.t2().rejected().log().entityId(), d.t1().request())
         )
-        .when(d -> d.t2().isRejected() && d.t1().request().equals(route.normalizer().apply(d.t2().rejected().log().one(AcceptRequest).t1()))).then(
+        .when(d -> d.t2().isRejected() && compareRequests(d.t1().request(), d.t2().rejected().log().one(AcceptRequest).t1(), route)).then(
             onEvent(RejectDuplicateRequest).to(Rejected)
                 .assembleInput()
                 .trigger(CompleteDuplicatedRequest).with(Tuple2::t2).on(RequestDispatching).identifiedBy(entityIdFromSession())
