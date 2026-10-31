@@ -31,17 +31,17 @@ public class Traverser {
       lastTransition = findTransitionForLoggedEvent(loggedEvent, currentState);
       currentState = targetState(currentState, lastTransition);
     }
-    System.out.printf(
-        """
-        Traverser.currentState for %s: %s
-        Effective events: %s
-        Actual events:    %s
-        """,
-        eventLog.entityModel().name(),
-        currentState.name(),
-        effectiveEvents.stream().map(e -> e.type().name() + "/" + e.type().id()).collect(joining(", ")),
-        eventLog.events().stream().map(Event::typeName).collect(joining(", "))
-    );
+//    System.out.printf(
+//        """
+//        Traverser.currentState for %s: %s
+//        Effective events: %s
+//        Actual events:    %s
+//        """,
+//        eventLog.entityModel().name(),
+//        currentState.name(),
+//        effectiveEvents.stream().map(e -> e.type().name() + "/" + e.type().id()).collect(joining(", ")),
+//        eventLog.events().stream().map(Event::typeName).collect(joining(", "))
+//    );
     return currentState;
   }
 

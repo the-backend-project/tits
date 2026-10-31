@@ -36,6 +36,7 @@ public interface PaymentEvent {
   }
 
   record ReversalData(
+      UUID paymentId,
       boolean clientOriginated,
       boolean technicalReversal,
       long amount,

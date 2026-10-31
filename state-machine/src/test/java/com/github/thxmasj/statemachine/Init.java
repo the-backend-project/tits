@@ -4,12 +4,13 @@ import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.EntityModels.
 import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.EntityModels.RequestRouting;
 import static com.github.thxmasj.statemachine.http.inbox.TransitionModels.requestDispatchingTransitions;
 import static com.github.thxmasj.statemachine.http.inbox.TransitionModels.requestRoutingTransitions;
-import static com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest.ProcessReference;
+import static com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest.Index;
 
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.statemachine.database.Client.Config;
 import com.github.thxmasj.statemachine.database.jdbc.DataSourceBuilder;
 import com.github.thxmasj.statemachine.http.inbox.HttpRequestRoute;
+import com.github.thxmasj.statemachine.http.outbox.AtMostOnce;
 import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest;
 import com.sun.net.httpserver.HttpContext;
 import com.sun.net.httpserver.HttpServer;
@@ -47,8 +48,14 @@ public class Init {
     transitions.put(RequestDispatching, requestDispatchingTransitions(routes, List.of()));
     for (var outbox : outboxes) {
       transitions.put(outbox, outbox.transitions());
+      if (outbox instanceof AtMostOnce<?, ?,?> amo) {
+        if (amo.rollbackOnAcceptedModel() != null)
+          transitions.put(amo.rollbackOnAcceptedModel(), amo.rollbackOnAcceptedModel().transitions());
+        if (amo.rollbackOnUnknownModel() != null)
+          transitions.put(amo.rollbackOnUnknownModel(), amo.rollbackOnUnknownModel().transitions());
+      }
     }
-    transitions.put(ProcessReference, HttpOutboxRequest.indexingTransitions);
+    transitions.put(Index, Index.transitions());
     return stateMachine(transitions);
   }
 

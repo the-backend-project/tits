@@ -1,7 +1,6 @@
 package com.github.thxmasj.statemachine.database.mssql;
 
 import static com.github.thxmasj.statemachine.EntityModel.Begin;
-import static com.github.thxmasj.statemachine.EntitySelector.entityId;
 import static com.github.thxmasj.statemachine.EntitySelector.newEntityId;
 import static com.github.thxmasj.statemachine.EventTrigger.trigger;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
@@ -31,10 +30,10 @@ public class EntitiesByIndexTest {
   enum OrderStates implements State { Created, Shipped }
 
   static EntityModel Order = EntityModel.of("Order", UUID.fromString("b837db51-40e1-456a-aee1-b0dbb958c281"));
-  static IndexEntityModel<UUID> CustomerIndex = IndexEntityModel.ofUUID("CustomerIndex", UUID.fromString("6a0eb254-8e11-4f96-b4fe-c93d8b4e7232"));
+  static EventType<UUID, UUID> customerReferenced = IndexEntityModel.referenceEventType("Customer referenced", UUID.fromString("56e950a0-369a-4bf9-b126-e5c762fdb6bc"));
+  static IndexEntityModel Index = IndexEntityModel.of("Index", UUID.fromString("6a0eb254-8e11-4f96-b4fe-c93d8b4e7232"), customerReferenced);
 
   static EventType<UUID, UUID> CreateOrder = BasicEventType.of("CreateOrder", UUID.fromString("38d58c97-6a1e-450f-a399-52e185859dc1"), DataType.uuid());
-  static EventType<UUID, UUID> CustomerIndexed = BasicEventType.of("CustomerIndexed", UUID.fromString("730bbf2c-3543-4dc9-980b-36be0702d763"), DataType.uuid());
   static EventType<Void, Void> ShipOrder = BasicEventType.of("ShipOrder", UUID.fromString("617fb006-eb86-455b-bf98-0c6efea8cba3"));
 
   @Test
@@ -43,7 +42,7 @@ public class EntitiesByIndexTest {
         Begin, List.of(
             onEvent(CreateOrder).to(OrderStates.Created)
                 .assemble(c -> tuple(c.input(), c.log().entityId()))
-                .trigger(CustomerIndexed).with(t -> t.t1()).on(CustomerIndex).identifiedBy(t -> newEntityId(t.t2().value()))
+                .trigger(customerReferenced).with(t -> t.t1()).on(Index).identifiedBy(t -> newEntityId(t.t2().value()))
                 .output()
         ),
         OrderStates.Created, List.of(
@@ -52,23 +51,17 @@ public class EntitiesByIndexTest {
         OrderStates.Shipped, List.of()
     );
 
-    Map<State, List<TransitionModel<?, ?>>> customerIndexTransitions = Map.of(
-        Begin, List.of(
-            onEvent(CustomerIndexed).toSelf().assembleInput().output(d -> d)
-        )
-    );
-
     String schema = UUID.randomUUID().toString();
     StateMachine machine = Init.stateMachine(schema, Map.of(
         Order, orderTransitions,
-        CustomerIndex, customerIndexTransitions
+        Index, Index.transitions()
     ));
 
     EntitiesByIndex entitiesByIndex = new EntitiesByIndex(
         Init.dataSource(),
-        List.of(Order, CustomerIndex),
+        List.of(Order, Index),
         schema,
-        List.of(CreateOrder, CustomerIndexed, ShipOrder),
+        List.of(CreateOrder, customerReferenced, ShipOrder),
         Clock.systemUTC()
     );
 
@@ -80,7 +73,7 @@ public class EntitiesByIndexTest {
     UUID orderId = event1.entityId();
 
     // Query index
-    List<EventLog> logs1 = entitiesByIndex.execute(CustomerIndex, customerId).collectList().block();
+    List<EventLog> logs1 = entitiesByIndex.execute(customerId).collectList().block();
     assertNotNull(logs1);
     assertEquals(1, logs1.size());
     EventLog orderLog1 = logs1.get(0);
@@ -94,7 +87,7 @@ public class EntitiesByIndexTest {
     assertEquals(2, event2.eventNumber());
 
     // Query index again - should still resolve model and reflect 2 events
-    List<EventLog> logs2 = entitiesByIndex.execute(CustomerIndex, customerId).collectList().block();
+    List<EventLog> logs2 = entitiesByIndex.execute(customerId).collectList().block();
     assertNotNull(logs2);
     assertEquals(1, logs2.size());
     EventLog orderLog2 = logs2.get(0);
@@ -107,7 +100,7 @@ public class EntitiesByIndexTest {
     assertNotNull(event3);
     UUID orderId2 = event3.entityId();
 
-    List<EventLog> logs3 = entitiesByIndex.execute(CustomerIndex, customerId).collectList().block();
+    List<EventLog> logs3 = entitiesByIndex.execute(customerId).collectList().block();
     assertNotNull(logs3);
     assertEquals(2, logs3.size());
     assertEquals(Order, logs3.get(0).entityModel());

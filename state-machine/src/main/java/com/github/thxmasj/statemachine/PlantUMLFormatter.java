@@ -29,7 +29,11 @@ public class PlantUMLFormatter {
 
   public PlantUMLFormatter(EntityModel model, Map<State, List<TransitionModel<?, ?>>> transitions) {
     this.model = model;
-    this.transitions = transitions.entrySet().stream().collect(toMap(entry -> entry.getKey(), Map.Entry::getValue));
+    if (model instanceof IndexEntityModel m) {
+      this.transitions = m.transitions().entrySet().stream().collect(toMap(entry -> entry.getKey(), Map.Entry::getValue));
+    } else {
+      this.transitions = transitions.entrySet().stream().collect(toMap(entry -> entry.getKey(), Map.Entry::getValue));
+    }
   }
 
   public File formatToFile(String directory) throws IOException {

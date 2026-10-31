@@ -1,10 +1,8 @@
 package com.github.thxmasj.statemachine.http.outbox;
 
-import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
+import static com.github.thxmasj.statemachine.IndexEntityModel.referenceEventType;
 import static com.github.thxmasj.statemachine.database.mssql.Mappers.eventTypesFor;
 
-import com.github.thxmasj.statemachine.BasicEventType;
-import com.github.thxmasj.statemachine.BuiltinEventTypes;
 import com.github.thxmasj.statemachine.DataType;
 import com.github.thxmasj.statemachine.EventLog;
 import com.github.thxmasj.statemachine.EventType;
@@ -17,7 +15,6 @@ import com.github.thxmasj.statemachine.message.http.TypedHttpRequest;
 import com.github.thxmasj.statemachine.message.http.TypedHttpResponse;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -53,21 +50,14 @@ public sealed interface HttpOutboxRequest<I> extends com.github.thxmasj.statemac
     return AtMostOnceBuilder.create();
   }
 
-  EventType<UUID, UUID> Indexed = BasicEventType.of(
-      "Indexed",
-      UUID.fromString("da7f9a47-67a9-4a0e-affb-865f665a9564"),
-      DataType.uuid()
-  );
+  EventType<UUID, UUID> ProcessReferenced = referenceEventType("Process referenced", UUID.fromString("d5b264d9-bf81-4c1d-9d9b-93dd556d0f66"));
+  EventType<UUID, UUID> BatchReferenced = referenceEventType("Batch referenced", UUID.fromString("18055445-263e-4c95-9610-1aa780f205d7"));
 
-  Map<State, List<TransitionModel<?, ?>>> indexingTransitions = Map.of(
-      Begin, List.of(
-          onEvent(Indexed).toSelf().assembleInput().output(d -> d)
-      )
-  );
-
-  IndexEntityModel<UUID> ProcessReference = IndexEntityModel.ofUUID(
-      "ProcessReference",
-      UUID.fromString("c0881c13-173e-4672-a6d9-2cdfa57c8cbe")
+  IndexEntityModel Index = IndexEntityModel.of(
+      "Index",
+      UUID.fromString("06e6e5e6-f893-44f8-8239-3bff5cca1338"),
+      ProcessReferenced,
+      BatchReferenced
   );
 
   static Map<State, List<TransitionModel<?, ?>>> combine(

@@ -3,12 +3,12 @@ package com.github.thxmasj.statemachine.database.mssql;
 import static com.github.thxmasj.statemachine.database.jdbc.PreparedStatementSupport.prepare;
 import static java.util.Collections.unmodifiableList;
 
+import com.github.thxmasj.statemachine.DataType;
 import com.github.thxmasj.statemachine.EntityId;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.Event;
 import com.github.thxmasj.statemachine.EventLog;
 import com.github.thxmasj.statemachine.EventType;
-import com.github.thxmasj.statemachine.IndexEntityModel;
 import com.github.thxmasj.statemachine.database.Parameter;
 import com.github.thxmasj.statemachine.database.Row;
 import com.github.thxmasj.statemachine.database.jdbc.JDBCRow;
@@ -64,11 +64,11 @@ public class EntitiesByIndex {
     );
   }
 
-  public <T> Flux<EventLog> execute(IndexEntityModel<T> model, T key) {
+  public Flux<EventLog> execute(UUID key) {
     return Mono.fromCallable(() -> {
           try (
               var connection = dataSource.getConnection();
-              var statement = prepare(sql, Map.of("value", new Parameter<>(byte[].class, model.marshal(key))), connection);
+              var statement = prepare(sql, Map.of("value", new Parameter<>(byte[].class, DataType.uuid().marshal(key))), connection);
           ) {
             statement.execute();
             ResultSet rs = statement.getResultSet();

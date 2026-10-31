@@ -11,6 +11,7 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.Aggregate.Se
 import static com.github.thxmasj.statemachine.templates.cardpayment.DummyTransitions.atLeastOnce;
 import static com.github.thxmasj.statemachine.templates.cardpayment.DummyTransitions.atMostOnce;
 
+import com.github.thxmasj.statemachine.Identifiable;
 import com.github.thxmasj.statemachine.PlantUMLFormatter;
 import com.github.thxmasj.statemachine.templates.cardpayment.DummyTransitions;
 import java.io.IOException;
@@ -20,9 +21,9 @@ import java.util.UUID;
 public class Main {
 
   static void main() throws IOException {
-    var atLeastOnce = atLeastOnce().build(UUID.randomUUID(), "AtLeastOnce");
+    var atLeastOnce = atLeastOnce(Identifiable.of("AtLeastOnce", UUID.randomUUID()));
     System.out.println(new PlantUMLFormatter(atLeastOnce, atLeastOnce.transitions()).formatToImage("docs/images/"));
-    var atMostOnce = atMostOnce().build(UUID.randomUUID(), "AtMostOnce");
+    var atMostOnce = atMostOnce(Identifiable.of("AtMostOnce", UUID.randomUUID()));
     System.out.println(new PlantUMLFormatter(atMostOnce, atMostOnce.transitions()).formatToImage("docs/images/"));
     System.out.println(new PlantUMLFormatter(RequestRouting, requestRoutingTransitions(List.of())).formatToImage("docs/images/"));
     System.out.println(new PlantUMLFormatter(RequestDispatching, requestDispatchingTransitions(List.of(), List.of())).formatToImage("docs/images/"));

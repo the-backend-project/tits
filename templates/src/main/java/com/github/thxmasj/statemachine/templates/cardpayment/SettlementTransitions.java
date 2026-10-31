@@ -32,13 +32,13 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEv
 import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.Timeout;
 
 import com.github.thxmasj.statemachine.EntityModel;
+import com.github.thxmasj.statemachine.Identifiable;
 import com.github.thxmasj.statemachine.State;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;
 import com.github.thxmasj.statemachine.Tuples.Tuple3;
 import com.github.thxmasj.statemachine.Tuples.Tuple4;
 import com.github.thxmasj.statemachine.http.outbox.AtLeastOnce;
-import com.github.thxmasj.statemachine.http.outbox.AtLeastOnceBuilder;
 import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest;
 import com.github.thxmasj.statemachine.templates.cardpayment.AcquirerResponse.ReconciliationValues;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Merchant;
@@ -50,6 +50,14 @@ import java.util.function.Function;
 
 public class SettlementTransitions {
 
+  public enum OutboxRequestModelIds implements Identifiable {
+    Reconciliation(UUID.fromString("9cd21799-5fe4-4f4b-9a21-44304c5b5318")),
+    ApprovedCutOff(UUID.fromString("6a3aad86-e86d-4152-8d32-20fecbdc5427"))
+    ;
+    private final UUID id;
+    OutboxRequestModelIds(UUID id) {this.id = id;}
+    @Override public UUID id() {return id;}
+  }
   private final Map<State, List<TransitionModel<?, ?>>> transitions;
   private final List<EntityModel> outboxRequestModels;
   private final AtLeastOnce<Tuple3<BatchNumber, AcquirerBatchNumber, Merchant>> reconciliation;
@@ -73,22 +81,14 @@ public class SettlementTransitions {
 
   public SettlementTransitions(
       // validateSettlementResponse()
-      AtLeastOnceBuilder.BuildStep<Tuple3<BatchNumber, AcquirerBatchNumber, Merchant>> reconciliationToAcquirer,
-      AtLeastOnceBuilder.BuildStep<Tuple2<CutOff, ReconciliationValues>> approvedCutOffToMerchant
+      AtLeastOnce<Tuple3<BatchNumber, AcquirerBatchNumber, Merchant>> reconciliationToAcquirer,
+      AtLeastOnce<Tuple2<CutOff, ReconciliationValues>> approvedCutOffToMerchant
   ) {
-    AtLeastOnce<Tuple3<BatchNumber, AcquirerBatchNumber, Merchant>> reconciliationToAcquirerOutbox = reconciliationToAcquirer.build(
-        UUID.fromString("d87e0767-bc18-472d-be55-9003328e1fc1"),
-        "Reconciliation"
-    );
-    this.reconciliation = reconciliationToAcquirerOutbox;
-    AtLeastOnce<Tuple2<CutOff, ReconciliationValues>> approvedCutOffToMerchantOutbox = approvedCutOffToMerchant.build(
-        UUID.fromString("2245b0a3-2ee9-4361-9c60-4965c71d34c0"),
-        "ApprovedCutOff"
-    );
-    this.approvedCutOff = approvedCutOffToMerchantOutbox;
+    this.reconciliation = reconciliationToAcquirer;
+    this.approvedCutOff = approvedCutOffToMerchant;
     this.outboxRequestModels = List.of(
-        reconciliationToAcquirerOutbox,
-        approvedCutOffToMerchantOutbox
+        reconciliationToAcquirer,
+        approvedCutOffToMerchant
     );
 
     this.transitions = Map.of(
@@ -118,9 +118,9 @@ public class SettlementTransitions {
             onEvent(CutOffRequest).to(ProcessingSettlement)
                 .assemble(c -> tuple(c.input(), c.log().id(BatchNumber), c.log().id(AcquirerBatchNumber), c.eventReference()))
                 .trigger(Get).on(Aggregate.Merchant).identifiedBy(d -> secondaryId(MerchantId, d.t1().merchantId()))
-                .trigger(reconciliationToAcquirerOutbox.requestDispatched())
+                .trigger(reconciliation.requestDispatched())
                 .with(d -> tuple(d.t1().t2(), d.t1().t3(), d.t2().accepted().event().getUnmarshalledData()))
-                .on(reconciliationToAcquirerOutbox)
+                .on(reconciliation)
                 .identifiedBy(newEntityId())
 //                .trigger(reconciliation())
 //                .with(d -> tuple(d.t1().t2(), d.t1().t3(), d.t2().accepted().event().getUnmarshalledData()))
@@ -151,9 +151,9 @@ public class SettlementTransitions {
                             input.reconciliationValues(),
                             input
                         ))
-                        .trigger(approvedCutOffToMerchantOutbox.requestDispatched())
+                        .trigger(approvedCutOff.requestDispatched())
                         .with(d -> new Tuple2<>(d.t1(), d.t2()))
-                        .on(approvedCutOffToMerchantOutbox)
+                        .on(approvedCutOff)
                         .identifiedBy(newEntityId())
 //                        .trigger(approvedCutOff())
 //                        .with(d -> new Tuple2<>(d.t1(), d.t2()))

@@ -48,6 +48,7 @@ import com.github.thxmasj.statemachine.State;
 import com.github.thxmasj.statemachine.StateMachine;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
+import com.github.thxmasj.statemachine.Tuples.Tuple2;
 import com.github.thxmasj.statemachine.Validated.Valid;
 import com.github.thxmasj.statemachine.http.NettyHttpClient;
 import com.github.thxmasj.statemachine.http.NettyHttpClientBuilder;
@@ -338,10 +339,10 @@ public class HttpInboxTest {
         .isAccepted(r -> r.statusCode() >= 200 && r.statusCode() <= 299)
         .isRejected(r -> r.statusCode() >= 400 && r.statusCode() <= 499)
         .isRejectedByInvalidResponse(r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499)
-        .rollbackModel(HttpOutboxRequest.atLeastOnce()
+        .rollbackOnAcceptedModel(HttpOutboxRequest.atLeastOnce()
             .requestPayloadType(DataType.none())
             .responsePayloadType(DataType.none())
-            .<Void>messageCreatorReactive(_ -> Mono.just(requestMessage("/rollback")))
+            .<Tuple2<Void, TypedHttpRequest<Void>>>messageCreatorReactive(_ -> Mono.just(requestMessage("/rollback")))
             .repeatMessageCreator((_, o) -> o)
             .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
             .inflightTimeout(Duration.ofSeconds(10))

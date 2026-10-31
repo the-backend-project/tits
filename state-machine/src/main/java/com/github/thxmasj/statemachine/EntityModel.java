@@ -4,11 +4,7 @@ import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdMod
 import java.util.List;
 import java.util.UUID;
 
-public interface EntityModel {
-
-  String name();
-
-  UUID id();
+public interface EntityModel extends Identifiable {
 
   default List<SecondaryIdModel<?>> secondaryIds() {
     return List.of();

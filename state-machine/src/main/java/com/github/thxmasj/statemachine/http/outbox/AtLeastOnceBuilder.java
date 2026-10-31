@@ -78,71 +78,73 @@ public final class AtLeastOnceBuilder {
 
   public interface ContentParserStep<I, RQ, RS> {
 
-    OnSuccessStep<I, RQ, RS> contentParser(Function<HttpResponseMessage, Validated<RS>> contentParser);
+    OnSuccessStep<I, RS> contentParser(Function<HttpResponseMessage, Validated<RS>> contentParser);
 
-    OnSuccessStep<I, RQ, RS> contentParser(
+    OnSuccessStep<I, RS> contentParser(
         BiFunction<TypedHttpRequest<RQ>, HttpResponseMessage, Validated<RS>> contentParser
     );
   }
 
   /// Optional: the success callback defaults to none.
-  public interface OnSuccessStep<I, RQ, RS> extends IsAcceptedStep<I, RQ, RS> {
+  public interface OnSuccessStep<I, RS> extends IsAcceptedStep<I, RS> {
 
-    <S> IsAcceptedStep<I, RQ, RS> onSuccess(
+    <S> IsAcceptedStep<I, RS> onSuccess(
         EventType<S, ?> eventType,
         Function<TypedHttpResponse<RS>, S> dataAdapter
     );
 
-    IsAcceptedStep<I, RQ, RS> onSuccess(EventType<Void, ?> eventType);
+    IsAcceptedStep<I, RS> onSuccess(EventType<Void, ?> eventType);
   }
 
-  public interface IsAcceptedStep<I, RQ, RS> {
+  public interface IsAcceptedStep<I, RS> {
 
-    IsFailureTransientStep<I, RQ, RS> isAccepted(Predicate<TypedHttpResponse<RS>> isAccepted);
+    IsFailureTransientStep<I, RS> isAccepted(Predicate<TypedHttpResponse<RS>> isAccepted);
 
-    IsFailureTransientStep<I, RQ, RS> isRollbackAccepted(Predicate<Tuple2<TypedHttpResponse<RS>, Boolean>> isRollbackAccepted);
+    //IsFailureTransientStep<I, RQ, RS> isRollbackAccepted(Predicate<Tuple2<TypedHttpResponse<RS>, Boolean>> isRollbackAccepted);
   }
 
-  public interface IsFailureTransientStep<I, RQ, RS> {
+  public interface IsFailureTransientStep<I, RS> {
 
-    IsRejectedByInvalidResponseStep<I, RQ, RS> isFailureTransient(Predicate<TypedHttpResponse<RS>> isFailureTransient);
+    IsRejectedByInvalidResponseStep<I> isFailureTransient(Predicate<TypedHttpResponse<RS>> isFailureTransient);
   }
 
-  public interface IsRejectedByInvalidResponseStep<I, RQ, RS> {
+  public interface IsRejectedByInvalidResponseStep<I> {
 
-    IsFailureByInvalidResponseTransientStep<I, RQ, RS> isRejectedByInvalidResponse(
+    IsFailureByInvalidResponseTransientStep<I> isRejectedByInvalidResponse(
         Predicate<Tuple2<HttpResponseMessage, String>> isRejectedByInvalidResponse
     );
   }
 
-  public interface IsFailureByInvalidResponseTransientStep<I, RQ, RS> {
+  public interface IsFailureByInvalidResponseTransientStep<I> {
 
-    IsAttemptAvailableStep<I, RQ, RS> isFailureByInvalidResponseTransient(
+    IsAttemptAvailableStep<I> isFailureByInvalidResponseTransient(
         Predicate<Tuple2<HttpResponseMessage, String>> isFailureByInvalidResponseTransient
     );
   }
 
-  public interface IsAttemptAvailableStep<I, RQ, RS> {
+  public interface IsAttemptAvailableStep<I> {
 
-    BackoffAlgorithmStep<I, RQ, RS> isAttemptAvailable(Predicate<RetryContext> isAttemptAvailable);
+    BackoffAlgorithmStep<I> isAttemptAvailable(Predicate<RetryContext> isAttemptAvailable);
   }
 
-  public interface BackoffAlgorithmStep<I, RQ, RS> {
+  public interface BackoffAlgorithmStep<I> {
 
-    SuperModelStep<I> backoffAlgorithm(Function<RetryContext, Duration> backoffAlgorithm);
+    BatchIdExtractorStep<I> backoffAlgorithm(Function<RetryContext, Duration> backoffAlgorithm);
+  }
+
+  /// Optional: the batch id extractor defaults to none.
+  public interface BatchIdExtractorStep<I> extends BuildStep<I> {
+
+    BuildStep<I> batchIdExtractor(Function<I, UUID> batchIdExtractor);
   }
 
   /// Optional: the super model defaults to none.
-  public interface SuperModelStep<I> extends BuildStep<I> {
-
-    BuildStep<I> superModel(AtMostOnce<?, ?> superModel);
-  }
+//  public interface SuperModelStep<I> extends BuildStep<I> {
+//
+//    BuildStep<I> superModel(AtMostOnce<?, ?> superModel);
+//  }
 
   public interface BuildStep<I> {
-
-    default AtLeastOnce<I> build(UUID id, String name) {
-      return build(name, id);
-    }
 
     AtLeastOnce<I> build(String name, UUID id);
   }
@@ -239,7 +241,7 @@ public final class AtLeastOnceBuilder {
     }
 
     @Override
-    public OnSuccessStep<I, RQ, RS> contentParser(Function<HttpResponseMessage, Validated<RS>> contentParser) {
+    public OnSuccessStep<I, RS> contentParser(Function<HttpResponseMessage, Validated<RS>> contentParser) {
       return new WithContentParser<>(
           requestPayloadType,
           responsePayloadType,
@@ -254,7 +256,7 @@ public final class AtLeastOnceBuilder {
     }
 
     @Override
-    public OnSuccessStep<I, RQ, RS> contentParser(
+    public OnSuccessStep<I, RS> contentParser(
         BiFunction<TypedHttpRequest<RQ>, HttpResponseMessage, Validated<RS>> contentParser
     ) {
       return new WithContentParser<>(
@@ -271,9 +273,9 @@ public final class AtLeastOnceBuilder {
     }
   }
 
-  private static final class WithContentParser<I, RQ, RS> implements OnSuccessStep<I, RQ, RS>, IsFailureTransientStep<I, RQ, RS>,
-      IsRejectedByInvalidResponseStep<I, RQ, RS>, IsFailureByInvalidResponseTransientStep<I, RQ, RS>, IsAttemptAvailableStep<I, RQ, RS>,
-      BackoffAlgorithmStep<I, RQ, RS>, SuperModelStep<I>, BuildStep<I> {
+  private static final class WithContentParser<I, RQ, RS> implements OnSuccessStep<I, RS>, IsFailureTransientStep<I, RS>,
+      IsRejectedByInvalidResponseStep<I>, IsFailureByInvalidResponseTransientStep<I>, IsAttemptAvailableStep<I>,
+      BackoffAlgorithmStep<I>, BatchIdExtractorStep<I>, BuildStep<I> {
 
     private final DataType<RQ> requestPayloadType;
     private final DataType<RS> responsePayloadType;
@@ -286,13 +288,14 @@ public final class AtLeastOnceBuilder {
     private final BiFunction<TypedHttpRequest<RQ>, HttpResponseMessage, Validated<RS>> requestAwareContentParser;
     private Callback<TypedHttpResponse<RS>, ?> onSuccess;
     private Predicate<TypedHttpResponse<RS>> isAccepted;
-    private Predicate<Tuple2<TypedHttpResponse<RS>, Boolean>> isRollbackAccepted;
+    //private Predicate<Tuple2<TypedHttpResponse<RS>, Boolean>> isRollbackAccepted;
     private Predicate<TypedHttpResponse<RS>> isFailureTransient;
     private Predicate<Tuple2<HttpResponseMessage, String>> isRejectedByInvalidResponse;
     private Predicate<Tuple2<HttpResponseMessage, String>> isFailureByInvalidResponseTransient;
     private Predicate<RetryContext> isAttemptAvailable;
     private Function<RetryContext, Duration> backoffAlgorithm;
-    private AtMostOnce<?, ?> superModel;
+    private Function<I, UUID> batchIdExtractor;
+    //private AtMostOnce<?, ?> superModel;
 
     private WithContentParser(
         DataType<RQ> requestPayloadType,
@@ -317,7 +320,7 @@ public final class AtLeastOnceBuilder {
     }
 
     @Override
-    public <S> IsAcceptedStep<I, RQ, RS> onSuccess(
+    public <S> IsAcceptedStep<I, RS> onSuccess(
         EventType<S, ?> eventType,
         Function<TypedHttpResponse<RS>, S> dataAdapter
     ) {
@@ -326,24 +329,24 @@ public final class AtLeastOnceBuilder {
     }
 
     @Override
-    public IsAcceptedStep<I, RQ, RS> onSuccess(EventType<Void, ?> eventType) {
+    public IsAcceptedStep<I, RS> onSuccess(EventType<Void, ?> eventType) {
       return onSuccess(eventType, _ -> null);
     }
 
     @Override
-    public IsFailureTransientStep<I, RQ, RS> isAccepted(Predicate<TypedHttpResponse<RS>> isAccepted) {
+    public IsFailureTransientStep<I, RS> isAccepted(Predicate<TypedHttpResponse<RS>> isAccepted) {
       this.isAccepted = isAccepted;
       return this;
     }
 
-    @Override
-    public IsFailureTransientStep<I, RQ, RS> isRollbackAccepted(Predicate<Tuple2<TypedHttpResponse<RS>, Boolean>> isRollbackAccepted) {
-      this.isRollbackAccepted = isRollbackAccepted;
-      return this;
-    }
+//    @Override
+//    public IsFailureTransientStep<I, RQ, RS> isRollbackAccepted(Predicate<Tuple2<TypedHttpResponse<RS>, Boolean>> isRollbackAccepted) {
+//      this.isRollbackAccepted = isRollbackAccepted;
+//      return this;
+//    }
 
     @Override
-    public IsRejectedByInvalidResponseStep<I, RQ, RS> isFailureTransient(
+    public IsRejectedByInvalidResponseStep<I> isFailureTransient(
         Predicate<TypedHttpResponse<RS>> isFailureTransient
     ) {
       this.isFailureTransient = isFailureTransient;
@@ -351,7 +354,7 @@ public final class AtLeastOnceBuilder {
     }
 
     @Override
-    public IsFailureByInvalidResponseTransientStep<I, RQ, RS> isRejectedByInvalidResponse(
+    public IsFailureByInvalidResponseTransientStep<I> isRejectedByInvalidResponse(
         Predicate<Tuple2<HttpResponseMessage, String>> isRejectedByInvalidResponse
     ) {
       this.isRejectedByInvalidResponse = isRejectedByInvalidResponse;
@@ -359,7 +362,7 @@ public final class AtLeastOnceBuilder {
     }
 
     @Override
-    public IsAttemptAvailableStep<I, RQ, RS> isFailureByInvalidResponseTransient(
+    public IsAttemptAvailableStep<I> isFailureByInvalidResponseTransient(
         Predicate<Tuple2<HttpResponseMessage, String>> isFailureByInvalidResponseTransient
     ) {
       this.isFailureByInvalidResponseTransient = isFailureByInvalidResponseTransient;
@@ -367,22 +370,28 @@ public final class AtLeastOnceBuilder {
     }
 
     @Override
-    public BackoffAlgorithmStep<I, RQ, RS> isAttemptAvailable(Predicate<RetryContext> isAttemptAvailable) {
+    public BackoffAlgorithmStep<I> isAttemptAvailable(Predicate<RetryContext> isAttemptAvailable) {
       this.isAttemptAvailable = isAttemptAvailable;
       return this;
     }
 
     @Override
-    public SuperModelStep<I> backoffAlgorithm(Function<RetryContext, Duration> backoffAlgorithm) {
+    public BatchIdExtractorStep<I> backoffAlgorithm(Function<RetryContext, Duration> backoffAlgorithm) {
       this.backoffAlgorithm = backoffAlgorithm;
       return this;
     }
 
     @Override
-    public BuildStep<I> superModel(AtMostOnce<?, ?> superModel) {
-      this.superModel = superModel;
+    public BuildStep<I> batchIdExtractor(Function<I, UUID> batchIdExtractor) {
+      this.batchIdExtractor = batchIdExtractor;
       return this;
     }
+
+//    @Override
+//    public BuildStep<I> superModel(AtMostOnce<?, ?> superModel) {
+//      this.superModel = superModel;
+//      return this;
+//    }
 
     @Override
     public AtLeastOnce<I> build(String name, UUID id) {
@@ -400,13 +409,14 @@ public final class AtLeastOnceBuilder {
           contentParser,
           requestAwareContentParser,
           isAccepted,
-          isRollbackAccepted,
+          //isRollbackAccepted,
           isFailureTransient,
           isRejectedByInvalidResponse,
           isFailureByInvalidResponseTransient,
           isAttemptAvailable,
           backoffAlgorithm,
-          superModel
+          batchIdExtractor
+          //,superModel
       );
     }
   }

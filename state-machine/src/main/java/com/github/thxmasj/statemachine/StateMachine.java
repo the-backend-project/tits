@@ -484,8 +484,6 @@ public class StateMachine {
                 onEvent(correlationId, eventTrigger.eventSpec().eventType(), adaptedInput, log, null, List.of())
                     .contextWrite(ctx -> ctx.put("RS/" + log.entityId().value(), responseSink))
                     .thenMany(responseSink.asFlux())
-                    .doOnNext(e -> System.out.println("onEvent output: " + e.type().name() + " (#" + e.eventNumber() + ")"))
-                    .doOnError(e -> {System.out.println("onEvent Z ERROR: " + e);e.printStackTrace();})
                     .retryWhen(RetrySpec.fixedDelay(3, Duration.ofMillis(500))
                         .filter(e -> e instanceof EventAlreadyExists)
                         // Avoid the "Thundering Herd" problem
@@ -506,8 +504,7 @@ public class StateMachine {
       EventLog eventLog,
       ChangeContext<?> requestChangeContext
   ) {
-    return onEvent(correlationId, inputEvent.eventType(), inputEvent.data(), eventLog, requestChangeContext, List.of())
-        .doOnError(e -> System.out.println("onEvent X ERROR: " + e));
+    return onEvent(correlationId, inputEvent.eventType(), inputEvent.data(), eventLog, requestChangeContext, List.of());
   }
 
   private List<Change> changes(@NotNull ChangeContext<?> tail) {
@@ -603,9 +600,9 @@ public class StateMachine {
                 identityResults
             )
         )
-        .doOnNext(output -> System.out.printf("onEvent result with pending unresolved:\n" + chainToString(output)))
+//        .doOnNext(output -> System.out.printf("onEvent result with pending unresolved:\n" + chainToString(output)))
         .flatMap(this::calculatePendingChanges)
-        .doOnNext(output -> System.out.printf("onEvent result:\n" + chainToString(output)))
+//        .doOnNext(output -> System.out.printf("onEvent result:\n" + chainToString(output)))
         .flatMap(output -> switch (finalResult(output)) {
           case Accepted<?> _, Completed<?> _ -> storeChanges(now, correlationId, output)
 //              .doOnSuccess(_ -> triggerActions(correlationId, output))
@@ -1050,9 +1047,10 @@ public class StateMachine {
                                 if (responseSink.isPresent()) {
                                   System.out.println("Found response sink for " + changeList.stream().map(c -> c.entityModel().name() + "/" + c.entityId().value() + "/" + c.newEvent().typeName()).toList());
                                   changeList.forEach(change -> responseSink.get().tryEmitNext(change.newEvent()).orThrow());
-                                } else {
-                                  System.out.println("No response sink for " + changeList.stream().map(c -> c.entityModel().name() + "/" + c.entityId().value() + "/" + c.newEvent().typeName()).toList());
                                 }
+//                                else {
+//                                  System.out.println("No response sink for " + changeList.stream().map(c -> c.entityModel().name() + "/" + c.entityId().value() + "/" + c.newEvent().typeName()).toList());
+//                                }
                               });
                           return ctx;
                         }

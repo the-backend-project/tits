@@ -118,11 +118,18 @@ public class ChangeState {
           return entityModel().name() + ":" +
               entityId().value() + ":ev:[" +
               newEvent().typeName() + "]:" +
-              newEvent().eventNumber() +
+              newEvent().eventNumber() + ":data=" +
+              (newEvent().data() != null ? capString(newEvent().getUnmarshalledData().toString()) : "N/A") +
               (newEvent().type() instanceof BasicEventType.ReadOnly<?,?> ? " (read-only)" : "");
         }
 
       };
+    }
+
+    private static String capString(String s) {
+      if (s == null) return null;
+      if (s.length() > 50) return s.substring(0, 50) + "...";
+      return s;
     }
 
     static Change fromDelayedEvent(DelayedEvent<?> delayedEvent) {
@@ -387,7 +394,7 @@ public class ChangeState {
         } catch (Exception e) {
           return new EventAlreadyExists(pkViolation.duplicateKey());
         }
-      } else if (pkViolation.tableName().equals("Event")) {
+      } else if (pkViolation.tableName().equals("Event") || pkViolation.tableName().equals("IndexEvent")) {
         try {
           EntityId entityId = new EntityId.UUID(UUID.fromString(pkViolation.duplicateKey().split(",")[0]));
           int eventNumber = Integer.parseInt(pkViolation.duplicateKey().split(",")[1].trim());

@@ -17,8 +17,6 @@ import static com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Me
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.github.thxmasj.statemachine.BasicEventType;
@@ -53,7 +51,6 @@ import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.function.Function;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import reactor.test.StepVerifier;
@@ -139,6 +136,38 @@ public class HttpOutboxTest {
   }
 
   @Test
+  public void rollbackOfAcceptedExchange() {
+    var model = ProcessModel.create();
+    Init.addOkContext(server, model.path());
+    Init.addOkContext(server, "/rollback-on-accepted");
+    var events = model.machine().onEvent(trigger(model.doProcess(), model.process()))
+        .take(2)
+        .collectList()
+        .block();
+    assertNotNull(events);
+    assertEquals(model.doProcess(), events.get(0).type());
+    assertEquals(model.processed(), events.get(1).type());
+    var rollback = model.machine().onEvent(
+        trigger(Rollback, model.process(), events.get(1).entityId()),
+        new Data(0, "Technical")
+    ).blockFirst();
+    assertNotNull(rollback);
+    assertEquals(Rollback, rollback.type());
+  }
+
+  @Test
+  public void rollbackModelsUsedFromAcceptedAndUnknownStates() {
+    var model = ProcessModel.create();
+    var acceptedTransitions = model.exchange().transitions().get(AtMostOnce.States.Accepted);
+    assertEquals(1, acceptedTransitions.size());
+    assertEquals(model.exchange().rollbackOnAcceptedModel(), acceptedTransitions.getFirst().triggers().getFirst().entityModel());
+
+    var unknownTransitions = model.exchange().transitions().get(AtMostOnce.States.Unknown);
+    assertEquals(1, unknownTransitions.size());
+    assertEquals(model.exchange().rollbackOnUnknownModel(), unknownTransitions.getFirst().triggers().getFirst().entityModel());
+  }
+
+  @Test
   public void requestDispatchedOutputDataType() {
     var exchange = HttpOutboxRequest.atMostOnce()
         .requestPayloadType(DataType.string())
@@ -173,118 +202,6 @@ public class HttpOutboxTest {
 
     assertNotNull(exchange.requestDispatched().outputDataType());
     assertEquals("(HTTP request<string>, uuid)", exchange.requestDispatched().outputDataType().name());
-  }
-
-  @Test
-  public void atLeastOnceWithSuperModel() {
-    var superModel = HttpOutboxRequest.atMostOnce()
-        .requestPayloadType(DataType.string())
-        .responsePayloadType(DataType.string())
-        .<Void>messageCreator(_ -> requestMessage("/super", "payload"))
-        .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
-        .contentParser(_ -> valid("response"))
-        .isAccepted(_ -> true)
-        .isRejected(_ -> false)
-        .isRejectedByInvalidResponse(_ -> false)
-        .build("SuperModel", UUID.randomUUID());
-
-    var exchange = HttpOutboxRequest.atLeastOnce()
-        .requestPayloadType(DataType.string())
-        .responsePayloadType(DataType.string())
-        .<Void>messageCreator(_ -> requestMessage("/test", "payload"))
-        .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
-        .contentParser(_ -> valid("response"))
-        .isAccepted(_ -> true)
-        .isFailureTransient(_ -> true)
-        .isRejectedByInvalidResponse(_ -> false)
-        .isFailureByInvalidResponseTransient(_ -> false)
-        .isAttemptAvailable(_ -> true)
-        .backoffAlgorithm(_ -> Duration.ofSeconds(1))
-        .superModel(superModel)
-        .build("AtLeastOnceWithSuperModel", UUID.randomUUID());
-
-    assertSame(superModel, exchange.superModel());
-  }
-
-  @Test
-  public void atLeastOnceWithoutSuperModel() {
-    var exchange = HttpOutboxRequest.atLeastOnce()
-        .requestPayloadType(DataType.string())
-        .responsePayloadType(DataType.string())
-        .<Void>messageCreator(_ -> requestMessage("/test", "payload"))
-        .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
-        .contentParser(_ -> valid("response"))
-        .isAccepted(_ -> true)
-        .isFailureTransient(_ -> true)
-        .isRejectedByInvalidResponse(_ -> false)
-        .isFailureByInvalidResponseTransient(_ -> false)
-        .isAttemptAvailable(_ -> true)
-        .backoffAlgorithm(_ -> Duration.ofSeconds(1))
-        .build("AtLeastOnceWithoutSuperModel", UUID.randomUUID());
-
-    assertNull(exchange.superModel());
-  }
-
-  @Test
-  public void rollbackModelBuilderReceivesSuperModel() {
-    var rollbackModelBuilder = HttpOutboxRequest.atLeastOnce()
-        .requestPayloadType(DataType.string())
-        .responsePayloadType(DataType.string())
-        .<Void>messageCreator(_ -> requestMessage("/rollback", "payload"))
-        .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
-        .contentParser(_ -> valid("response"))
-        .isAccepted(_ -> true)
-        .isFailureTransient(_ -> true)
-        .isRejectedByInvalidResponse(_ -> false)
-        .isFailureByInvalidResponseTransient(_ -> false)
-        .isAttemptAvailable(_ -> true)
-        .backoffAlgorithm(_ -> Duration.ofSeconds(1));
-
-    var superModel = HttpOutboxRequest.atMostOnce()
-        .requestPayloadType(DataType.string())
-        .responsePayloadType(DataType.string())
-        .<Void>messageCreator(_ -> requestMessage("/super", "payload"))
-        .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
-        .contentParser(_ -> valid("response"))
-        .isAccepted(_ -> true)
-        .isRejected(_ -> false)
-        .isRejectedByInvalidResponse(_ -> false)
-        .rollbackModel(rollbackModelBuilder)
-        .build("SuperModel", UUID.randomUUID());
-
-    assertNotNull(superModel.rollbackModel());
-    assertSame(superModel, superModel.rollbackModel().superModel());
-  }
-
-  @Test
-  public void rollbackModelBuildStepReceivesSuperModel() {
-    AtLeastOnceBuilder.BuildStep<Void> rollbackModelBuilder = HttpOutboxRequest.atLeastOnce()
-        .requestPayloadType(DataType.string())
-        .responsePayloadType(DataType.string())
-        .<Void>messageCreator(_ -> requestMessage("/rollback", "payload"))
-        .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
-        .contentParser(_ -> valid("response"))
-        .isAccepted(_ -> true)
-        .isFailureTransient(_ -> true)
-        .isRejectedByInvalidResponse(_ -> false)
-        .isFailureByInvalidResponseTransient(_ -> false)
-        .isAttemptAvailable(_ -> true)
-        .backoffAlgorithm(_ -> Duration.ofSeconds(1));
-
-    var superModel = HttpOutboxRequest.atMostOnce()
-        .requestPayloadType(DataType.string())
-        .responsePayloadType(DataType.string())
-        .<Void>messageCreator(_ -> requestMessage("/super", "payload"))
-        .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
-        .contentParser(_ -> valid("response"))
-        .isAccepted(_ -> true)
-        .isRejected(_ -> false)
-        .isRejectedByInvalidResponse(_ -> false)
-        .rollbackModel(rollbackModelBuilder)
-        .build("SuperModel", UUID.randomUUID());
-
-    assertNotNull(superModel.rollbackModel());
-    assertSame(superModel, superModel.rollbackModel().superModel());
   }
 
   @Test
@@ -482,8 +399,7 @@ public class HttpOutboxTest {
     assertTrue(occ.stepOutput().isAccepted());
     var acceptedEvent = occ.stepOutput().accepted().event();
     assertEquals(model.exchange().requestDispatched(), acceptedEvent.type());
-    @SuppressWarnings("unchecked")
-    var outputData = (Tuple2<TypedHttpRequest<Void>, UUID>) acceptedEvent.getUnmarshalledData();
+    var outputData = acceptedEvent.getUnmarshalledData();
     assertNotNull(outputData);
     assertNotNull(outputData.t1());
     assertEquals(triggerEntityId, outputData.t2());
@@ -584,8 +500,7 @@ public class HttpOutboxTest {
     assertTrue(occ.stepOutput().isAccepted());
     var acceptedEvent = occ.stepOutput().accepted().event();
     assertEquals(alo.requestDispatched(), acceptedEvent.type());
-    @SuppressWarnings("unchecked")
-    var outputData = (Tuple2<TypedHttpRequest<Void>, UUID>) acceptedEvent.getUnmarshalledData();
+    var outputData = acceptedEvent.getUnmarshalledData();
     assertNotNull(outputData);
     assertNotNull(outputData.t1());
     assertEquals(triggerEntityId, outputData.t2());
@@ -610,7 +525,7 @@ public class HttpOutboxTest {
       EventType<Void, Void> failed,
       EventType<Void, Void> missingResponse,
       EventType<Void, Void> unknown,
-      AtMostOnce<Void, Void> exchange,
+      AtMostOnce<Void, ?, Void> exchange,
       StateMachine machine,
       String path
   ) {
@@ -629,7 +544,7 @@ public class HttpOutboxTest {
       EventType<Void, Void> missingResponse = BasicEventType.of("Missing response", UUID.fromString("7cd9c1f1-1ce0-4249-a709-5e11ea2f6404"));
       EventType<Void, Void> unknown = BasicEventType.of("Unknown", UUID.fromString("46cf31dd-56ed-41cb-b2ca-501930a23e44"));
       String path = "/" + UUID.randomUUID();
-      AtMostOnce<Void, Void> Exchange = HttpOutboxRequest.atMostOnce()
+      AtMostOnce<Void, ?, Void> Exchange = HttpOutboxRequest.atMostOnce()
           .requestPayloadType(DataType.none())
           .responsePayloadType(DataType.none())
           .<Void>messageCreator(_ -> requestMessage(path))
@@ -646,10 +561,10 @@ public class HttpOutboxTest {
           .isAccepted(r -> r.statusCode() >= 200 && r.statusCode() <= 299)
           .isRejected(r -> r.statusCode() >= 400 && r.statusCode() <= 499)
           .isRejectedByInvalidResponse(r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499)
-          .rollbackModel(HttpOutboxRequest.atLeastOnce()
+          .rollbackOnAcceptedModel(HttpOutboxRequest.atLeastOnce()
               .requestPayloadType(DataType.none())
               .responsePayloadType(DataType.none())
-              .<Void>messageCreator(_ -> requestMessage("/rollback"))
+              .<Tuple2<Void, TypedHttpRequest<Void>>>messageCreator(_ -> requestMessage("/rollback-on-accepted"))
               .repeatMessageCreator((_, o) -> o)
               .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
               .contentParser(_ -> valid(null))
@@ -659,7 +574,22 @@ public class HttpOutboxTest {
               .isFailureByInvalidResponseTransient(r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499)
               .isAttemptAvailable(c -> Duration.between(c.enqueueTime(), c.now()).compareTo(Duration.ofHours(5)) < 0)
               .backoffAlgorithm(c -> new DelaySpecification(Duration.ofSeconds(10), Duration.ofMinutes(10), Duration.ofHours(5), 1.5).calculateDelay(c.attemptNumber()))
-              .build("ExchangeRollback", UUID.fromString("fd4959b4-5c14-4b7a-8ea5-b559b94f803c"))
+              .build("ExchangeRollbackOnAccepted", UUID.fromString("fd4959b4-5c14-4b7a-8ea5-b559b94f803c"))
+          )
+          .rollbackOnUnknownModel(HttpOutboxRequest.atLeastOnce()
+              .requestPayloadType(DataType.none())
+              .responsePayloadType(DataType.none())
+              .<Tuple2<Void, TypedHttpRequest<Void>>>messageCreator(_ -> requestMessage("/rollback"))
+              .repeatMessageCreator((_, o) -> o)
+              .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
+              .contentParser(_ -> valid(null))
+              .isAccepted(r -> r.statusCode() >= 200 && r.statusCode() <= 299)
+              .isFailureTransient(r -> r.statusCode() >= 500 && r.statusCode() <= 599)
+              .isRejectedByInvalidResponse(r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499)
+              .isFailureByInvalidResponseTransient(r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499)
+              .isAttemptAvailable(c -> Duration.between(c.enqueueTime(), c.now()).compareTo(Duration.ofHours(5)) < 0)
+              .backoffAlgorithm(c -> new DelaySpecification(Duration.ofSeconds(10), Duration.ofMinutes(10), Duration.ofHours(5), 1.5).calculateDelay(c.attemptNumber()))
+              .build("ExchangeRollbackOnUnknown", UUID.fromString("ec3848a3-4b03-3a69-7d94-a448a83e792b"))
           )
           .build("Exchange", UUID.fromString("a3778c63-144f-4748-9e8b-cc10ee20db3f"));
 

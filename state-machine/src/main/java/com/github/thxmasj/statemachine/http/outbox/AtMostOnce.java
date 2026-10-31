@@ -9,6 +9,7 @@ import static com.github.thxmasj.statemachine.http.outbox.AtMostOnce.States.Acce
 import static com.github.thxmasj.statemachine.http.outbox.AtMostOnce.States.Failed;
 import static com.github.thxmasj.statemachine.http.outbox.AtMostOnce.States.InFlight;
 import static com.github.thxmasj.statemachine.http.outbox.AtMostOnce.States.Intermediate;
+import static com.github.thxmasj.statemachine.http.outbox.AtMostOnce.States.RolledBack;
 import static com.github.thxmasj.statemachine.http.outbox.AtMostOnce.States.Unknown;
 import static com.github.thxmasj.statemachine.http.outbox.EventTypes.ConnectionDropped;
 import static com.github.thxmasj.statemachine.http.outbox.EventTypes.ConnectionFailed;
@@ -17,7 +18,6 @@ import static com.github.thxmasj.statemachine.http.outbox.EventTypes.TimeoutExpi
 import static com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest.toHttpRequest;
 
 import com.github.thxmasj.statemachine.BasicEventType;
-import com.github.thxmasj.statemachine.BasicEventType.ReadOnly;
 import com.github.thxmasj.statemachine.DataType;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.EventLog;
@@ -42,18 +42,13 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import reactor.core.publisher.Mono;
 
-public final class AtMostOnce<I, RI> implements HttpOutboxRequest<I> {
+public final class AtMostOnce<I, RQ, RI> implements HttpOutboxRequest<I> {
 
   private final String name;
   private final UUID id;
-  private final AtLeastOnce<RI> rollbackModel;
-  private final Shape<I, ?, ?, ?, ?, ?, ?, ?, ?, ?> shape;
-
-  public record Projection<RQ, RS>(
-      TypedHttpRequest<RQ> request,
-      TypedHttpResponse<RS> response,
-      AtLeastOnce.Projection<?, ?> rollbackProjection
-  ) {}
+  private final AtLeastOnce<Tuple2<RI, TypedHttpRequest<RQ>>> rollbackOnAcceptedModel;
+  private final AtLeastOnce<Tuple2<RI, TypedHttpRequest<RQ>>> rollbackOnUnknownModel;
+  private final Shape<I, ?, ?, ?, ?, ?, ?, ?, RQ, ?> shape;
 
   private record Shape<I, T1, T2, T3, T4, T5, T6, T7, RQ, RS>(
       DataType<RQ> requestPayloadType,
@@ -73,11 +68,12 @@ public final class AtMostOnce<I, RI> implements HttpOutboxRequest<I> {
       BiFunction<TypedHttpRequest<RQ>, HttpResponseMessage, Validated<RS>> requestAwareContentParser,
       Predicate<TypedHttpResponse<RS>> isAccepted,
       Predicate<TypedHttpResponse<RS>> isRejected,
-      Predicate<Tuple2<HttpResponseMessage, String>> isRejectedByInvalidResponse
+      Predicate<Tuple2<HttpResponseMessage, String>> isRejectedByInvalidResponse,
+      Function<I, UUID> batchIdExtractor
   ) {
     EventType<I, Tuple2<TypedHttpRequest<RQ>, UUID>> requestDispatched() {
       return BasicEventType.of(
-          "Request dispatched (AMO)",
+          "Request dispatched",
           UUID.fromString("3f22bfef-dcb4-4560-8b88-6b5040433319"),
           DataType.unknown(),
           DataType.tuple(HttpDataType.forRequest(requestPayloadType), DataType.uuid())
@@ -154,8 +150,13 @@ public final class AtMostOnce<I, RI> implements HttpOutboxRequest<I> {
     return shape.requestDispatched();
   }
 
-  public EventType<RI, ?> rollbackDispatched() {
-    return rollbackModel != null ? rollbackModel.requestDispatched() : null;
+  public EventType<RI, Void> rollbackDispatched() {
+    return BasicEventType.of(
+        "Rollback dispatched",
+        UUID.fromString("2cda741e-4447-4787-a5eb-46f0502e08ec"),
+        DataType.unknown(),
+        DataType.none()
+    );
   }
 
   @Override
@@ -184,11 +185,15 @@ public final class AtMostOnce<I, RI> implements HttpOutboxRequest<I> {
             .orElse(log.oneIfExists(shape.validResponseAndUnknown()).orElse(null)));
   }
 
-  public AtLeastOnce<RI> rollbackModel() {
-    return rollbackModel;
+  public AtLeastOnce<Tuple2<RI, TypedHttpRequest<RQ>>> rollbackOnAcceptedModel() {
+    return rollbackOnAcceptedModel;
   }
 
-  public <T1, T2, T3, T4, T5, T6, T7, RQ, RS> AtMostOnce(
+  public AtLeastOnce<Tuple2<RI, TypedHttpRequest<RQ>>> rollbackOnUnknownModel() {
+    return rollbackOnUnknownModel;
+  }
+
+  public <T1, T2, T3, T4, T5, T6, T7, RS> AtMostOnce(
       String name,
       UUID id,
       DataType<RQ> requestPayloadType,
@@ -209,7 +214,9 @@ public final class AtMostOnce<I, RI> implements HttpOutboxRequest<I> {
       Predicate<TypedHttpResponse<RS>> isAccepted,
       Predicate<TypedHttpResponse<RS>> isRejected,
       Predicate<Tuple2<HttpResponseMessage, String>> isRejectedByInvalidResponse,
-      AtLeastOnce<RI> rollbackModel
+      Function<I, UUID> batchIdExtractor,
+      AtLeastOnce<Tuple2<RI, TypedHttpRequest<RQ>>> rollbackOnAcceptedModel,
+      AtLeastOnce<Tuple2<RI, TypedHttpRequest<RQ>>> rollbackOnUnknownModel
   ) {
     this(
         name,
@@ -232,11 +239,13 @@ public final class AtMostOnce<I, RI> implements HttpOutboxRequest<I> {
         isAccepted,
         isRejected,
         isRejectedByInvalidResponse,
-        _ -> rollbackModel
+        batchIdExtractor,
+        _ -> rollbackOnAcceptedModel,
+        _ -> rollbackOnUnknownModel
     );
   }
 
-  public <T1, T2, T3, T4, T5, T6, T7, RQ, RS> AtMostOnce(
+  public <T1, T2, T3, T4, T5, T6, T7, RS> AtMostOnce(
       String name,
       UUID id,
       DataType<RQ> requestPayloadType,
@@ -257,7 +266,9 @@ public final class AtMostOnce<I, RI> implements HttpOutboxRequest<I> {
       Predicate<TypedHttpResponse<RS>> isAccepted,
       Predicate<TypedHttpResponse<RS>> isRejected,
       Predicate<Tuple2<HttpResponseMessage, String>> isRejectedByInvalidResponse,
-      Function<AtMostOnce<I, RI>, AtLeastOnce<RI>> rollbackModelSupplier
+      Function<I, UUID> batchIdExtractor,
+      Function<AtMostOnce<I, RQ, RI>, AtLeastOnce<Tuple2<RI, TypedHttpRequest<RQ>>>> rollbackOnAcceptedModelSupplier,
+      Function<AtMostOnce<I, RQ, RI>, AtLeastOnce<Tuple2<RI, TypedHttpRequest<RQ>>>> rollbackOnUnknownModelSupplier
   ) {
     this.name = name;
     this.id = id;
@@ -279,33 +290,63 @@ public final class AtMostOnce<I, RI> implements HttpOutboxRequest<I> {
         requestAwareContentParser,
         isAccepted,
         isRejected,
-        isRejectedByInvalidResponse
+        isRejectedByInvalidResponse,
+        batchIdExtractor
     );
-    this.rollbackModel = rollbackModelSupplier != null ? rollbackModelSupplier.apply(this) : null;
+    this.rollbackOnAcceptedModel = rollbackOnAcceptedModelSupplier != null ? rollbackOnAcceptedModelSupplier.apply(this) : null;
+    this.rollbackOnUnknownModel = rollbackOnUnknownModelSupplier != null ? rollbackOnUnknownModelSupplier.apply(this) : null;
   }
 
-  public EventType<Void, Projection<?, ?>> Get = new ReadOnly<>(
-      "Get",
-      UUID.fromString("401ca27d-8f51-495c-88aa-2a0d1248aad6"),
-      DataType.none(),
-      DataType.unknown() // Never marshaling, so...
-  );
-
-  private <T1, T2, T3, T4, T5, T6, T7, RQ, RS> Map<State, List<TransitionModel<?, ?>>> transitions(Shape<I, T1, T2, T3, T4, T5, T6, T7, RQ, RS> shape) {
-    return HttpOutboxRequest.combine(rollbackModel != null ? rollbackModel.inflightTransitions() : Map.of(), Map.of(
+  private <T1, T2, T3, T4, T5, T6, T7, RS> Map<State, List<TransitionModel<?, ?>>> transitions(Shape<I, T1, T2, T3, T4, T5, T6, T7, RQ, RS> shape) {
+    return Map.of(
         Begin, List.of(
-            onEvent(shape.requestDispatched()).to(InFlight)
-                .assembleReactive(c -> shape.messageCreator().apply(c).zipWith(Mono.just(tuple(c.triggerEvent(), c.log().entityId()))))
-                .trigger(Indexed).with(d -> d.getT2().t1().entityId()).on(ProcessReference).identifiedBy(d -> newEntityId(d.getT2().t2().value()))
-                .trigger(shape.forward()).with(d -> toHttpRequest(d.t1().getT1(), shape.requestPayloadType()))
-                .trigger(TimeoutExpired).after(_ -> shape.inflightTimeout())
-                .output(d -> tuple(d.t1().getT1(), d.t1().getT2().t1().entityId()))
+            shape.batchIdExtractor != null ?
+                onEvent(shape.requestDispatched()).to(InFlight)
+                    .assembleReactive(c -> shape.messageCreator().apply(c)
+                        .zipWith(Mono.just(tuple(
+                            c.triggerEvent(), // process id
+                            c.log().entityId(), // my id
+                            shape.batchIdExtractor.apply(c.input()) // batch id
+                        ))))
+
+                    .trigger(ProcessReferenced)
+                    .with(d -> d.getT2().t1().entityId()) // process id
+                    .on(Index)
+                    .identifiedBy(d -> newEntityId(d.getT2().t2().value()))
+
+                    .trigger(BatchReferenced)
+                    .with(d -> d.t1().getT2().t3()) // batch id
+                    .on(Index)
+                    .identifiedBy(d -> entityId(d.t1().getT2().t2().value())) // NB: EntityId created above
+
+                    .trigger(shape.forward()).with(d -> toHttpRequest(d.t1().t1().getT1(), shape.requestPayloadType()))
+                    .trigger(TimeoutExpired).after(_ -> shape.inflightTimeout())
+                    .output(d -> tuple(d.t1().t1().getT1(), d.t1().t1().getT2().t1().entityId())) :
+                onEvent(shape.requestDispatched()).to(InFlight)
+                    .assembleReactive(c -> shape.messageCreator().apply(c)
+                        .zipWith(Mono.just(tuple(
+                            c.triggerEvent(), // process id
+                            c.log().entityId() // my id
+                        ))))
+
+                    .trigger(ProcessReferenced)
+                    .with(d -> d.getT2().t1().entityId()) // process id
+                    .on(Index)
+                    .identifiedBy(d -> newEntityId(d.getT2().t2().value()))
+
+                    .trigger(shape.forward()).with(d -> toHttpRequest(d.t1().getT1(), shape.requestPayloadType()))
+                    .trigger(TimeoutExpired).after(_ -> shape.inflightTimeout())
+                    .output(d -> tuple(d.t1().getT1(), d.t1().getT2().t1().entityId()))
         ),
         InFlight, list(
-            rollbackModel != null ? rollbackModel.requestDispatchedTransition() : null,
-            onEvent(Get).toSelf()
-                .assemble((_, log) -> new Projection<>(log.one(shape.requestDispatched()).t1(), null, null))
-                .output(d -> d),
+            rollbackOnUnknownModel != null ?
+                onEvent(rollbackDispatched()).to(RolledBack)
+                    .assemble(c -> tuple(c.input(), c.log().one(shape.requestDispatched()).t1()))
+                    .trigger(rollbackOnUnknownModel.requestDispatched())
+                    .with(d -> d)
+                    .on(rollbackOnUnknownModel)
+                    .identifiedBy(newEntityId())
+                    .output() : null,
             shape.onPeerUnavailable() != null ?
                 onEvent(ConnectionFailed).to(Failed)
                     .assemble(c -> c.log().entityModel())
@@ -428,20 +469,26 @@ public final class AtMostOnce<I, RI> implements HttpOutboxRequest<I> {
                 )
         ),
         Intermediate, List.of(),
-        Failed, List.of(
-            onEvent(Get).toSelf()
-                .assemble((_, log) -> new Projection<>(
-                    log.one(shape.requestDispatched()).t1(),
-                    log.oneIfExists(shape.invalidResponseAndRejected())
-                        .map(m -> new TypedHttpResponse<>(m.statusCode(), m.reasonPhrase(), m.headers(), (RS) null))
-                        .orElse(log.oneIfExists(shape.validResponseAndRejected()).orElse(null)),
-                    null
-                ))
-                .output(d -> d)
-        ),
-        Accepted, rollbackModel != null ? List.of(rollbackModel.requestDispatchedTransition()) : List.of(),
-        Unknown, rollbackModel != null ? List.of(rollbackModel.requestDispatchedTransition()) : List.of()
-    ));
+        Failed, List.of(),
+        Accepted, rollbackOnAcceptedModel != null ? List.of(
+                onEvent(rollbackDispatched()).to(RolledBack)
+                    .assemble(c -> tuple(c.input(), c.log().one(shape.requestDispatched()).t1()))
+                    .trigger(rollbackOnAcceptedModel.requestDispatched())
+                    .with(d -> d)
+                    .on(rollbackOnAcceptedModel)
+                    .identifiedBy(newEntityId())
+                    .output()
+            ) : List.of(),
+        Unknown, rollbackOnUnknownModel != null ? List.of(
+            onEvent(rollbackDispatched()).to(RolledBack)
+                .assemble(c -> tuple(c.input(), c.log().one(shape.requestDispatched()).t1()))
+                .trigger(rollbackOnUnknownModel.requestDispatched())
+                .with(d -> d)
+                .on(rollbackOnUnknownModel)
+                .identifiedBy(newEntityId())
+                .output()
+        ) : List.of()
+    );
   }
 
   @Override
@@ -468,7 +515,8 @@ public final class AtMostOnce<I, RI> implements HttpOutboxRequest<I> {
     InFlight,
     Failed,
     Accepted,
-    Unknown
+    Unknown,
+    RolledBack
   }
 
   private static List<TransitionModel<?, ?>> list(TransitionModel<?, ?>... transitions) {
