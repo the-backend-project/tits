@@ -58,8 +58,10 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.ProcessingAuthorisation;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.ProcessingCapture;
 import static com.github.thxmasj.statemachine.templates.cardpayment.PaymentState.Rejected;
+import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.AssignAcquirerBatchNumber;
 import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.GetAcquirerBatchNumber;
 import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.GetBatchNumber;
+import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.GetCurrentBatchNumber;
 import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.MerchantCredit;
 import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.MerchantCreditReversed;
 import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.MerchantDebit;
@@ -465,8 +467,8 @@ public class PaymentTransitions {
                                     .with(d -> new MerchantId(d.t2().id()))
                                     .on(Settlement)
                                     .identifiedBy(d -> lastInIdGroup(BatchNumber, d.t2().id(), CreateIfNotExists))
-                                    .trigger(GetBatchNumber)
-                                    .with(d -> d.t2().accepted().event().getUnmarshalledData())
+                                    .trigger(GetCurrentBatchNumber)
+                                    .with(d -> new MerchantId(d.t1().t2().id()))
                                     .on(Settlement)
                                     .identifiedBy(d -> entityId(d.t2().accepted().event().entityId()))
                                     .trigger(authorisation.rollbackDispatched())
@@ -565,7 +567,7 @@ public class PaymentTransitions {
                                 d -> secondaryId(
                                     AcquirerBatchNumber,
                                     new AcquirerBatchNumber(d.t1().merchantId(), d.t3().batchNumber()),
-                                    CreateIfNotExists
+                                    lastInIdGroup(BatchNumber, d.t1().merchantId(), CreateIfNotExists)
                                 )
                             )
                             .trigger(MerchantCredit)
@@ -581,12 +583,16 @@ public class PaymentTransitions {
                             ))
                             .on(approvedAuthorisation)
                             .identifiedBy(newEntityId())
+                            .trigger(AssignAcquirerBatchNumber)
+                            .with(d -> new AcquirerBatchNumber(d.t1().t1().t1().t1().merchantId(), d.t1().t1().t1().t3().batchNumber()))
+                            .on(Settlement)
+                            .identifiedBy(d -> entityId(d.t1().t1().t2().accepted().event().entityId()))
                             .reversible(
                                 assemble((log, _) -> log.one(ValidPaymentRequest).t1())
                                     .trigger(MerchantCreditReversed).with(d -> d.amount().requested()).on(Settlement)
                                     .identifiedBy(d -> lastInIdGroup(BatchNumber, d.merchantId()))
                             )
-                            .output(d -> d.t1().t1().t1().t3()),
+                            .output(d -> d.t1().t1().t1().t1().t3()),
                         d -> d.t1()
                     )
                     .otherwise(
@@ -620,7 +626,11 @@ public class PaymentTransitions {
                     .assemble((input, log) -> tuple(log.one(ValidPaymentRequest).t1(), log.one(ValidPaymentRequest).t2(), input))
                     .trigger(GetBatchNumber).with(d -> new AcquirerBatchNumber(d.t1().merchantId(), d.t3().batchNumber())).on(Settlement)
                         .identifiedBy(
-                            d -> secondaryId(AcquirerBatchNumber, new AcquirerBatchNumber(d.t1().merchantId(), d.t3().batchNumber()), CreateIfNotExists),
+                            d -> secondaryId(
+                                AcquirerBatchNumber,
+                                new AcquirerBatchNumber(d.t1().merchantId(), d.t3().batchNumber()),
+                                lastInIdGroup(BatchNumber, d.t1().merchantId(), CreateIfNotExists)
+                            ),
                             d -> lastInIdGroup(BatchNumber, d.t1().merchantId(), CreateIfNotExists)
                         )
                     .trigger(MerchantCredit).with(d -> d.t1().t3().amount()).on(Settlement)
@@ -629,9 +639,13 @@ public class PaymentTransitions {
                     .with(d -> tuple(d.t1().t1().t1(), d.t1().t1().t2(), d.t1().t2().accepted().event().getUnmarshalledData(), d.t1().t1().t3()))
                     .on(approvedCapture)
                     .identifiedBy(newEntityId())
+                    .trigger(AssignAcquirerBatchNumber)
+                    .with(d -> new AcquirerBatchNumber(d.t1().t1().t1().t1().merchantId(), d.t1().t1().t1().t3().batchNumber()))
+                    .on(Settlement)
+                    .identifiedBy(d -> entityId(d.t1().t1().t2().accepted().event().entityId()))
 //                    .trigger(approvedCapture()).with(d -> tuple(d.t1().t1().t1(), d.t1().t1().t2(), d.t1().t2().accepted().event().getUnmarshalledData(), d.t1().t1().t3())).to(
 //                        Queues.Merchant).guaranteed()
-                    .output(d -> d.t1().t1().t1().t3())
+                    .output(d -> d.t1().t1().t1().t1().t3())
             ),
             Preauthorised, List.of(
                 rollbackOn(Cancel),
@@ -862,7 +876,11 @@ public class PaymentTransitions {
                 })
                 .trigger(GetBatchNumber).with(d -> new AcquirerBatchNumber(d.t2().id(), d.t3().batchNumber())).on(Settlement)
                     .identifiedBy(
-                        d -> secondaryId(AcquirerBatchNumber, new AcquirerBatchNumber(d.t2().id(), d.t3().batchNumber()), CreateIfNotExists),
+                        d -> secondaryId(
+                            AcquirerBatchNumber,
+                            new AcquirerBatchNumber(d.t2().id(), d.t3().batchNumber()),
+                            lastInIdGroup(BatchNumber, d.t2().id())
+                        ),
                         d -> lastInIdGroup(BatchNumber, d.t2().id())
                     )
                 .trigger(MerchantDebit).with(d -> d.t1().t3().amount()).on(Settlement)
@@ -871,12 +889,16 @@ public class PaymentTransitions {
                 .with(d -> tuple(d.t1().t1().t1(), d.t1().t1().t2(), d.t1().t1().t3(), d.t1().t2().accepted().event().getUnmarshalledData(), d.t1().t1().t4()))
                 .on(approvedRefund)
                 .identifiedBy(newEntityId())
+                .trigger(AssignAcquirerBatchNumber)
+                .with(d -> new AcquirerBatchNumber(d.t1().t1().t1().t2().id(), d.t1().t1().t1().t3().batchNumber()))
+                .on(Settlement)
+                .identifiedBy(d -> entityId(d.t1().t1().t2().accepted().event().entityId()))
                 .reversible(
                     assemble((log, _) -> tuple(log.last(ValidRefundRequest), log.one(ValidPaymentRequest).t2()))
                         .trigger(MerchantDebitReversed).with(d -> d.t1().refund().amount()).on(Settlement)
                         .identifiedBy(d -> lastInIdGroup(BatchNumber, d.t2().id()))
                 )
-                .output(d -> d.t1().t1().t1().t3()),
+                .output(d -> d.t1().t1().t1().t1().t3()),
             onEvent(AcquirerDeclined).to(anchor)
                 .assemble((input, log) -> tuple(log.one(ValidPaymentRequest).t1(), log.one(ValidPaymentRequest).t2(), input))
                 .trigger(declinedRefund.requestDispatched())

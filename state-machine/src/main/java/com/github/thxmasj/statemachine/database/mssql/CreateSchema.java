@@ -98,6 +98,24 @@ public class CreateSchema {
         GRANT INSERT, DELETE, SELECT, UPDATE ON [{schema}].[Timeout] TO [{role}];
         CREATE UNIQUE INDEX ixEntityId ON [{schema}].[Timeout] (EntityId);
         CREATE INDEX ixDeadline ON [{schema}].[Timeout] (Deadline);
+
+        CREATE TABLE [{schema}].[ConditionTrigger]
+        (
+            Id            UNIQUEIDENTIFIER NOT NULL,
+            EntityId      UNIQUEIDENTIFIER NOT NULL,
+            EntityModelId UNIQUEIDENTIFIER NOT NULL,
+            TriggerEntityId    UNIQUEIDENTIFIER NOT NULL,
+            TriggerEventNumber INT              NOT NULL,
+            Type          UNIQUEIDENTIFIER NOT NULL,
+            Data          VARBINARY(MAX),
+            Timestamp     DATETIME2        NOT NULL,
+            LastTypes     VARCHAR(370)     NOT NULL, -- Comma separated event type ids, at most 10
+            ReferenceType UNIQUEIDENTIFIER NOT NULL,
+            IndexKey      VARBINARY(1700)  NOT NULL,
+            CorrelationId VARCHAR(36)      NOT NULL,
+            CONSTRAINT [pkConditionTrigger] PRIMARY KEY (Id)
+        );
+        GRANT INSERT, DELETE, SELECT ON [{schema}].[ConditionTrigger] TO [{role}];
         """.replace("{schema}", schema)
             .replace("{checksum}", String.valueOf(checksum(coreSql)))
             .replace("{role}", role);

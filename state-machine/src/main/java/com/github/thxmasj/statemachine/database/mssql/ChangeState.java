@@ -5,6 +5,8 @@ import static java.util.stream.Collectors.joining;
 import static java.util.stream.IntStream.range;
 
 import com.github.thxmasj.statemachine.BasicEventType;
+import com.github.thxmasj.statemachine.ConditionTrigger;
+import com.github.thxmasj.statemachine.DataType;
 import com.github.thxmasj.statemachine.DelayedEvent;
 import com.github.thxmasj.statemachine.EntityId;
 import com.github.thxmasj.statemachine.EntityModel;
@@ -12,6 +14,7 @@ import com.github.thxmasj.statemachine.Event;
 import com.github.thxmasj.statemachine.IndexEntityModel;
 import com.github.thxmasj.statemachine.SecondaryId;
 import com.github.thxmasj.statemachine.StateMachine.ProcessResult;
+import com.github.thxmasj.statemachine.TriggerType;
 import com.github.thxmasj.statemachine.database.Client;
 import com.github.thxmasj.statemachine.database.Client.PrimaryKeyConstraintViolation;
 import com.github.thxmasj.statemachine.database.Client.Query.Builder;
@@ -23,6 +26,7 @@ import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import reactor.core.publisher.Flux;
 
@@ -59,6 +63,24 @@ public class ChangeState {
       if (secondaryId.model().isSerial())
         spec.bind("secondaryId" + secondaryId.model().name() + "SerialNumber", secondaryId.serialNumber());
     }
+    if (change.triggerType() != null) {
+      spec.bind("triggerId", change.triggerId());
+    }
+    if (change.conditionTrigger() != null) {
+      spec
+          .bind("conditionTriggerId", change.conditionTrigger().id())
+          .bind("type", change.conditionTrigger().type().id())
+          .bindNullable("data", byte[].class, marshal(change.conditionTrigger()))
+          .bind("conditionEntityModelId", change.conditionTrigger().entityModel().id())
+          .bind("triggerEntityId", change.conditionTrigger().triggerEvent().entityId())
+          .bind("triggerEventNumber", change.conditionTrigger().triggerEvent().eventNumber())
+          .bind("lastTypes", change.conditionTrigger().lastTypes().stream()
+              .map(t -> t.id().toString())
+              .collect(Collectors.joining(",")))
+          .bind("referenceType", change.conditionTrigger().referenceType().id())
+          .bind("indexKey", DataType.uuid().marshal(change.conditionTrigger().indexKey()))
+          .bind("correlationId", change.conditionTrigger().correlationId());
+    }
     if (change.delayedEvent() != null) {
       ZonedDateTime deadline = change.delayedEvent().after();
       spec
@@ -74,6 +96,10 @@ public class ChangeState {
     return delayedEvent.type().inputDataType().marshal(delayedEvent.data());
   }
 
+  private static <T> byte[] marshal(ConditionTrigger<T> conditionTrigger) {
+    return conditionTrigger.type().inputDataType().marshal(conditionTrigger.data());
+  }
+
   public interface Change {
 
     EntityModel entityModel();
@@ -85,6 +111,67 @@ public class ChangeState {
     List<SecondaryId<?>> newSecondaryIds();
 
     DelayedEvent<?> delayedEvent();
+
+    default ConditionTrigger<?> conditionTrigger() {
+      return null;
+    }
+
+    /**
+     * The type of the stored trigger that caused this change's new event, if any.
+     */
+    default TriggerType triggerType() {
+      return null;
+    }
+
+    /**
+     * The id of the stored trigger that caused this change's new event. The trigger is deleted together with the new
+     * event, so that it will not be triggered again.
+     */
+    default UUID triggerId() {
+      return null;
+    }
+
+    static Change fromConditionTrigger(ConditionTrigger<?> conditionTrigger) {
+      return new Change() {
+        @Override
+        public EntityModel entityModel() {
+          return conditionTrigger.entityModel();
+        }
+
+        @Override
+        public EntityId entityId() {
+          return new EntityId.UUID(conditionTrigger.entityId());
+        }
+
+        @Override
+        public Event<?> newEvent() {
+          return null;
+        }
+
+        @Override
+        public List<SecondaryId<?>> newSecondaryIds() {
+          return List.of();
+        }
+
+        @Override
+        public DelayedEvent<?> delayedEvent() {
+          return null;
+        }
+
+        @Override
+        public ConditionTrigger<?> conditionTrigger() {
+          return conditionTrigger;
+        }
+
+        @Override
+        public String toString() {
+          return entityModel().name() + ":" +
+              conditionTrigger.entityId() + ":trigger(condition):[" +
+              conditionTrigger.type().name() + "]";
+        }
+
+      };
+    }
 
     static Change fromAcceptedEvent(ProcessResult.Accepted<?> acceptedEvent) {
       return new Change() {
@@ -101,6 +188,16 @@ public class ChangeState {
         @Override
         public Event<?> newEvent() {
           return acceptedEvent.event();
+        }
+
+        @Override
+        public TriggerType triggerType() {
+          return acceptedEvent.triggerType();
+        }
+
+        @Override
+        public UUID triggerId() {
+          return acceptedEvent.triggerId();
         }
 
         @Override
@@ -128,7 +225,7 @@ public class ChangeState {
 
     private static String capString(String s) {
       if (s == null) return null;
-      if (s.length() > 50) return s.substring(0, 50) + "...";
+      if (s.length() > 50) return s.replace("\n", "↵").substring(0, 50) + "...";
       return s;
     }
 
@@ -226,7 +323,9 @@ public class ChangeState {
             changes.get(i).entityModel(),
             changes.get(i).newEvent(),
             changes.get(i).newSecondaryIds(),
-            changes.get(i).delayedEvent()
+            changes.get(i).delayedEvent(),
+            changes.get(i).conditionTrigger(),
+            changes.get(i).triggerType()
         )).collect(joining("\n")) +
             """
             INSERT INTO @QueueElementToProcess (ChangeIndex, MessageIndex, RequestId, ElementId)
@@ -256,7 +355,9 @@ public class ChangeState {
       EntityModel entityModel,
       Event<?> event,
       List<SecondaryId<?>> secondaryIds,
-      DelayedEvent<?> delayedEvent
+      DelayedEvent<?> delayedEvent,
+      ConditionTrigger<?> conditionTrigger,
+      TriggerType triggerType
   ) {
     String sql =
         """
@@ -336,6 +437,41 @@ public class ChangeState {
           )
           """.replace("{schema}", schema)
               .replace("{changeIndex}", String.valueOf(changeIndex));
+      if (triggerType == TriggerType.CONDITION) {
+        sql +=
+            """
+            DELETE [{schema}].[ConditionTrigger]
+            WHERE Id=:triggerId;
+            """.replace("{schema}", schema);
+      }
+    }
+
+    if (conditionTrigger != null) {
+      sql +=
+          """
+          INSERT INTO [{schema}].[ConditionTrigger] (
+            Id,
+            EntityId,
+            EntityModelId,
+            TriggerEntityId,
+            TriggerEventNumber,
+            Type,
+            Data,
+            Timestamp,
+            LastTypes,
+            ReferenceType,
+            IndexKey,
+            CorrelationId
+          ) VALUES (
+            :conditionTriggerId,
+            @entityId{changeIndex},
+            :conditionEntityModelId,
+            :triggerEntityId,
+            :triggerEventNumber,
+            :type,:data,:timestamp,:lastTypes,:referenceType,:indexKey,:correlationId
+          );
+          """.replace("{changeIndex}", String.valueOf(changeIndex))
+              .replace("{schema}", schema);
     }
 
     if (delayedEvent != null) {

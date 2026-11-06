@@ -5,11 +5,14 @@ import static com.github.thxmasj.statemachine.EntitySelector.newEntityId;
 import static com.github.thxmasj.statemachine.EventTrigger.trigger;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
 import static com.github.thxmasj.statemachine.Tuples.tuple;
+import static com.github.thxmasj.statemachine.database.mssql.Mappers.eventTypesFor;
+import static java.util.stream.Collectors.toMap;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.github.thxmasj.statemachine.BasicEventType;
+import com.github.thxmasj.statemachine.BuiltinEventTypes;
 import com.github.thxmasj.statemachine.DataType;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.EventLog;
@@ -23,6 +26,7 @@ import java.time.Clock;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 
 public class EntitiesByIndexTest {
@@ -52,11 +56,20 @@ public class EntitiesByIndexTest {
     );
 
     String schema = UUID.randomUUID().toString();
-    StateMachine machine = Init.stateMachine(schema, Map.of(
+    var transitions = Map.of(
         Order, orderTransitions,
         Index, Index.transitions()
-    ));
-
+    );
+    Map<EntityModel, List<EventType<?, ?>>> eventsByEntityModel = transitions.entrySet().stream()
+        .collect(toMap(
+            e -> e.getKey(),
+            e -> Stream.concat(
+                    BuiltinEventTypes.ALL.stream(),
+                    e.getValue().values().stream().flatMap(tl -> tl.stream()).flatMap(t -> eventTypesFor(t).stream())
+                )
+                .distinct().toList()
+        ));
+    StateMachine machine = Init.stateMachine(schema, transitions);
     EntitiesByIndex entitiesByIndex = new EntitiesByIndex(
         Init.dataSource(),
         List.of(Order, Index),
@@ -73,7 +86,7 @@ public class EntitiesByIndexTest {
     UUID orderId = event1.entityId();
 
     // Query index
-    List<EventLog> logs1 = entitiesByIndex.execute(customerId).collectList().block();
+    List<EventLog> logs1 = entitiesByIndex.execute(customerId, customerReferenced).collectList().block();
     assertNotNull(logs1);
     assertEquals(1, logs1.size());
     EventLog orderLog1 = logs1.get(0);
@@ -87,7 +100,7 @@ public class EntitiesByIndexTest {
     assertEquals(2, event2.eventNumber());
 
     // Query index again - should still resolve model and reflect 2 events
-    List<EventLog> logs2 = entitiesByIndex.execute(customerId).collectList().block();
+    List<EventLog> logs2 = entitiesByIndex.execute(customerId, customerReferenced).collectList().block();
     assertNotNull(logs2);
     assertEquals(1, logs2.size());
     EventLog orderLog2 = logs2.get(0);
@@ -100,7 +113,7 @@ public class EntitiesByIndexTest {
     assertNotNull(event3);
     UUID orderId2 = event3.entityId();
 
-    List<EventLog> logs3 = entitiesByIndex.execute(customerId).collectList().block();
+    List<EventLog> logs3 = entitiesByIndex.execute(customerId, customerReferenced).collectList().block();
     assertNotNull(logs3);
     assertEquals(2, logs3.size());
     assertEquals(Order, logs3.get(0).entityModel());

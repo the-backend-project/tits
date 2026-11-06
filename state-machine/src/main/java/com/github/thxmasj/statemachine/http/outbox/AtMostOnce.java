@@ -51,6 +51,7 @@ public final class AtMostOnce<I, RQ, RI> implements HttpOutboxRequest<I> {
   private final Shape<I, ?, ?, ?, ?, ?, ?, ?, RQ, ?> shape;
 
   private record Shape<I, T1, T2, T3, T4, T5, T6, T7, RQ, RS>(
+      DataType<I> inputDataType,
       DataType<RQ> requestPayloadType,
       DataType<RS> responsePayloadType,
       Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator,
@@ -75,7 +76,7 @@ public final class AtMostOnce<I, RQ, RI> implements HttpOutboxRequest<I> {
       return BasicEventType.of(
           "Request dispatched",
           UUID.fromString("3f22bfef-dcb4-4560-8b88-6b5040433319"),
-          DataType.unknown(),
+          inputDataType,
           DataType.tuple(HttpDataType.forRequest(requestPayloadType), DataType.uuid())
       );
     }
@@ -101,7 +102,7 @@ public final class AtMostOnce<I, RQ, RI> implements HttpOutboxRequest<I> {
     EventType<TypedHttpResponse<RS>, TypedHttpResponse<RS>> requestAccepted() {
       return BasicEventType.of(
           "[request accepted]",
-          UUID.fromString("0f8fe1c2-2d29-406c-87b5-f9f43a03a54f"),
+          RequestAcceptedId,
           HttpDataType.forResponse(responsePayloadType),
           HttpDataType.forResponse(responsePayloadType)
       );
@@ -150,13 +151,19 @@ public final class AtMostOnce<I, RQ, RI> implements HttpOutboxRequest<I> {
     return shape.requestDispatched();
   }
 
+
   public EventType<RI, Void> rollbackDispatched() {
     return BasicEventType.of(
         "Rollback dispatched",
-        UUID.fromString("2cda741e-4447-4787-a5eb-46f0502e08ec"),
+        RollbackDispatchedId,
         DataType.unknown(),
         DataType.none()
     );
+  }
+
+  @Override
+  public DataType<I> inputDataType() {
+    return shape.inputDataType();
   }
 
   @Override
@@ -196,6 +203,7 @@ public final class AtMostOnce<I, RQ, RI> implements HttpOutboxRequest<I> {
   public <T1, T2, T3, T4, T5, T6, T7, RS> AtMostOnce(
       String name,
       UUID id,
+      DataType<I> inputDataType,
       DataType<RQ> requestPayloadType,
       DataType<RS> responsePayloadType,
       Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator,
@@ -221,6 +229,7 @@ public final class AtMostOnce<I, RQ, RI> implements HttpOutboxRequest<I> {
     this(
         name,
         id,
+        inputDataType,
         requestPayloadType,
         responsePayloadType,
         messageCreator,
@@ -248,6 +257,7 @@ public final class AtMostOnce<I, RQ, RI> implements HttpOutboxRequest<I> {
   public <T1, T2, T3, T4, T5, T6, T7, RS> AtMostOnce(
       String name,
       UUID id,
+      DataType<I> inputDataType,
       DataType<RQ> requestPayloadType,
       DataType<RS> responsePayloadType,
       Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator,
@@ -273,6 +283,7 @@ public final class AtMostOnce<I, RQ, RI> implements HttpOutboxRequest<I> {
     this.name = name;
     this.id = id;
     this.shape = new Shape<>(
+        inputDataType,
         requestPayloadType,
         responsePayloadType,
         messageCreator,
@@ -487,7 +498,8 @@ public final class AtMostOnce<I, RQ, RI> implements HttpOutboxRequest<I> {
                 .on(rollbackOnUnknownModel)
                 .identifiedBy(newEntityId())
                 .output()
-        ) : List.of()
+        ) : List.of(),
+        RolledBack, List.of()
     );
   }
 

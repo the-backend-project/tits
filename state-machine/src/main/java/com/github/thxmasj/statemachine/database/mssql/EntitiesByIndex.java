@@ -57,18 +57,25 @@ public class EntitiesByIndex {
         FROM [{schema}].Event e
           INNER JOIN [{schema}].[Entity] ent ON ent.EntityId = e.EntityId
           INNER JOIN [{schema}].IndexEvent ie ON e.EntityId=ie.EntityId
-        WHERE ie.Data=:value
+        WHERE ie.Data=:value AND ie.Type=:referenceType
         ORDER BY e.EntityId, e.EventNumber;
         """
             .replace("{schema}", schemaName)
     );
   }
 
-  public Flux<EventLog> execute(UUID key) {
+  public Flux<EventLog> execute(UUID key, EventType<?, ?> referenceType) {
     return Mono.fromCallable(() -> {
           try (
               var connection = dataSource.getConnection();
-              var statement = prepare(sql, Map.of("value", new Parameter<>(byte[].class, DataType.uuid().marshal(key))), connection);
+              var statement = prepare(
+                  sql,
+                  Map.of(
+                      "value", new Parameter<>(byte[].class, DataType.uuid().marshal(key)),
+                      "referenceType", new Parameter<>(UUID.class, referenceType.id())
+                  ),
+                  connection
+              );
           ) {
             statement.execute();
             ResultSet rs = statement.getResultSet();

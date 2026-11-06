@@ -10,4 +10,8 @@ public class MappingFailure extends RuntimeException {
     super(message);
   }
 
+  public MappingFailure(String message, Throwable cause) {
+    super(message, cause);
+  }
+
 }

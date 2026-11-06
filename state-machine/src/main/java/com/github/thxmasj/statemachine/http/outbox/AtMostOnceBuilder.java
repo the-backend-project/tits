@@ -26,7 +26,7 @@ import reactor.core.publisher.Mono;
 /// can be skipped, as it also offers the settings of the steps following it.
 ///
 /// The type of the request payload is introduced by [RequestPayloadTypeStep], the type of the response payload by
-/// [ResponsePayloadTypeStep], the type of the data which the request message is created from by [MessageCreatorStep],
+/// [ResponsePayloadTypeStep], the type of the data which the request message is created from by [InputDataTypeStep],
 /// and the type of the data which the rollback request message is created from by [RollbackOnAcceptedModelStep] or
 /// [RollbackOnUnknownModelStep].
 public final class AtMostOnceBuilder {
@@ -44,16 +44,23 @@ public final class AtMostOnceBuilder {
 
   public interface ResponsePayloadTypeStep<RQ> {
 
-    <RS> MessageCreatorStep<RQ, RS> responsePayloadType(DataType<RS> responsePayloadType);
+    <RS> InputDataTypeStep<RQ, RS> responsePayloadType(DataType<RS> responsePayloadType);
   }
 
-  public interface MessageCreatorStep<RQ, RS> {
+  /// The type of the input data of the outbox, i.e. of the data which the request message is created from. Needed to
+  /// unmarshal the input when it is stored, e.g. when the request is dispatched by a condition trigger.
+  public interface InputDataTypeStep<RQ, RS> {
 
-    default <I> ForwarderStep<I, RQ, RS> messageCreator(Function<TransitionContext<I>, TypedHttpRequest<RQ>> messageCreator) {
+    <I> MessageCreatorStep<I, RQ, RS> inputDataType(DataType<I> inputDataType);
+  }
+
+  public interface MessageCreatorStep<I, RQ, RS> {
+
+    default ForwarderStep<I, RQ, RS> messageCreator(Function<TransitionContext<I>, TypedHttpRequest<RQ>> messageCreator) {
       return messageCreatorReactive(messageCreator.andThen(Mono::just));
     }
 
-    <I> ForwarderStep<I, RQ, RS> messageCreatorReactive(Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator);
+    ForwarderStep<I, RQ, RS> messageCreatorReactive(Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator);
   }
 
   public interface ForwarderStep<I, RQ, RS> {
@@ -218,12 +225,12 @@ public final class AtMostOnceBuilder {
     }
 
     @Override
-    public <RS> MessageCreatorStep<RQ, RS> responsePayloadType(DataType<RS> responsePayloadType) {
+    public <RS> InputDataTypeStep<RQ, RS> responsePayloadType(DataType<RS> responsePayloadType) {
       return new WithResponsePayloadType<>(requestPayloadType, responsePayloadType);
     }
   }
 
-  private static final class WithResponsePayloadType<RQ, RS> implements MessageCreatorStep<RQ, RS> {
+  private static final class WithResponsePayloadType<RQ, RS> implements InputDataTypeStep<RQ, RS> {
 
     private final DataType<RQ> requestPayloadType;
     private final DataType<RS> responsePayloadType;
@@ -237,14 +244,37 @@ public final class AtMostOnceBuilder {
     }
 
     @Override
-    public <I> ForwarderStep<I, RQ, RS> messageCreatorReactive(Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator) {
-      return new WithMessageCreator<>(requestPayloadType, responsePayloadType, messageCreator);
+    public <I> MessageCreatorStep<I, RQ, RS> inputDataType(DataType<I> inputDataType) {
+      return new WithInputDataType<>(inputDataType, requestPayloadType, responsePayloadType);
+    }
+  }
+
+  private static final class WithInputDataType<I, RQ, RS> implements MessageCreatorStep<I, RQ, RS> {
+
+    private final DataType<I> inputDataType;
+    private final DataType<RQ> requestPayloadType;
+    private final DataType<RS> responsePayloadType;
+
+    private WithInputDataType(
+        DataType<I> inputDataType,
+        DataType<RQ> requestPayloadType,
+        DataType<RS> responsePayloadType
+    ) {
+      this.inputDataType = inputDataType;
+      this.requestPayloadType = requestPayloadType;
+      this.responsePayloadType = responsePayloadType;
+    }
+
+    @Override
+    public ForwarderStep<I, RQ, RS> messageCreatorReactive(Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator) {
+      return new WithMessageCreator<>(inputDataType, requestPayloadType, responsePayloadType, messageCreator);
     }
   }
 
   private static final class WithMessageCreator<I, RQ, RS> implements ForwarderStep<I, RQ, RS>,
       InflightTimeoutStep<I, RQ, RS> {
 
+    private final DataType<I> inputDataType;
     private final DataType<RQ> requestPayloadType;
     private final DataType<RS> responsePayloadType;
     private final Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator;
@@ -257,10 +287,12 @@ public final class AtMostOnceBuilder {
     private Callback<Tuple2<HttpResponseMessage, String>, ?> onInvalidResponseUnknown = new Callback<>(InvalidResponse, Tuple2::t2);
 
     private WithMessageCreator(
+        DataType<I> inputDataType,
         DataType<RQ> requestPayloadType,
         DataType<RS> responsePayloadType,
         Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator
     ) {
+      this.inputDataType = inputDataType;
       this.requestPayloadType = requestPayloadType;
       this.responsePayloadType = responsePayloadType;
       this.messageCreator = messageCreator;
@@ -345,6 +377,7 @@ public final class AtMostOnceBuilder {
     @Override
     public OnSuccessStep<I, RQ, RS> contentParser(Function<HttpResponseMessage, Validated<RS>> contentParser) {
       return new WithContentParser<>(
+          inputDataType,
           requestPayloadType,
           responsePayloadType,
           messageCreator,
@@ -365,6 +398,7 @@ public final class AtMostOnceBuilder {
         BiFunction<TypedHttpRequest<RQ>, HttpResponseMessage, Validated<RS>> contentParser
     ) {
       return new WithContentParser<>(
+          inputDataType,
           requestPayloadType,
           responsePayloadType,
           messageCreator,
@@ -386,6 +420,7 @@ public final class AtMostOnceBuilder {
       IsRejectedStep<I, RQ, RS>, IsRejectedByInvalidResponseStep<I, RQ, RS>, BatchIdExtractorStep<I, RQ>,
       RollbackOnAcceptedModelStep<I, RQ> {
 
+    private final DataType<I> inputDataType;
     private final DataType<RQ> requestPayloadType;
     private final DataType<RS> responsePayloadType;
     private final Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator;
@@ -407,6 +442,7 @@ public final class AtMostOnceBuilder {
     private Function<I, UUID> batchIdExtractor;
 
     private WithContentParser(
+        DataType<I> inputDataType,
         DataType<RQ> requestPayloadType,
         DataType<RS> responsePayloadType,
         Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator,
@@ -420,6 +456,7 @@ public final class AtMostOnceBuilder {
         Function<HttpResponseMessage, Validated<RS>> contentParser,
         BiFunction<TypedHttpRequest<RQ>, HttpResponseMessage, Validated<RS>> requestAwareContentParser
     ) {
+      this.inputDataType = inputDataType;
       this.requestPayloadType = requestPayloadType;
       this.responsePayloadType = responsePayloadType;
       this.messageCreator = messageCreator;
@@ -509,6 +546,7 @@ public final class AtMostOnceBuilder {
       return (name, id) -> new AtMostOnce<>(
           name,
           id,
+          inputDataType,
           requestPayloadType,
           responsePayloadType,
           messageCreator,

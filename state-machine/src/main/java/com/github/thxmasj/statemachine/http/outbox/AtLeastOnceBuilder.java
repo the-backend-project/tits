@@ -23,7 +23,7 @@ import reactor.core.publisher.Mono;
 /// can be skipped, as it also offers the settings of the steps following it.
 ///
 /// The type of the request payload is introduced by [RequestPayloadTypeStep], the type of the response payload by
-/// [ResponsePayloadTypeStep], and the type of the data which the request message is created from by [MessageCreatorStep].
+/// [ResponsePayloadTypeStep], and the type of the data which the request message is created from by [InputDataTypeStep].
 public final class AtLeastOnceBuilder {
 
   private AtLeastOnceBuilder() {}
@@ -39,16 +39,23 @@ public final class AtLeastOnceBuilder {
 
   public interface ResponsePayloadTypeStep<RQ> {
 
-    <RS> MessageCreatorStep<RQ, RS> responsePayloadType(DataType<RS> responsePayloadType);
+    <RS> InputDataTypeStep<RQ, RS> responsePayloadType(DataType<RS> responsePayloadType);
   }
 
-  public interface MessageCreatorStep<RQ, RS> {
+  /// The type of the input data of the outbox, i.e. of the data which the request message is created from. Needed to
+  /// unmarshal the input when it is stored, e.g. when the request is dispatched by a condition trigger.
+  public interface InputDataTypeStep<RQ, RS> {
 
-    default <I> RepeatMessageCreatorStep<I, RQ, RS> messageCreator(Function<TransitionContext<I>, TypedHttpRequest<RQ>> messageCreator) {
+    <I> MessageCreatorStep<I, RQ, RS> inputDataType(DataType<I> inputDataType);
+  }
+
+  public interface MessageCreatorStep<I, RQ, RS> {
+
+    default RepeatMessageCreatorStep<I, RQ, RS> messageCreator(Function<TransitionContext<I>, TypedHttpRequest<RQ>> messageCreator) {
       return messageCreatorReactive(messageCreator.andThen(Mono::just));
     }
 
-    <I> RepeatMessageCreatorStep<I, RQ, RS> messageCreatorReactive(Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator);
+    RepeatMessageCreatorStep<I, RQ, RS> messageCreatorReactive(Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator);
   }
 
   /// Optional: the repeated message defaults to the message of the original attempt.
@@ -166,12 +173,12 @@ public final class AtLeastOnceBuilder {
     }
 
     @Override
-    public <RS> MessageCreatorStep<RQ, RS> responsePayloadType(DataType<RS> responsePayloadType) {
+    public <RS> InputDataTypeStep<RQ, RS> responsePayloadType(DataType<RS> responsePayloadType) {
       return new WithResponsePayloadType<>(requestPayloadType, responsePayloadType);
     }
   }
 
-  private static final class WithResponsePayloadType<RQ, RS> implements MessageCreatorStep<RQ, RS> {
+  private static final class WithResponsePayloadType<RQ, RS> implements InputDataTypeStep<RQ, RS> {
 
     private final DataType<RQ> requestPayloadType;
     private final DataType<RS> responsePayloadType;
@@ -185,16 +192,39 @@ public final class AtLeastOnceBuilder {
     }
 
     @Override
-    public <I> RepeatMessageCreatorStep<I, RQ, RS> messageCreatorReactive(
+    public <I> MessageCreatorStep<I, RQ, RS> inputDataType(DataType<I> inputDataType) {
+      return new WithInputDataType<>(inputDataType, requestPayloadType, responsePayloadType);
+    }
+  }
+
+  private static final class WithInputDataType<I, RQ, RS> implements MessageCreatorStep<I, RQ, RS> {
+
+    private final DataType<I> inputDataType;
+    private final DataType<RQ> requestPayloadType;
+    private final DataType<RS> responsePayloadType;
+
+    private WithInputDataType(
+        DataType<I> inputDataType,
+        DataType<RQ> requestPayloadType,
+        DataType<RS> responsePayloadType
+    ) {
+      this.inputDataType = inputDataType;
+      this.requestPayloadType = requestPayloadType;
+      this.responsePayloadType = responsePayloadType;
+    }
+
+    @Override
+    public RepeatMessageCreatorStep<I, RQ, RS> messageCreatorReactive(
         Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator
     ) {
-      return new WithMessageCreator<>(requestPayloadType, responsePayloadType, messageCreator);
+      return new WithMessageCreator<>(inputDataType, requestPayloadType, responsePayloadType, messageCreator);
     }
   }
 
   private static final class WithMessageCreator<I, RQ, RS> implements RepeatMessageCreatorStep<I, RQ, RS>,
       InflightTimeoutStep<I, RQ, RS> {
 
+    private final DataType<I> inputDataType;
     private final DataType<RQ> requestPayloadType;
     private final DataType<RS> responsePayloadType;
     private final Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator;
@@ -205,10 +235,12 @@ public final class AtLeastOnceBuilder {
     private EntityModel processModel;
 
     private WithMessageCreator(
+        DataType<I> inputDataType,
         DataType<RQ> requestPayloadType,
         DataType<RS> responsePayloadType,
         Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator
     ) {
+      this.inputDataType = inputDataType;
       this.requestPayloadType = requestPayloadType;
       this.responsePayloadType = responsePayloadType;
       this.messageCreator = messageCreator;
@@ -243,6 +275,7 @@ public final class AtLeastOnceBuilder {
     @Override
     public OnSuccessStep<I, RS> contentParser(Function<HttpResponseMessage, Validated<RS>> contentParser) {
       return new WithContentParser<>(
+          inputDataType,
           requestPayloadType,
           responsePayloadType,
           messageCreator,
@@ -260,6 +293,7 @@ public final class AtLeastOnceBuilder {
         BiFunction<TypedHttpRequest<RQ>, HttpResponseMessage, Validated<RS>> contentParser
     ) {
       return new WithContentParser<>(
+          inputDataType,
           requestPayloadType,
           responsePayloadType,
           messageCreator,
@@ -277,6 +311,7 @@ public final class AtLeastOnceBuilder {
       IsRejectedByInvalidResponseStep<I>, IsFailureByInvalidResponseTransientStep<I>, IsAttemptAvailableStep<I>,
       BackoffAlgorithmStep<I>, BatchIdExtractorStep<I>, BuildStep<I> {
 
+    private final DataType<I> inputDataType;
     private final DataType<RQ> requestPayloadType;
     private final DataType<RS> responsePayloadType;
     private final Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator;
@@ -298,6 +333,7 @@ public final class AtLeastOnceBuilder {
     //private AtMostOnce<?, ?> superModel;
 
     private WithContentParser(
+        DataType<I> inputDataType,
         DataType<RQ> requestPayloadType,
         DataType<RS> responsePayloadType,
         Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator,
@@ -308,6 +344,7 @@ public final class AtLeastOnceBuilder {
         Function<HttpResponseMessage, Validated<RS>> contentParser,
         BiFunction<TypedHttpRequest<RQ>, HttpResponseMessage, Validated<RS>> requestAwareContentParser
     ) {
+      this.inputDataType = inputDataType;
       this.requestPayloadType = requestPayloadType;
       this.responsePayloadType = responsePayloadType;
       this.messageCreator = messageCreator;
@@ -398,6 +435,7 @@ public final class AtLeastOnceBuilder {
       return new AtLeastOnce<>(
           name,
           id,
+          inputDataType,
           requestPayloadType,
           responsePayloadType,
           messageCreator,

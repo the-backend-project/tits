@@ -46,6 +46,7 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
   private final Shape<I, ?, ?, ?> shape;
 
   private record Shape<I, RQ, RS, S>(
+      DataType<I> inputDataType,
       DataType<RQ> requestPayloadType,
       DataType<RS> responsePayloadType,
       Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator,
@@ -97,7 +98,7 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
       return BasicEventType.of(
           "Request dispatched",
           UUID.fromString("736f1f23-dba8-467e-a503-a9e2c516197e"),
-          DataType.unknown(),
+          inputDataType,
           DataType.tuple(HttpDataType.forRequest(requestPayloadType), DataType.uuid())
       );
     }
@@ -161,8 +162,8 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
     EventType<TypedHttpResponse<RS>, TypedHttpResponse<RS>> requestAccepted() {
       return BasicEventType.of(
           "[request accepted]",
-          UUID.fromString("ee8e5913-a047-492c-ab16-55458ecb2930"),
-          DataType.unknown(),
+          RequestAcceptedId,
+          HttpDataType.forResponse(responsePayloadType),
           HttpDataType.forResponse(responsePayloadType)
       );
     }
@@ -171,6 +172,12 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
   @Override
   public EventType<I, ?> requestDispatched() {
     return shape.requestDispatched();
+  }
+
+
+  @Override
+  public DataType<I> inputDataType() {
+    return shape.inputDataType();
   }
 
   @Override
@@ -233,6 +240,7 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
   public <S, RQ, RS> AtLeastOnce(
       String name,
       UUID id,
+      DataType<I> inputDataType,
       DataType<RQ> requestPayloadType,
       DataType<RS> responsePayloadType,
       Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator,
@@ -254,6 +262,7 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
     this.name = name;
     this.id = id;
     this.shape = new Shape<>(
+        inputDataType,
         requestPayloadType,
         responsePayloadType,
         messageCreator,
@@ -551,7 +560,7 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
     return name;
   }
 
-  enum States implements State {
+  public enum States implements State {
     InFlight,
     Accepted,
     Compensating,

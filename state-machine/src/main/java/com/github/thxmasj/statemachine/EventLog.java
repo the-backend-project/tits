@@ -157,6 +157,13 @@ public record EventLog(
         .orElseThrow();
   }
 
+  public <T> Optional<T> idIfExists(SecondaryIdModel<T> model) {
+    return secondaryIds().stream()
+        .filter(id -> id.model() == model)
+        .map(id -> (T)id.data())
+        .findFirst();
+  }
+
   public EventLog withNewEvent(Event<?> newEvent) {
     return new EventLog(
         entityModel(),

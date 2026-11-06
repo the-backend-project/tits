@@ -4,8 +4,10 @@ import static com.github.thxmasj.statemachine.EntityModel.Begin;
 import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.CompleteRequest;
 import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.EntityModels.RequestDispatching;
 import static com.github.thxmasj.statemachine.EntitySelector.entityIdFromSession;
+import static com.github.thxmasj.statemachine.EntitySelector.newEntityId;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
 import static com.github.thxmasj.statemachine.Tuples.tuple;
+import static com.github.thxmasj.statemachine.templates.cardpayment.Aggregate.Settlement;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Identifiers.MerchantId;
 import static com.github.thxmasj.statemachine.templates.cardpayment.MerchantEvent.Create;
 import static com.github.thxmasj.statemachine.templates.cardpayment.MerchantEvent.Delete;
@@ -16,6 +18,7 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.MerchantEven
 import static com.github.thxmasj.statemachine.templates.cardpayment.MerchantState.Active;
 import static com.github.thxmasj.statemachine.templates.cardpayment.MerchantState.Deleted;
 import static com.github.thxmasj.statemachine.templates.cardpayment.MerchantState.Suspended;
+import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.OpenInitial;
 import static java.util.Optional.ofNullable;
 
 import com.github.thxmasj.statemachine.DataType;
@@ -35,8 +38,9 @@ public class MerchantTransitions {
             onEvent(Create).to(Active)
                 .assemble(c -> tuple(c.input(), c.eventReference()))
                 .newIdentifier(MerchantId, d -> d.t1().id())
-                .trigger(CompleteRequest).with(d -> tuple("", d.t1().t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
-                .output(d -> d.t1().t1().t1())
+                .trigger(OpenInitial).with(d -> new com.github.thxmasj.statemachine.templates.cardpayment.MerchantId(d.t1().t1().id())).on(Settlement).identifiedBy(newEntityId())
+                .trigger(CompleteRequest).with(d -> tuple("", d.t1().t1().t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                .output(d -> d.t1().t1().t1().t1())
         ),
         Active, List.of(
             onEvent(Suspend).to(Suspended)

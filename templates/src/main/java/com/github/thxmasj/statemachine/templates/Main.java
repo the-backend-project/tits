@@ -23,7 +23,11 @@ public class Main {
   static void main() throws IOException {
     var atLeastOnce = atLeastOnce(Identifiable.of("AtLeastOnce", UUID.randomUUID()));
     System.out.println(new PlantUMLFormatter(atLeastOnce, atLeastOnce.transitions()).formatToImage("docs/images/"));
-    var atMostOnce = atMostOnce(Identifiable.of("AtMostOnce", UUID.randomUUID()));
+    var atMostOnce = atMostOnce(
+        Identifiable.of("AtMostOnce", UUID.randomUUID()),
+        Identifiable.of("RollbackOnAccepted", UUID.randomUUID()),
+        Identifiable.of("RollbackOnUnknown", UUID.randomUUID())
+    );
     System.out.println(new PlantUMLFormatter(atMostOnce, atMostOnce.transitions()).formatToImage("docs/images/"));
     System.out.println(new PlantUMLFormatter(RequestRouting, requestRoutingTransitions(List.of())).formatToImage("docs/images/"));
     System.out.println(new PlantUMLFormatter(RequestDispatching, requestDispatchingTransitions(List.of(), List.of())).formatToImage("docs/images/"));

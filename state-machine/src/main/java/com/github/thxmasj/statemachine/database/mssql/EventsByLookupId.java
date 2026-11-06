@@ -9,6 +9,7 @@ import com.github.thxmasj.statemachine.Event;
 import com.github.thxmasj.statemachine.EventLog;
 import com.github.thxmasj.statemachine.EventType;
 import com.github.thxmasj.statemachine.SecondaryId;
+import com.github.thxmasj.statemachine.database.MappingFailure;
 import com.github.thxmasj.statemachine.database.UnknownEntity;
 import com.github.thxmasj.statemachine.database.jdbc.JDBCRow;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.Column;
@@ -108,7 +109,11 @@ public class EventsByLookupId {
             rs = statement.getResultSet();
             List<Event<?>> events = new ArrayList<>();
             while (rs.next()) {
-              events.add(Mappers.eventMapper(eventTypes, clock).apply(entityId, new JDBCRow(rs)));
+              try {
+                events.add(Mappers.eventMapper(eventTypes, clock).apply(entityId, new JDBCRow(rs)));
+              } catch (MappingFailure e) {
+                throw new MappingFailure("EventsBySecondaryId: Failed to map row to event for entity model " + entityModel.name(), e);
+              }
             }
             List<SecondaryId<?>> secondaryIds = new ArrayList<>();
             for (var idModel2 : entityModel.secondaryIds()) {

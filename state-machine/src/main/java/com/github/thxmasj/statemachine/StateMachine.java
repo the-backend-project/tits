@@ -43,8 +43,10 @@ import com.github.thxmasj.statemachine.database.mssql.EventsByLastEntity;
 import com.github.thxmasj.statemachine.database.mssql.EventsByLookupId;
 import com.github.thxmasj.statemachine.database.mssql.LastSecondaryId;
 import com.github.thxmasj.statemachine.database.mssql.MoveToDLQ;
+import com.github.thxmasj.statemachine.database.mssql.ConditionTriggers;
 import com.github.thxmasj.statemachine.database.mssql.NextDeadline;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
+import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import jakarta.annotation.Nullable;
 import jakarta.validation.constraints.NotNull;
@@ -73,6 +75,8 @@ import reactor.util.retry.RetrySpec;
 
 public class StateMachine {
 
+  private static final int MAX_CONDITION_TRIGGERS_PER_POLL = 10;
+
   private final Function<List<String>, Mono<Void>> delayer;
   private final Clock clock;
   private final Listener listener;
@@ -86,6 +90,7 @@ public class StateMachine {
   private final MoveToDLQ moveToDLQ;
   private final NextDeadline nextDeadline;
   private final DeleteExpiredDeadline deleteExpiredDeadline;
+  private final ConditionTriggers conditionTriggers;
   private final Map<EntityModel, Traverser> traversers;
   private final Map<EntityModel, List<EventType<?, ?>>> eventTypesByEntityModel;
 
@@ -122,6 +127,7 @@ public class StateMachine {
       Listener listener,
       boolean withResolving
   ) {
+    System.out.println("Supported entity models:\n" + transitions.keySet().stream().map(m -> m.name() + (m instanceof HttpOutboxRequest ? " (HTTP outbox request)" : "")).collect(joining("\n")));
     this.traversers = transitions.entrySet().stream().collect(toMap(Entry::getKey, e -> new Traverser(e.getValue())));
     List<EntityModel> entityModels = transitions.keySet().stream().toList();
     this.eventTypesByEntityModel = transitions.entrySet().stream()
@@ -165,6 +171,7 @@ public class StateMachine {
     this.moveToDLQ = new MoveToDLQ(jdbcClient, schemaName);
     this.nextDeadline = new NextDeadline(jdbcClient, eventTypes, clock, entityModels, schemaName);
     this.deleteExpiredDeadline = new DeleteExpiredDeadline(jdbcClient, schemaName);
+    this.conditionTriggers = new ConditionTriggers(jdbcClient, eventTypesByEntityModel, clock, schemaName);
     this.listener = listener;
     if (withResolving) {
       Looper<ResolverStatus> resolverLooper = new Looper<>(
@@ -179,6 +186,14 @@ public class StateMachine {
       );
       resolverLooper.loop();
       workers.add(resolverLooper);
+      Looper<ResolverStatus> conditionTriggerLooper = new Looper<>(
+          "ConditionTriggerWorker",
+          false,
+          () -> fireConditionTriggers().flux(),
+          _ -> ofSeconds(1)
+      );
+      conditionTriggerLooper.loop();
+      workers.add(conditionTriggerLooper);
     }
 //    for (var entityModel : entityModels) {
 //      if (entityModel instanceof HttpOutbox.EntityModel queue) {
@@ -348,7 +363,11 @@ public class StateMachine {
       public Completed<T> completed() {return this;}
     }
 
-    record Accepted<T>(Event<T> event, EntityModel entityModel) implements ProcessResult<T> {
+    /**
+     * @param triggerType optional type of the stored trigger that caused the event
+     * @param triggerId   id of the stored trigger that caused the event, present if and only if triggerType is
+     */
+    record Accepted<T>(Event<T> event, EntityModel entityModel, TriggerType triggerType, UUID triggerId) implements ProcessResult<T> {
       public Accepted<T> accepted() {return this;}
     }
 
@@ -404,7 +423,11 @@ public class StateMachine {
     }
 
     static <T> Accepted<T> accepted(Event<T> event, EntityModel entityModel) {
-      return new Accepted<>(event, entityModel);
+      return new Accepted<>(event, entityModel, null, null);
+    }
+
+    static <T> Accepted<T> accepted(Event<T> event, EntityModel entityModel, TriggerType triggerType, UUID triggerId) {
+      return new Accepted<>(event, entityModel, triggerType, triggerId);
     }
 
     default boolean isAccepted() {
@@ -476,12 +499,21 @@ public class StateMachine {
   }
 
   public <T, I, O> Flux<Event<?>> onEvent(String correlationId, EventTrigger<T, I, O> eventTrigger, T input) {
+    return onEvent(correlationId, eventTrigger, input, null);
+  }
+
+  private <T, I, O> Flux<Event<?>> onEvent(
+      String correlationId,
+      EventTrigger<T, I, O> eventTrigger,
+      T input,
+      @Nullable EventReference triggerEvent
+  ) {
     System.out.println("onEvent " + correlationId + " " + eventTrigger.eventSpec().eventType().name());
     I adaptedInput = eventTrigger.eventSpec().inputAdapter().apply(input);
     Many<Event<?>> responseSink = Sinks.many().unicast().onBackpressureBuffer();
     return eventLog(eventTrigger, input, null)
         .flatMapMany(log ->
-                onEvent(correlationId, eventTrigger.eventSpec().eventType(), adaptedInput, log, null, List.of())
+                onEvent(correlationId, eventTrigger.eventSpec().eventType(), adaptedInput, log, null, List.of(), eventTrigger.triggerType(), eventTrigger.triggerId(), triggerEvent)
                     .contextWrite(ctx -> ctx.put("RS/" + log.entityId().value(), responseSink))
                     .thenMany(responseSink.asFlux())
                     .retryWhen(RetrySpec.fixedDelay(3, Duration.ofMillis(500))
@@ -516,6 +548,7 @@ public class StateMachine {
             changes.add(Change.fromAcceptedEvent(occ.stepOutput().accepted()));
         case ChangeContext.OutputChangeContext<?> _ -> {}
         case ChangeContext.DelayedTriggerChangeContext<?, ?> dtcc -> changes.add(Change.fromDelayedEvent(dtcc.delayedEvent()));
+        case ChangeContext.ConditionTriggerChangeContext<?, ?> ctcc -> changes.add(Change.fromConditionTrigger(ctcc.conditionTrigger()));
         case ChangeContext.AssembledChangeContext<?> _ -> {}
         case ChangeContext.ChoiceChangeContext<?> _ -> {}
         case ChangeContext.InitialChangeContext<?> _ -> {}
@@ -571,6 +604,20 @@ public class StateMachine {
       ChangeContext<?> stage1,
       List<IdentityResult<?>> identityResults
   ) {
+    return onEvent(correlationId, eventType, input, eventLog, stage1, identityResults, null, null, null);
+  }
+
+  private <I> Mono<ProcessResult<?>> onEvent(
+      String correlationId,
+      EventType<I, ?> eventType,
+      I input,
+      EventLog eventLog,
+      ChangeContext<?> stage1,
+      List<IdentityResult<?>> identityResults,
+      TriggerType triggerType,
+      UUID triggerId,
+      @Nullable EventReference triggerEvent
+  ) {
     System.out.println(eventLog.entityModel().name() + ": onEvent " + eventType.name() + " with log " + eventLog.events().stream().map(Event::typeName).collect(joining(",")));
     var now = ZonedDateTime.now(clock);
     var tuple = transitionModel(eventLog, eventType);
@@ -588,7 +635,7 @@ public class StateMachine {
             new InitialChangeContext<>(
                 stage1,
                 null,
-                null,
+                triggerEvent,
                 tuple.t2(),
                 tuple.t3(),
                 eventLog.lastEventNumber() + 1,
@@ -597,7 +644,9 @@ public class StateMachine {
                 correlationId,
                 input,
                 this,
-                identityResults
+                identityResults,
+                triggerType,
+                triggerId
             )
         )
 //        .doOnNext(output -> System.out.printf("onEvent result with pending unresolved:\n" + chainToString(output)))
@@ -652,7 +701,10 @@ public class StateMachine {
                     input,
                     eventLog,
                     stage1,
-                    List.of(identityResult)
+                    List.of(identityResult),
+                    triggerType,
+                    triggerId,
+                    triggerEvent
                 ))
         );
   }
@@ -698,6 +750,50 @@ public class StateMachine {
   public Mono<State> onStatus(EntitySelector entitySelector, EntityModel entityModel) {
     return eventLog(entitySelector, entityModel, null)
         .map(log -> traversers.get(entityModel).currentState(log));
+  }
+
+  private <T> Flux<Event<?>> fireConditionTrigger(ConditionTrigger<T> conditionTrigger) {
+    return fireConditionTrigger(conditionTrigger, conditionTrigger.type());
+  }
+
+  private <T, O> Flux<Event<?>> fireConditionTrigger(
+      ConditionTrigger<T> conditionTrigger,
+      EventType<T, O> eventType
+  ) {
+    var eventTrigger = new EventTrigger<Void, T, O>(
+        new EventTrigger.EventSpec<>(eventType, _ -> conditionTrigger.data()),
+        // The target entity may not exist yet, in which case it is created by the fired event
+        List.of(_ -> EntitySelector.entityId(conditionTrigger.entityId(), EntitySelector.CreationMode.CreateIfNotExists)),
+        conditionTrigger.entityModel(),
+        false,
+        null,
+        TriggerType.CONDITION,
+        conditionTrigger.id()
+    );
+    // The condition trigger is deleted together with the change of the fired event
+    return onEvent(conditionTrigger.correlationId(), eventTrigger, null, conditionTrigger.triggerEvent())
+        .contextWrite(Correlation.contextOf(conditionTrigger.correlationId()));
+  }
+
+  /**
+   * Fire waiting condition triggers whose condition is now met. The waiting row is deleted together with the change
+   * of the fired event. Returns Ok if an event was fired, otherwise Empty (or Error).
+   */
+  public Mono<ResolverStatus> fireConditionTriggers() {
+    System.out.println("fireConditionTriggers()");
+    return conditionTriggers.execute(MAX_CONDITION_TRIGGERS_PER_POLL)
+        .doOnNext(t -> System.out.println("fireConditionTriggers() found trigger: " + t))
+        .concatMap(event -> fireConditionTrigger(event)
+            .hasElements()
+            .onErrorResume(e -> {
+              e.printStackTrace();
+              System.out.println("Failed to fire condition trigger " + event.type().name() + " on " + event.entityId() + ": " + e);
+              return Mono.empty();
+            })
+        )
+        .any(fired -> fired)
+        .map(fired -> fired ? ResolverStatus.Ok : ResolverStatus.Empty)
+        .onErrorReturn(ResolverStatus.Error);
   }
 
   private <T, I, O> Mono<EventLog> eventLog(
@@ -784,7 +880,7 @@ public class StateMachine {
   private EventLog logFromNestedChanges(EntityId entityId, ChangeContext<?> changeContext) {
     for (var c = changeContext; c != null; c = c.previous()) {
       if (c instanceof OutputChangeContext<?>(TransitionModelBuilder.ChangeContext<?> previous, ProcessResult<?> stepOutput)
-          && stepOutput instanceof Accepted<?>(Event<?> event, _)
+          && stepOutput instanceof Accepted<?>(Event<?> event, _, _, _)
           && event.entityId().equals(entityId.value())
           && !(previous instanceof ChoiceChangeContext)) {
         //System.out.println("Found log from change context for entity id " + entityId.value() + ":\n" + chainToString(changeContext));

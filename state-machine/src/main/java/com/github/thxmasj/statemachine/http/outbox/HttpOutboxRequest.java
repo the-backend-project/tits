@@ -3,6 +3,7 @@ package com.github.thxmasj.statemachine.http.outbox;
 import static com.github.thxmasj.statemachine.IndexEntityModel.referenceEventType;
 import static com.github.thxmasj.statemachine.database.mssql.Mappers.eventTypesFor;
 
+import com.github.thxmasj.statemachine.BasicEventType;
 import com.github.thxmasj.statemachine.DataType;
 import com.github.thxmasj.statemachine.EventLog;
 import com.github.thxmasj.statemachine.EventType;
@@ -34,6 +35,8 @@ public sealed interface HttpOutboxRequest<I> extends com.github.thxmasj.statemac
 
   EventType<I, ?> requestDispatched();
 
+  DataType<I> inputDataType();
+
   DataType<?> requestPayloadType();
 
   DataType<?> responsePayloadType();
@@ -48,6 +51,26 @@ public sealed interface HttpOutboxRequest<I> extends com.github.thxmasj.statemac
 
   static AtMostOnceBuilder.RequestPayloadTypeStep atMostOnce() {
     return AtMostOnceBuilder.create();
+  }
+
+  /// Id of the request accepted event type, shared by all kinds of outbox requests so that a condition can refer to it
+  /// without knowing which kind of request it is.
+  UUID RequestAcceptedId = UUID.fromString("ee8e5913-a047-492c-ab16-55458ecb2930");
+
+  /// The request accepted event type of any outbox request, agnostic to its input and output data types. Use it where
+  /// only the identity of the event type matters, e.g. when stating the last event that satisfies a condition.
+  static EventType<?, ?> requestAccepted() {
+    return BasicEventType.of("[request accepted]", RequestAcceptedId, DataType.unknown(), DataType.unknown());
+  }
+
+  /// Id of the rollback dispatched event type, shared by all outbox requests that can be rolled back so that a
+  /// condition can refer to it without knowing which kind of request it is.
+  UUID RollbackDispatchedId = UUID.fromString("2cda741e-4447-4787-a5eb-46f0502e08ec");
+
+  /// The rollback dispatched event type of any outbox request, agnostic to its input data type. Use it where only the
+  /// identity of the event type matters, e.g. when stating the last event that satisfies a condition.
+  static EventType<?, ?> rollbackDispatched() {
+    return BasicEventType.of("Rollback dispatched", RollbackDispatchedId, DataType.unknown(), DataType.none());
   }
 
   EventType<UUID, UUID> ProcessReferenced = referenceEventType("Process referenced", UUID.fromString("d5b264d9-bf81-4c1d-9d9b-93dd556d0f66"));

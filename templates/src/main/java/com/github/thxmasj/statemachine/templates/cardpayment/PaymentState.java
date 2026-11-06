@@ -15,6 +15,7 @@ public enum PaymentState implements State {
   Preauthorised,
   Authorised,
   ProcessingRefund {@Override public Timeout<?> timeout() {return rollbackAfter(ofMillis(6600));}},
+  AwaitingAcquirerBatchNumber,
   Open,
   ProcessingSettlement {
     @Override

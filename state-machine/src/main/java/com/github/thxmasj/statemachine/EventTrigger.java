@@ -18,10 +18,19 @@ public class EventTrigger<T, I, O> {
       Function<T, I> inputAdapter
   ) {}
 
+  public record EventCondition<T>(
+      EventType<?, ?> referenceType,
+      Function<T, UUID> indexKey,
+      List<EventType<?, ?>> lastTypes
+  ) {}
+
   private final EventSpec<T, I, O> eventSpec;
   private final List<Function<T, ? extends EntitySelector>> entitySelectors;
   private final EntityModel entityModel;
   private final boolean createEntity;
+  private final EventCondition<T> condition;
+  private final TriggerType triggerType;
+  private final UUID triggerId;
 
   public EventTrigger(
       EventSpec<T, I, O> eventSpec,
@@ -29,10 +38,41 @@ public class EventTrigger<T, I, O> {
       EntityModel entityModel,
       boolean createEntity
   ) {
+    this(eventSpec, entitySelectors, entityModel, createEntity, null);
+  }
+
+  public EventTrigger(
+      EventSpec<T, I, O> eventSpec,
+      List<Function<T, ? extends EntitySelector>> entitySelectors,
+      EntityModel entityModel,
+      boolean createEntity,
+      EventCondition<T> condition
+  ) {
+    this(eventSpec, entitySelectors, entityModel, createEntity, condition, null, null);
+  }
+
+  /**
+   * @param triggerType optional type of the stored trigger this event trigger originates from
+   * @param triggerId   id of the stored trigger, present if and only if triggerType is
+   */
+  public EventTrigger(
+      EventSpec<T, I, O> eventSpec,
+      List<Function<T, ? extends EntitySelector>> entitySelectors,
+      EntityModel entityModel,
+      boolean createEntity,
+      EventCondition<T> condition,
+      TriggerType triggerType,
+      UUID triggerId
+  ) {
+    if ((triggerType == null) != (triggerId == null))
+      throw new IllegalArgumentException("Trigger type and trigger id must be given together");
     this.eventSpec = eventSpec;
     this.entitySelectors = entitySelectors;
     this.entityModel = entityModel;
     this.createEntity = createEntity;
+    this.condition = condition;
+    this.triggerType = triggerType;
+    this.triggerId = triggerId;
   }
 
   public static <I, O> EventTrigger<I, I, O> trigger(EventType<I, O> eventType, EntityModel entityModel, UUID entityId, I data) {
@@ -56,7 +96,7 @@ public class EventTrigger<T, I, O> {
   }
 
   public EventTrigger<T, I, O> withFallbackSelector() {
-    return new EventTrigger<>(eventSpec, replaceFallbackSelector(), entityModel(), createEntity());
+    return new EventTrigger<>(eventSpec, replaceFallbackSelector(), entityModel(), createEntity(), condition, triggerType, triggerId);
   }
 
   private List<Function<T, ? extends EntitySelector>> replaceFallbackSelector() {
@@ -76,6 +116,18 @@ public class EventTrigger<T, I, O> {
 
   public boolean createEntity() {
     return createEntity;
+  }
+
+  public EventCondition<T> condition() {
+    return condition;
+  }
+
+  public TriggerType triggerType() {
+    return triggerType;
+  }
+
+  public UUID triggerId() {
+    return triggerId;
   }
 
 }

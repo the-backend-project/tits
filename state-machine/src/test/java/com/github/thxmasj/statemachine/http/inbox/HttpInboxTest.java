@@ -37,6 +37,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.thxmasj.statemachine.BasicEventType;
 import com.github.thxmasj.statemachine.BasicEventType.Rollback.Data;
 import com.github.thxmasj.statemachine.DataType;
+import com.github.thxmasj.statemachine.http.HttpDataType;
 import com.github.thxmasj.statemachine.DelaySpecification;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.Event;
@@ -325,7 +326,8 @@ public class HttpInboxTest {
     Process0Outbox = HttpOutboxRequest.atMostOnce()
         .requestPayloadType(DataType.none())
         .responsePayloadType(DataType.none())
-        .<Void>messageCreatorReactive(_ -> Mono.just(requestMessage("/process/0")))
+        .inputDataType(DataType.none())
+        .messageCreatorReactive(_ -> Mono.just(requestMessage("/process/0")))
         .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
         .inflightTimeout(Duration.ofSeconds(10))
         .processModel(Lamp)
@@ -342,7 +344,8 @@ public class HttpInboxTest {
         .rollbackOnAcceptedModel(HttpOutboxRequest.atLeastOnce()
             .requestPayloadType(DataType.none())
             .responsePayloadType(DataType.none())
-            .<Tuple2<Void, TypedHttpRequest<Void>>>messageCreatorReactive(_ -> Mono.just(requestMessage("/rollback")))
+            .inputDataType(DataType.tuple(DataType.none(), HttpDataType.forRequest(DataType.none())))
+            .messageCreatorReactive(_ -> Mono.just(requestMessage("/rollback")))
             .repeatMessageCreator((_, o) -> o)
             .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
             .inflightTimeout(Duration.ofSeconds(10))
@@ -359,7 +362,8 @@ public class HttpInboxTest {
     Process3Outbox = HttpOutboxRequest.atLeastOnce()
         .requestPayloadType(DataType.none())
         .responsePayloadType(DataType.none())
-        .<Void>messageCreatorReactive(_ -> Mono.just(requestMessage("/process/3000")))
+        .inputDataType(DataType.none())
+        .messageCreatorReactive(_ -> Mono.just(requestMessage("/process/3000")))
         .repeatMessageCreator((_, requestMessage) -> requestMessage)
         .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
         .inflightTimeout(Duration.ofSeconds(10))
