@@ -38,7 +38,7 @@ jobs:
       - name: Build the templates
         run: mvn -B package -am -pl templates -DskipTests
       - name: Generate diagrams from the templates
-        run: java -jar templates/target/templates-0.3.0-SNAPSHOT.jar
+        run: java --enable-preview -jar templates/target/templates-0.3.0-SNAPSHOT.jar
       - name: Build Pages
         run: mkdocs build
       - name: Upload Pages
