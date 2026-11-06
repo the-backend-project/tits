@@ -99,7 +99,6 @@ public class TransitionModelBuilder<I, T, O> {
     }
 
     default InitialChangeContext<?> initialChangeContext() {
-      //System.out.println("Finding initial change context for " +  this);
       try {
         int depth = this instanceof ChangeContext.OutputChangeContext<?> ? 0 : 1;
         for (ChangeContext<?> c = this; c != null; c = c.previous()) {
@@ -112,18 +111,6 @@ public class TransitionModelBuilder<I, T, O> {
         throw new IllegalStateException("Failed to find initial change context: " + e);
       }
       throw new IllegalStateException("No initial context. We have: " + chainToString(this));
-    }
-
-    default InitialChangeContext<?> initialChangeContext(EntityModel entityModel) {
-      InitialChangeContext<?> candidate = null;
-      for (ChangeContext<?> c = this; c != null; c = c.previous()) {
-        if (c instanceof ChangeContext.InitialChangeContext<?> i && i.log().entityModel().equals(entityModel)) {
-          if (i.stage1() != null) return i.stage1().initialChangeContext(entityModel);
-          candidate = i;
-        }
-      }
-      if (candidate != null) return candidate;
-      throw new IllegalStateException("No initial context for entity model " + entityModel.name());
     }
 
     default List<SecondaryId<?>> secondaryIds() {
@@ -1108,8 +1095,6 @@ public class TransitionModelBuilder<I, T, O> {
     return new TransitionModel<>(
         modelContext,
         builderFunction.andThen(a -> a.map(b -> {
-//              if (!(b instanceof ChoiceChangeContext) || !(b.previous() instanceof OutputChangeContext))
-//                throw new IllegalStateException("Expected current ChangeContext to be ChoiceChangeContext (is " + b.getClass().getSimpleName() + ") or previous ChangeContext to be OutputChangeContext (is " + b.previous().getClass().getSimpleName() + ")");
               if (!(b.previous() instanceof OutputChangeContext) && !(b.previous() instanceof PendingChangeContext)) {
                 throw new IllegalStateException("Previous step should be output or pending");
               }
@@ -1117,7 +1102,6 @@ public class TransitionModelBuilder<I, T, O> {
                   b,
                   ProcessResult.completed(
                       b.previous() instanceof OutputChangeContext<?> o ? o.stepOutput() : (b.previous() instanceof PendingChangeContext<?, ?, ?> p ? p.stepOutput() : null),
-//                      ((OutputChangeContext<?>)b.previous()).stepOutput(),
                       b.initialChangeContext().log().entityId(),
                       b.initialChangeContext().eventNumber(),
                       b.initialChangeContext().log().entityModel()
