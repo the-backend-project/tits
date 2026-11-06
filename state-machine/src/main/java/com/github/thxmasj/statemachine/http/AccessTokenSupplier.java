@@ -36,12 +36,12 @@ public class AccessTokenSupplier implements Supplier<String> {
   private final HttpClient httpClient;
   private final URI url;
   private final Map<String, String> headers;
-  private final String body;
+  private final byte[] body;
 
   private AccessTokenSupplier(
       URI url,
       Map<String, String> headers,
-      String body,
+      byte[] body,
       Clock clock,
       HttpClient httpClient
   ) {
@@ -73,14 +73,14 @@ public class AccessTokenSupplier implements Supplier<String> {
               "Could not get access token from %s. HTTP status: %s. HTTP payload: %s",
               url.toString(),
               item.statusCode(),
-              item.body()
+              new String(item.body())
           ))
       );
       return;
     }
     AccessToken token;
     try {
-      token = AccessToken.parse(item.body(), clock);
+      token = AccessToken.parse(new String(item.body()), clock);
     } catch (Exception e) {
       onError(e);
       return;
@@ -164,12 +164,12 @@ public class AccessTokenSupplier implements Supplier<String> {
       return new AccessTokenSupplier(url, headers, createBody(), clock, httpClient);
     }
 
-    private String createBody() {
+    private byte[] createBody() {
       var body = new StringBuilder("grant_type=").append(grantType);
       if (!scopes.isEmpty()) {
         body.append("&").append("scope=").append(URLEncoder.encode(String.join(" ", scopes), UTF_8));
       }
-      return body.toString();
+      return body.toString().getBytes();
     }
   }
 

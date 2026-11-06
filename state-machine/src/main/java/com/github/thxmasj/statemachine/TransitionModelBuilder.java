@@ -1,29 +1,30 @@
 package com.github.thxmasj.statemachine;
 
+import static com.github.thxmasj.statemachine.StateMachine.chainToString;
 import static com.github.thxmasj.statemachine.Tuples.tuple;
 import static java.util.Collections.unmodifiableList;
 import static java.util.Optional.ofNullable;
 
 import com.github.thxmasj.statemachine.BasicEventType.Rollback.Data;
-import com.github.thxmasj.statemachine.BuiltinEntities.EventReference;
+import com.github.thxmasj.statemachine.EventTrigger.EventCondition;
 import com.github.thxmasj.statemachine.EventTrigger.EventSpec;
-import com.github.thxmasj.statemachine.OutgoingRequestModel.Builder;
 import com.github.thxmasj.statemachine.StateMachine.CircularChange;
 import com.github.thxmasj.statemachine.StateMachine.IdentityResult;
 import com.github.thxmasj.statemachine.StateMachine.ProcessResult;
 import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Accepted;
 import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Completed;
-import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Entity;
 import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Pending;
 import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Rejected;
 import com.github.thxmasj.statemachine.StateMachine.ProcessResult.UnknownId;
 import com.github.thxmasj.statemachine.StateMachine.RejectedEvent;
+import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.ActionChangeContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.AssembledChangeContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.ChoiceChangeContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.CombinedChangeContext;
+import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.ConditionTriggerChangeContext;
+import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.DelayedTriggerChangeContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.IdentityChangeContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.InitialChangeContext;
-import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.OutgoingRequestChangeContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.OutputChangeContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.PendingChangeContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.RejectedChangeContext;
@@ -34,8 +35,6 @@ import com.github.thxmasj.statemachine.Tuples.Tuple2;
 import com.github.thxmasj.statemachine.Tuples.Tuple4;
 import com.github.thxmasj.statemachine.database.UnknownEntity;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
-import com.github.thxmasj.statemachine.message.Message.IncomingResponse;
-import com.github.thxmasj.statemachine.message.Message.OutgoingRequest;
 import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
@@ -45,6 +44,7 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -59,7 +59,7 @@ public class TransitionModelBuilder<I, T, O> {
       State to,
       EventType<I, O> eventType,
       List<EventTrigger<?, ?, ?>> triggers,
-      List<OutgoingRequestModel<?, ?>> outgoingRequests,
+      List<Action<?>> actions,
       List<Filter<?, ?, ?>> filters,
       TransitionModel<Data, Data> reverseModel
   ) {
@@ -67,12 +67,13 @@ public class TransitionModelBuilder<I, T, O> {
     public String description() {
       if (reversal)
         return "<reversal>";
-      return String.format("%s -> %s", eventType.name(), to != null ? to : "<self>");
+      return String.format("%s -> %s", eventType.name(), to != null ? to.name() : "<self>");
     }
 
   }
 
   public interface TransitionContext<I> {
+    EventReference triggerEvent();
     State from();
     ZonedDateTime timestamp();
     String correlationId();
@@ -98,24 +99,18 @@ public class TransitionModelBuilder<I, T, O> {
     }
 
     default InitialChangeContext<?> initialChangeContext() {
-      int depth = this instanceof ChangeContext.OutputChangeContext<?> ? 0 : 1;
-      for (ChangeContext<?> c = this; c != null; c = c.previous()) {
-        if (c instanceof ChangeContext.OutputChangeContext<?> _) depth++;
-        if (c instanceof ChangeContext.InitialChangeContext<?> i && --depth == 0) return i;
-      }
-      throw new IllegalStateException("No initial context");
-    }
-
-    default InitialChangeContext<?> initialChangeContext(EntityModel entityModel) {
-      InitialChangeContext<?> candidate = null;
-      for (ChangeContext<?> c = this; c != null; c = c.previous()) {
-        if (c instanceof ChangeContext.InitialChangeContext<?> i && i.log().entityModel().equals(entityModel)) {
-          if (i.stage1() != null) return i.stage1().initialChangeContext(entityModel);
-          candidate = i;
+      try {
+        int depth = this instanceof ChangeContext.OutputChangeContext<?> ? 0 : 1;
+        for (ChangeContext<?> c = this; c != null; c = c.previous()) {
+          if (c instanceof ChangeContext.OutputChangeContext<?> _)
+            depth++;
+          if (c instanceof ChangeContext.InitialChangeContext<?> i && --depth == 0)
+            return i;
         }
+      } catch (Exception e) {
+        throw new IllegalStateException("Failed to find initial change context: " + e);
       }
-      if (candidate != null) return candidate;
-      throw new IllegalStateException("No initial context for entity model " + entityModel.name());
+      throw new IllegalStateException("No initial context. We have: " + chainToString(this));
     }
 
     default List<SecondaryId<?>> secondaryIds() {
@@ -129,20 +124,10 @@ public class TransitionModelBuilder<I, T, O> {
       return secondaryIds;
     }
 
-    default List<OutgoingRequest> outgoingRequests() {
-      ArrayList<OutgoingRequest> outgoingRequests = new ArrayList<>();
-      ChangeContext<?> changeContext = this;
-      while (changeContext != null) {
-        if (changeContext instanceof OutgoingRequestChangeContext<?> c)
-          outgoingRequests.add(c.outgoingRequest);
-        changeContext = changeContext.previous();
-      }
-      return outgoingRequests;
-    }
-
     record InitialChangeContext<I>(
         ChangeContext<?> stage1,
         ChangeContext<?> previous,
+        EventReference triggerEvent,
         TransitionModel<?, ?> transitionModel,
         State from,
         int eventNumber,
@@ -151,9 +136,26 @@ public class TransitionModelBuilder<I, T, O> {
         String correlationId,
         I input,
         StateMachine stateMachine,
-        IncomingResponse incomingResponse,
-        List<IdentityResult<?>> identityResults
+        List<IdentityResult<?>> identityResults,
+        TriggerType triggerType,
+        UUID triggerId
     ) implements ChangeContext<I>, TransitionContext<I> {
+      public InitialChangeContext(
+          ChangeContext<?> stage1,
+          ChangeContext<?> previous,
+          EventReference triggerEvent,
+          TransitionModel<?, ?> transitionModel,
+          State from,
+          int eventNumber,
+          EventLog log,
+          ZonedDateTime timestamp,
+          String correlationId,
+          I input,
+          StateMachine stateMachine,
+          List<IdentityResult<?>> identityResults
+      ) {
+        this(stage1, previous, triggerEvent, transitionModel, from, eventNumber, log, timestamp, correlationId, input, stateMachine, identityResults, null, null);
+      }
       @Override public I stepOutput() {return input;}
       @Override public String toString() {
         return "Initial " + log.entityModel().name() + "/" + log.entityId().value() + "/" + eventNumber + "/" + from.name() + "(stage1=" + (stage1 != null) + "): " + transitionModel + " with " + ofNullable(input).map(i -> i.getClass().getSimpleName()).orElse("-");
@@ -168,13 +170,14 @@ public class TransitionModelBuilder<I, T, O> {
         T stepOutput
     ) implements ChangeContext<T> {
       @Override public String toString() {
-        return "Assembled";
+        return "Assembled" + this.hashCode();
       }
     }
 
     record TriggerChangeContext<T, O1>(
         ChangeContext<ProcessResult<O1>> previous,
-        ChangeContext<T> outer
+        ChangeContext<T> outer,
+        EventTrigger<T, ?, O1> eventTrigger
     ) implements ChangeContext<Tuple2<T, ProcessResult<O1>>> {
 
       @Override
@@ -183,9 +186,41 @@ public class TransitionModelBuilder<I, T, O> {
       }
 
       @Override public String toString() {
-        return "Trigger (outer: " + outer + ")";
+        return "Trigger: " + eventTrigger.eventSpec().eventType().name() + "@" + eventTrigger.entityModel().name();
       }
 
+    }
+
+    record DelayedTriggerChangeContext<T, I1>(
+        ChangeContext<T> previous,
+        DelayedEvent<I1> delayedEvent
+    ) implements ChangeContext<T> {
+      @Override public String toString() {
+        return "Delayed trigger: " + delayedEvent.entityModel().name() + "/" + delayedEvent.type().name() + "/"
+            + delayedEvent.entityId() + "/" + delayedEvent.eventNumber() + " after " + delayedEvent.after()
+            + " (now is " + previous.initialChangeContext().timestamp() + ")";
+      }
+
+      @Override
+      public T stepOutput() {
+        return previous.stepOutput();
+      }
+    }
+
+    record ConditionTriggerChangeContext<T, I1>(
+        ChangeContext<T> previous,
+        ConditionTrigger<I1> conditionTrigger
+    ) implements ChangeContext<T> {
+      @Override public String toString() {
+        return "Condition trigger: " + conditionTrigger.entityModel().name() + "/" + conditionTrigger.type().name() + "/"
+            + conditionTrigger.entityId() + " when last event is one of "
+            + conditionTrigger.lastTypes().stream().map(EventType::name).toList();
+      }
+
+      @Override
+      public T stepOutput() {
+        return previous.stepOutput();
+      }
     }
 
     record CombinedChangeContext<T, U>(
@@ -261,21 +296,18 @@ public class TransitionModelBuilder<I, T, O> {
       }
     }
 
-    record OutgoingRequestChangeContext<T>(
-        EntityModel entityModel,
-        EntityId entityId,
+    record ActionChangeContext<T, U>(
         ChangeContext<T> previous,
-        OutgoingRequest outgoingRequest
+        ActionTrigger<U> actionTrigger
     ) implements ChangeContext<T> {
+      @Override public String toString() {
+        return "Action: " + actionTrigger.action().name();
+      }
 
       @Override
       public T stepOutput() {
         return previous.stepOutput();
       }
-      @Override public String toString() {
-        return "OutgoingRequest: on " + outgoingRequest.queue().name() + " (" + outgoingRequest.message().requestLine() + ")";
-      }
-
     }
 
     record OutputChangeContext<T>(
@@ -285,8 +317,8 @@ public class TransitionModelBuilder<I, T, O> {
       @Override public String toString() {
         return "Output:" + switch (stepOutput) {
           case Accepted<?> a -> "Accepted:" + a.entityModel().name() + "/" + a.event().entityId() + "/" + a.event().typeName() + "/" + a.event().eventNumber();
-          case Rejected<?> r -> "Rejected:" + r.exception().entityModel().name() + "/" + r.exception().entityId().value() + r.eventType().name() + ":" + r.exception().getMessage();
-          case Completed<?> c -> "Completed:" + c.entityModel().name() + "/" + c.entityId().value() + "/-/" + c.eventNumber();
+          case Rejected<?> r -> "Rejected" + (r.isHandled() ? "[Handled]" : "[Unhandled]") + ":" + r.exception().entityModel().name() + "/" + r.exception().entityId().value() + r.eventType().name() + ":" + r.exception().getMessage();
+          case Completed<?> c -> "Completed:" + c.choiceResult();
           case UnknownId<?> u -> "UnknownId:type=" + u.exception().secondaryId().model() + "/ev=" + u.eventType().name();
           case Pending<?, ?, ?> p -> "Pending:" + p.exception().entityModel() + "/" + p.exception().entityId().value() + ":" + p.exception().getMessage();
         };
@@ -309,7 +341,7 @@ public class TransitionModelBuilder<I, T, O> {
         ProcessResult.Rejected<O> stepOutput
     ) implements ChangeContext<ProcessResult<O>> {
       @Override public String toString() {
-        return "Rejected:" + stepOutput.exception().getMessage();
+        return "Rejected" + (stepOutput.isHandled() ? "[Handled]" : "[Unhandled]") + ":" + stepOutput.exception().getMessage();
       }
     }
 
@@ -337,7 +369,9 @@ public class TransitionModelBuilder<I, T, O> {
                     i.timestamp(),
                     i.from
                 ),
-                i.log().entityModel()
+                i.log().entityModel(),
+                i.triggerType(),
+                i.triggerId()
             )
         )))
     );
@@ -347,14 +381,11 @@ public class TransitionModelBuilder<I, T, O> {
     return new TransitionModel<>(
         new ModelContext<>(false, null, eventType, List.of(), List.of(), List.of(), null),
         initialChangeContext -> initialChangeContext.flatMap(i -> {
-          System.out.println("Validating rollback (" + eventType.name() + "), data [" + i.stepOutput() + "] initial change context: " + i);
-          //int rollbackFrom = i.stepOutput().fromNumber();
           int rollbackTo = i.stepOutput().toNumber();
           int actualRollbackTo = rollbackTo;
           if (rollbackTo < 0) {
             actualRollbackTo = i.log().lastEventNumber() + rollbackTo; // add negative
           }
-          System.out.println("Rolling back events:\n" + i.log().events().subList(actualRollbackTo, i.log().events().size()).stream().map(e -> "#" + e.eventNumber() + "[" + e.type().name() + "]").collect(Collectors.joining("\n")));
           if (
             // Rollback to future event
               actualRollbackTo >= i.log().lastEventNumber()
@@ -365,14 +396,6 @@ public class TransitionModelBuilder<I, T, O> {
                   // Rollback from an event which is not the last
                   //|| rollbackFrom != i.log().lastEventNumber()
           ) {
-
-            System.out.println(
-                "Rejecting rollback (rollbackTo=" + rollbackTo + /*", rollbackFrom=" + rollbackFrom +*/ "): " +
-                actualRollbackTo + " >= " + i.log().lastEventNumber() +
-                " || " + actualRollbackTo + " < 0 " +
-                " || " + i.log().events().subList(actualRollbackTo, i.log().events().size()).stream().filter(e -> e.type() instanceof RequestEventType<?,?>).count() + " > 1"
-                /*+ rollbackFrom + " != " +  i.log().lastEventNumber()*/
-            );
             return Mono.just(new OutputChangeContext<>(
                 i,
                 ProcessResult.rejected(
@@ -405,6 +428,7 @@ public class TransitionModelBuilder<I, T, O> {
                   Mono.just(new InitialChangeContext<>(
                       null,
                       c,
+                      null,
                       tm.reverseModel(),
                       i.from(),
                       event.eventNumber(),
@@ -413,7 +437,6 @@ public class TransitionModelBuilder<I, T, O> {
                       i.correlationId(),
                       i.stepOutput(),
                       i.stateMachine(),
-                      null,
                       List.of()
                   ))
               ));
@@ -429,7 +452,9 @@ public class TransitionModelBuilder<I, T, O> {
                       i.timestamp(),
                       i.stepOutput()
                   ),
-                  i.log().entityModel()
+                  i.log().entityModel(),
+                  i.triggerType(),
+                  i.triggerId()
               )
           ));
         })
@@ -481,6 +506,13 @@ public class TransitionModelBuilder<I, T, O> {
       );
     }
 
+    public <T> TransitionModelBuilder<I, T, O> assembleReactive(Function<TransitionContext<I>, Mono<T>> assembler) {
+      return new TransitionModelBuilder<>(
+          modelContext,
+          initialChangeContext -> initialChangeContext.flatMap(i -> assembler.apply(i).map(t -> new AssembledChangeContext<>(i, t)))
+      );
+    }
+
     public TransitionModelBuilder<I, I, O> assembleInput() {
       return new TransitionModelBuilder<>(
           modelContext,
@@ -495,16 +527,6 @@ public class TransitionModelBuilder<I, T, O> {
               initialChangeContext -> initialChangeContext.map(i -> new AssembledChangeContext<>(i, null))
           ),
           eventType
-      );
-    }
-
-    public <T1> WithOutgoingRequest<I, Void, O, T1> trigger(OutgoingRequestCreator<T1> outgoingRequestCreator) {
-      return new WithOutgoingRequest<>(
-          new TransitionModelBuilder<>(
-              modelContext,
-              initialChangeContext -> initialChangeContext.map(cc -> new AssembledChangeContext<>(cc, null))
-          ),
-          outgoingRequestCreator
       );
     }
 
@@ -528,115 +550,81 @@ public class TransitionModelBuilder<I, T, O> {
     this.builderFunction = builderFunction;
   }
 
-  public record WithOutgoingRequest<I, T, O, T1>(TransitionModelBuilder<I, T, O> builder, OutgoingRequestCreator<T1> outgoingRequestCreator) {
-
-    public record WithOutgoingRequestAndData<I, T, O, T1>(
-        WithOutgoingRequest<I, T, O, T1> outgoingRequest,
-        Function<T, T1> dataAdapter
-    ) {
-
-      public WithOutgoingRequestAndDataAndQueue<I, T, O, T1> to(OutboxQueue to) {
-        return new WithOutgoingRequestAndDataAndQueue<>(this, to);
-      }
-
-    }
-
-    public static final class WithOutgoingRequestAndDataAndQueue<I, T, O, T1> {
-
-      private final WithOutgoingRequestAndData<I, T, O, T1> base;
-      private final OutboxQueue queue;
-      private IncomingResponseValidator<?> responseValidator;
-      private boolean guaranteed = false;
-      private int retryTimes;
-      private Duration retryInterval;
-
-      public WithOutgoingRequestAndDataAndQueue(
-          WithOutgoingRequestAndData<I, T, O, T1> base,
-          OutboxQueue queue
-      ) {
-        this.base = base;
-        this.queue = queue;
-      }
-
-      public WithOutgoingRequestAndDataAndQueue<I, T, O, T1> responseValidator(
-          IncomingResponseValidator<?> responseValidator
-      ) {
-        this.responseValidator = responseValidator;
-        return this;
-      }
-
-      public WithOutgoingRequestAndDataAndQueue<I, T, O, T1> guaranteed() {
-        this.guaranteed = true;
-        return this;
-      }
-
-      public WithOutgoingRequestAndDataAndQueue<I, T, O, T1> retry(int times, Duration interval) {
-        this.retryTimes = times;
-        this.retryInterval = interval;
-        return this;
-      }
-
-      // TODO: Having this public to support reversible
-      public TransitionModelBuilder<I, T, O> complete() {
-        var requestModelBuilder = Builder.request(
-                base.dataAdapter(),
-                base.outgoingRequest().outgoingRequestCreator()
-            ).to(queue).responseValidator(responseValidator);
-        if (guaranteed) requestModelBuilder = requestModelBuilder.guaranteed();
-        if (retryTimes > 0) requestModelBuilder = requestModelBuilder.retry(retryTimes, retryInterval);
-        return base.outgoingRequest().builder().trigger(requestModelBuilder.build());
-      }
-
-      public WithOutgoingRequestAndDataAndQueue<I, T, O, T1> to(OutboxQueue to) {
-        return new WithOutgoingRequestAndDataAndQueue<>(new WithOutgoingRequestAndData<>(this.base.outgoingRequest(), (T _) -> null), to);
-      }
-
-      public <I1, O1> WithEventType<I, T, O, I1, O1> trigger(EventType<I1, O1> eventType) {
-        return new WithEventType<>(complete(), eventType);
-      }
-
-      public <T2> WithOutgoingRequest<I, T, O, T2> trigger(OutgoingRequestCreator<T2> outgoingRequestCreator) {
-        return new WithOutgoingRequest<>(complete(), outgoingRequestCreator);
-      }
-
-      public TransitionModelBuilder<I, T, O> reversible(TransitionModelBuilder<Data, ?, Data> reverseModel) {
-        return complete().reversible(reverseModel);
-      }
-
-      public TransitionModel<I, O> output(Function<T, O> f) {
-        return complete().output(f);
-      }
-
-      public TransitionModel<I, O> output() {
-        return complete().output();
-      }
-
-      public OutboxQueue queue() {return queue;}
-
-    }
-
-    public WithOutgoingRequestAndData<I, T, O, T1> with(Function<T, T1> dataAdapter) {
-      return new WithOutgoingRequestAndData<>(this, dataAdapter);
-    }
-
-  }
-
   public record WithEventType<I, T, O, I1, O1>(TransitionModelBuilder<I, T, O> builder, EventType<I1, O1> eventType) {
 
+    public record WithCondition<I, T, O, I1, O1>(
+        WithEventType<I, T, O, I1, O1> eventType,
+        EventType<?, ?> referenceType,
+        Function<T, UUID> indexKey
+    ) {
+
+      /// The condition is met when the last event of every referenced entity is one of the given types.
+      public ConditionalWithEventType<I, T, O, I1, O1> is(EventType<?, ?>... lastTypes) {
+        if (lastTypes.length == 0 || lastTypes.length > 10)
+          throw new IllegalArgumentException("Between 1 and 10 last event types must be given");
+        return new ConditionalWithEventType<>(
+            eventType.builder(),
+            eventType.eventType(),
+            new EventCondition<>(referenceType, indexKey, List.of(lastTypes))
+        );
+      }
+
+    }
+
+    public record ConditionalWithEventType<I, T, O, I1, O1>(
+        TransitionModelBuilder<I, T, O> builder,
+        EventType<I1, O1> eventType,
+        EventCondition<T> condition
+    ) {
+
+      public ConditionalWithEventTypeAndData<I, T, O, I1, O1> with(Function<T, I1> dataAdapter) {
+        return new ConditionalWithEventTypeAndData<>(this, dataAdapter);
+      }
+
+    }
+
+    public record ConditionalWithEventTypeAndData<I, T, O, I1, O1>(ConditionalWithEventType<I, T, O, I1, O1> eventType, Function<T, I1> dataAdapter) {
+
+      public ConditionalWithEntity<I, T, O, I1, O1> on(EntityModel entityModel) {
+        return new ConditionalWithEntity<>(this, entityModel);
+      }
+
+    }
+
+    public record ConditionalWithEntity<I, T, O, I1, O1>(ConditionalWithEventTypeAndData<I, T, O, I1, O1> eventTypeAndData, EntityModel entityModel) {
+
+      @SafeVarargs
+      public final TransitionModelBuilder<I, T, O> identifiedBy(Function<T, ? extends EntitySelector>... entitySelector) {
+        var eventType = eventTypeAndData.eventType();
+        return eventType.builder().triggerConditional(
+            new EventTrigger<>(
+                new EventSpec<>(eventType.eventType(), eventTypeAndData.dataAdapter()),
+                List.of(entitySelector),
+                entityModel,
+                false,
+                eventType.condition()
+            )
+        );
+      }
+
+    }
+
     public record WithEventTypeAndData<I, T, O, I1, O1>(WithEventType<I, T, O, I1, O1> eventType, Function<T, I1> dataAdapter) {
+
       public WithEntity<I, T, O, I1, O1> on(EntityModel entityModel) {
         return new WithEntity<>(this, entityModel);
       }
+
+      public TransitionModelBuilder<I, T, O> after(Function<T, Duration> delay) {
+        return this.eventType.builder.triggerDelayed(this.eventType.eventType(), this.dataAdapter, delay);
+      }
+
     }
 
     public record WithIdentifier<I, T, O, I1, O1>(WithEntity<I, T, O, I1, O1> entity, List<Function<T, ? extends EntitySelector>> entitySelectors) {
 
       public <I2, O2> WithEventType<I, Tuple2<T, ProcessResult<O1>>, O, I2, O2> trigger(EventType<I2, O2> eventType) {
         return new WithEventType<>(complete(), eventType);
-      }
-
-      public <T1> WithOutgoingRequest<I, Tuple2<T, ProcessResult<O1>>, O, T1> trigger(OutgoingRequestCreator<T1> outgoingRequestCreator) {
-        return new WithOutgoingRequest<>(complete(), outgoingRequestCreator);
       }
 
       public WithFilter<I, Tuple2<T, ProcessResult<O1>>, O> when(Predicate<Tuple2<T, ProcessResult<O1>>> filter) {
@@ -662,17 +650,18 @@ public class TransitionModelBuilder<I, T, O> {
         return complete().output();
       }
 
-      private EventTrigger<T, I1, O1> completeTrigger() {
-        return new EventTrigger<>(
-            new EventSpec<>(this.entity.eventTypeAndData.eventType.eventType, this.entity.eventTypeAndData.dataAdapter),
-            this.entitySelectors,
-            this.entity.entityModel,
-            false // TODO: Support create entity
-        );
-      }
-
       private TransitionModelBuilder<I, Tuple2<T, ProcessResult<O1>>, O> complete() {
-        return this.entity.eventTypeAndData.eventType.builder.trigger(completeTrigger());
+        return this.entity.eventTypeAndData.eventType.builder.trigger(
+            new EventTrigger<>(
+                new EventSpec<>(
+                    this.entity.eventTypeAndData.eventType.eventType,
+                    this.entity.eventTypeAndData.dataAdapter
+                ),
+                this.entitySelectors,
+                this.entity.entityModel,
+                false // TODO: Support create entity
+            )
+        );
       }
 
       public WithIdentifier<I, T, O, I1, O1> identifiedBy(Function<T, ? extends EntitySelector> entitySelector) {
@@ -690,8 +679,16 @@ public class TransitionModelBuilder<I, T, O> {
 
     }
 
+    public TransitionModelBuilder<I, T, O> after(Function<T, Duration> delay) {
+      return this.builder.triggerDelayed(eventType, _ -> null, delay);
+    }
+
     public WithEventTypeAndData<I, T, O, I1, O1> with(Function<T, I1> dataAdapter) {
       return new WithEventTypeAndData<>(this, dataAdapter);
+    }
+
+    public WithCondition<I, T, O, I1, O1> when(EventType<?, ?> referenceType, Function<T, UUID> indexKey) {
+      return new WithCondition<>(this, referenceType, indexKey);
     }
 
     public WithEntity<I, T, O, I1, O1> on(EntityModel entityModel) {
@@ -704,8 +701,35 @@ public class TransitionModelBuilder<I, T, O> {
     return new WithEventType<>(this, eventType);
   }
 
-  public <T1> WithOutgoingRequest<I, T, O, T1> trigger(OutgoingRequestCreator<T1> outgoingRequestCreator) {
-    return new WithOutgoingRequest<>(this, outgoingRequestCreator);
+  public record WithAction<I, T, O, I1>(TransitionModelBuilder<I, T, O> builder, Action<I1> action) {
+
+    public TransitionModelBuilder<I, T, O> with(Function<T, I1> dataAdapter) {
+      var modelContext = new ModelContext<>(
+          this.builder.modelContext.reversal,
+          this.builder.modelContext.to,
+          this.builder.modelContext.eventType,
+          this.builder.modelContext.triggers,
+          join(this.builder.modelContext.actions, action),
+          this.builder.modelContext.filters,
+          this.builder.modelContext.reverseModel
+      );
+      return new TransitionModelBuilder<>(
+          modelContext,
+          builder.builderFunction.andThen(c -> c.map(d -> new ActionChangeContext<>(
+              d,
+              new ActionTrigger<>(
+                  action,
+                  dataAdapter.apply(d.stepOutput()),
+                  d.initialChangeContext().log()
+              )
+          )))
+      );
+    }
+
+  }
+
+  public <I1> WithAction<I, T, O, I1> trigger(Action<I1> action) {
+    return new WithAction<>(this, action);
   }
 
   public TransitionModelBuilder<I, T, O> when(Map<Predicate<T>, TransitionModel<T, ?>> choices) {
@@ -716,16 +740,16 @@ public class TransitionModelBuilder<I, T, O> {
     return builder;
   }
 
-  public <I1> TransitionModelBuilder<I, T, O> choice(List<GuardedTransition<T, I1, ?>> guardedTransitions, Function<T, I1> dataAdapter) {
-    var builder = this;
+  public <I1> TransitionModelBuilder<I, T, O> choice(List<GuardedTransition<T, I1, ?>> guardedTransitions) {
+    TransitionModelBuilder<I, T, O> builder = this;
     for (var guardedTransition : guardedTransitions) {
-      builder = builder.when(guardedTransition, dataAdapter);
+      builder = builder.when(guardedTransition);
     }
     return builder;
   }
 
-  public <I1, O1> TransitionModelBuilder<I, T, O> when(GuardedTransition<T, I1, O1> guardedTransition, Function<T, I1> dataAdapter) {
-    return when(guardedTransition.guard()).then(guardedTransition.then(), dataAdapter);
+  public <I1, O1> TransitionModelBuilder<I, T, O> when(GuardedTransition<T, I1, O1> guardedTransition) {
+    return when(guardedTransition.guard()).then(guardedTransition.then(), guardedTransition.dataAdapter());
   }
 
   public WithFilter<I, T, O> when(Predicate<T> filter) {
@@ -795,7 +819,7 @@ public class TransitionModelBuilder<I, T, O> {
           this.builder.modelContext.to,
           this.builder.modelContext.eventType,
           this.builder.modelContext.triggers,
-          this.builder.modelContext.outgoingRequests,
+          this.builder.modelContext.actions,
           join(this.builder.modelContext.filters, filter),
           this.builder.modelContext.reverseModel
       );
@@ -813,6 +837,7 @@ public class TransitionModelBuilder<I, T, O> {
                         new InitialChangeContext<>(
                             null,
                             c,
+                            null,
                             filter.alternative().model(),
                             c.initialChangeContext().from(),
                             c.initialChangeContext().eventNumber(),
@@ -821,8 +846,9 @@ public class TransitionModelBuilder<I, T, O> {
                             c.initialChangeContext().correlationId(),
                             filter.alternative().dataAdapter().apply(c.stepOutput()),
                             c.initialChangeContext().stateMachine(),
-                            null,
-                            List.of()
+                            List.of(),
+                            c.initialChangeContext().triggerType(),
+                            c.initialChangeContext().triggerId()
                         )
                     ).map(alternativeOutput -> new ChoiceChangeContext<>(alternativeOutput, c));
               })
@@ -903,7 +929,7 @@ public class TransitionModelBuilder<I, T, O> {
             modelContext.to,
             modelContext.eventType,
             modelContext.triggers,
-            modelContext.outgoingRequests,
+            modelContext.actions,
             modelContext.filters,
             reverseModel.complete()
         ),
@@ -914,7 +940,16 @@ public class TransitionModelBuilder<I, T, O> {
   private <I1, O1> TransitionModelBuilder<I, Tuple2<T, ProcessResult<O1>>, O> trigger(EventTrigger<T, I1, O1> eventTrigger) {
     Function<Mono<ChangeContext<T>>, Mono<ChangeContext<Tuple2<T, ProcessResult<O1>>>>> f =
         changeContext -> changeContext
-            .flatMap(c -> c.initialChangeContext().stateMachine().calculateTriggeredEvent(eventTrigger, c, c.stepOutput(), false)
+            .flatMap(c -> c.initialChangeContext().stateMachine().calculateTriggeredEvent(
+                        eventTrigger,
+                        c,
+                        c.stepOutput(),
+                        false,
+                        new EventReference(
+                            c.initialChangeContext().log().entityId().value(),
+                            c.initialChangeContext().eventNumber()
+                        )
+                    )
                     .onErrorResume(
                         CircularChange.class,
                         e -> Mono.just(new PendingChangeContext<>(
@@ -936,13 +971,7 @@ public class TransitionModelBuilder<I, T, O> {
                             ProcessResult.unknownId(eventTrigger.eventSpec().eventType(), e)
                         ))
                     )
-                .map(output -> new TriggerChangeContext<>(output, c))
-//                .contextWrite(ctx -> {
-//                  EventLog eventLog = c.initialChangeContext().log();
-//                  if (modelContext.eventType() == null) return ctx;
-//                  System.out.println("Session entity id for " + eventLog.entityModel().name() + ": " + eventLog.entityId().value());
-//                  return ctx.put(eventLog.entityModel(), eventLog.entityId());
-//                })
+                .map(output -> new TriggerChangeContext<>(output, c, eventTrigger))
             );
     var eventTriggers = join(modelContext.triggers, eventTrigger);
     return new TransitionModelBuilder<>(
@@ -951,12 +980,87 @@ public class TransitionModelBuilder<I, T, O> {
             modelContext.to,
             modelContext.eventType,
             eventTriggers,
-            modelContext.outgoingRequests,
+            modelContext.actions,
             modelContext.filters,
             modelContext.reverseModel
         ),
         builderFunction.andThen(f)
     );
+  }
+
+  private <I1, O1> TransitionModelBuilder<I, T, O> triggerDelayed(EventType<I1, O1> eventType, Function<T, I1> dataAdapter, Function<T, Duration> delay) {
+    Function<Mono<ChangeContext<T>>, Mono<ChangeContext<T>>> f =
+        changeContext -> changeContext
+            .map(c -> new DelayedTriggerChangeContext<>(
+                c,
+                new DelayedEvent<>(
+                    c.initialChangeContext().log().entityModel(),
+                    c.initialChangeContext().log().entityId().value(),
+                    eventType,
+                    c.initialChangeContext().eventNumber() + 1,
+                    dataAdapter.apply(c.stepOutput()),
+                    c.initialChangeContext().timestamp().plus(delay.apply(c.stepOutput()))
+                )
+            ));
+    return new TransitionModelBuilder<>(
+        modelContext,
+        builderFunction.andThen(f)
+    );
+  }
+
+  private <I1, O1> TransitionModelBuilder<I, T, O> triggerConditional(EventTrigger<T, I1, O1> eventTrigger) {
+    Function<Mono<ChangeContext<T>>, Mono<ChangeContext<T>>> f =
+        changeContext -> changeContext
+            // The event is always stored as a ConditionTrigger. If its condition is already met it is fired right after
+            // the triggering change is committed, otherwise it is fired by the poller once the condition is met.
+            .map(c -> {
+              var condition = eventTrigger.condition();
+              return new ConditionTriggerChangeContext<>(
+                  c,
+                  new ConditionTrigger<>(
+                      UUID.randomUUID(),
+                      new EventReference(
+                          c.initialChangeContext().log().entityId().value(),
+                          c.initialChangeContext().eventNumber()
+                      ),
+                      eventTrigger.entityModel(),
+                      conditionalEntityId(eventTrigger, c),
+                      eventTrigger.eventSpec().eventType(),
+                      eventTrigger.eventSpec().inputAdapter().apply(c.stepOutput()),
+                      c.initialChangeContext().timestamp(),
+                      condition.referenceType(),
+                      condition.lastTypes(),
+                      condition.indexKey().apply(c.stepOutput()),
+                      c.initialChangeContext().correlationId()
+                  )
+              );
+            });
+    var eventTriggers = join(modelContext.triggers, eventTrigger);
+    return new TransitionModelBuilder<>(
+        new ModelContext<>(
+            modelContext.reversal,
+            modelContext.to,
+            modelContext.eventType,
+            eventTriggers,
+            modelContext.actions,
+            modelContext.filters,
+            modelContext.reverseModel
+        ),
+        builderFunction.andThen(f)
+    );
+  }
+
+  private static <T> UUID conditionalEntityId(EventTrigger<T, ?, ?> eventTrigger, ChangeContext<T> c) {
+    var selector = eventTrigger.entitySelectors().getFirst().apply(c.stepOutput());
+    if (selector instanceof EntitySelector.ById byId && byId.id() instanceof EntityId.UUID uuid) {
+      return uuid.value();
+    }
+    if (selector instanceof EntitySelector.ByIdFromSession
+        && c.initialChangeContext().log().entityModel().equals(eventTrigger.entityModel())
+        && c.initialChangeContext().log().entityId() instanceof EntityId.UUID uuid) {
+      return uuid.value();
+    }
+    throw new UnsupportedOperationException("Conditional trigger requires the entity to be identified by id or by the session's entity");
   }
 
   private static <E> List<E> join(List<E> list, E element) {
@@ -964,46 +1068,6 @@ public class TransitionModelBuilder<I, T, O> {
     l.addAll(list);
     l.add(element);
     return unmodifiableList(l);
-  }
-
-  private <T1> TransitionModelBuilder<I, T, O> trigger(OutgoingRequestModel<T, T1> requestModel) {
-    Function<Mono<ChangeContext<T>>, Mono<ChangeContext<T>>> f =
-        c -> c.flatMap(changeContext ->
-            changeContext.initialChangeContext().stateMachine().createOutgoingRequest(
-                modelContext.reversal,
-                changeContext.initialChangeContext().timestamp(),
-                new Entity(
-                    changeContext.initialChangeContext().log().entityId(),
-                    changeContext.initialChangeContext().log().secondaryIds(),
-                    changeContext.initialChangeContext().log().entityModel()
-                ),
-                changeContext.stepOutput(),
-                changeContext.initialChangeContext().eventNumber(),
-                // TODO: This assumes nested change with parent entity is always calculated before outgoing request. Model does not restrict to that.
-                //       Refactor as the concept is weak anyways.
-                changeContext,
-                requestModel,
-                changeContext.initialChangeContext().correlationId()
-                )
-                .map(request -> new OutgoingRequestChangeContext<>(
-                    changeContext.initialChangeContext().log().entityModel(),
-                    changeContext.initialChangeContext().log().entityId(),
-                    changeContext,
-                    request
-                ))
-        );
-    return new TransitionModelBuilder<>(
-        new ModelContext<>(
-            modelContext.reversal,
-            modelContext.to,
-            modelContext.eventType,
-            modelContext.triggers,
-            join(modelContext.outgoingRequests, requestModel),
-            modelContext.filters,
-            modelContext.reverseModel
-        ),
-        builderFunction.andThen(f)
-    );
   }
 
   public TransitionModel<I, O> output(Function<T, O> f) {
@@ -1020,7 +1084,8 @@ public class TransitionModelBuilder<I, T, O> {
                     f.apply(b.stepOutput())
                 ),
                 b.initialChangeContext().log().entityModel(),
-                modelContext.to() != null && modelContext.to().timeout() != State.NEVER_TIMEOUT ? modelContext.to().timeout().duration() : null
+                b.initialChangeContext().triggerType(),
+                b.initialChangeContext().triggerId()
             )
         )))
     );
@@ -1029,13 +1094,21 @@ public class TransitionModelBuilder<I, T, O> {
   private TransitionModel<I, O> complete() {
     return new TransitionModel<>(
         modelContext,
-        builderFunction.andThen(a -> a.map(b -> new OutputChangeContext<>(
-            b,
-            ProcessResult.completed(
-                b.initialChangeContext().log().entityId(),
-                b.initialChangeContext().log().lastEventNumber() + 1,
-                b.initialChangeContext().log().entityModel()
-            ))))
+        builderFunction.andThen(a -> a.map(b -> {
+              if (!(b.previous() instanceof OutputChangeContext) && !(b.previous() instanceof PendingChangeContext)) {
+                throw new IllegalStateException("Previous step should be output or pending");
+              }
+              return new OutputChangeContext<>(
+                  b,
+                  ProcessResult.completed(
+                      b.previous() instanceof OutputChangeContext<?> o ? o.stepOutput() : (b.previous() instanceof PendingChangeContext<?, ?, ?> p ? p.stepOutput() : null),
+                      b.initialChangeContext().log().entityId(),
+                      b.initialChangeContext().eventNumber(),
+                      b.initialChangeContext().log().entityModel()
+                  )
+              );
+            }
+        ))
     );
   }
 
@@ -1052,7 +1125,8 @@ public class TransitionModelBuilder<I, T, O> {
                     b.initialChangeContext().timestamp()
                 ),
                 b.initialChangeContext().log().entityModel(),
-                modelContext.to() != null && modelContext.to().timeout() != State.NEVER_TIMEOUT ? modelContext.to().timeout().duration() : null
+                b.initialChangeContext().triggerType(),
+                b.initialChangeContext().triggerId()
             )
         )))
     );
@@ -1080,7 +1154,7 @@ public class TransitionModelBuilder<I, T, O> {
 
     @Override
     public String toString() {
-      return String.format("onEvent(%s).to(%s)", (modelContext.eventType != null ? modelContext.eventType.name() : "N/A") , modelContext.to != null ? modelContext.to : "<self>");
+      return String.format("onEvent(%s).to(%s)", (modelContext.eventType != null ? modelContext.eventType.name() : "N/A") , modelContext.to != null ? modelContext.to.name() : "<self>");
     }
 
     TransitionModel(
@@ -1089,10 +1163,6 @@ public class TransitionModelBuilder<I, T, O> {
     ) {
       this.modelContext = modelContext;
       this.chain = chain;
-    }
-
-    public List<OutgoingRequestModel<?, ?>>  outgoingRequests() {
-      return modelContext.outgoingRequests();
     }
 
     public TransitionModel<Data, Data> reverseModel() {
@@ -1104,7 +1174,7 @@ public class TransitionModelBuilder<I, T, O> {
     }
 
     public Mono<OutputChangeContext<O>> calculate(InitialChangeContext<I> initialChangeContext) {
-      log(modelContext, "calculate [" + eventType().name() + "] on [" + initialChangeContext.log().entityModel().name() + "]");
+      log(modelContext, "calculate [" + eventType().name() + "] on [" + initialChangeContext.log().entityModel().name() + ":" + initialChangeContext.log().entityId().value() + "] (input: " + initialChangeContext.input() + ")");
       return chain.apply(Mono.just(initialChangeContext));
     }
 
@@ -1136,10 +1206,18 @@ public class TransitionModelBuilder<I, T, O> {
     public List<Filter<?,?,?>> filters() {
       return modelContext.filters();
     }
+
+    public List<EventTrigger<?, ?, ?>> triggers() {
+      return modelContext.triggers();
+    }
+
+    public List<Action<?>> actions() {
+      return modelContext.actions();
+    }
   }
 
   static void log(ModelContext<?, ?> modelContext, String text) {
-    System.out.println(modelContext.description() + ": " + text);
+    System.out.println(ZonedDateTime.now() + ": " + modelContext.description() + ": " + text);
   }
 
 }

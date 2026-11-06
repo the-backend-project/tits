@@ -2,7 +2,6 @@ package com.github.thxmasj.statemachine.templates;
 
 import static com.github.thxmasj.statemachine.EntitySelector.entityId;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
-import static com.github.thxmasj.statemachine.templates.Batching.States.Begin;
 
 import com.github.thxmasj.statemachine.BasicEventType;
 import com.github.thxmasj.statemachine.EntityModel;
@@ -30,11 +29,6 @@ public class Batching {
     }
     ;
 
-    @Override
-    public State initialState() {
-      return Begin;
-    }
-
     public Map<State, List<TransitionModel<?, ?>>> transitions() {
       return Map.of(
           Begin, List.of(
@@ -55,9 +49,5 @@ public class Batching {
     AddToBatch = BasicEventType.of("AddToBatch", UUID.fromString("ef054730-344c-4d1b-98a9-5aa7204a2eab")),
     DeleteFromBatch = BasicEventType.of("DeleteFromBatch", UUID.fromString("8dc15503-2a4d-491b-b258-82f209d32825"))
     ;
-
-  public enum States implements State {
-    Begin
-  }
 
 }

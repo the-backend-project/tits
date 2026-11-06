@@ -36,6 +36,7 @@ public class Logger implements Listener {
   private String toString(List<Change> changes) {
     try {
       return new ObjectMapper()
+          .findAndRegisterModules()
           //.enable(SerializationFeature.INDENT_OUTPUT)
           .setSerializationInclusion(JsonInclude.Include.NON_EMPTY)
           .writeValueAsString(changes);

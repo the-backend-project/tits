@@ -14,13 +14,19 @@ jobs:
       mssql:
         image: mcr.microsoft.com/azure-sql-edge:2.0.0
         ports:
-          - 1433:1433
+          - 11433:1433
         env:
           ACCEPT_EULA: Y
           SA_PASSWORD: A_Str0ng_Required_Password
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Initialize test database
+        run: |
+          docker run --rm \
+            --network ${{ job.services.mssql.network }} \
+            --env=SA_PASSWORD=A_Str0ng_Required_Password \
+            "$(docker build -q test/mssql)"
       - name: Set up Java
         uses: actions/setup-java@v4
         with:

@@ -1,6 +1,7 @@
 package com.github.thxmasj.statemachine;
 
 import static com.github.thxmasj.statemachine.BuiltinEventTypes.Rollback;
+import static com.github.thxmasj.statemachine.EntityModel.Begin;
 import static com.github.thxmasj.statemachine.EntitySelector.entityId;
 import static com.github.thxmasj.statemachine.EntitySelector.newEntityId;
 import static com.github.thxmasj.statemachine.EventTrigger.trigger;
@@ -17,13 +18,14 @@ import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.o
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.assemble;
 
 import com.github.thxmasj.statemachine.BasicEventType.Rollback.Data;
-import com.github.thxmasj.statemachine.database.mssql.SchemaNames.Column;
-import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
+import com.github.thxmasj.statemachine.StateMachine.RejectedEvent;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import com.github.thxmasj.statemachine.database.mssql.SchemaNames.Column;
+import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
 import org.junit.jupiter.api.Test;
 import reactor.test.StepVerifier;
 
@@ -35,8 +37,6 @@ public class RollbackTest {
   enum Entities implements EntityModel {
     Pacman {
       @Override public UUID id() {return UUID.fromString("15f23da6-19be-460d-8af4-ffdbd600fc51");}
-      @Override public State initialState() {return Stopped;}
-
       @Override
       public List<SecondaryIdModel<?>> secondaryIds() {
         return List.of(SpeedId);
@@ -44,11 +44,15 @@ public class RollbackTest {
     },
     Speed {
       @Override public UUID id() {return UUID.fromString("6adad2d0-dd57-4d6b-932c-add277eb0cae");}
-      @Override public State initialState() {return Zero;}
     }
   }
 
   static SecondaryIdModel<UUID> SpeedId = new SecondaryIdModel<>() {
+    @Override
+    public UUID id() {
+      return UUID.fromString("16a902b5-49ae-46a8-8e0d-3711e6b41b44");
+    }
+
     @Override
     public String name() {
       return "SpeedId";
@@ -82,6 +86,16 @@ public class RollbackTest {
   private final static StateMachine eventListener = Init.stateMachine(
       Map.of(
           Pacman, Map.of(
+              Begin, List.of(
+                  onEvent(Forward).to(Moving)
+                      .trigger(Increase).on(Speed).identifiedBy(newEntityId())
+                      .newIdentifier(SpeedId, d -> d.t2().accepted().event().entityId())
+                      .reversible(
+                          assemble((log, _) -> log.id(SpeedId))
+                              .trigger(Decrease).on(Speed).identifiedBy(EntitySelector::entityId)
+                      )
+                      .output()
+              ),
               Stopped, List.of(
                   onEvent(Forward).to(Moving)
                       .trigger(Increase).on(Speed).identifiedBy(newEntityId())
@@ -118,6 +132,9 @@ public class RollbackTest {
               Dead, List.of()
           ),
           Speed, Map.of(
+              Begin, List.of(
+                  onEvent(Increase).to(Slow).output()
+              ),
               Zero, List.of(
                   onEvent(Increase).to(Slow).output()
               ),
@@ -134,20 +151,20 @@ public class RollbackTest {
               )
 
           )
-      ),
-      null
+      )
   );
 
   @Test
   public void rollbackOfOneEvent() {
     StepVerifier
         .create(eventListener.onEvent(trigger(Forward, Pacman))
-            .flatMap(forwardEvent -> eventListener.onEvent(trigger(Rollback, Pacman, forwardEvent.entityId()), new Data(-1, 1, "test"))
+            .flatMap(forwardEvent -> eventListener.onEvent(trigger(Rollback, Pacman, forwardEvent.entityId()), new Data(-1,
+                    "test"))
                     .next()
                     .zipWhen(rollbackEvent -> eventListener.onStatus(entityId(rollbackEvent.entityId()), Pacman))
             )
         )
-        .expectNextMatches(t -> t.getT1().type() == Rollback && t.getT1().eventNumber() == 2 && t.getT2() == Stopped)
+        .expectNextMatches(t -> t.getT1().type() == Rollback && t.getT1().eventNumber() == 2 && t.getT2() == Begin)
         .thenCancel().verify();
   }
 
@@ -156,11 +173,12 @@ public class RollbackTest {
     StepVerifier
         .create(eventListener.onEvent(trigger(Forward, Pacman))
             .flatMap(forwardEvent -> eventListener.onEvent(trigger(Forward, Pacman, forwardEvent.entityId())))
-            .flatMap(backwardEvent -> eventListener.onEvent(trigger(Rollback, Pacman, backwardEvent.entityId()), new Data(-2, 2, "test")))
+            .flatMap(backwardEvent -> eventListener.onEvent(trigger(Rollback, Pacman, backwardEvent.entityId()), new Data(-2,
+                "test")))
             .next()
             .zipWhen(rollbackEvent -> eventListener.onStatus(entityId(rollbackEvent.entityId()), Pacman))
         )
-        .expectNextMatches(t -> t.getT1().type() == Rollback && t.getT1().eventNumber() == 3 && t.getT2() == Stopped)
+        .expectNextMatches(t -> t.getT1().type() == Rollback && t.getT1().eventNumber() == 3 && t.getT2() == Begin)
         .thenCancel().verify();
   }
 
@@ -168,9 +186,10 @@ public class RollbackTest {
   public void rollbackOfTwoEventsWhenThereIsOnlyOne() {
     StepVerifier.create(
             eventListener.onEvent(trigger(Forward, Pacman))
-                .flatMap(output -> eventListener.onEvent(trigger(Rollback, Pacman, output.entityId()), new Data(-2, 1, "test")))
+                .flatMap(output -> eventListener.onEvent(trigger(Rollback, Pacman, output.entityId()), new Data(-2,
+                    "test")))
         )
-        .expectErrorMessage("Rollback on Pacman not allowed for Moving: Can't rollback to event number -1")
+        .expectErrorMatches(t -> t instanceof RejectedEvent && t.getMessage().matches("\\[Rollback] on \\[Pacman]/.{36} rejected for state \\[Moving]: Can't rollback to event number -1"))
         .verify();
   }
 
@@ -178,9 +197,10 @@ public class RollbackTest {
   public void rollbackToAFutureEvent() {
     StepVerifier.create(
             eventListener.onEvent(trigger(Forward, Pacman))
-                .flatMap(output -> eventListener.onEvent(trigger(Rollback, Pacman, output.entityId()), new Data(2, 1, "test")))
+                .flatMap(output -> eventListener.onEvent(trigger(Rollback, Pacman, output.entityId()), new Data(2,
+                    "test")))
         )
-        .expectErrorMessage("Rollback on Pacman not allowed for Moving: Can't rollback to event number 2")
+        .expectErrorMatches(t -> t instanceof RejectedEvent && t.getMessage().matches("\\[Rollback] on \\[Pacman]/.{36} rejected for state \\[Moving]: Can't rollback to event number 2"))
         .verify();
   }
 

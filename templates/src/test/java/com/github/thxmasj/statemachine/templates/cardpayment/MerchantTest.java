@@ -31,8 +31,7 @@ public class MerchantTest {
         UUID.randomUUID().toString(),
         "Test",
         Clock.systemUTC(),
-        new Logger("MerchantTest"),
-        _ -> null
+        new Logger("MerchantTest")
     );
   }
 

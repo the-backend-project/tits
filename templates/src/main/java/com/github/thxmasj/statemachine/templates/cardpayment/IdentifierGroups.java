@@ -7,6 +7,7 @@ import com.github.thxmasj.statemachine.SecondaryId;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.Column;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.ColumnOrder;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
+
 import java.util.List;
 
 public interface IdentifierGroups {

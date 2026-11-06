@@ -8,6 +8,12 @@ import java.util.function.Function;
 
 public interface State {
 
+  State Intermediate = State.of("Intermediate");
+
+  static State of(String name) {
+    return () -> name;
+  }
+
   Timeout<Void> NEVER_TIMEOUT = new Timeout<>(Duration.ZERO, null, null);
 
   String name();
@@ -23,11 +29,11 @@ public interface State {
   }
 
   default Timeout<?> rollbackAfter(Duration duration) {
-    return new Timeout<>(duration, Rollback, lastEventNumber -> new Data(-1, lastEventNumber, name() + " timed out"));
+    return new Timeout<>(duration, Rollback, lastEventNumber -> new Data(-1, name() + " timed out"));
   }
 
   default Timeout<?> rollbackAfter(Duration duration, int numberOfEventsToRollback) {
-    return new Timeout<>(duration, Rollback, lastEventNumber -> new Data(-numberOfEventsToRollback, lastEventNumber, name() + " timed out"));
+    return new Timeout<>(duration, Rollback, lastEventNumber -> new Data(-numberOfEventsToRollback, name() + " timed out"));
   }
 
 }

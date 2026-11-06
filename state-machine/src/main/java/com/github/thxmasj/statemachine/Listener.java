@@ -11,11 +11,9 @@ public interface Listener {
 
     record Change(
         Entity entity,
-        Duration timeout,
+        ZonedDateTime timeout,
         Event event,
-        List<String> secondaryIds,
-        List<String> outgoingRequests,
-        List<String> incomingResponses
+        List<String> secondaryIds
     ) {
       public record Entity(
           String model,
@@ -26,11 +24,33 @@ public interface Listener {
           return model + "[id=" + id + "]";
         }
       }
-      public record Event(
-          int number,
-          String type,
-          String data
-      ) {}
+
+      public static class Event {
+
+        private final int number;
+        private final String type;
+
+        public Event(int number, String type) {
+          this.number = number;
+          this.type = type;
+        }
+
+        public int number() {return number;}
+
+        public String type() {return type;}
+
+      }
+
+      public static class DelayedEvent extends Event {
+        private final ZonedDateTime after;
+
+        public DelayedEvent(int number, String type, ZonedDateTime after) {
+          super(number, type);
+          this.after = after;
+        }
+
+        public ZonedDateTime after() {return after;}
+      }
     }
 
     void changeAccepted(

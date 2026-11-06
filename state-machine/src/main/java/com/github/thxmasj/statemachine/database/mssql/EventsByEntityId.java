@@ -8,18 +8,23 @@ import com.github.thxmasj.statemachine.EntityId;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.Event;
 import com.github.thxmasj.statemachine.EventLog;
+import com.github.thxmasj.statemachine.EventType;
 import com.github.thxmasj.statemachine.SecondaryId;
-import com.github.thxmasj.statemachine.database.Row;
+import com.github.thxmasj.statemachine.database.MappingFailure;
+import com.github.thxmasj.statemachine.database.Parameter;
 import com.github.thxmasj.statemachine.database.UnknownEntity;
 import com.github.thxmasj.statemachine.database.jdbc.JDBCRow;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.Column;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.time.Clock;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.BiFunction;
+import java.util.UUID;
 import javax.sql.DataSource;
 import reactor.core.publisher.Mono;
 
@@ -28,17 +33,17 @@ public class EventsByEntityId {
 
   private final DataSource dataSource;
   private final Map<EntityModel, String> sqls;
-  private final Map<EntityModel, BiFunction<EntityId, Row, Event<?>>> eventMappers;
+  private final Clock clock;
 
   public EventsByEntityId(
       DataSource dataSource,
       List<EntityModel> entityModels,
       String schemaName,
-      Map<EntityModel, BiFunction<EntityId, Row, Event<?>>> eventMappers
+      Clock clock
   ) {
     this.dataSource = dataSource;
+    this.clock = clock;
     this.sqls = new HashMap<>();
-    this.eventMappers = eventMappers;
     for (var entityModel : entityModels) {
       var names = new SchemaNames(schemaName, entityModel);
       String sql =
@@ -63,19 +68,22 @@ public class EventsByEntityId {
     }
   }
 
-  public Mono<EventLog> execute(EntityModel entityModel, EntityId entityId) {
+  public Mono<EventLog> execute(EntityModel entityModel, List<EventType<?, ?>> eventTypes, EntityId entityId) {
     String sqlToPrepare = requireNonNull(sqls.get(entityModel), "Unknown model " + entityModel.name());
     return Mono.fromCallable(() -> {
-      System.out.println("Finding event log for " + entityModel.name() + "/" + entityId.value());
       try (
-          var connection = dataSource.getConnection();
-          var statement = prepare(sqlToPrepare, Map.of("entityId", entityId.value()), connection)
+          Connection connection = dataSource.getConnection();
+          PreparedStatement statement = prepare(sqlToPrepare, Map.of("entityId", new Parameter<>(UUID.class, entityId.value())), connection)
       ) {
         statement.execute();
         ResultSet rs = statement.getResultSet();
         List<Event<?>> events = new ArrayList<>();
         while (rs.next()) {
-          events.add(eventMappers.get(entityModel).apply(entityId, new JDBCRow(rs)));
+          try {
+            events.add(Mappers.eventMapper(eventTypes, clock).apply(entityId, new JDBCRow(rs)));
+          } catch (MappingFailure e) {
+            throw new MappingFailure("EventsByEntityId: Failed to map row to event for entity model " + entityModel.name(), e);
+          }
         }
         List<SecondaryId<?>> secondaryIds = new ArrayList<>();
         for (var idModel : entityModel.secondaryIds()) {
@@ -87,6 +95,7 @@ public class EventsByEntityId {
         rs.close();
         if (events.isEmpty() && secondaryIds.isEmpty())
           throw new UnknownEntity(entityModel, entityId);
+        //System.out.println("Found event log for " + entityModel.name() + "/" + entityId.value() + ": " + events.stream().map(e -> e.typeName()).collect(joining(", ")));
         return new EventLog(entityModel, entityId, secondaryIds, Collections.unmodifiableList(events));
       }
     });

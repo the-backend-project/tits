@@ -5,37 +5,38 @@ import static java.util.stream.Collectors.joining;
 import static java.util.stream.IntStream.range;
 
 import com.github.thxmasj.statemachine.BasicEventType;
+import com.github.thxmasj.statemachine.ConditionTrigger;
+import com.github.thxmasj.statemachine.DataType;
+import com.github.thxmasj.statemachine.DelayedEvent;
 import com.github.thxmasj.statemachine.EntityId;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.Event;
+import com.github.thxmasj.statemachine.IndexEntityModel;
 import com.github.thxmasj.statemachine.SecondaryId;
 import com.github.thxmasj.statemachine.StateMachine.ProcessResult;
+import com.github.thxmasj.statemachine.TriggerType;
 import com.github.thxmasj.statemachine.database.Client;
 import com.github.thxmasj.statemachine.database.Client.PrimaryKeyConstraintViolation;
 import com.github.thxmasj.statemachine.database.Client.Query.Builder;
 import com.github.thxmasj.statemachine.database.Client.UniqueIndexConstraintViolation;
 import com.github.thxmasj.statemachine.database.EventAlreadyExists;
 import com.github.thxmasj.statemachine.database.SecondaryIdAlreadyExists;
-import com.github.thxmasj.statemachine.message.Message.IncomingResponse;
-import com.github.thxmasj.statemachine.message.Message.OutgoingRequest;
 import java.time.Clock;
-import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import reactor.core.publisher.Flux;
 
 public class ChangeState {
 
-  private final List<EntityModel> entityModels;
   private final Client databaseClient;
   private final Clock clock;
   private final String schema;
 
-  public ChangeState(List<EntityModel> entityModels, Client databaseClient, String schema, Clock clock) {
-    this.entityModels = entityModels;
+  public ChangeState(Client databaseClient, String schema, Clock clock) {
     this.databaseClient = databaseClient;
     this.clock = clock;
     this.schema = schema;
@@ -43,7 +44,6 @@ public class ChangeState {
 
   private void bind(Builder spec, ZonedDateTime timestamp, String correlationId, Change change) {
     Event<?> event = change.newEvent();
-    ZonedDateTime deadline = change.timeout() != null ? timestamp.plus(change.timeout()) : null;
     if (change.entityId() != null)
       spec.bind("entityId", change.entityId().value());
     spec.bind("entityModelId", change.entityModel().id());
@@ -51,7 +51,7 @@ public class ChangeState {
     if (event != null) {
       spec.bind("eventNumber", event.eventNumber())
           .bind("type", event.type().id())
-          .bind("data", event.getMarshalledData());
+          .bindNullable("data", byte[].class, event.getMarshalledData());
     }
     for (SecondaryId<?> secondaryId : change.newSecondaryIds()) {
       for (int i = 0; i < secondaryId.model().columns().size(); i++) {
@@ -63,30 +63,41 @@ public class ChangeState {
       if (secondaryId.model().isSerial())
         spec.bind("secondaryId" + secondaryId.model().name() + "SerialNumber", secondaryId.serialNumber());
     }
-    for (int i = 0; i < change.outgoingRequests().size(); i++) {
-      OutgoingRequest orq = change.outgoingRequests().get(i);
-      if (orq.parentEntity() != null) {
-        spec.bind("outgoingRequestParentEntityId" + i, orq.parentEntity().value());
-      }
-      spec.bind("outgoingRequestId" + i, orq.id())
-          .bind("outgoingRequestQueueId" + i, orq.queue().id())
-          .bind("outgoingRequestEventNumber" + i, orq.eventNumber())
-          .bind("outgoingRequestCreatorId" + i, orq.creatorId())
-          .bind("correlationId", correlationId)
-          .bind("outgoingRequestGuaranteedDelivery" + i, orq.guaranteed())
-          .bind("outgoingRequestData" + i, orq.message().message());
+    if (change.triggerType() != null) {
+      spec.bind("triggerId", change.triggerId());
     }
-    if (change.incomingResponse() != null) {
-      IncomingResponse irs = change.incomingResponse();
-      spec.bind("incomingResponseEventNumber", irs.eventNumber())
-          .bind("incomingResponseRequestId", irs.requestId())
-          .bind("incomingResponseData", irs.message().message());
-    }
-    if (deadline != null) {
+    if (change.conditionTrigger() != null) {
       spec
+          .bind("conditionTriggerId", change.conditionTrigger().id())
+          .bind("type", change.conditionTrigger().type().id())
+          .bindNullable("data", byte[].class, marshal(change.conditionTrigger()))
+          .bind("conditionEntityModelId", change.conditionTrigger().entityModel().id())
+          .bind("triggerEntityId", change.conditionTrigger().triggerEvent().entityId())
+          .bind("triggerEventNumber", change.conditionTrigger().triggerEvent().eventNumber())
+          .bind("lastTypes", change.conditionTrigger().lastTypes().stream()
+              .map(t -> t.id().toString())
+              .collect(Collectors.joining(",")))
+          .bind("referenceType", change.conditionTrigger().referenceType().id())
+          .bind("indexKey", DataType.uuid().marshal(change.conditionTrigger().indexKey()))
+          .bind("correlationId", change.conditionTrigger().correlationId());
+    }
+    if (change.delayedEvent() != null) {
+      ZonedDateTime deadline = change.delayedEvent().after();
+      spec
+          .bind("eventNumber", change.delayedEvent().eventNumber())
+          .bind("type", change.delayedEvent().type().id())
+          .bindNullable("data", byte[].class, marshal(change.delayedEvent()))
           .bind("deadline", deadline.withZoneSameInstant(clock.getZone()).toLocalDateTime())
           .bind("correlationId", correlationId);
     }
+  }
+
+  private static <T> byte[] marshal(DelayedEvent<T> delayedEvent) {
+    return delayedEvent.type().inputDataType().marshal(delayedEvent.data());
+  }
+
+  private static <T> byte[] marshal(ConditionTrigger<T> conditionTrigger) {
+    return conditionTrigger.type().inputDataType().marshal(conditionTrigger.data());
   }
 
   public interface Change {
@@ -95,17 +106,72 @@ public class ChangeState {
     
     EntityId entityId();
     
-    boolean storeEvent();
-
     Event<?> newEvent();
 
     List<SecondaryId<?>> newSecondaryIds();
 
-    List<OutgoingRequest> outgoingRequests();
+    DelayedEvent<?> delayedEvent();
 
-    IncomingResponse incomingResponse();
+    default ConditionTrigger<?> conditionTrigger() {
+      return null;
+    }
 
-    Duration timeout();
+    /**
+     * The type of the stored trigger that caused this change's new event, if any.
+     */
+    default TriggerType triggerType() {
+      return null;
+    }
+
+    /**
+     * The id of the stored trigger that caused this change's new event. The trigger is deleted together with the new
+     * event, so that it will not be triggered again.
+     */
+    default UUID triggerId() {
+      return null;
+    }
+
+    static Change fromConditionTrigger(ConditionTrigger<?> conditionTrigger) {
+      return new Change() {
+        @Override
+        public EntityModel entityModel() {
+          return conditionTrigger.entityModel();
+        }
+
+        @Override
+        public EntityId entityId() {
+          return new EntityId.UUID(conditionTrigger.entityId());
+        }
+
+        @Override
+        public Event<?> newEvent() {
+          return null;
+        }
+
+        @Override
+        public List<SecondaryId<?>> newSecondaryIds() {
+          return List.of();
+        }
+
+        @Override
+        public DelayedEvent<?> delayedEvent() {
+          return null;
+        }
+
+        @Override
+        public ConditionTrigger<?> conditionTrigger() {
+          return conditionTrigger;
+        }
+
+        @Override
+        public String toString() {
+          return entityModel().name() + ":" +
+              conditionTrigger.entityId() + ":trigger(condition):[" +
+              conditionTrigger.type().name() + "]";
+        }
+
+      };
+    }
 
     static Change fromAcceptedEvent(ProcessResult.Accepted<?> acceptedEvent) {
       return new Change() {
@@ -120,13 +186,18 @@ public class ChangeState {
         }
 
         @Override
-        public boolean storeEvent() {
-          return true;
+        public Event<?> newEvent() {
+          return acceptedEvent.event();
         }
 
         @Override
-        public Event<?> newEvent() {
-          return acceptedEvent.event();
+        public TriggerType triggerType() {
+          return acceptedEvent.triggerType();
+        }
+
+        @Override
+        public UUID triggerId() {
+          return acceptedEvent.triggerId();
         }
 
         @Override
@@ -135,18 +206,8 @@ public class ChangeState {
         }
 
         @Override
-        public List<OutgoingRequest> outgoingRequests() {
-          return List.of();
-        }
-
-        @Override
-        public IncomingResponse incomingResponse() {
+        public DelayedEvent<?> delayedEvent() {
           return null;
-        }
-
-        @Override
-        public Duration timeout() {
-          return acceptedEvent.timeout();
         }
 
         @Override
@@ -154,8 +215,54 @@ public class ChangeState {
           return entityModel().name() + ":" +
               entityId().value() + ":ev:[" +
               newEvent().typeName() + "]:" +
-              newEvent().eventNumber() +
+              newEvent().eventNumber() + ":data=" +
+              (newEvent().data() != null ? capString(newEvent().getUnmarshalledData().toString()) : "N/A") +
               (newEvent().type() instanceof BasicEventType.ReadOnly<?,?> ? " (read-only)" : "");
+        }
+
+      };
+    }
+
+    private static String capString(String s) {
+      if (s == null) return null;
+      if (s.length() > 50) return s.replace("\n", "↵").substring(0, 50) + "...";
+      return s;
+    }
+
+    static Change fromDelayedEvent(DelayedEvent<?> delayedEvent) {
+      return new Change() {
+        @Override
+        public EntityModel entityModel() {
+          return delayedEvent.entityModel();
+        }
+
+        @Override
+        public EntityId entityId() {
+          return new EntityId.UUID(delayedEvent.entityId());
+        }
+
+        @Override
+        public Event<?> newEvent() {
+          return null;
+        }
+
+        @Override
+        public List<SecondaryId<?>> newSecondaryIds() {
+          return List.of();
+        }
+
+        @Override
+        public DelayedEvent<?> delayedEvent() {
+          return delayedEvent;
+        }
+
+        @Override
+        public String toString() {
+          return entityModel().name() + ":" +
+              delayedEvent.entityId() + ":ev:[" +
+              delayedEvent.type().name() + "]:" +
+              delayedEvent.eventNumber() +
+              " after " + delayedEvent.after();
         }
 
       };
@@ -174,11 +281,6 @@ public class ChangeState {
         }
 
         @Override
-        public boolean storeEvent() {
-          return false;
-        }
-
-        @Override
         public Event<?> newEvent() {
           return null;
         }
@@ -189,17 +291,7 @@ public class ChangeState {
         }
 
         @Override
-        public List<OutgoingRequest> outgoingRequests() {
-          return List.of();
-        }
-
-        @Override
-        public IncomingResponse incomingResponse() {
-          return null;
-        }
-
-        @Override
-        public Duration timeout() {
+        public DelayedEvent<?> delayedEvent() {
           return null;
         }
 
@@ -209,117 +301,6 @@ public class ChangeState {
               entityId().value() + ":id:" +
               id.model().name() + ":" +
               id.data();
-        }
-      };
-    }
-
-    static Change fromOutgoingRequest(OutgoingRequest outgoingRequest, EntityModel entityModel, EntityId entityId) {
-      return new Change() {
-        @Override
-        public EntityModel entityModel() {
-          return entityModel;
-        }
-
-        @Override
-        public EntityId entityId() {
-          return entityId;
-        }
-
-        @Override
-        public boolean storeEvent() {
-          return false;
-        }
-
-        @Override
-        public Event<?> newEvent() {
-          return null;
-        }
-
-        @Override
-        public List<SecondaryId<?>> newSecondaryIds() {
-          return List.of();
-        }
-
-        @Override
-        public List<OutgoingRequest> outgoingRequests() {
-          return List.of(outgoingRequest);
-        }
-
-        @Override
-        public IncomingResponse incomingResponse() {
-          return null;
-        }
-
-        @Override
-        public Duration timeout() {
-          return null;
-        }
-
-        @Override
-        public String toString() {
-          return entityModel().name() + ":" +
-              entityId().value() + ":rq:[" +
-              outgoingRequest.queue().name() + "]:" +
-              "id=" + outgoingRequest.id() + ":" +
-              outgoingRequest.eventNumber() + ":" +
-              "guaranteed=" + outgoingRequest.guaranteed() + ":" +
-              outgoingRequest.message().requestLine();
-        }
-
-      };
-    }
-
-    static Change fromIncomingResponse(IncomingResponse incomingResponse, EntityModel entityModel, EntityId entityId) {
-      return new Change() {
-        @Override
-        public EntityModel entityModel() {
-          return entityModel;
-        }
-
-        @Override
-        public EntityId entityId() {
-          return entityId;
-        }
-
-        @Override
-        public boolean storeEvent() {
-          return false;
-        }
-
-        @Override
-        public Event<?> newEvent() {
-          return null;
-        }
-
-        @Override
-        public List<SecondaryId<?>> newSecondaryIds() {
-          return List.of();
-        }
-
-        @Override
-        public List<OutgoingRequest> outgoingRequests() {
-          return List.of();
-        }
-
-        @Override
-        public IncomingResponse incomingResponse() {
-          return incomingResponse;
-        }
-
-        @Override
-        public Duration timeout() {
-          return null;
-        }
-
-        @Override
-        public String toString() {
-          return entityModel().name() + ":" +
-              entityId().value() + ":rs:[" +
-              incomingResponse.queue().name() + "]:" +
-              "id=" + incomingResponse.requestId() + ":" +
-              incomingResponse.eventNumber() + ":" +
-              "guaranteed=" + incomingResponse.guaranteed() + ":" +
-              incomingResponse.message().statusLine();
         }
       };
     }
@@ -340,11 +321,11 @@ public class ChangeState {
             i,
             "p" + i + "_",
             changes.get(i).entityModel(),
-            changes.get(i).newEvent() != null && changes.get(i).storeEvent(),
+            changes.get(i).newEvent(),
             changes.get(i).newSecondaryIds(),
-            changes.get(i).outgoingRequests(),
-            changes.get(i).incomingResponse(),
-            changes.get(i).timeout() != null
+            changes.get(i).delayedEvent(),
+            changes.get(i).conditionTrigger(),
+            changes.get(i).triggerType()
         )).collect(joining("\n")) +
             """
             INSERT INTO @QueueElementToProcess (ChangeIndex, MessageIndex, RequestId, ElementId)
@@ -372,25 +353,26 @@ public class ChangeState {
       int changeIndex,
       String parameterPrefix,
       EntityModel entityModel,
-      boolean withEvent,
+      Event<?> event,
       List<SecondaryId<?>> secondaryIds,
-      List<OutgoingRequest> outgoingRequests,
-      IncomingResponse incomingResponse,
-      boolean withDeadline
+      DelayedEvent<?> delayedEvent,
+      ConditionTrigger<?> conditionTrigger,
+      TriggerType triggerType
   ) {
-    var names = new SchemaNames(schema, entityModel);
-    var q = names.qualifiedNames();
     String sql =
         """
         DECLARE @entityId{changeIndex} UNIQUEIDENTIFIER
         SELECT @entityId{changeIndex}=:entityId
         """.replace("{changeIndex}", String.valueOf(changeIndex));
+    //
+    // Secondary id
+    //
     for (SecondaryId<?> secondaryId : secondaryIds) {
       sql +=
           """
-          INSERT INTO {idTable} (EntityId, {columnList})
+          INSERT INTO [{schema}].[{idTable}] (EntityId, {columnList})
           VALUES (@entityId{changeIndex}, {valueList})
-          """.replace("{idTable}", q.idTable(secondaryId.model()))
+          """.replace("{idTable}", "Id_" + secondaryId.model().name())
               .replace(
                   "{columnList}",
                   secondaryId.model().columns().stream().map(SchemaNames.Column::name).collect(joining(",")) + (
@@ -402,10 +384,39 @@ public class ChangeState {
                   range(0, secondaryId.model().columns().size()).mapToObj(i -> ":secondaryId" + secondaryId.model()
                       .name() + i).collect(joining(",")) + (secondaryId.model().isSerial() ? ",:secondaryId"
                       + secondaryId.model().name() + "SerialNumber" : "")
-              );
+              )
+              .replace("{schema}", schema);
     }
 
-    if (withEvent) {
+    if (event != null && entityModel instanceof IndexEntityModel) {
+      sql +=
+          """
+          INSERT INTO [{schema}].[IndexEvent] (
+            EntityId,
+            EventNumber,
+            Type,
+            Timestamp,
+            Data
+          ) VALUES (
+            @entityId{changeIndex},
+            :eventNumber,:type,:timestamp,:data
+          )
+          """.replace("{schema}", schema)
+              .replace("{changeIndex}", String.valueOf(changeIndex));
+    } else if (event != null) {
+      if (event.eventNumber() == 1) {
+        sql +=
+            """
+            INSERT INTO [{schema}].[Entity] (
+              EntityId,
+              EntityModelId
+            ) VALUES (
+              @entityId{changeIndex},
+              :entityModelId
+            );
+            """.replace("{schema}", schema)
+                .replace("{changeIndex}", String.valueOf(changeIndex));
+      }
       sql +=
           """
           DELETE [{schema}].[Timeout] FROM [{schema}].[Timeout] WITH (INDEX([ixEntityId]))
@@ -426,185 +437,58 @@ public class ChangeState {
           )
           """.replace("{schema}", schema)
               .replace("{changeIndex}", String.valueOf(changeIndex));
+      if (triggerType == TriggerType.CONDITION) {
+        sql +=
+            """
+            DELETE [{schema}].[ConditionTrigger]
+            WHERE Id=:triggerId;
+            """.replace("{schema}", schema);
+      }
     }
 
-    sql += incomingResponse == null ? "" :
-        /* Deletes corresponding outgoing request from queue when incoming response has arrived. Note that this must
-           be done prior to insertion of new outgoing requests (see below), otherwise, in case of rollback, the new
-           outgoing request will be deleted as well */
-        """
-        DELETE [{schema}].[OutboxQueue] FROM [{schema}].[OutboxQueue] WITH (INDEX([ixEntityId]))
-        WHERE EntityId=@entityId{changeIndex} AND RequestId=:incomingResponseRequestId
-        IF @@ROWCOUNT != 1
-          THROW 50003, 'Failed to delete outgoing request from queue', 1;
-        """.replace("{changeIndex}", String.valueOf(changeIndex))
-            .replace("{schema}", schema);
+    if (conditionTrigger != null) {
+      sql +=
+          """
+          INSERT INTO [{schema}].[ConditionTrigger] (
+            Id,
+            EntityId,
+            EntityModelId,
+            TriggerEntityId,
+            TriggerEventNumber,
+            Type,
+            Data,
+            Timestamp,
+            LastTypes,
+            ReferenceType,
+            IndexKey,
+            CorrelationId
+          ) VALUES (
+            :conditionTriggerId,
+            @entityId{changeIndex},
+            :conditionEntityModelId,
+            :triggerEntityId,
+            :triggerEventNumber,
+            :type,:data,:timestamp,:lastTypes,:referenceType,:indexKey,:correlationId
+          );
+          """.replace("{changeIndex}", String.valueOf(changeIndex))
+              .replace("{schema}", schema);
+    }
 
-    sql += range(0, outgoingRequests.size()).mapToObj(i ->
-        """
-        INSERT INTO [{schema}].[OutboxRequest] (
-          Id,
-          QueueId,
-          EntityId,
-          EventNumber,
-          Timestamp,
-          Data
-        )
-        OUTPUT {changeIndex}, {i}, inserted.Id INTO @OutboxElement
-        VALUES (
-          :outgoingRequestId{i},
-          :outgoingRequestQueueId{i},
-          @entityId{changeIndex},
-          :outgoingRequestEventNumber{i},
-          :timestamp,
-          :outgoingRequestData{i}
-        );
-        """.replace("{changeIndex}", String.valueOf(changeIndex))
-            .replace("{i}", String.valueOf(i))
-            .replace("{schema}", schema)
-    ).collect(joining());
-
-    sql += range(0, outgoingRequests.size()).mapToObj(i ->
-        """
-        INSERT INTO [{schema}].[OutboxQueue] (
-          QueueId,
-          EntityModelId,
-          EntityId,
-          {parentEntityColumn}
-          EventNumber,
-          CreatorId,
-          Guaranteed,
-          CorrelationId,
-          Timestamp,
-          RequestId
-        )
-        OUTPUT {changeIndex}, {i}, inserted.RequestId, inserted.ElementId, inserted.Guaranteed INTO @QueueElement
-        VALUES (
-          :outgoingRequestQueueId{i},
-          :entityModelId,
-          @entityId{changeIndex},
-          {parentEntityValue}
-          :outgoingRequestEventNumber{i},
-          :outgoingRequestCreatorId{i},
-          :outgoingRequestGuaranteedDelivery{i},
-          :correlationId,
-          :timestamp,
-          (SELECT RequestId FROM @OutboxElement WHERE ChangeIndex={changeIndex} AND MessageIndex={i})
-        );
-        """.replace("{changeIndex}", String.valueOf(changeIndex))
-            .replace("{i}", String.valueOf(i))
-            .replace("{schema}", schema)
-            .replace("{parentEntityColumn}", outgoingRequests.get(i).parentEntity() != null ? "ParentEntityId," : "")
-            .replace(
-                "{parentEntityValue}",
-                outgoingRequests.get(i).parentEntity() != null ? ":outgoingRequestParentEntityId" + i + "," : ""
-            )
-    ).collect(joining());
-
-    sql += range(0, outgoingRequests.size()).filter(i -> outgoingRequests.get(i).guaranteed()).mapToObj(i ->
-        """
-        SET XACT_ABORT OFF
-        BEGIN TRY
-        INSERT INTO [{schema}].[OutboxQueueProcessing] (
-          ElementId,
-          QueueId,
-          EntityModelId,
-          EntityId,
-          EventNumber,
-          CreatorId,
-          Guaranteed,
-          Data,
-          CorrelationId,
-          EnqueuedAt,
-          Attempt,
-          NextAttemptAt,
-          RequestId
-        )
-        OUTPUT {changeIndex}, {i}, inserted.RequestId, inserted.ElementId INTO @QueueElementToProcess
-        SELECT
-          (SELECT ElementId FROM @QueueElement WHERE ChangeIndex = {changeIndex} AND MessageIndex = {i}),
-          :outgoingRequestQueueId{i},
-          :entityModelId,
-          @entityId{changeIndex},
-          :outgoingRequestEventNumber{i},
-          :outgoingRequestCreatorId{i},
-          :outgoingRequestGuaranteedDelivery{i},
-          :outgoingRequestData{i},
-          :correlationId,
-          :timestamp,
-          1,
-          (DATEADD(millisecond, 10*1000, :timestamp)), -- TODO: (DATEADD(millisecond, :minimumBackoff*1000, :now))
-          (SELECT RequestId FROM @OutboxElement WHERE ChangeIndex={changeIndex} AND MessageIndex={i})
-        WHERE @entityId{changeIndex} NOT IN (
-          SELECT EntityId
-          FROM [{schema}].[OutboxDeadLetterQueue]
-          WITH (INDEX([pkOutboxDeadLetterQueue]))
-          WHERE QueueId=:outgoingRequestQueueId{i}
-        )
-        AND @entityId{changeIndex} NOT IN (
-          SELECT EntityId
-          FROM [{schema}].[OutboxQueueProcessing]
-          WITH (INDEX([pkOutboxQueueProcessing]))
-          WHERE QueueId=:outgoingRequestQueueId{i}
-        )
-        """.replace("{changeIndex}", String.valueOf(changeIndex))
-            .replace("{i}", String.valueOf(i))
-            .replace("{schema}", schema)
-            +
-            (
-                childEntity(entityModel) == null ? "" :
-                    """
-                    AND @entityId{changeIndex} NOT IN (
-                      SELECT ParentEntityId
-                      FROM [{schema}].[OutboxQueue]
-                      WHERE ParentEntityId IS NOT NULL
-                      AND QueueId=:outgoingRequestQueueId{i})
-                    """.replace("{changeIndex}", String.valueOf(changeIndex))
-                        .replace("{i}", String.valueOf(i))
-                        .replace("{schema}", schema)
-            ) +
-            """
-            END TRY
-            BEGIN CATCH
-            END CATCH
-            SET XACT_ABORT ON
-            """
-    ).collect(joining());
-
-    sql += incomingResponse == null ? "" :
-        """
-        INSERT INTO [{schema}].[OutboxResponse] (
-          EntityId,
-          EventNumber,
-          Timestamp,
-          Data,
-          RequestId
-        ) VALUES (
-          @entityId{changeIndex},
-          :incomingResponseEventNumber,
-          :timestamp,
-          :incomingResponseData,
-          :incomingResponseRequestId
-        );
-        """.replace("{changeIndex}", String.valueOf(changeIndex))
-            .replace("{schema}", schema);
-
-    sql += incomingResponse != null && incomingResponse.guaranteed() ?
-        """
-        DELETE [{schema}].[OutboxQueueProcessing] FROM [{schema}].[OutboxQueueProcessing] WITH (INDEX(pkOutboxQueueProcessing))
-        WHERE EntityId=@entityId{changeIndex} AND RequestId=:incomingResponseRequestId
-        IF @@ROWCOUNT != 1
-          THROW 50004, 'Failed to delete queue processing element (change index {changeIndex}, incomingResponseRequestId)', 1;
-        """.replace("{changeIndex}", String.valueOf(changeIndex))
-            .replace("{schema}", schema) : "";
-
-    if (withDeadline && withEvent)
+    if (delayedEvent != null) {
+      sql +=
+          """
+          DELETE [{schema}].[Timeout] FROM [{schema}].[Timeout] WITH (INDEX([ixEntityId]))
+          WHERE EntityId=@entityId{changeIndex} AND EventNumber=:eventNumber - 1;
+          """.replace("{changeIndex}", String.valueOf(changeIndex))
+              .replace("{schema}", schema);
       sql +=
           """
           INSERT INTO [{schema}].[Timeout] (
             EntityId,
             EntityModelId,
             EventNumber,
+            Type,
+            Data,
             Deadline,
             CorrelationId,
             Attempt
@@ -612,27 +496,41 @@ public class ChangeState {
             @entityId{changeIndex},
             :entityModelId,
             :eventNumber,
+            :type,
+            :data,
             :deadline,
             :correlationId,
             0
           );
           """.replace("{changeIndex}", String.valueOf(changeIndex))
               .replace("{schema}", schema);
+    }
     // Remove comments
     sql = sql.lines().map(line -> line.replaceAll("--.*", "")).collect(joining("\n")) + "\n";
     return sql.replaceAll(":([a-zA-Z0-9_]+)", ":" + parameterPrefix + "$1");
   }
 
-  private EntityModel childEntity(EntityModel thisModel) {
-    return entityModels.stream()
-        .filter(e -> thisModel.equals(e.parentEntity()))
-        .findFirst()
-        .orElse(null);
-  }
+//  private EntityModel childEntity(HttpOutbox.EntityModel thisModel) {
+//    return entityModels.stream()
+//        .filter(e -> e instanceof HttpOutbox.EntityModel outE && thisModel.equals(outE.parentEntity()))
+//        .findFirst()
+//        .orElse(null);
+//  }
 
   private Function<PrimaryKeyConstraintViolation, Throwable> primaryKeyConstraintViolationMapper(List<Change> changes) {
     return pkViolation -> {
-      if (pkViolation.tableName().equals("Event")) {
+      if (pkViolation.tableName().equals("Entity")) {
+        try {
+          EntityId entityId = new EntityId.UUID(UUID.fromString(pkViolation.duplicateKey().trim()));
+          return new EventAlreadyExists(
+              entityId,
+              1,
+              changes
+          );
+        } catch (Exception e) {
+          return new EventAlreadyExists(pkViolation.duplicateKey());
+        }
+      } else if (pkViolation.tableName().equals("Event") || pkViolation.tableName().equals("IndexEvent")) {
         try {
           EntityId entityId = new EntityId.UUID(UUID.fromString(pkViolation.duplicateKey().split(",")[0]));
           int eventNumber = Integer.parseInt(pkViolation.duplicateKey().split(",")[1].trim());
@@ -688,7 +586,8 @@ public class ChangeState {
             indexViolation.duplicateKey(),
             new SchemaNames(schema, tuple.t1().entityModel()).idTableName(tuple.t2().model())
         ))
-        .findFirst().orElseThrow();
+        .findFirst()
+        .orElseThrow(() -> new RuntimeException("Failed to map index violation exception: " + indexViolation, indexViolation));
   }
 
 }

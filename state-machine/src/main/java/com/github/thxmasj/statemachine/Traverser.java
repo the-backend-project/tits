@@ -1,5 +1,6 @@
 package com.github.thxmasj.statemachine;
 
+import static com.github.thxmasj.statemachine.EntityModel.Begin;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.rollbackOn;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.statusOn;
 import static com.github.thxmasj.statemachine.Tuples.tuple;
@@ -9,6 +10,7 @@ import static java.util.stream.Collectors.joining;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -20,16 +22,7 @@ public class Traverser {
 
   public State currentState(EventLog eventLog) {
     var effectiveEvents = eventLog.effectiveEvents();
-//    System.out.printf(
-//        """
-//        Traverser.currentState:
-//        Effective events: %s
-//        Actual events:    %s
-//        """,
-//        effectiveEvents.stream().map(Event::typeName).collect(joining(", ")),
-//        eventLog.events().stream().map(Event::typeName).collect(joining(", "))
-//    );
-    State currentState = eventLog.entityModel().initialState();
+    State currentState = Begin;
     if (effectiveEvents.isEmpty()) {
       return currentState;
     }
@@ -38,10 +31,21 @@ public class Traverser {
       lastTransition = findTransitionForLoggedEvent(loggedEvent, currentState);
       currentState = targetState(currentState, lastTransition);
     }
+//    System.out.printf(
+//        """
+//        Traverser.currentState for %s: %s
+//        Effective events: %s
+//        Actual events:    %s
+//        """,
+//        eventLog.entityModel().name(),
+//        currentState.name(),
+//        effectiveEvents.stream().map(e -> e.type().name() + "/" + e.type().id()).collect(joining(", ")),
+//        eventLog.events().stream().map(Event::typeName).collect(joining(", "))
+//    );
     return currentState;
   }
 
-  public State targetState(State currentState, TransitionModel<?, ?> transition) {
+  private State targetState(State currentState, TransitionModel<?, ?> transition) {
     return transition.toState() != null ? transition.toState() : currentState; // toSelf
   }
 
@@ -54,16 +58,24 @@ public class Traverser {
   public Tuple2<State, TransitionModel<?, ?>> accept(EventLog eventLog, EventType<?, ?> eventType) {
     var currentState = currentState(eventLog);
     var availableTransitions = transitions.get(currentState);
-    if (availableTransitions == null) throw new IllegalStateException("No available transitions for current state " + currentState + " on " + eventLog.entityModel().name());
+    if (availableTransitions == null) throw new IllegalStateException("No available transitions for current state " + currentState.name() + " on " + eventLog.entityModel().name());
     var t = findTransitionForTriggeredEvent(eventType, availableTransitions);
     if (t != null && eventType == BuiltinEventTypes.Rollback)
       System.out.println("Using custom rollback transition for entity " + eventLog.entityModel().name() + ": " + t + "\nAll transitions:\n" + transitions.values().stream().flatMap(List::stream).map(Object::toString).collect(joining("\n")));
     if (t == null && eventType == BuiltinEventTypes.Rollback && eventType instanceof BasicEventType.Rollback rollback)
-      //t = onEvent(rollback).toSelf().assembleInput().output(d -> d);
       t = rollbackOn(rollback);
     else if (t == null && eventType == BuiltinEventTypes.Status)
       t = statusOn();
     return tuple(currentState, t);
+  }
+
+  public State targetState(EventType<?, ?>... eventTypes) {
+    var currentState = Begin;
+    for (var eventType : eventTypes) {
+      var t = findTransitionForLoggedEvent(eventType, currentState);
+      currentState = t.toState();
+    }
+    return currentState;
   }
 
 //  public TransitionModel<?, ?> accept(State currentState, EventType<?, ?> eventType) {
@@ -80,7 +92,7 @@ public class Traverser {
     if (events.isEmpty()) {
       throw new IllegalStateException("Event log is empty");
     }
-    State state = eventLog.entityModel().initialState();
+    State state = Begin;
     for (var event : events) {
       if (event.eventNumber() == eventNumber) {
         return findTransitionForLoggedEvent(event.type(), state);

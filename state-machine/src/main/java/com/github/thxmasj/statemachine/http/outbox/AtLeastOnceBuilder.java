@@ -1,0 +1,461 @@
+package com.github.thxmasj.statemachine.http.outbox;
+
+import com.github.thxmasj.statemachine.DataType;
+import com.github.thxmasj.statemachine.EntityModel;
+import com.github.thxmasj.statemachine.EventType;
+import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionContext;
+import com.github.thxmasj.statemachine.Tuples.Tuple2;
+import com.github.thxmasj.statemachine.Validated;
+import com.github.thxmasj.statemachine.http.HttpClient;
+import com.github.thxmasj.statemachine.http.outbox.AtLeastOnce.RetryContext;
+import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
+import com.github.thxmasj.statemachine.message.http.TypedHttpRequest;
+import com.github.thxmasj.statemachine.message.http.TypedHttpResponse;
+import java.time.Duration;
+import java.util.UUID;
+import java.util.function.BiFunction;
+import java.util.function.Function;
+import java.util.function.Predicate;
+import reactor.core.publisher.Mono;
+
+/// Builder of [AtLeastOnce] outboxes. The settings are given in the fixed order of the steps below, each step
+/// returning the next one, so that the order is enforced by the compiler. A step which has a default is optional and
+/// can be skipped, as it also offers the settings of the steps following it.
+///
+/// The type of the request payload is introduced by [RequestPayloadTypeStep], the type of the response payload by
+/// [ResponsePayloadTypeStep], and the type of the data which the request message is created from by [InputDataTypeStep].
+public final class AtLeastOnceBuilder {
+
+  private AtLeastOnceBuilder() {}
+
+  static RequestPayloadTypeStep create() {
+    return new WithNothing();
+  }
+
+  public interface RequestPayloadTypeStep {
+
+    <RQ> ResponsePayloadTypeStep<RQ> requestPayloadType(DataType<RQ> requestPayloadType);
+  }
+
+  public interface ResponsePayloadTypeStep<RQ> {
+
+    <RS> InputDataTypeStep<RQ, RS> responsePayloadType(DataType<RS> responsePayloadType);
+  }
+
+  /// The type of the input data of the outbox, i.e. of the data which the request message is created from. Needed to
+  /// unmarshal the input when it is stored, e.g. when the request is dispatched by a condition trigger.
+  public interface InputDataTypeStep<RQ, RS> {
+
+    <I> MessageCreatorStep<I, RQ, RS> inputDataType(DataType<I> inputDataType);
+  }
+
+  public interface MessageCreatorStep<I, RQ, RS> {
+
+    default RepeatMessageCreatorStep<I, RQ, RS> messageCreator(Function<TransitionContext<I>, TypedHttpRequest<RQ>> messageCreator) {
+      return messageCreatorReactive(messageCreator.andThen(Mono::just));
+    }
+
+    RepeatMessageCreatorStep<I, RQ, RS> messageCreatorReactive(Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator);
+  }
+
+  /// Optional: the repeated message defaults to the message of the original attempt.
+  public interface RepeatMessageCreatorStep<I, RQ, RS> extends ForwarderStep<I, RQ, RS> {
+
+    ForwarderStep<I, RQ, RS> repeatMessageCreator(
+        BiFunction<TransitionContext<Void>, TypedHttpRequest<RQ>, TypedHttpRequest<RQ>> repeatMessageCreator
+    );
+  }
+
+  public interface ForwarderStep<I, RQ, RS> {
+
+    InflightTimeoutStep<I, RQ, RS> forwarder(HttpClient forwarder);
+  }
+
+  /// Optional: the inflight timeout defaults to ten seconds.
+  public interface InflightTimeoutStep<I, RQ, RS> extends ProcessModelStep<I, RQ, RS> {
+
+    ProcessModelStep<I, RQ, RS> inflightTimeout(Duration inflightTimeout);
+  }
+
+  /// Optional: the process model defaults to none, which is sufficient as long as no callback is given.
+  public interface ProcessModelStep<I, RQ, RS> extends ContentParserStep<I, RQ, RS> {
+
+    ContentParserStep<I, RQ, RS> processModel(EntityModel processModel);
+  }
+
+  public interface ContentParserStep<I, RQ, RS> {
+
+    OnSuccessStep<I, RS> contentParser(Function<HttpResponseMessage, Validated<RS>> contentParser);
+
+    OnSuccessStep<I, RS> contentParser(
+        BiFunction<TypedHttpRequest<RQ>, HttpResponseMessage, Validated<RS>> contentParser
+    );
+  }
+
+  /// Optional: the success callback defaults to none.
+  public interface OnSuccessStep<I, RS> extends IsAcceptedStep<I, RS> {
+
+    <S> IsAcceptedStep<I, RS> onSuccess(
+        EventType<S, ?> eventType,
+        Function<TypedHttpResponse<RS>, S> dataAdapter
+    );
+
+    IsAcceptedStep<I, RS> onSuccess(EventType<Void, ?> eventType);
+  }
+
+  public interface IsAcceptedStep<I, RS> {
+
+    IsFailureTransientStep<I, RS> isAccepted(Predicate<TypedHttpResponse<RS>> isAccepted);
+
+    //IsFailureTransientStep<I, RQ, RS> isRollbackAccepted(Predicate<Tuple2<TypedHttpResponse<RS>, Boolean>> isRollbackAccepted);
+  }
+
+  public interface IsFailureTransientStep<I, RS> {
+
+    IsRejectedByInvalidResponseStep<I> isFailureTransient(Predicate<TypedHttpResponse<RS>> isFailureTransient);
+  }
+
+  public interface IsRejectedByInvalidResponseStep<I> {
+
+    IsFailureByInvalidResponseTransientStep<I> isRejectedByInvalidResponse(
+        Predicate<Tuple2<HttpResponseMessage, String>> isRejectedByInvalidResponse
+    );
+  }
+
+  public interface IsFailureByInvalidResponseTransientStep<I> {
+
+    IsAttemptAvailableStep<I> isFailureByInvalidResponseTransient(
+        Predicate<Tuple2<HttpResponseMessage, String>> isFailureByInvalidResponseTransient
+    );
+  }
+
+  public interface IsAttemptAvailableStep<I> {
+
+    BackoffAlgorithmStep<I> isAttemptAvailable(Predicate<RetryContext> isAttemptAvailable);
+  }
+
+  public interface BackoffAlgorithmStep<I> {
+
+    BatchIdExtractorStep<I> backoffAlgorithm(Function<RetryContext, Duration> backoffAlgorithm);
+  }
+
+  /// Optional: the batch id extractor defaults to none.
+  public interface BatchIdExtractorStep<I> extends BuildStep<I> {
+
+    BuildStep<I> batchIdExtractor(Function<I, UUID> batchIdExtractor);
+  }
+
+  /// Optional: the super model defaults to none.
+//  public interface SuperModelStep<I> extends BuildStep<I> {
+//
+//    BuildStep<I> superModel(AtMostOnce<?, ?> superModel);
+//  }
+
+  public interface BuildStep<I> {
+
+    AtLeastOnce<I> build(String name, UUID id);
+  }
+
+  private static final class WithNothing implements RequestPayloadTypeStep {
+
+    @Override
+    public <RQ> ResponsePayloadTypeStep<RQ> requestPayloadType(DataType<RQ> requestPayloadType) {
+      return new WithRequestPayloadType<>(requestPayloadType);
+    }
+  }
+
+  private static final class WithRequestPayloadType<RQ> implements ResponsePayloadTypeStep<RQ> {
+
+    private final DataType<RQ> requestPayloadType;
+
+    private WithRequestPayloadType(DataType<RQ> requestPayloadType) {
+      this.requestPayloadType = requestPayloadType;
+    }
+
+    @Override
+    public <RS> InputDataTypeStep<RQ, RS> responsePayloadType(DataType<RS> responsePayloadType) {
+      return new WithResponsePayloadType<>(requestPayloadType, responsePayloadType);
+    }
+  }
+
+  private static final class WithResponsePayloadType<RQ, RS> implements InputDataTypeStep<RQ, RS> {
+
+    private final DataType<RQ> requestPayloadType;
+    private final DataType<RS> responsePayloadType;
+
+    private WithResponsePayloadType(
+        DataType<RQ> requestPayloadType,
+        DataType<RS> responsePayloadType
+    ) {
+      this.requestPayloadType = requestPayloadType;
+      this.responsePayloadType = responsePayloadType;
+    }
+
+    @Override
+    public <I> MessageCreatorStep<I, RQ, RS> inputDataType(DataType<I> inputDataType) {
+      return new WithInputDataType<>(inputDataType, requestPayloadType, responsePayloadType);
+    }
+  }
+
+  private static final class WithInputDataType<I, RQ, RS> implements MessageCreatorStep<I, RQ, RS> {
+
+    private final DataType<I> inputDataType;
+    private final DataType<RQ> requestPayloadType;
+    private final DataType<RS> responsePayloadType;
+
+    private WithInputDataType(
+        DataType<I> inputDataType,
+        DataType<RQ> requestPayloadType,
+        DataType<RS> responsePayloadType
+    ) {
+      this.inputDataType = inputDataType;
+      this.requestPayloadType = requestPayloadType;
+      this.responsePayloadType = responsePayloadType;
+    }
+
+    @Override
+    public RepeatMessageCreatorStep<I, RQ, RS> messageCreatorReactive(
+        Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator
+    ) {
+      return new WithMessageCreator<>(inputDataType, requestPayloadType, responsePayloadType, messageCreator);
+    }
+  }
+
+  private static final class WithMessageCreator<I, RQ, RS> implements RepeatMessageCreatorStep<I, RQ, RS>,
+      InflightTimeoutStep<I, RQ, RS> {
+
+    private final DataType<I> inputDataType;
+    private final DataType<RQ> requestPayloadType;
+    private final DataType<RS> responsePayloadType;
+    private final Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator;
+    private BiFunction<TransitionContext<Void>, TypedHttpRequest<RQ>, TypedHttpRequest<RQ>> repeatMessageCreator =
+        (_, message) -> message;
+    private HttpClient forwarder;
+    private Duration inflightTimeout = Duration.ofSeconds(10);
+    private EntityModel processModel;
+
+    private WithMessageCreator(
+        DataType<I> inputDataType,
+        DataType<RQ> requestPayloadType,
+        DataType<RS> responsePayloadType,
+        Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator
+    ) {
+      this.inputDataType = inputDataType;
+      this.requestPayloadType = requestPayloadType;
+      this.responsePayloadType = responsePayloadType;
+      this.messageCreator = messageCreator;
+    }
+
+    @Override
+    public ForwarderStep<I, RQ, RS> repeatMessageCreator(
+        BiFunction<TransitionContext<Void>, TypedHttpRequest<RQ>, TypedHttpRequest<RQ>> repeatMessageCreator
+    ) {
+      this.repeatMessageCreator = repeatMessageCreator;
+      return this;
+    }
+
+    @Override
+    public InflightTimeoutStep<I, RQ, RS> forwarder(HttpClient forwarder) {
+      this.forwarder = forwarder;
+      return this;
+    }
+
+    @Override
+    public ProcessModelStep<I, RQ, RS> inflightTimeout(Duration inflightTimeout) {
+      this.inflightTimeout = inflightTimeout;
+      return this;
+    }
+
+    @Override
+    public ContentParserStep<I, RQ, RS> processModel(EntityModel processModel) {
+      this.processModel = processModel;
+      return this;
+    }
+
+    @Override
+    public OnSuccessStep<I, RS> contentParser(Function<HttpResponseMessage, Validated<RS>> contentParser) {
+      return new WithContentParser<>(
+          inputDataType,
+          requestPayloadType,
+          responsePayloadType,
+          messageCreator,
+          repeatMessageCreator,
+          forwarder,
+          inflightTimeout,
+          processModel,
+          contentParser,
+          null
+      );
+    }
+
+    @Override
+    public OnSuccessStep<I, RS> contentParser(
+        BiFunction<TypedHttpRequest<RQ>, HttpResponseMessage, Validated<RS>> contentParser
+    ) {
+      return new WithContentParser<>(
+          inputDataType,
+          requestPayloadType,
+          responsePayloadType,
+          messageCreator,
+          repeatMessageCreator,
+          forwarder,
+          inflightTimeout,
+          processModel,
+          null,
+          contentParser
+      );
+    }
+  }
+
+  private static final class WithContentParser<I, RQ, RS> implements OnSuccessStep<I, RS>, IsFailureTransientStep<I, RS>,
+      IsRejectedByInvalidResponseStep<I>, IsFailureByInvalidResponseTransientStep<I>, IsAttemptAvailableStep<I>,
+      BackoffAlgorithmStep<I>, BatchIdExtractorStep<I>, BuildStep<I> {
+
+    private final DataType<I> inputDataType;
+    private final DataType<RQ> requestPayloadType;
+    private final DataType<RS> responsePayloadType;
+    private final Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator;
+    private final BiFunction<TransitionContext<Void>, TypedHttpRequest<RQ>, TypedHttpRequest<RQ>> repeatMessageCreator;
+    private final HttpClient forwarder;
+    private final Duration inflightTimeout;
+    private final EntityModel processModel;
+    private final Function<HttpResponseMessage, Validated<RS>> contentParser;
+    private final BiFunction<TypedHttpRequest<RQ>, HttpResponseMessage, Validated<RS>> requestAwareContentParser;
+    private Callback<TypedHttpResponse<RS>, ?> onSuccess;
+    private Predicate<TypedHttpResponse<RS>> isAccepted;
+    //private Predicate<Tuple2<TypedHttpResponse<RS>, Boolean>> isRollbackAccepted;
+    private Predicate<TypedHttpResponse<RS>> isFailureTransient;
+    private Predicate<Tuple2<HttpResponseMessage, String>> isRejectedByInvalidResponse;
+    private Predicate<Tuple2<HttpResponseMessage, String>> isFailureByInvalidResponseTransient;
+    private Predicate<RetryContext> isAttemptAvailable;
+    private Function<RetryContext, Duration> backoffAlgorithm;
+    private Function<I, UUID> batchIdExtractor;
+    //private AtMostOnce<?, ?> superModel;
+
+    private WithContentParser(
+        DataType<I> inputDataType,
+        DataType<RQ> requestPayloadType,
+        DataType<RS> responsePayloadType,
+        Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator,
+        BiFunction<TransitionContext<Void>, TypedHttpRequest<RQ>, TypedHttpRequest<RQ>> repeatMessageCreator,
+        HttpClient forwarder,
+        Duration inflightTimeout,
+        EntityModel processModel,
+        Function<HttpResponseMessage, Validated<RS>> contentParser,
+        BiFunction<TypedHttpRequest<RQ>, HttpResponseMessage, Validated<RS>> requestAwareContentParser
+    ) {
+      this.inputDataType = inputDataType;
+      this.requestPayloadType = requestPayloadType;
+      this.responsePayloadType = responsePayloadType;
+      this.messageCreator = messageCreator;
+      this.repeatMessageCreator = repeatMessageCreator;
+      this.forwarder = forwarder;
+      this.inflightTimeout = inflightTimeout;
+      this.processModel = processModel;
+      this.contentParser = contentParser;
+      this.requestAwareContentParser = requestAwareContentParser;
+    }
+
+    @Override
+    public <S> IsAcceptedStep<I, RS> onSuccess(
+        EventType<S, ?> eventType,
+        Function<TypedHttpResponse<RS>, S> dataAdapter
+    ) {
+      this.onSuccess = new Callback<>(eventType, dataAdapter);
+      return this;
+    }
+
+    @Override
+    public IsAcceptedStep<I, RS> onSuccess(EventType<Void, ?> eventType) {
+      return onSuccess(eventType, _ -> null);
+    }
+
+    @Override
+    public IsFailureTransientStep<I, RS> isAccepted(Predicate<TypedHttpResponse<RS>> isAccepted) {
+      this.isAccepted = isAccepted;
+      return this;
+    }
+
+//    @Override
+//    public IsFailureTransientStep<I, RQ, RS> isRollbackAccepted(Predicate<Tuple2<TypedHttpResponse<RS>, Boolean>> isRollbackAccepted) {
+//      this.isRollbackAccepted = isRollbackAccepted;
+//      return this;
+//    }
+
+    @Override
+    public IsRejectedByInvalidResponseStep<I> isFailureTransient(
+        Predicate<TypedHttpResponse<RS>> isFailureTransient
+    ) {
+      this.isFailureTransient = isFailureTransient;
+      return this;
+    }
+
+    @Override
+    public IsFailureByInvalidResponseTransientStep<I> isRejectedByInvalidResponse(
+        Predicate<Tuple2<HttpResponseMessage, String>> isRejectedByInvalidResponse
+    ) {
+      this.isRejectedByInvalidResponse = isRejectedByInvalidResponse;
+      return this;
+    }
+
+    @Override
+    public IsAttemptAvailableStep<I> isFailureByInvalidResponseTransient(
+        Predicate<Tuple2<HttpResponseMessage, String>> isFailureByInvalidResponseTransient
+    ) {
+      this.isFailureByInvalidResponseTransient = isFailureByInvalidResponseTransient;
+      return this;
+    }
+
+    @Override
+    public BackoffAlgorithmStep<I> isAttemptAvailable(Predicate<RetryContext> isAttemptAvailable) {
+      this.isAttemptAvailable = isAttemptAvailable;
+      return this;
+    }
+
+    @Override
+    public BatchIdExtractorStep<I> backoffAlgorithm(Function<RetryContext, Duration> backoffAlgorithm) {
+      this.backoffAlgorithm = backoffAlgorithm;
+      return this;
+    }
+
+    @Override
+    public BuildStep<I> batchIdExtractor(Function<I, UUID> batchIdExtractor) {
+      this.batchIdExtractor = batchIdExtractor;
+      return this;
+    }
+
+//    @Override
+//    public BuildStep<I> superModel(AtMostOnce<?, ?> superModel) {
+//      this.superModel = superModel;
+//      return this;
+//    }
+
+    @Override
+    public AtLeastOnce<I> build(String name, UUID id) {
+      return new AtLeastOnce<>(
+          name,
+          id,
+          inputDataType,
+          requestPayloadType,
+          responsePayloadType,
+          messageCreator,
+          repeatMessageCreator,
+          forwarder,
+          inflightTimeout,
+          processModel,
+          onSuccess,
+          contentParser,
+          requestAwareContentParser,
+          isAccepted,
+          //isRollbackAccepted,
+          isFailureTransient,
+          isRejectedByInvalidResponse,
+          isFailureByInvalidResponseTransient,
+          isAttemptAvailable,
+          backoffAlgorithm,
+          batchIdExtractor
+          //,superModel
+      );
+    }
+  }
+}

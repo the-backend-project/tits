@@ -8,22 +8,24 @@ import java.util.TreeMap;
 
 public class HttpMessageParser {
 
-  public static HttpRequestMessage parseRequest(String message) {
+  public static HttpRequestMessage parseRequest(byte[] rawMessage) {
+    String message = new String(rawMessage);
     String requestLine = message.lines().findFirst().orElseThrow();
     Method method = Method.valueOf(requestLine.substring(0, requestLine.indexOf(" ")));
     URI uri = uri(message);
     Map<String, String> headers = HttpMessageParser.headers(message);
-    String body = HttpMessageParser.body(message);
+    byte[] body = HttpMessageParser.body(message);
     return new HttpRequestMessage(method, uri, headers, body);
   }
 
-  public static HttpResponseMessage parseResponse(String message) {
+  public static HttpResponseMessage parseResponse(byte[] rawMessage) {
+    String message = new String(rawMessage);
     String statusLine = message.lines().findFirst().orElseThrow();
     var s = statusLine.substring(statusLine.indexOf(" ") + 1);
     int statusCode = Integer.parseInt(s.substring(0, s.indexOf(" ")));
     String reasonPhrase = statusLine.substring(statusLine.lastIndexOf(" ") + 1);
     Map<String, String> headers = HttpMessageParser.headers(message);
-    String body = HttpMessageParser.body(message);
+    byte[] body = HttpMessageParser.body(message);
     return new HttpResponseMessage(statusCode, reasonPhrase, headers, body);
   }
 
@@ -36,12 +38,12 @@ public class HttpMessageParser {
     return headersOfHead(head(message));
   }
 
-  public static String body(String message) {
+  public static byte[] body(String message) {
     int indexOfBody = indexOfBody(message);
     if (indexOfBody == -1)
       return null;
     String substring = message.substring(indexOfBody);
-    return substring.isBlank() ? null : substring;
+    return substring.isBlank() ? null : substring.getBytes();
   }
 
   private static Map<String, String> headersOfHead(String head) {

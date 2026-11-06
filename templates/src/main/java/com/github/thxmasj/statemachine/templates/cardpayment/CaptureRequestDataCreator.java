@@ -15,7 +15,6 @@ public class CaptureRequestDataCreator {
       AcquirerResponse bankResponse,
       Capture captureData,
       long alreadyCapturedAmount,
-      EntityId entityId,
       ZonedDateTime captureTime
   ) {}
 

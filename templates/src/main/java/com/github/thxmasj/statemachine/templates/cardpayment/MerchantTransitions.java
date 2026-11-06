@@ -1,10 +1,13 @@
 package com.github.thxmasj.statemachine.templates.cardpayment;
 
-import static com.github.thxmasj.statemachine.BuiltinEntities.CompleteRequest;
-import static com.github.thxmasj.statemachine.BuiltinEntities.Models.RequestDispatching;
+import static com.github.thxmasj.statemachine.EntityModel.Begin;
+import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.CompleteRequest;
+import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.EntityModels.RequestDispatching;
 import static com.github.thxmasj.statemachine.EntitySelector.entityIdFromSession;
+import static com.github.thxmasj.statemachine.EntitySelector.newEntityId;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
 import static com.github.thxmasj.statemachine.Tuples.tuple;
+import static com.github.thxmasj.statemachine.templates.cardpayment.Aggregate.Settlement;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Identifiers.MerchantId;
 import static com.github.thxmasj.statemachine.templates.cardpayment.MerchantEvent.Create;
 import static com.github.thxmasj.statemachine.templates.cardpayment.MerchantEvent.Delete;
@@ -13,11 +16,12 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.MerchantEven
 import static com.github.thxmasj.statemachine.templates.cardpayment.MerchantEvent.Suspend;
 import static com.github.thxmasj.statemachine.templates.cardpayment.MerchantEvent.Update;
 import static com.github.thxmasj.statemachine.templates.cardpayment.MerchantState.Active;
-import static com.github.thxmasj.statemachine.templates.cardpayment.MerchantState.Begin;
 import static com.github.thxmasj.statemachine.templates.cardpayment.MerchantState.Deleted;
 import static com.github.thxmasj.statemachine.templates.cardpayment.MerchantState.Suspended;
+import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEvent.OpenInitial;
 import static java.util.Optional.ofNullable;
 
+import com.github.thxmasj.statemachine.DataType;
 import com.github.thxmasj.statemachine.State;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
@@ -34,8 +38,9 @@ public class MerchantTransitions {
             onEvent(Create).to(Active)
                 .assemble(c -> tuple(c.input(), c.eventReference()))
                 .newIdentifier(MerchantId, d -> d.t1().id())
-                .trigger(CompleteRequest).with(d -> tuple("", d.t1().t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
-                .output(d -> d.t1().t1().t1())
+                .trigger(OpenInitial).with(d -> new com.github.thxmasj.statemachine.templates.cardpayment.MerchantId(d.t1().t1().id())).on(Settlement).identifiedBy(newEntityId())
+                .trigger(CompleteRequest).with(d -> tuple("", d.t1().t1().t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                .output(d -> d.t1().t1().t1().t1())
         ),
         Active, List.of(
             onEvent(Suspend).to(Suspended)
@@ -47,10 +52,10 @@ public class MerchantTransitions {
                 .trigger(CompleteRequest).with(d -> tuple("", d)).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(),
             onEvent(Update).toSelf()
-                .assemble(c -> tuple(merge(c.log().last(Merchant.class), c.input()), c.eventReference()))
+                .assemble(c -> tuple(merge(c.log().last(DataType.json(Merchant.class)), c.input()), c.eventReference()))
                 .trigger(CompleteRequest).with(d -> tuple("", d.t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t1()),
-            onEvent(Get).toSelf().assemble((_, log) -> log.last(Merchant.class)).output(d -> d)
+            onEvent(Get).toSelf().assemble((_, log) -> log.last(DataType.json(Merchant.class))).output(d -> d)
         ),
         Suspended, List.of(
             onEvent(Resume).to(Active)
@@ -58,7 +63,7 @@ public class MerchantTransitions {
                 .trigger(CompleteRequest).with(d -> tuple("", d)).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(),
             onEvent(Update).toSelf()
-                .assemble(c -> tuple(merge(c.log().last(Merchant.class), c.input()), c.eventReference()))
+                .assemble(c -> tuple(merge(c.log().last(DataType.json(Merchant.class)), c.input()), c.eventReference()))
                 .trigger(CompleteRequest).with(d -> tuple("", d.t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t1()),
             onEvent(Delete).to(Deleted)

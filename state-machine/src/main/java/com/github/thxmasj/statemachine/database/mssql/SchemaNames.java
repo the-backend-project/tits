@@ -4,6 +4,7 @@ import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.SecondaryId;
 import java.sql.ResultSet;
 import java.util.List;
+import java.util.UUID;
 import java.util.function.Function;
 
 public record SchemaNames(
@@ -16,7 +17,7 @@ public record SchemaNames(
   }
 
   public String idTableName(SecondaryIdModel<?> idModel) {
-    return model.name() + "_" + idModel.name();
+    return "Id_" + idModel.name();
   }
 
   public String idTablePrimaryKeyName(SecondaryIdModel<?> idModel) {
@@ -24,19 +25,13 @@ public record SchemaNames(
   }
 
   public QualifiedNames qualifiedNames() {
-    return new QualifiedNames(this);
+    return new QualifiedNames();
   }
 
   public class QualifiedNames {
 
-    private final SchemaNames entityModel;
-
-    public QualifiedNames(SchemaNames entityModel) {
-        this.entityModel = entityModel;
-    }
-
     public String idTable(SecondaryIdModel<?> secondaryId) {
-      return qualifiedName(entityModel.idTableName(secondaryId));
+      return qualifiedName("Id_" + secondaryId.name());
     }
 
     public String qualifiedName(String name) {
@@ -45,6 +40,7 @@ public record SchemaNames(
   }
 
   public interface SecondaryIdModel<T> {
+    UUID id();
     String name();
     List<Column> columns();
     SecondaryId<T> map(ResultSet resultSet);
