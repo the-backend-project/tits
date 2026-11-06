@@ -44,7 +44,6 @@ import com.github.thxmasj.statemachine.database.mssql.EventsByLookupId;
 import com.github.thxmasj.statemachine.database.mssql.LastSecondaryId;
 import com.github.thxmasj.statemachine.database.mssql.NextDeadline;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
-import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest;
 import jakarta.annotation.Nullable;
 import jakarta.validation.constraints.NotNull;
 import java.time.Clock;
@@ -121,7 +120,7 @@ public class StateMachine {
       Listener listener,
       boolean withResolving
   ) {
-    System.out.println("Supported entity models:\n" + transitions.keySet().stream().map(m -> m.name() + (m instanceof HttpOutboxRequest ? " (HTTP outbox request)" : "")).collect(joining("\n")));
+    System.out.println("Supported entity models:\n" + transitions.keySet().stream().map(EntityModel::name).collect(joining("\n")));
     this.traversers = transitions.entrySet().stream().collect(toMap(Entry::getKey, e -> new Traverser(e.getValue())));
     List<EntityModel> entityModels = transitions.keySet().stream().toList();
     this.eventTypesByEntityModel = transitions.entrySet().stream()
