@@ -13,6 +13,7 @@ import static com.github.thxmasj.statemachine.Validated.valid;
 import static com.github.thxmasj.statemachine.http.outbox.EventTypes.InvalidResponse;
 import static com.github.thxmasj.statemachine.http.outbox.EventTypes.ResponseReceived;
 import static com.github.thxmasj.statemachine.http.outbox.EventTypes.TimeoutExpired;
+import static com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest.Index;
 import static com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Method.POST;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -49,6 +50,7 @@ import java.net.URI;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.ZonedDateTime;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -67,6 +69,26 @@ public class HttpOutboxTest {
   @BeforeAll
   public static void setup() throws IOException {
     server = Init.httpServer();
+  }
+
+  private static StateMachine stateMachine(
+      EntityModel entityModel,
+      Map<State, List<TransitionModel<?, ?>>> processTransitions,
+      List<HttpOutboxRequest<?>> outboxes
+  ) {
+    Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions = new HashMap<>();
+    transitions.put(entityModel, processTransitions);
+    for (var outbox : outboxes) {
+      transitions.put(outbox, outbox.transitions());
+      if (outbox instanceof AtMostOnce<?, ?,?> amo) {
+        if (amo.rollbackOnAcceptedModel() != null)
+          transitions.put(amo.rollbackOnAcceptedModel(), amo.rollbackOnAcceptedModel().transitions());
+        if (amo.rollbackOnUnknownModel() != null)
+          transitions.put(amo.rollbackOnUnknownModel(), amo.rollbackOnUnknownModel().transitions());
+      }
+    }
+    transitions.put(Index, Index.transitions());
+    return Init.stateMachine(transitions);
   }
 
   private static <T> TypedHttpRequest<T> requestMessage(String path) {
@@ -288,10 +310,9 @@ public class HttpOutboxTest {
         States.Done, List.of()
     );
 
-    var machine = Init.stateMachine(
+    var machine = stateMachine(
         process,
         processTransitions,
-        List.of(),
         List.of(exchange)
     );
 
@@ -433,7 +454,7 @@ public class HttpOutboxTest {
         .backoffAlgorithm(_ -> Duration.ofSeconds(1))
         .build("ALOExchange", UUID.randomUUID());
 
-    var machine = Init.stateMachine(process, Map.of(Begin, List.of(onEvent(processed).to(States.Done).output())), List.of(), List.of(alo));
+    var machine = stateMachine(process, Map.of(Begin, List.of(onEvent(processed).to(States.Done).output())), List.of(alo));
 
     var inFlightTransitions = alo.transitions().get(AtLeastOnce.States.InFlight);
     @SuppressWarnings("unchecked")
@@ -490,7 +511,7 @@ public class HttpOutboxTest {
         .backoffAlgorithm(_ -> Duration.ofSeconds(1))
         .build("ALOExchange", UUID.randomUUID());
 
-    var machine = Init.stateMachine(process, Map.of(Begin, List.of()), List.of(), List.of(alo));
+    var machine = stateMachine(process, Map.of(Begin, List.of()), List.of(alo));
 
     var beginTransitions = alo.transitions().get(Begin);
     @SuppressWarnings("unchecked")
@@ -623,10 +644,9 @@ public class HttpOutboxTest {
           States.Done, List.of()
       );
 
-      var machine = Init.stateMachine(
+      var machine = stateMachine(
           process,
           processTransitions,
-          List.of(),
           List.of(Exchange)
       );
       return new ProcessModel(process, doProcess, processed, failed, missingResponse, unknown, Exchange, machine, path);
@@ -681,10 +701,9 @@ public class HttpOutboxTest {
           )
       );
 
-      var machine = Init.stateMachine(
+      var machine = stateMachine(
           process,
           processTransitions,
-          List.of(),
           List.of(Exchange)
       );
       return new ProcessModelWithoutRollback(process, doProcess, processed, failed, machine, path);
@@ -729,10 +748,9 @@ public class HttpOutboxTest {
           States.Done, List.of()
       );
 
-      var machine = Init.stateMachine(
+      var machine = stateMachine(
           process,
           processTransitions,
-          List.of(),
           List.of(Exchange)
       );
       return new ProcessModelWithDefaultInvalidResponseRejection(process, doProcess, machine, path);
@@ -777,10 +795,9 @@ public class HttpOutboxTest {
           States.Done, List.of()
       );
 
-      var machine = Init.stateMachine(
+      var machine = stateMachine(
           process,
           processTransitions,
-          List.of(),
           List.of(Exchange)
       );
       return new ProcessModelWithDefaultInvalidResponseUnknown(process, doProcess, machine, path);

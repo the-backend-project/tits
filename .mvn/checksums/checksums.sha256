@@ -499,6 +499,7 @@ c04539f472e9a6dd0c7685ea82d677282269ab8e7baca2e14500e381e0c6cec5  jakarta/xml/bi
 8dc519d7a3e792112a7cd841eafbec4f00dbc633d085add20c45f0ab476ca496  net/bytebuddy/byte-buddy-parent/1.15.11/byte-buddy-parent-1.15.11.pom
 970636134d61c183b19f8f58fa631e30d2f2abca344b37848a393cac7863dd70  net/bytebuddy/byte-buddy/1.14.12/byte-buddy-1.14.12.jar
 5da995c70de7b7f4a848a85437c7ddee803d1ab7cac2d7d8df7194c3d5e2714d  net/bytebuddy/byte-buddy/1.14.12/byte-buddy-1.14.12.pom
+fa08998aae1e7bdae83bde0712c50e8444d71c0e0c196bb2247ade8d4ad0eb90  net/bytebuddy/byte-buddy/1.15.11/byte-buddy-1.15.11.jar
 205b8b254196717e81dad672bb869a719afc96df297f97d811effe1f43653dae  net/bytebuddy/byte-buddy/1.15.11/byte-buddy-1.15.11.pom
 adb7e82bff755c8a90c3b7412226f3a72ed4a8bbdb0cdb3726b46905036051dc  net/javacrumbs/json-unit/json-unit-core/2.40.1/json-unit-core-2.40.1.jar
 7d04558dafbdeed6270b1683061da4fa78fbeaa86502043d21e46575a8287e11  net/javacrumbs/json-unit/json-unit-core/2.40.1/json-unit-core-2.40.1.pom

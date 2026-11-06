@@ -1,17 +1,8 @@
 package com.github.thxmasj.statemachine;
 
-import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.EntityModels.RequestDispatching;
-import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.EntityModels.RequestRouting;
-import static com.github.thxmasj.statemachine.http.inbox.TransitionModels.requestDispatchingTransitions;
-import static com.github.thxmasj.statemachine.http.inbox.TransitionModels.requestRoutingTransitions;
-import static com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest.Index;
-
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.statemachine.database.Client.Config;
 import com.github.thxmasj.statemachine.database.jdbc.DataSourceBuilder;
-import com.github.thxmasj.statemachine.http.inbox.HttpRequestRoute;
-import com.github.thxmasj.statemachine.http.outbox.AtMostOnce;
-import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest;
 import com.sun.net.httpserver.HttpContext;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -19,7 +10,6 @@ import java.net.InetSocketAddress;
 import java.net.URI;
 import java.time.Clock;
 import java.time.Duration;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -34,29 +24,6 @@ public class Init {
 
   public static DataSource dataSource() {
     return dataSource;
-  }
-
-  public static StateMachine stateMachine(
-      EntityModel entityModel,
-      Map<State, List<TransitionModel<?, ?>>> processTransitions,
-      List<HttpRequestRoute<?>> routes,
-      List<HttpOutboxRequest<?>> outboxes
-  ) {
-    Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions = new HashMap<>();
-    transitions.put(entityModel, processTransitions);
-    transitions.put(RequestRouting, requestRoutingTransitions(routes));
-    transitions.put(RequestDispatching, requestDispatchingTransitions(routes, List.of()));
-    for (var outbox : outboxes) {
-      transitions.put(outbox, outbox.transitions());
-      if (outbox instanceof AtMostOnce<?, ?,?> amo) {
-        if (amo.rollbackOnAcceptedModel() != null)
-          transitions.put(amo.rollbackOnAcceptedModel(), amo.rollbackOnAcceptedModel().transitions());
-        if (amo.rollbackOnUnknownModel() != null)
-          transitions.put(amo.rollbackOnUnknownModel(), amo.rollbackOnUnknownModel().transitions());
-      }
-    }
-    transitions.put(Index, Index.transitions());
-    return stateMachine(transitions);
   }
 
   public static StateMachine stateMachine(

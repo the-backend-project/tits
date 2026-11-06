@@ -12,6 +12,8 @@
 
     <modules>
         <module>state-machine</module>
+        <module>http-inbox</module>
+        <module>http-outbox</module>
         <module>templates</module>
     </modules>
 

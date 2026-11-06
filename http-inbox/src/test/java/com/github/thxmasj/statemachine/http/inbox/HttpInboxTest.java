@@ -12,6 +12,7 @@ import static com.github.thxmasj.statemachine.Validated.invalid;
 import static com.github.thxmasj.statemachine.Validated.valid;
 import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.CompleteRequest;
 import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.EntityModels.RequestDispatching;
+import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.EntityModels.RequestRouting;
 import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.TRIGGER;
 import static com.github.thxmasj.statemachine.http.inbox.HttpInboxTest.Entities.Lamp;
 import static com.github.thxmasj.statemachine.http.inbox.HttpInboxTest.States.Off;
@@ -23,6 +24,8 @@ import static com.github.thxmasj.statemachine.http.inbox.HttpRequestRoute.Conten
 import static com.github.thxmasj.statemachine.http.inbox.HttpRequestRoute.ContentRoute.parseEntityId;
 import static com.github.thxmasj.statemachine.http.inbox.HttpRequestRoute.ContentRoute.parseMessageId;
 import static com.github.thxmasj.statemachine.http.inbox.TransitionModels.requestDispatchingTransitions;
+import static com.github.thxmasj.statemachine.http.inbox.TransitionModels.requestRoutingTransitions;
+import static com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest.Index;
 import static com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Method.DELETE;
 import static com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Method.POST;
 import static com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Method.PUT;
@@ -54,6 +57,7 @@ import com.github.thxmasj.statemachine.Validated.Valid;
 import com.github.thxmasj.statemachine.http.NettyHttpClient;
 import com.github.thxmasj.statemachine.http.NettyHttpClientBuilder;
 import com.github.thxmasj.statemachine.http.inbox.HttpInbox.RoutedRequest;
+import com.github.thxmasj.statemachine.http.outbox.AtMostOnce;
 import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest;
 import com.github.thxmasj.statemachine.message.http.HttpMessageParser;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
@@ -64,6 +68,7 @@ import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.URI;
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -307,6 +312,29 @@ public class HttpInboxTest {
       )
   );
 
+  private static StateMachine createStateMachine(
+      EntityModel entityModel,
+      Map<State, List<TransitionModel<?, ?>>> processTransitions,
+      List<HttpRequestRoute<?>> routes,
+      List<HttpOutboxRequest<?>> outboxes
+  ) {
+    Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions = new HashMap<>();
+    transitions.put(entityModel, processTransitions);
+    transitions.put(RequestRouting, requestRoutingTransitions(routes));
+    transitions.put(RequestDispatching, requestDispatchingTransitions(routes, List.of()));
+    for (var outbox : outboxes) {
+      transitions.put(outbox, outbox.transitions());
+      if (outbox instanceof AtMostOnce<?, ?,?> amo) {
+        if (amo.rollbackOnAcceptedModel() != null)
+          transitions.put(amo.rollbackOnAcceptedModel(), amo.rollbackOnAcceptedModel().transitions());
+        if (amo.rollbackOnUnknownModel() != null)
+          transitions.put(amo.rollbackOnUnknownModel(), amo.rollbackOnUnknownModel().transitions());
+      }
+    }
+    transitions.put(Index, Index.transitions());
+    return Init.stateMachine(transitions);
+  }
+
   private static TypedHttpRequest<Void> requestMessage(String path) {
     return TypedHttpRequest.create(
         POST,
@@ -377,7 +405,7 @@ public class HttpInboxTest {
         .isAttemptAvailable(c -> Duration.between(c.enqueueTime(), c.now()).compareTo(Duration.ofHours(5)) < 0)
         .backoffAlgorithm(c -> new DelaySpecification(Duration.ofSeconds(10), Duration.ofMinutes(10), Duration.ofHours(5), 1.5).calculateDelay(c.attemptNumber()))
         .build("Process3Outbox", UUID.fromString("2e86f07c-50ed-4922-9839-54dca94be4b6"));
-    stateMachine = Init.stateMachine(
+    stateMachine = createStateMachine(
         Lamp,
         lampTransitions(),
         routes,
