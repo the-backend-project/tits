@@ -77,6 +77,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
+import reactor.netty.DisposableServer;
 
 public class HttpInboxTest {
 
@@ -424,6 +425,25 @@ public class HttpInboxTest {
     HttpResponseMessage response = HttpMessageParser.parseResponse(responseEvent.data());
     assertEquals(201, response.statusCode());
     assertTrue(ProblemDetail.parse(response.body()).detail().startsWith("Light is on!"));
+  }
+
+  @Test
+  public void whenInternalProcessRequestOverHttpThenInternalProcessResponse() throws IOException {
+    DisposableServer listener = new HttpInboxListener(stateMachine).listen(0);
+    try {
+      HttpResponseMessage response = new NettyHttpClient(new NettyHttpClientBuilder().build())
+          .exchange(new HttpRequestMessage(
+              PUT,
+              URI.create("http://localhost:" + listener.port() + "/internal/" + UUID.randomUUID()),
+              Map.of(),
+              new ObjectMapper().writeValueAsBytes(new InternalProcess("Hello", 1))
+          ))
+          .block(Duration.ofSeconds(5));
+      assertEquals(201, response.statusCode());
+      assertTrue(ProblemDetail.parse(response.body()).detail().startsWith("Light is on!"));
+    } finally {
+      listener.disposeNow();
+    }
   }
 
   @Test
