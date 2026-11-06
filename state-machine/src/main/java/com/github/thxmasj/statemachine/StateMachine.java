@@ -147,7 +147,7 @@ public class StateMachine {
     this.delayer = delayer != null ? delayer : _ -> Mono.empty();
     if (schemaDataSource != null) {
       new CreateSchema(entityModels.stream().flatMap(em -> em.secondaryIds().stream()).distinct().toList(), schemaName, role).execute(new JDBCClient(schemaDataSource))
-          .timeout(Duration.ofSeconds(5), Mono.error(new RuntimeException("Schema creation timed out. Is the database running?")))
+          .timeout(Duration.ofSeconds(20), Mono.error(new RuntimeException("Schema creation timed out. Is the database running?")))
           .block();
     }
     this.clock = clock;
