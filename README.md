@@ -18,3 +18,11 @@ mvn verify -Daether.artifactResolver.postProcessor.trustedChecksums.record=true
 
 The set of resolved artifacts can differ between Maven versions, so record with the Maven version used in CI as well
 as your local one if they differ.
+
+IntelliJ IDEA syncs the project with its bundled Maven and also resolves the `site` lifecycle plugin and the sources of
+dependencies. To keep the sync working, also record with IntelliJ's bundled Maven (in
+`<IntelliJ>/Contents/plugins/maven-plugin/lib/maven3/bin/mvn` on macOS):
+
+```shell
+mvn verify -DskipTests site:help dependency:sources -Daether.artifactResolver.postProcessor.trustedChecksums.record=true
+```
