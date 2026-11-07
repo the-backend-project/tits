@@ -19,10 +19,7 @@ mvn verify -Daether.artifactResolver.postProcessor.trustedChecksums.record=true
 The set of resolved artifacts can differ between Maven versions, so record with the Maven version used in CI as well
 as your local one if they differ.
 
-IntelliJ IDEA syncs the project with its bundled Maven and also resolves the `site` lifecycle plugin and the sources of
-dependencies. To keep the sync working, also record with IntelliJ's bundled Maven (in
-`<IntelliJ>/Contents/plugins/maven-plugin/lib/maven3/bin/mvn` on macOS):
-
-```shell
-mvn verify -DskipTests site:help dependency:sources -Daether.artifactResolver.postProcessor.trustedChecksums.record=true
-```
+IntelliJ IDEA does not expand `${maven.multiModuleProjectDirectory}` when it reads `.mvn/maven.config`, so its Maven
+sync cannot find the checksums file and reports every dependency as unresolved. Untick *Settings → Build, Execution,
+Deployment → Build Tools → Maven → Use settings from .mvn/maven.config* to let IntelliJ sync without checksum
+verification. Builds from the command line and in CI still verify the checksums.
