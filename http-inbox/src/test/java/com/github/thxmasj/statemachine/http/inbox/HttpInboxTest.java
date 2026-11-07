@@ -448,6 +448,45 @@ public class HttpInboxTest {
   }
 
   @Test
+  public void whenCorrelationIdHeaderOverHttpThenResponseHasSameCorrelationId() throws IOException {
+    HttpResponseMessage response = exchangeOverHttp(new HttpInboxListener(stateMachine), Map.of("X-Correlation-Id", "abc-123"));
+    assertEquals("abc-123", response.headerValue("X-Correlation-Id"));
+  }
+
+  @Test
+  public void whenCustomCorrelationIdHeaderOverHttpThenResponseHasSameCorrelationId() throws IOException {
+    HttpResponseMessage response = exchangeOverHttp(
+        new HttpInboxListener(stateMachine).correlationIdHeader("TID"),
+        Map.of("TID", "tid-123", "X-Correlation-Id", "ignored")
+    );
+    assertEquals("tid-123", response.headerValue("X-Correlation-Id"));
+  }
+
+  @Test
+  public void whenNoCorrelationIdHeaderOverHttpThenGeneratedCorrelationId() throws IOException {
+    HttpResponseMessage response = exchangeOverHttp(new HttpInboxListener(stateMachine), Map.of());
+    assertThat(response.headerValue("X-Correlation-Id")).matches("SYS-\\d{19}");
+  }
+
+  private HttpResponseMessage exchangeOverHttp(HttpInboxListener inboxListener, Map<String, String> headers) throws IOException {
+    DisposableServer listener = inboxListener.listen(0);
+    try {
+      HttpResponseMessage response = new NettyHttpClient(new NettyHttpClientBuilder().build())
+          .exchange(new HttpRequestMessage(
+              PUT,
+              URI.create("http://localhost:" + listener.port() + "/internal/" + UUID.randomUUID()),
+              headers,
+              new ObjectMapper().writeValueAsBytes(new InternalProcess("Hello", 1))
+          ))
+          .block(Duration.ofSeconds(5));
+      assertEquals(201, response.statusCode());
+      return response;
+    } finally {
+      listener.disposeNow();
+    }
+  }
+
+  @Test
   public void whenFilterRewritesRequestOverHttpThenRewrittenRequestIsRouted() throws IOException {
     DisposableServer listener = new HttpInboxListener(stateMachine)
         .filter((request, next) -> next.apply(new HttpRequestMessage(

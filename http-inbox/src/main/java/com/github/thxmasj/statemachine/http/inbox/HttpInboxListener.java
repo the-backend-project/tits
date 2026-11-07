@@ -16,7 +16,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
 import reactor.core.publisher.Mono;
@@ -42,7 +42,7 @@ public class HttpInboxListener {
 
   private final StateMachine stateMachine;
   private final Duration responseTimeout;
-  private final Function<HttpRequestMessage, String> correlationId;
+  private final String correlationIdHeader;
   private final List<Filter> filters;
 
   public HttpInboxListener(StateMachine stateMachine) {
@@ -50,18 +50,18 @@ public class HttpInboxListener {
   }
 
   public HttpInboxListener(StateMachine stateMachine, Duration responseTimeout) {
-    this(stateMachine, responseTimeout, _ -> UUID.randomUUID().toString(), List.of());
+    this(stateMachine, responseTimeout, "X-Correlation-Id", List.of());
   }
 
   private HttpInboxListener(
       StateMachine stateMachine,
       Duration responseTimeout,
-      Function<HttpRequestMessage, String> correlationId,
+      String correlationIdHeader,
       List<Filter> filters
   ) {
     this.stateMachine = stateMachine;
     this.responseTimeout = responseTimeout;
-    this.correlationId = correlationId;
+    this.correlationIdHeader = correlationIdHeader;
     this.filters = List.copyOf(filters);
   }
 
@@ -70,13 +70,14 @@ public class HttpInboxListener {
   public HttpInboxListener filter(Filter filter) {
     List<Filter> filters = new ArrayList<>(this.filters);
     filters.add(filter);
-    return new HttpInboxListener(stateMachine, responseTimeout, correlationId, filters);
+    return new HttpInboxListener(stateMachine, responseTimeout, correlationIdHeader, filters);
   }
 
-  /// Returns a listener which derives the correlation id of the triggered events from the request, e.g. from a
-  /// header. The default is a random UUID.
-  public HttpInboxListener correlationId(Function<HttpRequestMessage, String> correlationId) {
-    return new HttpInboxListener(stateMachine, responseTimeout, correlationId, filters);
+  /// Returns a listener which takes the correlation id of the triggered events from the given request header, e.g.
+  /// `TID`. The default header is `X-Correlation-Id`. Requests without the header get a generated correlation id
+  /// prefixed with `SYS-`.
+  public HttpInboxListener correlationIdHeader(String correlationIdHeader) {
+    return new HttpInboxListener(stateMachine, responseTimeout, correlationIdHeader, filters);
   }
 
   /// Starts listening on the given port. Use port 0 to bind to an ephemeral port.
@@ -118,12 +119,19 @@ public class HttpInboxListener {
   }
 
   private Mono<HttpResponseMessage> exchange(HttpRequestMessage requestMessage) {
-    return stateMachine.onEvent(correlationId.apply(requestMessage), TRIGGER, requestMessage)
+    return stateMachine.onEvent(correlationId(requestMessage), TRIGGER, requestMessage)
         // First event is the triggered event, second is the response event
         .skip(1)
         .next()
         .map(event -> HttpMessageParser.parseResponse(event.data()))
         .switchIfEmpty(Mono.error(() -> new IllegalStateException("No response event for " + requestMessage.requestLine())));
+  }
+
+  private String correlationId(HttpRequestMessage requestMessage) {
+    String correlationId = requestMessage.headerValue(correlationIdHeader);
+    if (correlationId == null || correlationId.isBlank())
+      return "SYS-" + ThreadLocalRandom.current().nextLong(1000000000000000000L, Long.MAX_VALUE);
+    return correlationId;
   }
 
   private static HttpRequestMessage requestMessage(HttpServerRequest request, Method method, byte[] body) {
