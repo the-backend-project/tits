@@ -34,4 +34,4 @@ jobs:
           distribution: 'temurin'
           cache: maven
       - name: Build Java artifacts and run any verifications
-        run: mvn -B verify --file pom.xml
+        run: mvn -B verify --file pom.xml -Daether.artifactResolver.postProcessor.trustedChecksums.failIfMissing=true
