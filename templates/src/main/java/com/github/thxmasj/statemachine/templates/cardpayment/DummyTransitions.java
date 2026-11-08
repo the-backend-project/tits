@@ -36,6 +36,7 @@ import com.github.thxmasj.statemachine.http.outbox.Dispatcher;
 import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest;
 import java.time.Duration;
 import java.util.UUID;
+import reactor.core.publisher.Mono;
 
 public class DummyTransitions {
 
@@ -83,10 +84,10 @@ public class DummyTransitions {
       Identifiable rollbackOnAcceptedId,
       Identifiable rollbackOnUnknownId
   ) {
-    return Dispatcher.reversible(atMostOnce(id, rollbackOnAcceptedId, rollbackOnUnknownId), _ -> null, _ -> null);
+    return Dispatcher.of(DummyTransitions.<Y>atMostOnce(id, rollbackOnAcceptedId, rollbackOnUnknownId), _ -> null);
   }
 
-  public static AtMostOnce<Request, Void> atMostOnce(Identifiable id) {
+  public static AtMostOnce<Request, Void, Void> atMostOnce(Identifiable id) {
     return HttpOutboxRequest.atMostOnce()
         .requestPayloadType(DataType.json(Request.class))
         .responsePayloadType(DataType.json(Response.class))
@@ -99,7 +100,7 @@ public class DummyTransitions {
         .build(id.name(), id.id());
   }
 
-  public static AtMostOnce<Request, Request> atMostOnce(Identifiable id, Identifiable rollbackOnAcceptedId, Identifiable rollbackOnUnknownId) {
+  public static <RI> AtMostOnce<Request, RI, Request> atMostOnce(Identifiable id, Identifiable rollbackOnAcceptedId, Identifiable rollbackOnUnknownId) {
     return HttpOutboxRequest.atMostOnce()
         .requestPayloadType(DataType.json(Request.class))
         .responsePayloadType(DataType.json(Response.class))
@@ -111,6 +112,7 @@ public class DummyTransitions {
         .isRejectedByInvalidResponse(_ -> true)
         .rollbackOnAcceptedModel(DummyTransitions.atLeastOnce(rollbackOnAcceptedId))
         .rollbackOnUnknownModel(DummyTransitions.atLeastOnce(rollbackOnUnknownId))
+        .<RI>rollbackMessageCreator((_, _) -> Mono.empty())
         .build(id.name(), id.id());
   }
 

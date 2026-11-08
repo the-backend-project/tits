@@ -163,7 +163,7 @@ public class SettlementTransitions {
                             input
                         ))
                         .trigger(approvedCutOff.requestDispatched())
-                        .with(d -> approvedCutOff.input(new Tuple2<>(d.t1(), d.t2())))
+                        .withReactive((ctx, d) -> approvedCutOff.input(ctx, new Tuple2<>(d.t1(), d.t2())))
                         .on(approvedCutOff.outbox())
                         .identifiedBy(newEntityId())
 //                        .trigger(approvedCutOff())
@@ -214,7 +214,7 @@ public class SettlementTransitions {
             .trigger(reconciliation.requestDispatched())
             // A rolled back request is settled too, as its reversal is a request referencing the batch on its own
             .when(BatchReferenced, d -> d.t1().t5()).is(HttpOutboxRequest.requestAccepted(), HttpOutboxRequest.rollbackDispatched())
-            .with(d -> reconciliation.input(tuple(d.t1().t2(), d.t1().t3(), d.t2().accepted().event().getUnmarshalledData())))
+            .withReactive((ctx, d) -> reconciliation.input(ctx, tuple(d.t1().t2(), d.t1().t3(), d.t2().accepted().event().getUnmarshalledData())))
             .on(reconciliation.outbox())
             .identifiedBy(newEntityId())
             .trigger(SettlementEvent.Open).with(d -> d.t1().t3().next()).on(Settlement).identifiedBy(newEntityId())

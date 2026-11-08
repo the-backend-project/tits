@@ -58,6 +58,7 @@ import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 public class HttpOutboxTest {
@@ -82,7 +83,7 @@ public class HttpOutboxTest {
     transitions.put(entityModel, processTransitions);
     for (var outbox : outboxes) {
       transitions.put(outbox, outbox.transitions());
-      if (outbox instanceof AtMostOnce<?, ?> amo) {
+      if (outbox instanceof AtMostOnce<?, ?, ?> amo) {
         if (amo.rollbackOnAcceptedModel() != null)
           transitions.put(amo.rollbackOnAcceptedModel(), amo.rollbackOnAcceptedModel().transitions());
         if (amo.rollbackOnUnknownModel() != null)
@@ -260,7 +261,8 @@ public class HttpOutboxTest {
 
     assertEquals(outbox, dispatcher.outbox());
     assertEquals(outbox.requestDispatched(), dispatcher.requestDispatched());
-    var input = dispatcher.input("/test");
+    var input = dispatcher.input(null, "/test").block();
+    assertNotNull(input);
     assertEquals(requestMessage("/test", "payload"), input.request());
     assertEquals(batchId, input.batchId());
     assertThrows(IllegalStateException.class, dispatcher::rollbackDispatched);
@@ -581,7 +583,7 @@ public class HttpOutboxTest {
       EventType<Void, Void> failed,
       EventType<Void, Void> missingResponse,
       EventType<Void, Void> unknown,
-      AtMostOnce<Void, Void> exchange,
+      AtMostOnce<Void, Void, Void> exchange,
       StateMachine machine,
       String path
   ) {
@@ -600,7 +602,7 @@ public class HttpOutboxTest {
       EventType<Void, Void> missingResponse = BasicEventType.of("Missing response", UUID.fromString("7cd9c1f1-1ce0-4249-a709-5e11ea2f6404"));
       EventType<Void, Void> unknown = BasicEventType.of("Unknown", UUID.fromString("46cf31dd-56ed-41cb-b2ca-501930a23e44"));
       String path = "/" + UUID.randomUUID();
-      AtMostOnce<Void, Void> Exchange = HttpOutboxRequest.atMostOnce()
+      AtMostOnce<Void, Void, Void> Exchange = HttpOutboxRequest.atMostOnce()
           .requestPayloadType(DataType.none())
           .responsePayloadType(DataType.none())
           .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
@@ -644,6 +646,7 @@ public class HttpOutboxTest {
               .backoffAlgorithm(c -> new DelaySpecification(Duration.ofSeconds(10), Duration.ofMinutes(10), Duration.ofHours(5), 1.5).calculateDelay(c.attemptNumber()))
               .build("ExchangeRollbackOnUnknown", UUID.fromString("ec3848a3-4b03-3a69-7d94-a448a83e792b"))
           )
+          .<Void>rollbackMessageCreator((_, d) -> Mono.just(Input.of(requestMessage(d.t2().uri().getPath() + "/rollback"))))
           .build("Exchange", UUID.fromString("a3778c63-144f-4748-9e8b-cc10ee20db3f"));
 
       Map<State, List<TransitionModel<?, ?>>> processTransitions = Map.of(
@@ -652,7 +655,7 @@ public class HttpOutboxTest {
                   .trigger(Exchange.requestDispatched()).with(_ -> Input.of(requestMessage(path))).on(Exchange).identifiedBy(newEntityId())
                   .reversible(
                       assemble((log, _) -> log.one(doProcess))
-                          .trigger(Exchange.rollbackDispatched()).with(_ -> Input.of(requestMessage(path + "/rollback"))).on(Exchange).identifiedBy(d -> entityId(d))
+                          .trigger(Exchange.rollbackDispatched()).on(Exchange).identifiedBy(d -> entityId(d))
                   )
                   .output(d -> d.t2().accepted().event().entityId())
           ),

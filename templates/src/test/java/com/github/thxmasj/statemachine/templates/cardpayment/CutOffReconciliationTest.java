@@ -47,6 +47,7 @@ import com.github.thxmasj.statemachine.Identifiable;
 import com.github.thxmasj.statemachine.State;
 import com.github.thxmasj.statemachine.StateMachine;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
+import com.github.thxmasj.statemachine.Tuples.Tuple2;
 import com.github.thxmasj.statemachine.Tuples.Tuple3;
 import com.github.thxmasj.statemachine.Tuples.Tuple4;
 import com.github.thxmasj.statemachine.Tuples.Tuple6;
@@ -268,7 +269,7 @@ public class CutOffReconciliationTest {
         .build(Authentication.name(), Authentication.id());
     Dispatcher<AuthenticationData, Void> authenticationDispatcher = Dispatcher.of(authentication, _ -> request(Authentication));
 
-    AtMostOnce<AcquirerAuthorisationRequest, Request> acquirerAuthorisation =
+    AtMostOnce<AcquirerAuthorisationRequest, Tuple4<ReversalData, Merchant, AcquirerBatchNumber, UUID>, Request> acquirerAuthorisation =
         HttpOutboxRequest.atMostOnce()
             .requestPayloadType(DataType.json(AcquirerAuthorisationRequest.class))
             .responsePayloadType(DataType.json(AcquirerResponse.class))
@@ -291,12 +292,13 @@ public class CutOffReconciliationTest {
                 DummyTransitions.atLeastOnce(AuthorisationRollbackOnAccepted)
             )
             .rollbackOnUnknownModel(DummyTransitions.atLeastOnce(AuthorisationRollbackOnUnknown))
+            .<Tuple4<ReversalData, Merchant, AcquirerBatchNumber, UUID>>rollbackMessageCreator((_, _) -> Mono.empty())
             .build(
                 PaymentTransitions.OutboxRequestModelIds.Authorisation.name(),
                 PaymentTransitions.OutboxRequestModelIds.Authorisation.id()
             );
     Dispatcher<Tuple6<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, UUID>, Tuple4<ReversalData, Merchant, AcquirerBatchNumber, UUID>> acquirerAuthorisationDispatcher =
-        Dispatcher.reversible(
+        Dispatcher.of(
             acquirerAuthorisation,
             (Tuple6<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, UUID> d) -> TypedHttpRequest.create(
                 POST,
@@ -311,10 +313,9 @@ public class CutOffReconciliationTest {
                     d.t1().merchantReference(),
                     d.t3().cryptogram()
                 )
-            ),
-            (Tuple4<ReversalData, Merchant, AcquirerBatchNumber, UUID> _) -> null
+            )
         ).batched(Tuple6::t6);
-    var preauthorisation = DummyTransitions.atMostOnce(Preauthorisation, PreauthorisationRollbackOnAccepted, PreauthorisationRollbackOnUnknown);
+    var preauthorisation = DummyTransitions.<Tuple2<ReversalData, Merchant>>atMostOnce(Preauthorisation, PreauthorisationRollbackOnAccepted, PreauthorisationRollbackOnUnknown);
 
     Dispatcher<Tuple3<BatchNumber, AcquirerBatchNumber, Merchant>, Void> reconciliation = dispatcher(
         Reconciliation,
@@ -324,7 +325,7 @@ public class CutOffReconciliationTest {
     var payment = new PaymentTransitions(
         _ -> new PaymentToken("4111111111111111", "00", "3012"),
         authenticationDispatcher,
-        Dispatcher.reversible(preauthorisation, _ -> null, _ -> null),
+        Dispatcher.of(preauthorisation, _ -> null),
         acquirerAuthorisationDispatcher,
         DummyTransitions.dispatcher(DummyTransitions.atLeastOnce(Capture)),
         DummyTransitions.reversibleDispatcher(Refund, RefundRollbackOnAccepted, RefundRollbackOnUnknown),
