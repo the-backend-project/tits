@@ -95,6 +95,11 @@ public interface HttpInbox {
       UUID.fromString("6bc64696-3b9e-4897-b9d0-de3abf567685"),
       DataType.tuple(DataType.string(), DataType.json(EventReference.class))
   );
+  ResponseEventType<Tuple2<String, EventReference>> CompleteFailedRequest = new ResponseEventType<>(
+      "Complete failed request",
+      UUID.fromString("4ea0817f-c153-4fbb-a09a-ffcd5e8d6960"),
+      DataType.tuple(DataType.string(), DataType.json(EventReference.class))
+  );
   EventType<HttpResponseMessage, HttpResponseMessage> CompleteRejectedRequest = BasicEventType.of(
       "Complete rejected request",
       UUID.fromString("887a0173-1847-4e5d-b529-3c25e1f8a5d1"),

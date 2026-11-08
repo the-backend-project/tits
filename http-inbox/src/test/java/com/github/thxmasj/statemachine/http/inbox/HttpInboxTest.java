@@ -10,6 +10,7 @@ import static com.github.thxmasj.statemachine.TransitionModelBuilder.assemble;
 import static com.github.thxmasj.statemachine.Tuples.tuple;
 import static com.github.thxmasj.statemachine.Validated.invalid;
 import static com.github.thxmasj.statemachine.Validated.valid;
+import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.CompleteFailedRequest;
 import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.CompleteRequest;
 import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.EntityModels.RequestDispatching;
 import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.EntityModels.RequestRouting;
@@ -138,6 +139,10 @@ public class HttpInboxTest {
                         .trigger(Process0Outbox.requestDispatched()).on(Process0Outbox).identifiedBy(newEntityId())
                 )
                 .output(),
+            onEvent(SubsystemUnavailableProcessing).to(Unreachable)
+                .assemble(TransitionContext::eventReference)
+                .trigger(CompleteFailedRequest).with(d -> tuple("Subsystem unavailable", d)).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                .output(),
             onEvent(SwitchOn).to(On).output()
         ),
         On, List.of(
@@ -222,6 +227,10 @@ public class HttpInboxTest {
       ComplexInternalProcessingDone = BasicEventType.of(
           "ComplexInternalProcessingDone",
           UUID.fromString("88c87c85-7778-4171-bc75-702f9e60b00e")
+      ),
+      SubsystemUnavailableProcessing = BasicEventType.of(
+          "SubsystemUnavailableProcessing",
+          UUID.fromString("af7756d1-0566-42d8-907b-70443bc7d879")
       );
   static EventType<Void, Void> ExternalProcessingDone = BasicEventType.of(
       "ExternalProcessingDone",
@@ -265,6 +274,11 @@ public class HttpInboxTest {
           m -> m.requestLine().matches("PUT .*/handledreject/.*"),
           m -> valid(m.body()),
           List.of(anyContent(null, null, UUID.fromString("00f910e2-8c22-4403-835d-15e112ac3080"), EventThatIsAlwaysRejected, Lamp, (RoutedRequest<byte[]> _) -> null, newEntity()))
+      ),
+      new HttpRequestRoute<>(
+          m -> m.requestLine().matches("PUT .*/unavailable/.*"),
+          m -> valid(m.body()),
+          List.of(anyContent(parseMessageId("PUT .*/unavailable/(.*)", 1), null, UUID.fromString("29d91ea2-3011-47d5-8e68-51e593a5fe3d"), SubsystemUnavailableProcessing, Lamp, (RoutedRequest<byte[]> _) -> null, newEntity()))
       ),
       new HttpRequestRoute<>(
           m -> m.requestLine().matches("PUT .*/complexinternal/.*"),
@@ -609,6 +623,15 @@ public class HttpInboxTest {
     HttpResponseMessage response = HttpMessageParser.parseResponse(responseEvent.data());
     assertEquals(201, response.statusCode());
     assertTrue(ProblemDetail.parse(response.body()).detail().startsWith("Light is externally switched on!"));
+  }
+
+  @Test
+  public void whenSubsystemUnavailableThenInternalServerError() throws IOException {
+    String messageId = UUID.randomUUID().toString();
+    Event<?> responseEvent = onRequest(PUT, URI.create("/unavailable/" + messageId), "Hello!".getBytes());
+    HttpResponseMessage response = HttpMessageParser.parseResponse(responseEvent.data());
+    assertEquals(500, response.statusCode());
+    assertEquals("Subsystem unavailable", ProblemDetail.parse(response.body()).detail());
   }
 
   @Test
