@@ -68,6 +68,7 @@ import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.URI;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -441,6 +442,103 @@ public class HttpInboxTest {
           .block(Duration.ofSeconds(5));
       assertEquals(201, response.statusCode());
       assertTrue(ProblemDetail.parse(response.body()).detail().startsWith("Light is on!"));
+    } finally {
+      listener.disposeNow();
+    }
+  }
+
+  @Test
+  public void whenCorrelationIdHeaderOverHttpThenResponseHasSameCorrelationId() throws IOException {
+    HttpResponseMessage response = exchangeOverHttp(new HttpInboxListener(stateMachine), Map.of("X-Correlation-Id", "abc-123"));
+    assertEquals("abc-123", response.headerValue("X-Correlation-Id"));
+  }
+
+  @Test
+  public void whenCustomCorrelationIdHeaderOverHttpThenResponseHasSameCorrelationId() throws IOException {
+    HttpResponseMessage response = exchangeOverHttp(
+        new HttpInboxListener(stateMachine).correlationIdHeader("TID"),
+        Map.of("TID", "tid-123", "X-Correlation-Id", "ignored")
+    );
+    assertEquals("tid-123", response.headerValue("X-Correlation-Id"));
+  }
+
+  @Test
+  public void whenNoCorrelationIdHeaderOverHttpThenGeneratedCorrelationId() throws IOException {
+    HttpResponseMessage response = exchangeOverHttp(new HttpInboxListener(stateMachine), Map.of());
+    assertThat(response.headerValue("X-Correlation-Id")).matches("SYS-\\d{19}");
+  }
+
+  private HttpResponseMessage exchangeOverHttp(HttpInboxListener inboxListener, Map<String, String> headers) throws IOException {
+    DisposableServer listener = inboxListener.listen(0);
+    try {
+      HttpResponseMessage response = new NettyHttpClient(new NettyHttpClientBuilder().build())
+          .exchange(new HttpRequestMessage(
+              PUT,
+              URI.create("http://localhost:" + listener.port() + "/internal/" + UUID.randomUUID()),
+              headers,
+              new ObjectMapper().writeValueAsBytes(new InternalProcess("Hello", 1))
+          ))
+          .block(Duration.ofSeconds(5));
+      assertEquals(201, response.statusCode());
+      return response;
+    } finally {
+      listener.disposeNow();
+    }
+  }
+
+  @Test
+  public void whenFilterRewritesRequestOverHttpThenRewrittenRequestIsRouted() throws IOException {
+    DisposableServer listener = new HttpInboxListener(stateMachine)
+        .filter((request, next) -> next.apply(new HttpRequestMessage(
+            PUT,
+            URI.create(request.uri().getPath().replace("/rewritten/", "/internal/")),
+            request.headers(),
+            request.body()
+        )))
+        .listen(0);
+    try {
+      HttpResponseMessage response = new NettyHttpClient(new NettyHttpClientBuilder().build())
+          .exchange(new HttpRequestMessage(
+              PUT,
+              URI.create("http://localhost:" + listener.port() + "/rewritten/" + UUID.randomUUID()),
+              Map.of(),
+              new ObjectMapper().writeValueAsBytes(new InternalProcess("Hello", 1))
+          ))
+          .block(Duration.ofSeconds(5));
+      assertEquals(201, response.statusCode());
+    } finally {
+      listener.disposeNow();
+    }
+  }
+
+  @Test
+  public void whenFilterRespondsOverHttpThenLaterFiltersAndInboxAreSkipped() {
+    List<String> applied = new ArrayList<>();
+    DisposableServer listener = new HttpInboxListener(stateMachine)
+        .filter((request, next) -> {
+          applied.add("first");
+          return next.apply(request);
+        })
+        .filter((_, _) -> {
+          applied.add("second");
+          return Mono.just(new HttpResponseMessage(401, "Unauthorized"));
+        })
+        .filter((request, next) -> {
+          applied.add("third");
+          return next.apply(request);
+        })
+        .listen(0);
+    try {
+      HttpResponseMessage response = new NettyHttpClient(new NettyHttpClientBuilder().build())
+          .exchange(new HttpRequestMessage(
+              PUT,
+              URI.create("http://localhost:" + listener.port() + "/internal/" + UUID.randomUUID()),
+              Map.of(),
+              "{}".getBytes()
+          ))
+          .block(Duration.ofSeconds(5));
+      assertEquals(401, response.statusCode());
+      assertEquals(List.of("first", "second"), applied);
     } finally {
       listener.disposeNow();
     }
