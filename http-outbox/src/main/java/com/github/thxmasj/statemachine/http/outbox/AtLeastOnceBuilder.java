@@ -8,6 +8,7 @@ import com.github.thxmasj.statemachine.Tuples.Tuple2;
 import com.github.thxmasj.statemachine.Validated;
 import com.github.thxmasj.statemachine.http.HttpClient;
 import com.github.thxmasj.statemachine.http.outbox.AtLeastOnce.RetryContext;
+import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest.BatchedRequest;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import com.github.thxmasj.statemachine.message.http.TypedHttpRequest;
 import com.github.thxmasj.statemachine.message.http.TypedHttpResponse;
@@ -123,11 +124,11 @@ public final class AtLeastOnceBuilder {
     BatchedStep<RQ> backoffAlgorithm(Function<RetryContext, Duration> backoffAlgorithm);
   }
 
-  /// Optional: the request defaults to not being batched. A batched request references the batch given by the batch id
-  /// of its input, which then must be given.
-  public interface BatchedStep<RQ> extends BuildStep<RQ> {
+  /// Optional: the request defaults to not being batched, with the request message as its input. A batched request has
+  /// a [BatchedRequest] as its input, and references the batch given by its batch id.
+  public interface BatchedStep<RQ> extends BuildStep<TypedHttpRequest<RQ>, RQ> {
 
-    BuildStep<RQ> batched();
+    BuildStep<BatchedRequest<RQ>, RQ> batched();
   }
 
   /// Optional: the super model defaults to none.
@@ -136,9 +137,9 @@ public final class AtLeastOnceBuilder {
 //    BuildStep<RQ> superModel(AtMostOnce<?, ?> superModel);
 //  }
 
-  public interface BuildStep<RQ> {
+  public interface BuildStep<I, RQ> {
 
-    AtLeastOnce<RQ> build(String name, UUID id);
+    AtLeastOnce<I, RQ> build(String name, UUID id);
   }
 
   private static final class WithNothing implements RequestPayloadTypeStep {
@@ -241,7 +242,7 @@ public final class AtLeastOnceBuilder {
 
   private static final class WithContentParser<RQ, RS> implements OnSuccessStep<RQ, RS>, IsFailureTransientStep<RQ, RS>,
       IsRejectedByInvalidResponseStep<RQ>, IsFailureByInvalidResponseTransientStep<RQ>, IsAttemptAvailableStep<RQ>,
-      BackoffAlgorithmStep<RQ>, BatchedStep<RQ>, BuildStep<RQ> {
+      BackoffAlgorithmStep<RQ>, BatchedStep<RQ> {
 
     private final DataType<RQ> requestPayloadType;
     private final DataType<RS> responsePayloadType;
@@ -259,7 +260,6 @@ public final class AtLeastOnceBuilder {
     private Predicate<Tuple2<HttpResponseMessage, String>> isFailureByInvalidResponseTransient;
     private Predicate<RetryContext> isAttemptAvailable;
     private Function<RetryContext, Duration> backoffAlgorithm;
-    private boolean batched;
     //private AtMostOnce<?, ?> superModel;
 
     private WithContentParser(
@@ -345,9 +345,8 @@ public final class AtLeastOnceBuilder {
     }
 
     @Override
-    public BuildStep<RQ> batched() {
-      this.batched = true;
-      return this;
+    public BuildStep<BatchedRequest<RQ>, RQ> batched() {
+      return (name, id) -> build(name, id, InputType.batched(requestPayloadType));
     }
 
 //    @Override
@@ -357,7 +356,11 @@ public final class AtLeastOnceBuilder {
 //    }
 
     @Override
-    public AtLeastOnce<RQ> build(String name, UUID id) {
+    public AtLeastOnce<TypedHttpRequest<RQ>, RQ> build(String name, UUID id) {
+      return build(name, id, InputType.unbatched(requestPayloadType));
+    }
+
+    private <I> AtLeastOnce<I, RQ> build(String name, UUID id, InputType<I, RQ> inputType) {
       return new AtLeastOnce<>(
           name,
           id,
@@ -377,7 +380,7 @@ public final class AtLeastOnceBuilder {
           isFailureByInvalidResponseTransient,
           isAttemptAvailable,
           backoffAlgorithm,
-          batched
+          inputType
           //,superModel
       );
     }

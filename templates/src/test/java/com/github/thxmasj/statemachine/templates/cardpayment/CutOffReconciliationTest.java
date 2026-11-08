@@ -63,6 +63,7 @@ import com.github.thxmasj.statemachine.http.outbox.AtLeastOnce;
 import com.github.thxmasj.statemachine.http.outbox.AtMostOnce;
 import com.github.thxmasj.statemachine.http.outbox.Dispatcher;
 import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest;
+import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest.BatchedRequest;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.TypedHttpRequest;
 import com.github.thxmasj.statemachine.message.http.TypedHttpResponse;
@@ -269,7 +270,7 @@ public class CutOffReconciliationTest {
         .build(Authentication.name(), Authentication.id());
     Dispatcher<AuthenticationData, Void> authenticationDispatcher = Dispatcher.of(authentication, _ -> request(Authentication));
 
-    AtMostOnce<AcquirerAuthorisationRequest, Tuple4<ReversalData, Merchant, AcquirerBatchNumber, UUID>, Request> acquirerAuthorisation =
+    AtMostOnce<BatchedRequest<AcquirerAuthorisationRequest>, AcquirerAuthorisationRequest, Tuple4<ReversalData, Merchant, AcquirerBatchNumber, UUID>, TypedHttpRequest<Request>> acquirerAuthorisation =
         HttpOutboxRequest.atMostOnce()
             .requestPayloadType(DataType.json(AcquirerAuthorisationRequest.class))
             .responsePayloadType(DataType.json(AcquirerResponse.class))
@@ -300,7 +301,7 @@ public class CutOffReconciliationTest {
     Dispatcher<Tuple6<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, UUID>, Tuple4<ReversalData, Merchant, AcquirerBatchNumber, UUID>> acquirerAuthorisationDispatcher =
         Dispatcher.of(
             acquirerAuthorisation,
-            (Tuple6<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, UUID> d) -> TypedHttpRequest.create(
+            (Tuple6<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, UUID> d) -> new BatchedRequest<>(TypedHttpRequest.create(
                 POST,
                 URI.create("http://localhost:" + acquirer.getAddress().getPort() + "/" + PaymentTransitions.OutboxRequestModelIds.Authorisation.name()),
                 new AcquirerAuthorisationRequest(
@@ -313,8 +314,8 @@ public class CutOffReconciliationTest {
                     d.t1().merchantReference(),
                     d.t3().cryptogram()
                 )
-            )
-        ).batched(Tuple6::t6);
+            ), d.t6())
+        );
     var preauthorisation = DummyTransitions.<Tuple2<ReversalData, Merchant>>atMostOnce(Preauthorisation, PreauthorisationRollbackOnAccepted, PreauthorisationRollbackOnUnknown);
 
     Dispatcher<Tuple3<BatchNumber, AcquirerBatchNumber, Merchant>, Void> reconciliation = dispatcher(
@@ -351,9 +352,9 @@ public class CutOffReconciliationTest {
     transitions.put(RequestRouting, requestRoutingTransitions(routes));
     transitions.put(RequestDispatching, requestDispatchingTransitions(routes, List.of()));
     transitions.put(Index, Index.transitions());
-    var outboxModels = new ArrayList<HttpOutboxRequest<?>>();
-    outboxModels.addAll(payment.outboxRequestModels().stream().map(m -> (HttpOutboxRequest<?>) m).toList());
-    outboxModels.addAll(settlement.outboxRequestModels().stream().map(m -> (HttpOutboxRequest<?>) m).toList());
+    var outboxModels = new ArrayList<HttpOutboxRequest<?, ?>>();
+    outboxModels.addAll(payment.outboxRequestModels().stream().map(m -> (HttpOutboxRequest<?, ?>) m).toList());
+    outboxModels.addAll(settlement.outboxRequestModels().stream().map(m -> (HttpOutboxRequest<?, ?>) m).toList());
     for (var outbox : outboxModels) {
       transitions.put(outbox, outbox.transitions());
     }
@@ -397,7 +398,7 @@ public class CutOffReconciliationTest {
     });
   }
 
-  private static AtLeastOnce<Request> atLeastOnce(Identifiable id) {
+  private static AtLeastOnce<TypedHttpRequest<Request>, Request> atLeastOnce(Identifiable id) {
     return HttpOutboxRequest.atLeastOnce()
         .requestPayloadType(DataType.json(Request.class))
         .responsePayloadType(DataType.json(Response.class))

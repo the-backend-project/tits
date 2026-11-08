@@ -22,10 +22,11 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-/// An outbox request, which dispatches request messages with payloads of type `RQ`. The request messages are created
-/// outside of it, by the dispatcher of the request, so that the outbox request is independent of where it is used. See
-/// [Dispatcher] for a way to pair an outbox request with the creator of its request messages.
-public sealed interface HttpOutboxRequest<RQ> extends com.github.thxmasj.statemachine.EntityModel permits AtLeastOnce, AtMostOnce {
+/// An outbox request, which dispatches request messages with payloads of type `RQ`. Its input, of type `I`, is the
+/// request message, or a [BatchedRequest] if the outbox request is batched. The input is created outside of it, by the
+/// dispatcher of the request, so that the outbox request is independent of where it is used. See [Dispatcher] for a
+/// way to pair an outbox request with the creator of its input.
+public sealed interface HttpOutboxRequest<I, RQ> extends com.github.thxmasj.statemachine.EntityModel permits AtLeastOnce, AtMostOnce {
 
   Map<State, List<TransitionModelBuilder.TransitionModel<?, ?>>> transitions();
 
@@ -38,7 +39,7 @@ public sealed interface HttpOutboxRequest<RQ> extends com.github.thxmasj.statema
         .toList();
   }
 
-  EventType<Input<RQ>, ?> requestDispatched();
+  EventType<I, ?> requestDispatched();
 
   DataType<RQ> requestPayloadType();
 
@@ -105,56 +106,47 @@ public sealed interface HttpOutboxRequest<RQ> extends com.github.thxmasj.statema
     return new HttpRequestMessage(request.method(), request.uri(), request.headers(), payloadType.marshal(request.payload()));
   }
 
-  /// The input of an outbox request: the request message to dispatch, and the id of the batch which the request
-  /// belongs to. The batch id is needed by a batched outbox request only, and is null otherwise.
-  record Input<RQ>(TypedHttpRequest<RQ> request, UUID batchId) {
+  /// The input of a batched outbox request: the request message to dispatch, and the id of the batch which the request
+  /// belongs to. The input of an outbox request which is not batched is the request message only.
+  record BatchedRequest<RQ>(TypedHttpRequest<RQ> request, UUID batchId) {
 
-    public static <RQ> Input<RQ> of(TypedHttpRequest<RQ> request) {
-      return new Input<>(request, null);
+    public BatchedRequest {
+      Objects.requireNonNull(request);
+      Objects.requireNonNull(batchId);
     }
 
-    public static <RQ> Input<RQ> of(TypedHttpRequest<RQ> request, UUID batchId) {
-      return new Input<>(request, batchId);
+    public static <RQ> DataType<BatchedRequest<RQ>> dataType(DataType<RQ> requestPayloadType) {
+      return new BatchedRequestDataType<>(HttpDataType.forRequest(requestPayloadType));
     }
 
-    public static <RQ> DataType<Input<RQ>> dataType(DataType<RQ> requestPayloadType) {
-      return new InputDataType<>(HttpDataType.forRequest(requestPayloadType));
-    }
-
-    private static final class InputDataType<RQ> implements DataType<Input<RQ>> {
+    private static final class BatchedRequestDataType<RQ> implements DataType<BatchedRequest<RQ>> {
 
       private final DataType<TypedHttpRequest<RQ>> requestType;
       private final DataType<UUID> batchIdType = DataType.uuid();
 
-      private InputDataType(DataType<TypedHttpRequest<RQ>> requestType) {
+      private BatchedRequestDataType(DataType<TypedHttpRequest<RQ>> requestType) {
         this.requestType = requestType;
       }
 
       @Override
       public String name() {
-        return "(" + requestType.name() + ", uuid?)";
+        return "(" + requestType.name() + ", uuid)";
       }
 
       @Override
-      public Input<RQ> unmarshal(byte[] value) {
+      public BatchedRequest<RQ> unmarshal(byte[] value) {
         List<byte[]> split = DataType.split(value);
-        return new Input<>(
-            requestType.unmarshal(split.getFirst()),
-            split.size() > 1 ? batchIdType.unmarshal(split.get(1)) : null
-        );
+        return new BatchedRequest<>(requestType.unmarshal(split.getFirst()), batchIdType.unmarshal(split.get(1)));
       }
 
       @Override
-      public byte[] marshal(Input<RQ> value) {
-        return DataType.concat(
-            requestType.marshal(value.request()),
-            value.batchId() != null ? batchIdType.marshal(value.batchId()) : null
-        );
+      public byte[] marshal(BatchedRequest<RQ> value) {
+        return DataType.concat(requestType.marshal(value.request()), batchIdType.marshal(value.batchId()));
       }
 
       @Override
       public boolean equals(Object o) {
-        return o instanceof InputDataType<?> that && Objects.equals(requestType, that.requestType);
+        return o instanceof BatchedRequestDataType<?> that && Objects.equals(requestType, that.requestType);
       }
 
       @Override

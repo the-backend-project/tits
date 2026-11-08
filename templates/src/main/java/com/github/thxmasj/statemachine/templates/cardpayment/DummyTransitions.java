@@ -34,6 +34,7 @@ import com.github.thxmasj.statemachine.http.outbox.AtLeastOnce;
 import com.github.thxmasj.statemachine.http.outbox.AtMostOnce;
 import com.github.thxmasj.statemachine.http.outbox.Dispatcher;
 import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest;
+import com.github.thxmasj.statemachine.message.http.TypedHttpRequest;
 import java.time.Duration;
 import java.util.UUID;
 import reactor.core.publisher.Mono;
@@ -74,7 +75,7 @@ public class DummyTransitions {
   public record Response() {}
 
   /// A dispatcher which creates no request messages, for outbox requests which are not exercised.
-  public static <X> Dispatcher<X, Void> dispatcher(HttpOutboxRequest<Request> outbox) {
+  public static <X> Dispatcher<X, Void> dispatcher(HttpOutboxRequest<TypedHttpRequest<Request>, Request> outbox) {
     return Dispatcher.of(outbox, _ -> null);
   }
 
@@ -87,7 +88,7 @@ public class DummyTransitions {
     return Dispatcher.of(DummyTransitions.<Y>atMostOnce(id, rollbackOnAcceptedId, rollbackOnUnknownId), _ -> null);
   }
 
-  public static AtMostOnce<Request, Void, Void> atMostOnce(Identifiable id) {
+  public static AtMostOnce<TypedHttpRequest<Request>, Request, Void, Void> atMostOnce(Identifiable id) {
     return HttpOutboxRequest.atMostOnce()
         .requestPayloadType(DataType.json(Request.class))
         .responsePayloadType(DataType.json(Response.class))
@@ -100,7 +101,7 @@ public class DummyTransitions {
         .build(id.name(), id.id());
   }
 
-  public static <RI> AtMostOnce<Request, RI, Request> atMostOnce(Identifiable id, Identifiable rollbackOnAcceptedId, Identifiable rollbackOnUnknownId) {
+  public static <RI> AtMostOnce<TypedHttpRequest<Request>, Request, RI, TypedHttpRequest<Request>> atMostOnce(Identifiable id, Identifiable rollbackOnAcceptedId, Identifiable rollbackOnUnknownId) {
     return HttpOutboxRequest.atMostOnce()
         .requestPayloadType(DataType.json(Request.class))
         .responsePayloadType(DataType.json(Response.class))
@@ -116,7 +117,7 @@ public class DummyTransitions {
         .build(id.name(), id.id());
   }
 
-  public static AtLeastOnce<Request> atLeastOnce(Identifiable id) {
+  public static AtLeastOnce<TypedHttpRequest<Request>, Request> atLeastOnce(Identifiable id) {
     return HttpOutboxRequest.atLeastOnce()
         .requestPayloadType(DataType.json(Request.class))
         .responsePayloadType(DataType.json(Response.class))

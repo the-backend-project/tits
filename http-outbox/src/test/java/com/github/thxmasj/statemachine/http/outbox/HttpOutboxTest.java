@@ -18,7 +18,6 @@ import static com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Me
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -42,7 +41,7 @@ import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;
 import com.github.thxmasj.statemachine.http.NettyHttpClient;
 import com.github.thxmasj.statemachine.http.NettyHttpClientBuilder;
-import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest.Input;
+import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest.BatchedRequest;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import com.github.thxmasj.statemachine.message.http.TypedHttpRequest;
 import com.github.thxmasj.statemachine.message.http.TypedHttpResponse;
@@ -77,13 +76,13 @@ public class HttpOutboxTest {
   private static StateMachine stateMachine(
       EntityModel entityModel,
       Map<State, List<TransitionModel<?, ?>>> processTransitions,
-      List<HttpOutboxRequest<?>> outboxes
+      List<HttpOutboxRequest<?, ?>> outboxes
   ) {
     Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions = new HashMap<>();
     transitions.put(entityModel, processTransitions);
     for (var outbox : outboxes) {
       transitions.put(outbox, outbox.transitions());
-      if (outbox instanceof AtMostOnce<?, ?, ?> amo) {
+      if (outbox instanceof AtMostOnce<?, ?, ?, ?> amo) {
         if (amo.rollbackOnAcceptedModel() != null)
           transitions.put(amo.rollbackOnAcceptedModel(), amo.rollbackOnAcceptedModel().transitions());
         if (amo.rollbackOnUnknownModel() != null)
@@ -229,22 +228,14 @@ public class HttpOutboxTest {
   }
 
   @Test
-  public void inputDataTypeRoundTrip() {
-    var dataType = Input.dataType(DataType.string());
-    var request = TypedHttpRequest.create(POST, URI.create("http://localhost/test"), "payload");
-    UUID batchId = UUID.randomUUID();
-
-    var withBatchId = dataType.unmarshal(dataType.marshal(Input.of(request, batchId)));
-    assertEquals(request, withBatchId.request());
-    assertEquals(batchId, withBatchId.batchId());
-
-    var withoutBatchId = dataType.unmarshal(dataType.marshal(Input.of(request)));
-    assertEquals(request, withoutBatchId.request());
-    assertNull(withoutBatchId.batchId());
+  public void batchedRequestDataTypeRoundTrip() {
+    var dataType = BatchedRequest.dataType(DataType.string());
+    var request = new BatchedRequest<>(TypedHttpRequest.create(POST, URI.create("http://localhost/test"), "payload"), UUID.randomUUID());
+    assertEquals(request, dataType.unmarshal(dataType.marshal(request)));
   }
 
   @Test
-  public void dispatcherCreatesInputWithMessageCreator() {
+  public void dispatcherCreatesInputOfBatchedOutbox() {
     var outbox = HttpOutboxRequest.atMostOnce()
         .requestPayloadType(DataType.string())
         .responsePayloadType(DataType.string())
@@ -256,15 +247,15 @@ public class HttpOutboxTest {
         .batched()
         .build("BatchedExchange", UUID.randomUUID());
     UUID batchId = UUID.randomUUID();
-    Dispatcher<String, Void> dispatcher = Dispatcher.of(outbox, (String path) -> requestMessage(path, "payload"))
-        .batched(_ -> batchId);
+    Dispatcher<String, Void> dispatcher = Dispatcher.of(
+        outbox,
+        (String path) -> new BatchedRequest<>(requestMessage(path, "payload"), batchId)
+    );
 
     assertEquals(outbox, dispatcher.outbox());
     assertEquals(outbox.requestDispatched(), dispatcher.requestDispatched());
-    var input = dispatcher.input(null, "/test").block();
-    assertNotNull(input);
-    assertEquals(requestMessage("/test", "payload"), input.request());
-    assertEquals(batchId, input.batchId());
+    assertEquals(new BatchedRequest<>(requestMessage("/test", "payload"), batchId), dispatcher.input(null, "/test").block());
+    assertEquals("(HTTP request<string>, uuid)", outbox.requestDispatched().inputDataType().name());
     assertThrows(IllegalStateException.class, dispatcher::rollbackDispatched);
   }
 
@@ -310,7 +301,7 @@ public class HttpOutboxTest {
     EventType<String, String> processed = BasicEventType.of("Processed", UUID.randomUUID(), DataType.string(), DataType.string());
     EventType<Void, Void> failed = BasicEventType.of("Failed", UUID.randomUUID());
     String path = "/" + UUID.randomUUID();
-    HttpOutboxRequest<String> exchange = HttpOutboxRequest.atMostOnce()
+    HttpOutboxRequest<TypedHttpRequest<String>, String> exchange = HttpOutboxRequest.atMostOnce()
         .requestPayloadType(DataType.string())
         .responsePayloadType(DataType.string())
         .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
@@ -330,7 +321,7 @@ public class HttpOutboxTest {
     Map<State, List<TransitionModel<?, ?>>> processTransitions = Map.of(
         Begin, List.of(
             onEvent(doProcess).to(States.WaitingForResponse)
-                .trigger(exchange.requestDispatched()).with(_ -> Input.of(requestMessage(path, "hello"))).on(exchange).identifiedBy(newEntityId())
+                .trigger(exchange.requestDispatched()).with(_ -> requestMessage(path, "hello")).on(exchange).identifiedBy(newEntityId())
                 .output()
         ),
         States.WaitingForResponse, List.of(
@@ -421,7 +412,7 @@ public class HttpOutboxTest {
 
     UUID processEntityId = UUID.randomUUID();
     @SuppressWarnings("unchecked")
-    EventType<Input<Void>, Tuple2<TypedHttpRequest<Void>, UUID>> reqDispatchedType = (EventType<Input<Void>, Tuple2<TypedHttpRequest<Void>, UUID>>) (Object) model.exchange().requestDispatched();
+    EventType<TypedHttpRequest<Void>, Tuple2<TypedHttpRequest<Void>, UUID>> reqDispatchedType = (EventType<TypedHttpRequest<Void>, Tuple2<TypedHttpRequest<Void>, UUID>>) (Object) model.exchange().requestDispatched();
     var reqDispatchedEvent = new Event<>(
         UUID.randomUUID(),
         1,
@@ -445,7 +436,7 @@ public class HttpOutboxTest {
     var model = ProcessModel.create();
     var beginTransitions = model.exchange().transitions().get(Begin);
     @SuppressWarnings("unchecked")
-    TransitionModel<Input<Void>, Tuple2<TypedHttpRequest<Void>, UUID>> reqDispatchedTransition = (TransitionModel<Input<Void>, Tuple2<TypedHttpRequest<Void>, UUID>>) beginTransitions.stream()
+    TransitionModel<TypedHttpRequest<Void>, Tuple2<TypedHttpRequest<Void>, UUID>> reqDispatchedTransition = (TransitionModel<TypedHttpRequest<Void>, Tuple2<TypedHttpRequest<Void>, UUID>>) beginTransitions.stream()
         .filter(t -> t.eventType().equals(model.exchange().requestDispatched()))
         .findFirst()
         .orElseThrow();
@@ -453,7 +444,7 @@ public class HttpOutboxTest {
     UUID triggerEntityId = UUID.randomUUID();
     var triggerEvent = new EventReference(triggerEntityId, 1);
     var log = new EventLog(model.exchange(), new EntityId.UUID(UUID.randomUUID()), List.of(), List.of());
-    var initialContext = new InitialChangeContext<>(null, null, triggerEvent, reqDispatchedTransition, Begin, 1, log, ZonedDateTime.now(), "corr-1", Input.<Void>of(requestMessage("/test")), model.machine(), List.of());
+    var initialContext = new InitialChangeContext<>(null, null, triggerEvent, reqDispatchedTransition, Begin, 1, log, ZonedDateTime.now(), "corr-1", HttpOutboxTest.<Void>requestMessage("/test"), model.machine(), List.of());
     var occ = reqDispatchedTransition.calculate(initialContext).block();
     assertNotNull(occ);
     assertTrue(occ.stepOutput().isAccepted());
@@ -469,7 +460,7 @@ public class HttpOutboxTest {
   public void atLeastOnceSuccessTransitionIdentifiesProcessEntity() {
     EntityModel process = EntityModel.of("Process", UUID.fromString("dda0cc10-3356-4522-8527-ca4f7006c566"));
     EventType<Void, Void> processed = BasicEventType.of("Processed", UUID.fromString("433d18b2-8429-4615-aeb0-5de2240413ea"));
-    AtLeastOnce<Void> alo = HttpOutboxRequest.atLeastOnce()
+    AtLeastOnce<TypedHttpRequest<Void>, Void> alo = HttpOutboxRequest.atLeastOnce()
         .requestPayloadType(DataType.none())
         .responsePayloadType(DataType.none())
         .repeatMessageCreator((_, o) -> o)
@@ -496,7 +487,7 @@ public class HttpOutboxTest {
 
     UUID processEntityId = UUID.randomUUID();
     @SuppressWarnings("unchecked")
-    EventType<Input<Void>, Tuple2<TypedHttpRequest<Void>, UUID>> reqDispatchedType = (EventType<Input<Void>, Tuple2<TypedHttpRequest<Void>, UUID>>) (Object) alo.requestDispatched();
+    EventType<TypedHttpRequest<Void>, Tuple2<TypedHttpRequest<Void>, UUID>> reqDispatchedType = (EventType<TypedHttpRequest<Void>, Tuple2<TypedHttpRequest<Void>, UUID>>) (Object) alo.requestDispatched();
     var reqDispatchedEvent = new Event<>(
         UUID.randomUUID(),
         1,
@@ -525,7 +516,7 @@ public class HttpOutboxTest {
   @Test
   public void atLeastOnceBeginRequestDispatchedOutputsTriggerEntityId() {
     EntityModel process = EntityModel.of("Process", UUID.fromString("dda0cc10-3356-4522-8527-ca4f7006c566"));
-    AtLeastOnce<Void> alo = HttpOutboxRequest.atLeastOnce()
+    AtLeastOnce<TypedHttpRequest<Void>, Void> alo = HttpOutboxRequest.atLeastOnce()
         .requestPayloadType(DataType.none())
         .responsePayloadType(DataType.none())
         .repeatMessageCreator((_, o) -> o)
@@ -544,7 +535,7 @@ public class HttpOutboxTest {
 
     var beginTransitions = alo.transitions().get(Begin);
     @SuppressWarnings("unchecked")
-    TransitionModel<Input<Void>, Tuple2<TypedHttpRequest<Void>, UUID>> reqDispatchedTransition = (TransitionModel<Input<Void>, Tuple2<TypedHttpRequest<Void>, UUID>>) beginTransitions.stream()
+    TransitionModel<TypedHttpRequest<Void>, Tuple2<TypedHttpRequest<Void>, UUID>> reqDispatchedTransition = (TransitionModel<TypedHttpRequest<Void>, Tuple2<TypedHttpRequest<Void>, UUID>>) beginTransitions.stream()
         .filter(t -> t.eventType().equals(alo.requestDispatched()))
         .findFirst()
         .orElseThrow();
@@ -552,7 +543,7 @@ public class HttpOutboxTest {
     UUID triggerEntityId = UUID.randomUUID();
     var triggerEvent = new EventReference(triggerEntityId, 1);
     var log = new EventLog(alo, new EntityId.UUID(UUID.randomUUID()), List.of(), List.of());
-    var initialContext = new InitialChangeContext<>(null, null, triggerEvent, reqDispatchedTransition, Begin, 1, log, ZonedDateTime.now(), "corr-1", Input.<Void>of(requestMessage("/test")), machine, List.of());
+    var initialContext = new InitialChangeContext<>(null, null, triggerEvent, reqDispatchedTransition, Begin, 1, log, ZonedDateTime.now(), "corr-1", HttpOutboxTest.<Void>requestMessage("/test"), machine, List.of());
     var occ = reqDispatchedTransition.calculate(initialContext).block();
     assertNotNull(occ);
     assertTrue(occ.stepOutput().isAccepted());
@@ -583,7 +574,7 @@ public class HttpOutboxTest {
       EventType<Void, Void> failed,
       EventType<Void, Void> missingResponse,
       EventType<Void, Void> unknown,
-      AtMostOnce<Void, Void, Void> exchange,
+      AtMostOnce<TypedHttpRequest<Void>, Void, Void, TypedHttpRequest<Void>> exchange,
       StateMachine machine,
       String path
   ) {
@@ -602,7 +593,7 @@ public class HttpOutboxTest {
       EventType<Void, Void> missingResponse = BasicEventType.of("Missing response", UUID.fromString("7cd9c1f1-1ce0-4249-a709-5e11ea2f6404"));
       EventType<Void, Void> unknown = BasicEventType.of("Unknown", UUID.fromString("46cf31dd-56ed-41cb-b2ca-501930a23e44"));
       String path = "/" + UUID.randomUUID();
-      AtMostOnce<Void, Void, Void> Exchange = HttpOutboxRequest.atMostOnce()
+      AtMostOnce<TypedHttpRequest<Void>, Void, Void, TypedHttpRequest<Void>> Exchange = HttpOutboxRequest.atMostOnce()
           .requestPayloadType(DataType.none())
           .responsePayloadType(DataType.none())
           .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
@@ -646,13 +637,13 @@ public class HttpOutboxTest {
               .backoffAlgorithm(c -> new DelaySpecification(Duration.ofSeconds(10), Duration.ofMinutes(10), Duration.ofHours(5), 1.5).calculateDelay(c.attemptNumber()))
               .build("ExchangeRollbackOnUnknown", UUID.fromString("ec3848a3-4b03-3a69-7d94-a448a83e792b"))
           )
-          .<Void>rollbackMessageCreator((_, d) -> Mono.just(Input.of(requestMessage(d.t2().uri().getPath() + "/rollback"))))
+          .<Void>rollbackMessageCreator((_, d) -> Mono.just(requestMessage(d.t2().uri().getPath() + "/rollback")))
           .build("Exchange", UUID.fromString("a3778c63-144f-4748-9e8b-cc10ee20db3f"));
 
       Map<State, List<TransitionModel<?, ?>>> processTransitions = Map.of(
           Begin, List.of(
               onEvent(doProcess).to(States.WaitingForResponse)
-                  .trigger(Exchange.requestDispatched()).with(_ -> Input.of(requestMessage(path))).on(Exchange).identifiedBy(newEntityId())
+                  .trigger(Exchange.requestDispatched()).with(_ -> requestMessage(path)).on(Exchange).identifiedBy(newEntityId())
                   .reversible(
                       assemble((log, _) -> log.one(doProcess))
                           .trigger(Exchange.rollbackDispatched()).on(Exchange).identifiedBy(d -> entityId(d))
@@ -692,7 +683,7 @@ public class HttpOutboxTest {
       EventType<Void, Void> processed = BasicEventType.of("Processed", UUID.randomUUID());
       EventType<Void, Void> failed = BasicEventType.of("Failed", UUID.randomUUID());
       String path = "/" + UUID.randomUUID();
-      HttpOutboxRequest<Void> Exchange = HttpOutboxRequest.atMostOnce()
+      HttpOutboxRequest<TypedHttpRequest<Void>, Void> Exchange = HttpOutboxRequest.atMostOnce()
           .requestPayloadType(DataType.none())
           .responsePayloadType(DataType.none())
           .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
@@ -712,7 +703,7 @@ public class HttpOutboxTest {
       Map<State, List<TransitionModel<?, ?>>> processTransitions = Map.of(
           Begin, List.of(
               onEvent(doProcess).to(States.WaitingForResponse)
-                  .trigger(Exchange.requestDispatched()).with(_ -> Input.of(requestMessage(path))).on(Exchange).identifiedBy(newEntityId())
+                  .trigger(Exchange.requestDispatched()).with(_ -> requestMessage(path)).on(Exchange).identifiedBy(newEntityId())
                   .output()
           ),
           States.WaitingForResponse, List.of(
@@ -743,7 +734,7 @@ public class HttpOutboxTest {
       EntityModel process = EntityModel.of("Process", UUID.randomUUID());
       EventType<Void, Void> doProcess = BasicEventType.of("Do process", UUID.randomUUID());
       String path = "/" + UUID.randomUUID();
-      HttpOutboxRequest<Void> Exchange = HttpOutboxRequest.atMostOnce()
+      HttpOutboxRequest<TypedHttpRequest<Void>, Void> Exchange = HttpOutboxRequest.atMostOnce()
           .requestPayloadType(DataType.none())
           .responsePayloadType(DataType.none())
           .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
@@ -757,7 +748,7 @@ public class HttpOutboxTest {
       Map<State, List<TransitionModel<?, ?>>> processTransitions = Map.of(
           Begin, List.of(
               onEvent(doProcess).to(States.WaitingForResponse)
-                  .trigger(Exchange.requestDispatched()).with(_ -> Input.of(requestMessage(path))).on(Exchange).identifiedBy(newEntityId())
+                  .trigger(Exchange.requestDispatched()).with(_ -> requestMessage(path)).on(Exchange).identifiedBy(newEntityId())
                   .output()
           ),
           States.WaitingForResponse, List.of(
@@ -788,7 +779,7 @@ public class HttpOutboxTest {
       EntityModel process = EntityModel.of("Process", UUID.randomUUID());
       EventType<Void, Void> doProcess = BasicEventType.of("Do process", UUID.randomUUID());
       String path = "/" + UUID.randomUUID();
-      HttpOutboxRequest<Void> Exchange = HttpOutboxRequest.atMostOnce()
+      HttpOutboxRequest<TypedHttpRequest<Void>, Void> Exchange = HttpOutboxRequest.atMostOnce()
           .requestPayloadType(DataType.<Void>unknown())
           .responsePayloadType(DataType.unknown())
           .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
@@ -802,7 +793,7 @@ public class HttpOutboxTest {
       Map<State, List<TransitionModel<?, ?>>> processTransitions = Map.of(
           Begin, List.of(
               onEvent(doProcess).to(States.WaitingForResponse)
-                  .trigger(Exchange.requestDispatched()).with(_ -> Input.of(requestMessage(path))).on(Exchange).identifiedBy(newEntityId())
+                  .trigger(Exchange.requestDispatched()).with(_ -> requestMessage(path)).on(Exchange).identifiedBy(newEntityId())
                   .output()
           ),
           States.WaitingForResponse, List.of(
@@ -825,12 +816,12 @@ public class HttpOutboxTest {
 
   record ProcessModelWithDefaultMissingResponse(
       EntityModel process,
-      HttpOutboxRequest<Void> exchange
+      HttpOutboxRequest<TypedHttpRequest<Void>, Void> exchange
   ) {
     static ProcessModelWithDefaultMissingResponse create() {
       EntityModel process = EntityModel.of("Process", UUID.randomUUID());
       String path = "/" + UUID.randomUUID();
-      HttpOutboxRequest<Void> exchange = HttpOutboxRequest.atMostOnce()
+      HttpOutboxRequest<TypedHttpRequest<Void>, Void> exchange = HttpOutboxRequest.atMostOnce()
           .requestPayloadType(DataType.<Void>unknown())
           .responsePayloadType(DataType.unknown())
           .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))

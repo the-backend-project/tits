@@ -58,7 +58,6 @@ import com.github.thxmasj.statemachine.http.NettyHttpClientBuilder;
 import com.github.thxmasj.statemachine.http.inbox.HttpInbox.RoutedRequest;
 import com.github.thxmasj.statemachine.http.outbox.AtMostOnce;
 import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest;
-import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest.Input;
 import com.github.thxmasj.statemachine.message.http.HttpMessageParser;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Method;
@@ -108,15 +107,15 @@ public class HttpInboxTest {
     }
   }
 
-  private static HttpOutboxRequest<Void> Process0Outbox;
-  private static HttpOutboxRequest<Void> Process3Outbox;
+  private static HttpOutboxRequest<TypedHttpRequest<Void>, Void> Process0Outbox;
+  private static HttpOutboxRequest<TypedHttpRequest<Void>, Void> Process3Outbox;
 
   private static Map<State, List<TransitionModel<?, ?>>> lampTransitions() {
     return Map.of(
         Begin, List.of(
             onEvent(InternalProcessing).to(On)
                 .assemble(TransitionContext::eventReference)
-                .trigger(Process0Outbox.requestDispatched()).with(_ -> Input.of(requestMessage("/process/0"))).on(Process0Outbox).identifiedBy(newEntityId())
+                .trigger(Process0Outbox.requestDispatched()).with(_ -> requestMessage("/process/0")).on(Process0Outbox).identifiedBy(newEntityId())
                 //.trigger(new ProcessRequest(0)).with(_ -> null).to(DeviceListener).guaranteed()
                 .trigger(CompleteRequest).with(d -> tuple("Light is on! " + random.nextLong(), d.t1())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(),
@@ -126,16 +125,16 @@ public class HttpInboxTest {
                 .output(),
             onEvent(ExternalProcessing).to(Processing)
                 .assembleInput()
-                .trigger(Process0Outbox.requestDispatched()).with(_ -> Input.of(requestMessage("/process/0"))).on(Process0Outbox).identifiedBy(newEntityId())
+                .trigger(Process0Outbox.requestDispatched()).with(_ -> requestMessage("/process/0")).on(Process0Outbox).identifiedBy(newEntityId())
                 .output(),
             onEvent(LongExternalProcessing).to(Processing)
                 .assembleInput()
-                .trigger(Process3Outbox.requestDispatched()).with(_ -> Input.of(requestMessage("/process/3000"))).on(Process3Outbox).identifiedBy(newEntityId())
+                .trigger(Process3Outbox.requestDispatched()).with(_ -> requestMessage("/process/3000")).on(Process3Outbox).identifiedBy(newEntityId())
                 .reversible(
                     assemble((log, rollbackType) -> "")
                         // NB: Response in request/reply session not possible with reversals triggered by the resolver
                         //.trigger(ComplexInternalProcessResponse).with(_ -> "Failed to switch on light! :(((").on(inboxExchange).identifiedBy(entityIdFromSession())
-                        .trigger(Process0Outbox.requestDispatched()).with(_ -> Input.of(requestMessage("/process/0"))).on(Process0Outbox).identifiedBy(newEntityId())
+                        .trigger(Process0Outbox.requestDispatched()).with(_ -> requestMessage("/process/0")).on(Process0Outbox).identifiedBy(newEntityId())
                 )
                 .output(),
             onEvent(SwitchOn).to(On).output()
@@ -155,7 +154,7 @@ public class HttpInboxTest {
         Off, List.of(
             onEvent(InternalProcessing).to(On)
                 .assemble(TransitionContext::eventReference)
-                .trigger(Process0Outbox.requestDispatched()).with(_ -> Input.of(requestMessage("/process/0"))).on(Process0Outbox).identifiedBy(newEntityId())
+                .trigger(Process0Outbox.requestDispatched()).with(_ -> requestMessage("/process/0")).on(Process0Outbox).identifiedBy(newEntityId())
                 //.trigger(new ProcessRequest(0)).with(_ -> null).to(DeviceListener).guaranteed()
                 .trigger(CompleteRequest).with(d -> tuple("Light is on! " + random.nextLong(), d.t1())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(),
@@ -165,16 +164,16 @@ public class HttpInboxTest {
                 .output(),
             onEvent(ExternalProcessing).to(Processing)
                 .assembleInput()
-                .trigger(Process0Outbox.requestDispatched()).with(_ -> Input.of(requestMessage("/process/0"))).on(Process0Outbox).identifiedBy(newEntityId())
+                .trigger(Process0Outbox.requestDispatched()).with(_ -> requestMessage("/process/0")).on(Process0Outbox).identifiedBy(newEntityId())
                 .output(),
             onEvent(LongExternalProcessing).to(Processing)
                 .assembleInput()
-                .trigger(Process3Outbox.requestDispatched()).with(_ -> Input.of(requestMessage("/process/3000"))).on(Process3Outbox).identifiedBy(newEntityId())
+                .trigger(Process3Outbox.requestDispatched()).with(_ -> requestMessage("/process/3000")).on(Process3Outbox).identifiedBy(newEntityId())
                 .reversible(
                     assemble((log, rollbackType) -> "")
                         // NB: Response in request/reply session not possible with reversals triggered by the resolver
                         //.trigger(ComplexInternalProcessResponse).with(_ -> "Failed to switch on light! :(((").on(inboxExchange).identifiedBy(entityIdFromSession())
-                        .trigger(Process0Outbox.requestDispatched()).with(_ -> Input.of(requestMessage("/process/0"))).on(Process0Outbox).identifiedBy(newEntityId())
+                        .trigger(Process0Outbox.requestDispatched()).with(_ -> requestMessage("/process/0")).on(Process0Outbox).identifiedBy(newEntityId())
                 )
                 .output(),
             onEvent(SwitchOn).to(On).output()
@@ -318,7 +317,7 @@ public class HttpInboxTest {
       EntityModel entityModel,
       Map<State, List<TransitionModel<?, ?>>> processTransitions,
       List<HttpRequestRoute<?>> routes,
-      List<HttpOutboxRequest<?>> outboxes
+      List<HttpOutboxRequest<?, ?>> outboxes
   ) {
     Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions = new HashMap<>();
     transitions.put(entityModel, processTransitions);
@@ -326,7 +325,7 @@ public class HttpInboxTest {
     transitions.put(RequestDispatching, requestDispatchingTransitions(routes, List.of()));
     for (var outbox : outboxes) {
       transitions.put(outbox, outbox.transitions());
-      if (outbox instanceof AtMostOnce<?, ?, ?> amo) {
+      if (outbox instanceof AtMostOnce<?, ?, ?, ?> amo) {
         if (amo.rollbackOnAcceptedModel() != null)
           transitions.put(amo.rollbackOnAcceptedModel(), amo.rollbackOnAcceptedModel().transitions());
         if (amo.rollbackOnUnknownModel() != null)
@@ -384,7 +383,7 @@ public class HttpInboxTest {
             .backoffAlgorithm(c -> new DelaySpecification(Duration.ofSeconds(10), Duration.ofMinutes(10), Duration.ofHours(5), 1.5).calculateDelay(c.attemptNumber()))
             .build("Process0RollbackOutbox", UUID.fromString("513f7e3e-c03e-4016-b5f3-ddb981cb1ffe"))
         )
-        .rollbackMessageCreator((_, _) -> Mono.just(Input.of(requestMessage("/rollback"))))
+        .rollbackMessageCreator((_, _) -> Mono.just(requestMessage("/rollback")))
         .build("Process0Outbox", UUID.fromString("2c68ffa2-0935-46fd-a032-2647ca51b801"));
     Process3Outbox = HttpOutboxRequest.atLeastOnce()
         .requestPayloadType(DataType.none())

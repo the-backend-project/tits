@@ -73,7 +73,7 @@ public class SettlementTransitions {
     return transitions;
   }
 
-  public List<HttpOutboxRequest<?>> acquirerOutboxRequestModels() {
+  public List<HttpOutboxRequest<?, ?>> acquirerOutboxRequestModels() {
     return List.of(reconciliation.outbox());
   }
 

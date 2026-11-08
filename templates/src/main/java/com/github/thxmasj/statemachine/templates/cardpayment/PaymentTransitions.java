@@ -172,7 +172,7 @@ public class PaymentTransitions {
     return preauthorisation;
   }
 
-  public List<HttpOutboxRequest<?>> acquirerOutboxRequestModels() {
+  public List<HttpOutboxRequest<?, ?>> acquirerOutboxRequestModels() {
     return outboxes(authorisation, preauthorisation, capture, refund, failedAuthentication, captureRequestedTooLate);
   }
 
@@ -180,11 +180,11 @@ public class PaymentTransitions {
     return approvedCapture;
   }
 
-  public List<HttpOutboxRequest<?>> merchantRefundRequestModels() {
+  public List<HttpOutboxRequest<?, ?>> merchantRefundRequestModels() {
     return outboxes(approvedRefund, declinedRefund, failedRefund);
   }
 
-  public List<HttpOutboxRequest<?>> merchantOutboxRequestModels() {
+  public List<HttpOutboxRequest<?, ?>> merchantOutboxRequestModels() {
     return outboxes(
         rolledBackAuthorisationRequest,
         rolledBackPreauthorisationRequest,
@@ -666,8 +666,8 @@ public class PaymentTransitions {
     );
   }
 
-  private static List<HttpOutboxRequest<?>> outboxes(Dispatcher<?, ?>... dispatchers) {
-    return Stream.of(dispatchers).<HttpOutboxRequest<?>>map(Dispatcher::outbox).toList();
+  private static List<HttpOutboxRequest<?, ?>> outboxes(Dispatcher<?, ?>... dispatchers) {
+    return Stream.of(dispatchers).<HttpOutboxRequest<?, ?>>map(Dispatcher::outbox).toList();
   }
 
   private Merchant merchant(Merchant merchant, MerchantDetails merchantDetails) {
