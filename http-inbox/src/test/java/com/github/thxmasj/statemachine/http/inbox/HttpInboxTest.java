@@ -40,7 +40,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.thxmasj.statemachine.BasicEventType;
 import com.github.thxmasj.statemachine.BasicEventType.Rollback.Data;
 import com.github.thxmasj.statemachine.DataType;
-import com.github.thxmasj.statemachine.http.HttpDataType;
 import com.github.thxmasj.statemachine.DelaySpecification;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.Event;
@@ -59,6 +58,7 @@ import com.github.thxmasj.statemachine.http.NettyHttpClientBuilder;
 import com.github.thxmasj.statemachine.http.inbox.HttpInbox.RoutedRequest;
 import com.github.thxmasj.statemachine.http.outbox.AtMostOnce;
 import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest;
+import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest.Input;
 import com.github.thxmasj.statemachine.message.http.HttpMessageParser;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Method;
@@ -108,15 +108,15 @@ public class HttpInboxTest {
     }
   }
 
-  private static HttpOutboxRequest<?> Process0Outbox;
-  private static HttpOutboxRequest<?> Process3Outbox;
+  private static HttpOutboxRequest<Void> Process0Outbox;
+  private static HttpOutboxRequest<Void> Process3Outbox;
 
   private static Map<State, List<TransitionModel<?, ?>>> lampTransitions() {
     return Map.of(
         Begin, List.of(
             onEvent(InternalProcessing).to(On)
                 .assemble(TransitionContext::eventReference)
-                .trigger(Process0Outbox.requestDispatched()).on(Process0Outbox).identifiedBy(newEntityId())
+                .trigger(Process0Outbox.requestDispatched()).with(_ -> Input.of(requestMessage("/process/0"))).on(Process0Outbox).identifiedBy(newEntityId())
                 //.trigger(new ProcessRequest(0)).with(_ -> null).to(DeviceListener).guaranteed()
                 .trigger(CompleteRequest).with(d -> tuple("Light is on! " + random.nextLong(), d.t1())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(),
@@ -126,16 +126,16 @@ public class HttpInboxTest {
                 .output(),
             onEvent(ExternalProcessing).to(Processing)
                 .assembleInput()
-                .trigger(Process0Outbox.requestDispatched()).on(Process0Outbox).identifiedBy(newEntityId())
+                .trigger(Process0Outbox.requestDispatched()).with(_ -> Input.of(requestMessage("/process/0"))).on(Process0Outbox).identifiedBy(newEntityId())
                 .output(),
             onEvent(LongExternalProcessing).to(Processing)
                 .assembleInput()
-                .trigger(Process3Outbox.requestDispatched()).on(Process3Outbox).identifiedBy(newEntityId())
+                .trigger(Process3Outbox.requestDispatched()).with(_ -> Input.of(requestMessage("/process/3000"))).on(Process3Outbox).identifiedBy(newEntityId())
                 .reversible(
                     assemble((log, rollbackType) -> "")
                         // NB: Response in request/reply session not possible with reversals triggered by the resolver
                         //.trigger(ComplexInternalProcessResponse).with(_ -> "Failed to switch on light! :(((").on(inboxExchange).identifiedBy(entityIdFromSession())
-                        .trigger(Process0Outbox.requestDispatched()).on(Process0Outbox).identifiedBy(newEntityId())
+                        .trigger(Process0Outbox.requestDispatched()).with(_ -> Input.of(requestMessage("/process/0"))).on(Process0Outbox).identifiedBy(newEntityId())
                 )
                 .output(),
             onEvent(SwitchOn).to(On).output()
@@ -155,7 +155,7 @@ public class HttpInboxTest {
         Off, List.of(
             onEvent(InternalProcessing).to(On)
                 .assemble(TransitionContext::eventReference)
-                .trigger(Process0Outbox.requestDispatched()).on(Process0Outbox).identifiedBy(newEntityId())
+                .trigger(Process0Outbox.requestDispatched()).with(_ -> Input.of(requestMessage("/process/0"))).on(Process0Outbox).identifiedBy(newEntityId())
                 //.trigger(new ProcessRequest(0)).with(_ -> null).to(DeviceListener).guaranteed()
                 .trigger(CompleteRequest).with(d -> tuple("Light is on! " + random.nextLong(), d.t1())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(),
@@ -165,16 +165,16 @@ public class HttpInboxTest {
                 .output(),
             onEvent(ExternalProcessing).to(Processing)
                 .assembleInput()
-                .trigger(Process0Outbox.requestDispatched()).on(Process0Outbox).identifiedBy(newEntityId())
+                .trigger(Process0Outbox.requestDispatched()).with(_ -> Input.of(requestMessage("/process/0"))).on(Process0Outbox).identifiedBy(newEntityId())
                 .output(),
             onEvent(LongExternalProcessing).to(Processing)
                 .assembleInput()
-                .trigger(Process3Outbox.requestDispatched()).on(Process3Outbox).identifiedBy(newEntityId())
+                .trigger(Process3Outbox.requestDispatched()).with(_ -> Input.of(requestMessage("/process/3000"))).on(Process3Outbox).identifiedBy(newEntityId())
                 .reversible(
                     assemble((log, rollbackType) -> "")
                         // NB: Response in request/reply session not possible with reversals triggered by the resolver
                         //.trigger(ComplexInternalProcessResponse).with(_ -> "Failed to switch on light! :(((").on(inboxExchange).identifiedBy(entityIdFromSession())
-                        .trigger(Process0Outbox.requestDispatched()).on(Process0Outbox).identifiedBy(newEntityId())
+                        .trigger(Process0Outbox.requestDispatched()).with(_ -> Input.of(requestMessage("/process/0"))).on(Process0Outbox).identifiedBy(newEntityId())
                 )
                 .output(),
             onEvent(SwitchOn).to(On).output()
@@ -326,7 +326,7 @@ public class HttpInboxTest {
     transitions.put(RequestDispatching, requestDispatchingTransitions(routes, List.of()));
     for (var outbox : outboxes) {
       transitions.put(outbox, outbox.transitions());
-      if (outbox instanceof AtMostOnce<?, ?,?> amo) {
+      if (outbox instanceof AtMostOnce<?, ?> amo) {
         if (amo.rollbackOnAcceptedModel() != null)
           transitions.put(amo.rollbackOnAcceptedModel(), amo.rollbackOnAcceptedModel().transitions());
         if (amo.rollbackOnUnknownModel() != null)
@@ -356,8 +356,6 @@ public class HttpInboxTest {
     Process0Outbox = HttpOutboxRequest.atMostOnce()
         .requestPayloadType(DataType.none())
         .responsePayloadType(DataType.none())
-        .inputDataType(DataType.none())
-        .messageCreatorReactive(_ -> Mono.just(requestMessage("/process/0")))
         .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
         .inflightTimeout(Duration.ofSeconds(10))
         .processModel(Lamp)
@@ -374,8 +372,6 @@ public class HttpInboxTest {
         .rollbackOnAcceptedModel(HttpOutboxRequest.atLeastOnce()
             .requestPayloadType(DataType.none())
             .responsePayloadType(DataType.none())
-            .inputDataType(DataType.tuple(DataType.none(), HttpDataType.forRequest(DataType.none())))
-            .messageCreatorReactive(_ -> Mono.just(requestMessage("/rollback")))
             .repeatMessageCreator((_, o) -> o)
             .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
             .inflightTimeout(Duration.ofSeconds(10))
@@ -392,8 +388,6 @@ public class HttpInboxTest {
     Process3Outbox = HttpOutboxRequest.atLeastOnce()
         .requestPayloadType(DataType.none())
         .responsePayloadType(DataType.none())
-        .inputDataType(DataType.none())
-        .messageCreatorReactive(_ -> Mono.just(requestMessage("/process/3000")))
         .repeatMessageCreator((_, requestMessage) -> requestMessage)
         .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
         .inflightTimeout(Duration.ofSeconds(10))

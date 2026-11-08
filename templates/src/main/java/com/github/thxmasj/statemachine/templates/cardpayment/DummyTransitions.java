@@ -32,6 +32,7 @@ import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.Identifiable;
 import com.github.thxmasj.statemachine.http.outbox.AtLeastOnce;
 import com.github.thxmasj.statemachine.http.outbox.AtMostOnce;
+import com.github.thxmasj.statemachine.http.outbox.Dispatcher;
 import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest;
 import java.time.Duration;
 import java.util.UUID;
@@ -40,43 +41,55 @@ public class DummyTransitions {
 
   public static SettlementTransitions settlement() {
     return new SettlementTransitions(
-        atLeastOnce(Reconciliation),
-        atLeastOnce(ApprovedCutOff)
+        dispatcher(atLeastOnce(Reconciliation)),
+        dispatcher(atLeastOnce(ApprovedCutOff))
     );
   }
 
   public static PaymentTransitions payment() {
     return new PaymentTransitions(
         null,
-        atMostOnce(Authentication),
-        atMostOnce(Preauthorisation, PreauthorisationRollbackOnAccepted, PreauthorisationRollbackOnUnknown),
-        atMostOnce(Authorisation, AuthorisationRollbackOnAccepted, AuthorisationRollbackOnUnknown),
-        atLeastOnce(Capture),
-        atMostOnce(Refund, RefundRollbackOnAccepted, RefundRollbackOnUnknown),
-        atLeastOnce(CaptureRequestedTooLate),
-        atLeastOnce(FailedAuthentication),
-        atLeastOnce(RolledBackAuthorisation),
-        atLeastOnce(RolledBackPreauthorisation),
-        atLeastOnce(ApprovedPreauthorisation),
-        atLeastOnce(FailedAuthorisation),
-        atLeastOnce(ApprovedAuthorisation),
-        atLeastOnce(DeclinedAuthorisation),
-        atLeastOnce(ApprovedCapture),
-        atLeastOnce(FailedRefund),
-        atLeastOnce(ApprovedRefund),
-        atLeastOnce(DeclinedRefund)
+        dispatcher(atMostOnce(Authentication)),
+        reversibleDispatcher(Preauthorisation, PreauthorisationRollbackOnAccepted, PreauthorisationRollbackOnUnknown),
+        reversibleDispatcher(Authorisation, AuthorisationRollbackOnAccepted, AuthorisationRollbackOnUnknown),
+        dispatcher(atLeastOnce(Capture)),
+        reversibleDispatcher(Refund, RefundRollbackOnAccepted, RefundRollbackOnUnknown),
+        dispatcher(atLeastOnce(CaptureRequestedTooLate)),
+        dispatcher(atLeastOnce(FailedAuthentication)),
+        dispatcher(atLeastOnce(RolledBackAuthorisation)),
+        dispatcher(atLeastOnce(RolledBackPreauthorisation)),
+        dispatcher(atLeastOnce(ApprovedPreauthorisation)),
+        dispatcher(atLeastOnce(FailedAuthorisation)),
+        dispatcher(atLeastOnce(ApprovedAuthorisation)),
+        dispatcher(atLeastOnce(DeclinedAuthorisation)),
+        dispatcher(atLeastOnce(ApprovedCapture)),
+        dispatcher(atLeastOnce(FailedRefund)),
+        dispatcher(atLeastOnce(ApprovedRefund)),
+        dispatcher(atLeastOnce(DeclinedRefund))
     );
   }
 
   public record Request() {}
   public record Response() {}
 
-  public static <I> AtMostOnce<I, Request, Void> atMostOnce(Identifiable id) {
+  /// A dispatcher which creates no request messages, for outbox requests which are not exercised.
+  public static <X> Dispatcher<X, Void> dispatcher(HttpOutboxRequest<Request> outbox) {
+    return Dispatcher.of(outbox, _ -> null);
+  }
+
+  /// A dispatcher which creates no request messages, for outbox requests which are not exercised.
+  public static <X, Y> Dispatcher<X, Y> reversibleDispatcher(
+      Identifiable id,
+      Identifiable rollbackOnAcceptedId,
+      Identifiable rollbackOnUnknownId
+  ) {
+    return Dispatcher.reversible(atMostOnce(id, rollbackOnAcceptedId, rollbackOnUnknownId), _ -> null, _ -> null);
+  }
+
+  public static AtMostOnce<Request, Void> atMostOnce(Identifiable id) {
     return HttpOutboxRequest.atMostOnce()
         .requestPayloadType(DataType.json(Request.class))
         .responsePayloadType(DataType.json(Response.class))
-        .inputDataType(DataType.<I>unknown())
-        .messageCreator(_ -> null)
         .forwarder(null)
         .processModel(EntityModel.of("Process", UUID.randomUUID()))
         .contentParser(_ -> valid(null))
@@ -86,29 +99,25 @@ public class DummyTransitions {
         .build(id.name(), id.id());
   }
 
-  public static <I, RI> AtMostOnce<I, Request, RI> atMostOnce(Identifiable id, Identifiable rollbackOnAcceptedId, Identifiable rollbackOnUnknownId) {
+  public static AtMostOnce<Request, Request> atMostOnce(Identifiable id, Identifiable rollbackOnAcceptedId, Identifiable rollbackOnUnknownId) {
     return HttpOutboxRequest.atMostOnce()
         .requestPayloadType(DataType.json(Request.class))
         .responsePayloadType(DataType.json(Response.class))
-        .inputDataType(DataType.<I>unknown())
-        .messageCreator(_ -> null)
         .forwarder(null)
         .processModel(EntityModel.of("Process", UUID.randomUUID()))
         .contentParser(_ -> valid(null))
         .isAccepted(_ -> true)
         .isRejected(_ -> true)
         .isRejectedByInvalidResponse(_ -> true)
-        .<RI>rollbackOnAcceptedModel(DummyTransitions.atLeastOnce(rollbackOnAcceptedId))
+        .rollbackOnAcceptedModel(DummyTransitions.atLeastOnce(rollbackOnAcceptedId))
         .rollbackOnUnknownModel(DummyTransitions.atLeastOnce(rollbackOnUnknownId))
         .build(id.name(), id.id());
   }
 
-  public static <I> AtLeastOnce<I> atLeastOnce(Identifiable id) {
+  public static AtLeastOnce<Request> atLeastOnce(Identifiable id) {
     return HttpOutboxRequest.atLeastOnce()
         .requestPayloadType(DataType.json(Request.class))
         .responsePayloadType(DataType.json(Response.class))
-        .inputDataType(DataType.<I>unknown())
-        .messageCreator(_ -> null)
         .forwarder(null)
         .processModel(EntityModel.of("Process", UUID.randomUUID()))
         .contentParser(_ -> valid(null))

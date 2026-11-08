@@ -43,7 +43,7 @@ import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;
 import com.github.thxmasj.statemachine.Tuples.Tuple3;
 import com.github.thxmasj.statemachine.Tuples.Tuple4;
-import com.github.thxmasj.statemachine.http.outbox.AtLeastOnce;
+import com.github.thxmasj.statemachine.http.outbox.Dispatcher;
 import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest;
 import com.github.thxmasj.statemachine.templates.cardpayment.AcquirerResponse.ReconciliationValues;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Merchant;
@@ -66,18 +66,18 @@ public class SettlementTransitions {
   }
   private final Map<State, List<TransitionModel<?, ?>>> transitions;
   private final List<EntityModel> outboxRequestModels;
-  private final AtLeastOnce<Tuple3<BatchNumber, AcquirerBatchNumber, Merchant>> reconciliation;
-  private final AtLeastOnce<Tuple2<CutOff, ReconciliationValues>> approvedCutOff;
+  private final Dispatcher<Tuple3<BatchNumber, AcquirerBatchNumber, Merchant>, Void> reconciliation;
+  private final Dispatcher<Tuple2<CutOff, ReconciliationValues>, Void> approvedCutOff;
 
   public Map<State, List<TransitionModel<?, ?>>> transitions() {
     return transitions;
   }
 
   public List<HttpOutboxRequest<?>> acquirerOutboxRequestModels() {
-    return List.of(reconciliation);
+    return List.of(reconciliation.outbox());
   }
 
-  public AtLeastOnce<Tuple2<CutOff, ReconciliationValues>> approvedCutOff() {
+  public Dispatcher<Tuple2<CutOff, ReconciliationValues>, Void> approvedCutOff() {
     return approvedCutOff;
   }
 
@@ -87,14 +87,14 @@ public class SettlementTransitions {
 
   public SettlementTransitions(
       // validateSettlementResponse()
-      AtLeastOnce<Tuple3<BatchNumber, AcquirerBatchNumber, Merchant>> reconciliationToAcquirer,
-      AtLeastOnce<Tuple2<CutOff, ReconciliationValues>> approvedCutOffToMerchant
+      Dispatcher<Tuple3<BatchNumber, AcquirerBatchNumber, Merchant>, Void> reconciliationToAcquirer,
+      Dispatcher<Tuple2<CutOff, ReconciliationValues>, Void> approvedCutOffToMerchant
   ) {
     this.reconciliation = reconciliationToAcquirer;
     this.approvedCutOff = approvedCutOffToMerchant;
     this.outboxRequestModels = List.of(
-        reconciliationToAcquirer,
-        approvedCutOffToMerchant
+        reconciliationToAcquirer.outbox(),
+        approvedCutOffToMerchant.outbox()
     );
 
     this.transitions = Map.of(
@@ -163,8 +163,8 @@ public class SettlementTransitions {
                             input
                         ))
                         .trigger(approvedCutOff.requestDispatched())
-                        .with(d -> new Tuple2<>(d.t1(), d.t2()))
-                        .on(approvedCutOff)
+                        .with(d -> approvedCutOff.input(new Tuple2<>(d.t1(), d.t2())))
+                        .on(approvedCutOff.outbox())
                         .identifiedBy(newEntityId())
 //                        .trigger(approvedCutOff())
 //                        .with(d -> new Tuple2<>(d.t1(), d.t2()))
@@ -214,8 +214,8 @@ public class SettlementTransitions {
             .trigger(reconciliation.requestDispatched())
             // A rolled back request is settled too, as its reversal is a request referencing the batch on its own
             .when(BatchReferenced, d -> d.t1().t5()).is(HttpOutboxRequest.requestAccepted(), HttpOutboxRequest.rollbackDispatched())
-            .with(d -> tuple(d.t1().t2(), d.t1().t3(), d.t2().accepted().event().getUnmarshalledData()))
-            .on(reconciliation)
+            .with(d -> reconciliation.input(tuple(d.t1().t2(), d.t1().t3(), d.t2().accepted().event().getUnmarshalledData())))
+            .on(reconciliation.outbox())
             .identifiedBy(newEntityId())
             .trigger(SettlementEvent.Open).with(d -> d.t1().t3().next()).on(Settlement).identifiedBy(newEntityId())
             .trigger(CompleteRequest).with(d -> tuple("", d.t1().t1().t4())).on(RequestDispatching).identifiedBy(entityIdFromSession())
