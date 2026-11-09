@@ -607,12 +607,14 @@ public class TransitionModelBuilder<I, T, O> {
       public final TransitionModelBuilder<I, T, O> identifiedBy(Function<T, ? extends EntitySelector>... entitySelector) {
         var eventType = eventTypeAndData.eventType();
         return eventType.builder().triggerConditional(
-            eventType.eventType(),
-            eventTypeAndData.dataAdapter(),
-            eventTypeAndData.reactiveDataAdapter(),
-            List.of(entitySelector),
-            entityModel,
-            eventType.condition()
+            new EventTrigger<>(
+                new EventSpec<>(eventType.eventType(), eventTypeAndData.dataAdapter()),
+                List.of(entitySelector),
+                entityModel,
+                false,
+                eventType.condition()
+            ),
+            eventTypeAndData.reactiveDataAdapter()
         );
       }
 
@@ -671,11 +673,16 @@ public class TransitionModelBuilder<I, T, O> {
 
       private TransitionModelBuilder<I, Tuple2<T, ProcessResult<O1>>, O> complete() {
         return this.entity.eventTypeAndData.eventType.builder.trigger(
-            this.entity.eventTypeAndData.eventType.eventType,
-            this.entity.eventTypeAndData.dataAdapter,
-            this.entity.eventTypeAndData.reactiveDataAdapter,
-            this.entitySelectors,
-            this.entity.entityModel
+            new EventTrigger<>(
+                new EventSpec<>(
+                    this.entity.eventTypeAndData.eventType.eventType,
+                    this.entity.eventTypeAndData.dataAdapter
+                ),
+                this.entitySelectors,
+                this.entity.entityModel,
+                false // TODO: Support create entity
+            ),
+            this.entity.eventTypeAndData.reactiveDataAdapter
         );
       }
 
@@ -958,87 +965,6 @@ public class TransitionModelBuilder<I, T, O> {
     );
   }
 
-  /// The trigger of an event of the given type. If the event type is an [EventCreator], the input of the event is
-  /// created by its data creator from the data given by the data adapters, and the event is of its underlying type.
-  private <I1, O1> TransitionModelBuilder<I, Tuple2<T, ProcessResult<O1>>, O> trigger(
-      EventType<I1, O1> eventType,
-      Function<T, I1> dataAdapter,
-      BiFunction<TransitionContext<?>, T, Mono<I1>> reactiveDataAdapter,
-      List<Function<T, ? extends EntitySelector>> entitySelectors,
-      EntityModel entityModel
-  ) {
-    if (eventType instanceof EventCreator<I1, ?, O1> eventCreator)
-      return createdTrigger(eventCreator, dataAdapter, reactiveDataAdapter, entitySelectors, entityModel);
-    return trigger(
-        new EventTrigger<>(new EventSpec<>(eventType, dataAdapter), entitySelectors, entityModel, false), // TODO: Support create entity
-        reactiveDataAdapter
-    );
-  }
-
-  private <X, I1, O1> TransitionModelBuilder<I, Tuple2<T, ProcessResult<O1>>, O> createdTrigger(
-      EventCreator<X, I1, O1> eventCreator,
-      Function<T, X> dataAdapter,
-      BiFunction<TransitionContext<?>, T, Mono<X>> reactiveDataAdapter,
-      List<Function<T, ? extends EntitySelector>> entitySelectors,
-      EntityModel entityModel
-  ) {
-    return trigger(
-        new EventTrigger<>(
-            new EventSpec<>(eventCreator.eventType(), createdReactively(eventCreator.eventType())),
-            entitySelectors,
-            entityModel,
-            false
-        ),
-        createdData(eventCreator, dataAdapter, reactiveDataAdapter)
-    );
-  }
-
-  private <I1, O1> TransitionModelBuilder<I, T, O> triggerConditional(
-      EventType<I1, O1> eventType,
-      Function<T, I1> dataAdapter,
-      BiFunction<TransitionContext<?>, T, Mono<I1>> reactiveDataAdapter,
-      List<Function<T, ? extends EntitySelector>> entitySelectors,
-      EntityModel entityModel,
-      EventCondition<T> condition
-  ) {
-    if (eventType instanceof EventCreator<I1, ?, O1> eventCreator)
-      return createdTriggerConditional(eventCreator, dataAdapter, reactiveDataAdapter, entitySelectors, entityModel, condition);
-    return triggerConditional(
-        new EventTrigger<>(new EventSpec<>(eventType, dataAdapter), entitySelectors, entityModel, false, condition),
-        reactiveDataAdapter
-    );
-  }
-
-  private <X, I1, O1> TransitionModelBuilder<I, T, O> createdTriggerConditional(
-      EventCreator<X, I1, O1> eventCreator,
-      Function<T, X> dataAdapter,
-      BiFunction<TransitionContext<?>, T, Mono<X>> reactiveDataAdapter,
-      List<Function<T, ? extends EntitySelector>> entitySelectors,
-      EntityModel entityModel,
-      EventCondition<T> condition
-  ) {
-    return triggerConditional(
-        new EventTrigger<>(
-            new EventSpec<>(eventCreator.eventType(), createdReactively(eventCreator.eventType())),
-            entitySelectors,
-            entityModel,
-            false,
-            condition
-        ),
-        createdData(eventCreator, dataAdapter, reactiveDataAdapter)
-    );
-  }
-
-  private static <T, X, I1> BiFunction<TransitionContext<?>, T, Mono<I1>> createdData(
-      EventCreator<X, I1, ?> eventCreator,
-      Function<T, X> dataAdapter,
-      BiFunction<TransitionContext<?>, T, Mono<X>> reactiveDataAdapter
-  ) {
-    return reactiveDataAdapter != null ?
-        (c, t) -> reactiveDataAdapter.apply(c, t).flatMap(x -> eventCreator.dataCreator().apply(c, x)) :
-        (c, t) -> eventCreator.dataCreator().apply(c, dataAdapter.apply(t));
-  }
-
   private <I1, O1> TransitionModelBuilder<I, Tuple2<T, ProcessResult<O1>>, O> trigger(
       EventTrigger<T, I1, O1> eventTrigger,
       BiFunction<TransitionContext<?>, T, Mono<I1>> reactiveDataAdapter
@@ -1094,8 +1020,6 @@ public class TransitionModelBuilder<I, T, O> {
   }
 
   private <I1, O1> TransitionModelBuilder<I, T, O> triggerDelayed(EventType<I1, O1> eventType, Function<T, I1> dataAdapter, Function<T, Duration> delay) {
-    if (eventType instanceof EventCreator<?, ?, ?>)
-      throw new UnsupportedOperationException("A delayed event can't have its data created by an event creator");
     Function<Mono<ChangeContext<T>>, Mono<ChangeContext<T>>> f =
         changeContext -> changeContext
             .map(c -> new DelayedTriggerChangeContext<>(

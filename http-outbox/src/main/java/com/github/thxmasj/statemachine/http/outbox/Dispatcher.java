@@ -1,30 +1,32 @@
 package com.github.thxmasj.statemachine.http.outbox;
 
 import com.github.thxmasj.statemachine.EntityModel;
-import com.github.thxmasj.statemachine.EventCreator;
+import com.github.thxmasj.statemachine.EventType;
 import com.github.thxmasj.statemachine.State;
+import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import java.util.List;
 import java.util.Map;
+import reactor.core.publisher.Mono;
 
-/// Pairs an outbox request with the creator of its input, which creates it from data of type `X`, so that the outbox
-/// request is reusable regardless of where its request messages come from. The input is the request message, or a
-/// [HttpOutboxRequest.BatchedRequest] for a batched outbox request.
-///
-/// The input type of the outbox request is hidden by [#requestDispatched()], so that a process can dispatch requests to
-/// an outbox request knowing only the type of the data the input is created from:
+/// Pairs an outbox request with the creator of its input (of type `I`), which creates it from data of type `X`, so
+/// that the outbox request is reusable regardless of where its request messages come from. The input is the request
+/// message, or a [HttpOutboxRequest.BatchedRequest] for a batched outbox request.
 /// ```
 /// .trigger(dispatcher.requestDispatched())
-/// .with(d -> x)
+/// .withReactive((c, d) -> dispatcher.input(c, x))
 /// .on(dispatcher.outbox())
 /// .identifiedBy(newEntityId())
 /// ```
-public sealed interface Dispatcher<X> permits AtLeastOnceDispatcher, AtMostOnceDispatcher, AtMostOnceWithRollbackDispatcher {
+public sealed interface Dispatcher<X, I> permits AtLeastOnceDispatcher, AtMostOnceDispatcher, AtMostOnceWithRollbackDispatcher {
 
-  HttpOutboxRequest<?, ?> outbox();
+  HttpOutboxRequest<I, ?> outbox();
 
-  /// The request dispatched event of the outbox request, with its input created from data of type `X`.
-  EventCreator<X, ?, ?> requestDispatched();
+  EventType<I, ?> requestDispatched();
+
+  /// The input of the request dispatched event, created from the given data in the given context of the transition
+  /// dispatching the request.
+  Mono<I> input(TransitionContext<?> context, X data);
 
   /// The transitions to register for the outbox request, including those of its rollback models, if any.
   Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions();

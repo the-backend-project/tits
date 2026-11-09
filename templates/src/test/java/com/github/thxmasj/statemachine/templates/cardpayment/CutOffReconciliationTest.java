@@ -269,7 +269,7 @@ public class CutOffReconciliationTest {
         .isRejected(_ -> false)
         .isRejectedByInvalidResponse(_ -> false)
         .build(Authentication.name(), Authentication.id());
-    Dispatcher<AuthenticationData> authenticationDispatcher = AtMostOnceDispatcher.of(authentication, _ -> request(Authentication));
+    Dispatcher<AuthenticationData, TypedHttpRequest<Request>> authenticationDispatcher = AtMostOnceDispatcher.of(authentication, _ -> request(Authentication));
 
     AtMostOnce<BatchedRequest<AcquirerAuthorisationRequest>, AcquirerAuthorisationRequest, TypedHttpRequest<Request>> acquirerAuthorisation =
         HttpOutboxRequest.atMostOnce()
@@ -298,7 +298,7 @@ public class CutOffReconciliationTest {
                 PaymentTransitions.OutboxRequestModelIds.Authorisation.name(),
                 PaymentTransitions.OutboxRequestModelIds.Authorisation.id()
             );
-    AtMostOnceWithRollbackDispatcher<Tuple6<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, UUID>, Tuple4<ReversalData, Merchant, AcquirerBatchNumber, UUID>> acquirerAuthorisationDispatcher =
+    AtMostOnceWithRollbackDispatcher<Tuple6<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, UUID>, BatchedRequest<AcquirerAuthorisationRequest>, Tuple4<ReversalData, Merchant, AcquirerBatchNumber, UUID>> acquirerAuthorisationDispatcher =
         AtMostOnceWithRollbackDispatcher.of(
             acquirerAuthorisation,
             (Tuple6<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, UUID> d) -> new BatchedRequest<>(TypedHttpRequest.create(
@@ -317,7 +317,7 @@ public class CutOffReconciliationTest {
             ), d.t6()),
             (_, _) -> Mono.empty()
         );
-    Dispatcher<Tuple3<BatchNumber, AcquirerBatchNumber, Merchant>> reconciliation = dispatcher(
+    Dispatcher<Tuple3<BatchNumber, AcquirerBatchNumber, Merchant>, TypedHttpRequest<Request>> reconciliation = dispatcher(
         Reconciliation,
         reconciliationInput::set
     );
@@ -378,11 +378,11 @@ public class CutOffReconciliationTest {
     );
   }
 
-  private static <X> Dispatcher<X> dispatcher(Identifiable id) {
+  private static <X> Dispatcher<X, TypedHttpRequest<Request>> dispatcher(Identifiable id) {
     return dispatcher(id, _ -> {});
   }
 
-  private static <X> Dispatcher<X> dispatcher(Identifiable id, Consumer<X> dataListener) {
+  private static <X> Dispatcher<X, TypedHttpRequest<Request>> dispatcher(Identifiable id, Consumer<X> dataListener) {
     return AtLeastOnceDispatcher.of(atLeastOnce(id), x -> {
       dataListener.accept(x);
       return request(id);

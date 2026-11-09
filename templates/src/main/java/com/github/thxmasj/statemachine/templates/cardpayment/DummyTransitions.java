@@ -77,17 +77,17 @@ public class DummyTransitions {
   public record Response() {}
 
   /// A dispatcher which creates no request messages, for outbox requests which are not exercised.
-  public static <X> AtLeastOnceDispatcher<X> dispatcher(AtLeastOnce<TypedHttpRequest<Request>, Request> outbox) {
+  public static <X> AtLeastOnceDispatcher<X, TypedHttpRequest<Request>> dispatcher(AtLeastOnce<TypedHttpRequest<Request>, Request> outbox) {
     return AtLeastOnceDispatcher.of(outbox, _ -> null);
   }
 
   /// A dispatcher which creates no request messages, for outbox requests which are not exercised.
-  public static <X> AtMostOnceDispatcher<X> dispatcher(AtMostOnce<TypedHttpRequest<Request>, Request, Void> outbox) {
+  public static <X> AtMostOnceDispatcher<X, TypedHttpRequest<Request>> dispatcher(AtMostOnce<TypedHttpRequest<Request>, Request, Void> outbox) {
     return AtMostOnceDispatcher.of(outbox, _ -> null);
   }
 
   /// A dispatcher which creates no request messages, for outbox requests which are not exercised.
-  public static <X, Y> AtMostOnceWithRollbackDispatcher<X, Y> reversibleDispatcher(
+  public static <X, Y> AtMostOnceWithRollbackDispatcher<X, TypedHttpRequest<Request>, Y> reversibleDispatcher(
       Identifiable id,
       Identifiable rollbackOnAcceptedId,
       Identifiable rollbackOnUnknownId

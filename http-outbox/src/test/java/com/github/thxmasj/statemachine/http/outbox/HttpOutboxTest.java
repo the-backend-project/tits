@@ -251,14 +251,14 @@ public class HttpOutboxTest {
         .batched()
         .build("BatchedExchange", UUID.randomUUID());
     UUID batchId = UUID.randomUUID();
-    AtMostOnceDispatcher<String> dispatcher = AtMostOnceDispatcher.of(
+    AtMostOnceDispatcher<String, BatchedRequest<String>> dispatcher = AtMostOnceDispatcher.of(
         outbox,
         (String path) -> new BatchedRequest<>(requestMessage(path, "payload"), batchId)
     );
 
     assertEquals(outbox, dispatcher.outbox());
-    assertEquals(outbox.requestDispatched(), dispatcher.requestDispatched().eventType());
-    assertEquals(new BatchedRequest<>(requestMessage("/test", "payload"), batchId), dispatcher.requestDispatched().dataCreator().apply(null, "/test").block());
+    assertEquals(outbox.requestDispatched(), dispatcher.requestDispatched());
+    assertEquals(new BatchedRequest<>(requestMessage("/test", "payload"), batchId), dispatcher.input(null, "/test").block());
     assertEquals("(HTTP request<string>, uuid)", outbox.requestDispatched().inputDataType().name());
   }
 
@@ -641,7 +641,7 @@ public class HttpOutboxTest {
               .build("ExchangeRollbackOnUnknown", UUID.fromString("ec3848a3-4b03-3a69-7d94-a448a83e792b"))
           )
           .build("Exchange", UUID.fromString("a3778c63-144f-4748-9e8b-cc10ee20db3f"));
-      AtMostOnceWithRollbackDispatcher<Void, Void> dispatcher = AtMostOnceWithRollbackDispatcher.of(
+      AtMostOnceWithRollbackDispatcher<Void, TypedHttpRequest<Void>, Void> dispatcher = AtMostOnceWithRollbackDispatcher.of(
           Exchange,
           (Void _) -> requestMessage(path),
           (_, d) -> Mono.just(requestMessage(d.t2().uri().getPath() + "/rollback"))
@@ -650,7 +650,7 @@ public class HttpOutboxTest {
       Map<State, List<TransitionModel<?, ?>>> processTransitions = Map.of(
           Begin, List.of(
               onEvent(doProcess).to(States.WaitingForResponse)
-                  .trigger(dispatcher.requestDispatched()).with(_ -> null).on(dispatcher.outbox()).identifiedBy(newEntityId())
+                  .trigger(dispatcher.requestDispatched()).withReactive((c, _) -> dispatcher.input(c, null)).on(dispatcher.outbox()).identifiedBy(newEntityId())
                   .reversible(
                       assemble((log, _) -> log.one(doProcess))
                           .trigger(dispatcher.rollbackDispatched()).on(dispatcher.outbox()).identifiedBy(d -> entityId(d))
