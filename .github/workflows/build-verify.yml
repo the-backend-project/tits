@@ -14,18 +14,41 @@ jobs:
       mssql:
         image: mcr.microsoft.com/azure-sql-edge:2.0.0
         ports:
-          - 1433:1433
+          - 11433:1433
         env:
           ACCEPT_EULA: Y
           SA_PASSWORD: A_Str0ng_Required_Password
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Initialize test database
+        run: |
+          docker run --rm \
+            --network ${{ job.services.mssql.network }} \
+            --env=SA_PASSWORD=A_Str0ng_Required_Password \
+            "$(docker build -q test/mssql)"
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
-          java-version: '24'
+          java-version: '27'
           distribution: 'temurin'
           cache: maven
       - name: Build Java artifacts and run any verifications
-        run: mvn -B verify --file pom.xml
+        run: mvn -B verify --file pom.xml -Daether.artifactResolver.postProcessor.trustedChecksums.failIfMissing=true
+
+  demo:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Build the demo native image and run it with its database
+        working-directory: demo
+        run: docker compose up --detach --build
+      - name: Check that the demo says hello
+        run: |
+          for i in $(seq 1 120); do curl -sf localhost:8080/health && break; sleep 1; done
+          curl -sf localhost:8080/ | grep 'Hello, world!'
+      - name: Show the logs
+        if: always()
+        working-directory: demo
+        run: docker compose logs

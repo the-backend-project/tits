@@ -1,65 +1,56 @@
 package com.github.thxmasj.statemachine;
 
-import com.github.thxmasj.statemachine.database.ChangeRaced;
-import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.UUID;
+import org.checkerframework.checker.nullness.qual.NonNull;
 
 public interface Listener {
 
-    void clientRequestFailed(
-            String correlationId,
-            EntityId entityId,
-            EventType<?, ?> requestEvent,
-            Throwable t
-    );
-
-    void rollbackFailed(
-            String correlationId,
-            EntityId entityId,
-            Throwable t
-    );
-
-    void inconsistentState(
-            String correlationId,
-            EntityId entityId,
-            String sourceState,
-            String details
-    );
-
-    void resolveStateFailed(
-        String correlationId,
-        EntityId entityId,
-        String sourceState,
-        EventType<?, ?> resolveEvent,
-        String details
-    );
-
     record Change(
         Entity entity,
-        State sourceState,
-        State targetState,
         ZonedDateTime timeout,
-        List<Event> events,
-        List<String> secondaryIds,
-        List<HttpRequestMessage> incomingRequests,
-        List<HttpResponseMessage> outgoingResponses,
-        List<HttpRequestMessage> outgoingRequests,
-        List<HttpResponseMessage> incomingResponses
+        Event event,
+        List<String> secondaryIds
     ) {
       public record Entity(
-          EntityModel type,
-          EntityId id,
+          String model,
+          UUID id,
           List<String> secondaryIds
-      ) {}
-      public record Event(
-          int number,
-          EventType<?, ?> type,
-          String data
-      ) {}
+      ) {
+        @Override public @NonNull String toString() {
+          return model + "[id=" + id + "]";
+        }
+      }
+
+      public static class Event {
+
+        private final int number;
+        private final String type;
+
+        public Event(int number, String type) {
+          this.number = number;
+          this.type = type;
+        }
+
+        public int number() {return number;}
+
+        public String type() {return type;}
+
+      }
+
+      public static class DelayedEvent extends Event {
+        private final ZonedDateTime after;
+
+        public DelayedEvent(int number, String type, ZonedDateTime after) {
+          super(number, type);
+          this.after = after;
+        }
+
+        public ZonedDateTime after() {return after;}
+      }
     }
 
     void changeAccepted(
@@ -67,17 +58,7 @@ public interface Listener {
         List<Change> changes
     );
 
-    void changeFailed(
-            String correlationId,
-            List<Change> changes,
-            Throwable t
-    );
-
-    void repeatedRequest(String correlationId, EntityId entityId, String clientId, String messageId);
-
-    void changeRaced(String correlationId, List<Change> changes, ChangeRaced cause);
-
-    void processNextDeadlineFailed(Throwable t);
+  void processNextDeadlineFailed(Throwable t);
 
   void forwardingAttempt(
       UUID requestId,

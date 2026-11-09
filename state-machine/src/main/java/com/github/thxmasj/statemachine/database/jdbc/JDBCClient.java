@@ -4,6 +4,7 @@ import static com.github.thxmasj.statemachine.database.jdbc.PreparedStatementSup
 import static java.util.stream.Collectors.joining;
 
 import com.github.thxmasj.statemachine.database.Client;
+import com.github.thxmasj.statemachine.database.Parameter;
 import com.github.thxmasj.statemachine.database.Row;
 import com.microsoft.sqlserver.jdbc.SQLServerException;
 import java.sql.Connection;
@@ -33,12 +34,12 @@ public class JDBCClient implements Client {
   }
 
   @Override
-  public <T> Mono<T> one(String name, String sql, Map<String, Object> parameters, Function<Row, T> rowMapper) {
+  public <T> Mono<T> one(String name, String sql, Map<String, Parameter<?>> parameters, Function<Row, T> rowMapper) {
     return all(name, sql, parameters, rowMapper).singleOrEmpty();
   }
 
   @Override
-  public <T> Flux<T> all(String name, String sql, Map<String, Object> parameters, Function<Row, T> rowMapper) {
+  public <T> Flux<T> all(String name, String sql, Map<String, Parameter<?>> parameters, Function<Row, T> rowMapper) {
     return Mono.fromCallable(() -> {
           try (
               Connection connection = dataSource.getConnection();
@@ -53,7 +54,7 @@ public class JDBCClient implements Client {
   }
 
   @Override
-  public Mono<Integer> update(String name, String sql, Map<String, Object> parameters) {
+  public Mono<Integer> update(String name, String sql, Map<String, Parameter<?>> parameters) {
     return Mono.fromCallable(() -> {
           try (
               Connection connection = dataSource.getConnection();
@@ -93,19 +94,19 @@ public class JDBCClient implements Client {
     return lastResult;
   }
 
-  private Function<? super Throwable, ? extends Throwable> errorMapper(String queryName, String sql, Map<String, Object> parameters) {
+  private Function<? super Throwable, ? extends Throwable> errorMapper(String queryName, String sql, Map<String, Parameter<?>> parameters) {
     return error -> switch (error) {
       case SQLServerException e when e.getSQLServerError().getErrorNumber() == 2627 -> {
         Matcher primaryKeyViolationMatcher = primaryKeyViolationPattern.matcher(e.getMessage());
         if (primaryKeyViolationMatcher.matches())
-          yield new PrimaryKeyConstraintViolation(queryName, null, primaryKeyViolationMatcher.group(3), primaryKeyViolationMatcher.group(1), e);
+          yield new PrimaryKeyConstraintViolation(queryName, null, primaryKeyViolationMatcher.group(4), primaryKeyViolationMatcher.group(3), primaryKeyViolationMatcher.group(1), e);
         else
           yield new DataIntegrityViolation(queryName, null, "N/A", errorMessage(e.getMessage(), queryName, sql, parameters), e);
       }
       case SQLServerException f when f.getSQLServerError().getErrorNumber() == 2601 -> {
         Matcher duplicateKeyRowMatcher = duplicateKeyRowPattern.matcher(f.getMessage());
         if (duplicateKeyRowMatcher.matches())
-          yield new UniqueIndexConstraintViolation(queryName, null, duplicateKeyRowMatcher.group(2), duplicateKeyRowMatcher.group(3), f);
+          yield new UniqueIndexConstraintViolation(queryName, null, duplicateKeyRowMatcher.group(4), duplicateKeyRowMatcher.group(2), duplicateKeyRowMatcher.group(3), f);
         else
           yield new DataIntegrityViolation(queryName, null, "N/A", errorMessage(f.getMessage(), queryName, sql, parameters), f);
       }
@@ -113,12 +114,12 @@ public class JDBCClient implements Client {
     };
   }
 
-  private String errorMessage(String message, String queryName, String sql, Map<String, Object> parameters) {
-    return "Query "+queryName+" failed: " + message + "\nParameters:\n" + parameters.entrySet().stream().map(e -> e.getKey() + "\t" + (e.getValue() != null ? e.getValue().getClass().getSimpleName() : "N/A") + "\t" + e.getValue()).collect(joining("\n")) + "\nSQL:\n" + sql;
+  private String errorMessage(String message, String queryName, String sql, Map<String, Parameter<?>> parameters) {
+    return "Query "+queryName+" failed: " + message + "\nParameters:\n" + parameters.entrySet().stream().map(e -> e.getKey() + "\t" + e.getValue()).collect(joining("\n")) + "\nSQL:\n" + sql;
   }
 
   private static final Pattern duplicateKeyRowPattern = Pattern.compile(
-      "Cannot insert duplicate key row in object '(.*)\\.(.*)' with unique index '(.*)'. The duplicate key value is \\((.*), (.*)\\).");
+      "Cannot insert duplicate key row in object '(.*)\\.(.*)' with unique index '(.*)'. The duplicate key value is \\((.*)\\).");
   private static final Pattern primaryKeyViolationPattern = Pattern.compile(
       "Violation of PRIMARY KEY constraint '(.*)'. Cannot insert duplicate key in object '(.*)\\.(.*)'. The duplicate key value is \\((.*)\\).");
 

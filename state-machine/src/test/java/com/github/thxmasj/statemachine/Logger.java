@@ -1,11 +1,12 @@
 package com.github.thxmasj.statemachine;
 
-import com.github.thxmasj.statemachine.database.*;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import java.time.*;
 import java.util.*;
-
-import static java.util.stream.Collectors.*;
 
 public class Logger implements Listener {
 
@@ -13,13 +14,6 @@ public class Logger implements Listener {
 
   public Logger(String entityName) {
     this.entityName = entityName;
-  }
-
-  @Override
-  public void clientRequestFailed(String correlationId, EntityId entityId, EventType<?, ?> eventType, Throwable t) {
-    log(header(entityId, correlationId) + " Request failed: " + t.toString());
-    //noinspection CallToPrintStackTrace
-    t.printStackTrace();
   }
 
   private void log(String message) {
@@ -31,53 +25,25 @@ public class Logger implements Listener {
   }
 
   @Override
-  public void rollbackFailed(String correlationId, EntityId entityId, Throwable t) {
-    log(header(entityId, correlationId) + " Rollback failed");
-  }
-
-  @Override
-  public void inconsistentState(
-          String correlationId,
-          EntityId entityId,
-          String sourceState,
-          String details
-  ) {
-    log(header(entityId, correlationId) + " Inconsistent state");
-  }
-
-  @Override
-  public void resolveStateFailed(
-      String correlationId,
-      EntityId entityId,
-      String sourceState,
-      EventType<?, ?> resolveEvent,
-      String details
-  ) {
-    log(header(entityId, correlationId) + " Resolving state " + sourceState + " with " + resolveEvent.name() + " failed: " + details);
-  }
-
-  @Override
   public void changeAccepted(String correlationId, List<Change> changes) {
-    log("[" + correlationId + "] Change accepted: \n  " + changes.stream().map(Change::toString).collect(joining("\n  ")));
+    log("[" + correlationId + "] Changes accepted: \n" + toString(changes));
   }
 
-  @Override
-  public void changeFailed(String correlationId, List<Change> changes, Throwable t) {
-    log("[" + correlationId + "] Change failed: \n  " + changes.stream().map(Change::toString).collect(joining("\n  ")) + "\nReason: " + t);
-  }
-
-  @Override
-  public void repeatedRequest(String correlationId, EntityId entityId, String clientId, String messageId) {
-    log(header(entityId, correlationId) + " Repeated request: clientId=" + clientId + ", messageId=" + messageId);
-  }
-
-  @Override
-  public void changeRaced(String correlationId, List<Change> changes, ChangeRaced cause) {
-    log(header(changes.getLast().entity().id(), correlationId) + " Change raced on table " + cause.tableName() + "\n" + changes.stream().map(Change::toString).collect(joining("\n  ")));
+  private String toString(List<Change> changes) {
+    try {
+      return new ObjectMapper()
+//          .enable(SerializationFeature.INDENT_OUTPUT)
+          .registerModule(new JavaTimeModule())
+          .setSerializationInclusion(JsonInclude.Include.NON_EMPTY)
+          .writeValueAsString(changes);
+    } catch (JsonProcessingException e) {
+      throw new RuntimeException(e);
+    }
   }
 
   @Override
   public void processNextDeadlineFailed(Throwable t) {
+    t.printStackTrace();
     log("Process next deadline failed: " + t.toString());
   }
 

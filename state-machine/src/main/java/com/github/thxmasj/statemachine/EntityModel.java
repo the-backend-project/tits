@@ -4,26 +4,19 @@ import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdMod
 import java.util.List;
 import java.util.UUID;
 
-public interface EntityModel {
+public interface EntityModel extends Identifiable {
 
-  String name();
-
-  UUID id();
-
-  default List<SecondaryIdModel> secondaryIds() {
+  default List<SecondaryIdModel<?>> secondaryIds() {
     return List.of();
   }
 
-  State initialState();
+  State Begin = () -> "Begin";
 
-  List<TransitionModel<?, ?, ?>> transitions();
-
-  default List<OutboxQueue> queues() {
-    return List.of();
+  static EntityModel of(String name, UUID id) {
+    return new EntityModel() {
+      @Override public String name() {return name;}
+      @Override public UUID id() {return id;}
+      @Override public String toString() {return name;}
+    };
   }
-
-  default EntityModel parentEntity() {
-    return null;
-  }
-
 }

@@ -2,7 +2,7 @@ package com.github.thxmasj.statemachine.templates.cardpayment;
 
 public record BatchNumber(
     String merchantId,
-    Long number
+    long number
 ) {
 
   public BatchNumber next() {

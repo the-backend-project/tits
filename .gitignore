@@ -2,3 +2,5 @@ target
 .idea
 site/
 docs/images
+.junie
+.mvn/checksums/*.bak

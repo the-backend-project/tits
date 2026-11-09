@@ -10,13 +10,18 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v4
-      - name: Set up JDK 24
+      - name: Set up JDK 27
         uses: actions/setup-java@v4
         with:
-          java-version: '24'
+          java-version: '27'
           distribution: 'temurin'
           cache: maven
+      # Modules depending on each other at a release version are subject to trusted checksum verification, but
+      # their checksums can not be known in advance. Missing checksums are therefore allowed during deploy, while
+      # checksum mismatches still fail the build.
       - name: Publish package
-        run: mvn -B versions:set -DnewVersion=${{ github.event.release.tag_name }} -DgenerateBackupPoms=false && mvn -B deploy -DskipTests
+        run: >-
+          mvn -B versions:set -DnewVersion=${{ github.event.release.tag_name }} -DgenerateBackupPoms=false &&
+          mvn -B deploy -DskipTests -Daether.artifactResolver.postProcessor.trustedChecksums.failIfMissing=false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -11,7 +11,6 @@ import java.net.URI;
 import java.net.URLEncoder;
 import java.time.Clock;
 import java.time.Duration;
-import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
@@ -21,7 +20,6 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
@@ -38,12 +36,12 @@ public class AccessTokenSupplier implements Supplier<String> {
   private final HttpClient httpClient;
   private final URI url;
   private final Map<String, String> headers;
-  private final String body;
+  private final byte[] body;
 
   private AccessTokenSupplier(
       URI url,
       Map<String, String> headers,
-      String body,
+      byte[] body,
       Clock clock,
       HttpClient httpClient
   ) {
@@ -75,14 +73,14 @@ public class AccessTokenSupplier implements Supplier<String> {
               "Could not get access token from %s. HTTP status: %s. HTTP payload: %s",
               url.toString(),
               item.statusCode(),
-              item.body()
+              new String(item.body())
           ))
       );
       return;
     }
     AccessToken token;
     try {
-      token = AccessToken.parse(item.body(), clock);
+      token = AccessToken.parse(new String(item.body()), clock);
     } catch (Exception e) {
       onError(e);
       return;
@@ -97,7 +95,7 @@ public class AccessTokenSupplier implements Supplier<String> {
     long t0 = System.currentTimeMillis();
     try {
       if (!readyLatch.await(10, TimeUnit.SECONDS))
-        throw new AccessFailed("No access token available");
+        throw new AccessFailed("No access token available from " + url);
     } catch (InterruptedException e) {
       throw new AccessFailed(
           "Interrupted while waiting for access token after %d ms (from: %s)"
@@ -112,6 +110,7 @@ public class AccessTokenSupplier implements Supplier<String> {
   }
 
   private void onError(Throwable throwable) {
+    System.out.println("AccessTokenSupplier.onError: URL " + url + ": " + throwable.getMessage());
     scheduleFetch(Duration.ofSeconds(5));
   }
 
@@ -165,12 +164,12 @@ public class AccessTokenSupplier implements Supplier<String> {
       return new AccessTokenSupplier(url, headers, createBody(), clock, httpClient);
     }
 
-    private String createBody() {
+    private byte[] createBody() {
       var body = new StringBuilder("grant_type=").append(grantType);
       if (!scopes.isEmpty()) {
         body.append("&").append("scope=").append(URLEncoder.encode(String.join(" ", scopes), UTF_8));
       }
-      return body.toString();
+      return body.toString().getBytes();
     }
   }
 

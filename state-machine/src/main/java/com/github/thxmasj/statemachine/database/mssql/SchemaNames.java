@@ -4,6 +4,7 @@ import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.SecondaryId;
 import java.sql.ResultSet;
 import java.util.List;
+import java.util.UUID;
 import java.util.function.Function;
 
 public record SchemaNames(
@@ -15,28 +16,22 @@ public record SchemaNames(
     return String.format("ix%s", String.join("_", columns.stream().map(Column::name).toList()));
   }
 
-  public String idTableName(SecondaryIdModel idModel) {
-    return model.name() + "_" + idModel.name();
+  public String idTableName(SecondaryIdModel<?> idModel) {
+    return "Id_" + idModel.name();
   }
 
-  public String idTablePrimaryKeyName(SecondaryIdModel idModel) {
+  public String idTablePrimaryKeyName(SecondaryIdModel<?> idModel) {
     return String.format("pk%s", idTableName(idModel));
   }
 
   public QualifiedNames qualifiedNames() {
-    return new QualifiedNames(this);
+    return new QualifiedNames();
   }
 
   public class QualifiedNames {
 
-    private final SchemaNames entityModel;
-
-    public QualifiedNames(SchemaNames entityModel) {
-        this.entityModel = entityModel;
-    }
-
-    public String idTable(SecondaryIdModel secondaryId) {
-      return qualifiedName(entityModel.idTableName(secondaryId));
+    public String idTable(SecondaryIdModel<?> secondaryId) {
+      return qualifiedName("Id_" + secondaryId.name());
     }
 
     public String qualifiedName(String name) {
@@ -44,23 +39,24 @@ public record SchemaNames(
     }
   }
 
-  public interface SecondaryIdModel {
+  public interface SecondaryIdModel<T> {
+    UUID id();
     String name();
     List<Column> columns();
-    SecondaryId map(ResultSet resultSet);
+    SecondaryId<T> map(ResultSet resultSet);
     default boolean isSerial() {
       return false;
     }
-    default Group group() {
+    default Group<T> group() {
       return null;
     }
-    interface Group {
+    interface Group<T> {
       List<Column> groupColumns();
       List<ColumnOrder> groupOrdering();
-      boolean isInitial(Object value);
-      SecondaryId initial(Object group);
-      SecondaryId next(SecondaryId current);
-      Object group(Object value);
+      boolean isInitial(T value);
+      SecondaryId<T> initial(Object group);
+      SecondaryId<T> next(SecondaryId<T> current);
+      Object group(T value);
     }
   }
 

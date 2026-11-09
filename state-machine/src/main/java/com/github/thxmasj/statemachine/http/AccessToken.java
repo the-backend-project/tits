@@ -14,14 +14,6 @@ public class AccessToken {
     this.expiry = clock.instant().plusSeconds(expiresIn);
   }
 
-  public AccessToken(String token, long expiresIn) {
-    this(token, expiresIn, Clock.systemDefaultZone());
-  }
-
-  public static AccessToken parse(String input) {
-    return Parser.parse(input);
-  }
-
   static AccessToken parse(String input, Clock clock) {
     return Parser.parse(input, clock);
   }
@@ -39,10 +31,6 @@ public class AccessToken {
 
     private static final Pattern tokenPattern = Pattern.compile("\"access_token\"\\s*:\\s*\"(.+?)\"");
     private static final Pattern expiryPattern = Pattern.compile("\"expires_in\"\\s*:\\s*(\\d+)");
-
-    static AccessToken parse(String input) {
-      return parse(input, Clock.systemDefaultZone());
-    }
 
     static AccessToken parse(String input, Clock clock) {
       var tokenMatcher = tokenPattern.matcher(input);

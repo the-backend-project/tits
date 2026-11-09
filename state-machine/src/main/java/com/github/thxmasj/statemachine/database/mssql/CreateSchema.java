@@ -2,9 +2,10 @@ package com.github.thxmasj.statemachine.database.mssql;
 
 import static java.util.stream.Collectors.joining;
 
-import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.database.Client;
+import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
 import java.nio.charset.StandardCharsets;
+import java.util.Comparator;
 import java.util.List;
 import java.util.zip.CRC32;
 import reactor.core.publisher.Mono;
@@ -12,12 +13,12 @@ import reactor.core.publisher.Mono;
 @SuppressWarnings({"StringConcatenationInLoop"})
 public class CreateSchema {
 
-  private final List<EntityModel> entityModels;
+  private final List<SecondaryIdModel<?>> idModels;
   private final String schema;
   private final String role;
 
-  public CreateSchema(List<EntityModel> entityModels, String schemaName, String role) {
-    this.entityModels = entityModels;
+  public CreateSchema(List<SecondaryIdModel<?>> idModels, String schemaName, String role) {
+    this.idModels = idModels.stream().sorted(Comparator.comparing(SecondaryIdModel::id)).toList();
     this.schema = schemaName;
     this.role = role;
   }
@@ -37,11 +38,7 @@ public class CreateSchema {
   }
 
   private String coreSql() {
-    StringBuilder sql = new StringBuilder();
-    for (var entityType : entityModels) {
-      sql.append(sqlForEntity(entityType));
-    }
-    return sql.toString();
+    return sqlForIds(idModels);
   }
 
   private String createSql(String schema) {
@@ -51,25 +48,49 @@ public class CreateSchema {
         CREATE TABLE [{schema}].[Metadata] (Checksum BIGINT NOT NULL)
         INSERT INTO [{schema}].[Metadata] (Checksum) VALUES ({checksum})
 
+        CREATE TABLE [{schema}].[Entity]
+        (
+            EntityId      UNIQUEIDENTIFIER NOT NULL,
+            EntityModelId UNIQUEIDENTIFIER NOT NULL,
+            CONSTRAINT [pkEntity] PRIMARY KEY (EntityId)
+        );
+        GRANT INSERT, SELECT ON [{schema}].[Entity] TO [{role}];
+
         CREATE TABLE [{schema}].[Event]
         (
             EntityId    UNIQUEIDENTIFIER   NOT NULL,
             EventNumber SMALLINT           NOT NULL,
             Type        UNIQUEIDENTIFIER   NOT NULL,
-            MessageId   VARCHAR(100),
-            ClientId    VARCHAR(100),
-            Data        VARCHAR(MAX),
+            Data        VARBINARY(MAX),
+            --Data        VARCHAR(MAX),
             Timestamp   DATETIME2          NOT NULL,
             CONSTRAINT [pkEvent] PRIMARY KEY (EntityId, EventNumber)
         );
         GRANT INSERT, SELECT ON [{schema}].[Event] TO [{role}];
-        CREATE UNIQUE INDEX ixEntityId_EventNumber ON [{schema}].[Event] (EntityId, EventNumber);
+        --CREATE UNIQUE INDEX ixEntityId_EventNumber ON [{schema}].[Event] (EntityId, EventNumber);
+
+        CREATE TABLE [{schema}].[IndexEvent]
+        (
+            EntityId    UNIQUEIDENTIFIER   NOT NULL,
+            EventNumber SMALLINT           NOT NULL,
+            Type        UNIQUEIDENTIFIER   NOT NULL,
+            --Data        VARCHAR(1700)    NOT NULL,
+            Data        VARBINARY(1700)    NOT NULL,
+            Timestamp   DATETIME2          NOT NULL,
+            CONSTRAINT [pkIndexEvent] PRIMARY KEY (EntityId, EventNumber)
+        );
+        GRANT INSERT, SELECT ON [{schema}].[IndexEvent] TO [{role}];
+        --CREATE UNIQUE INDEX ixEntityId_EventNumber ON [{schema}].[IndexEvent] (EntityId, EventNumber);
+        CREATE INDEX ixData ON [{schema}].[IndexEvent] (Data);
 
         CREATE TABLE [{schema}].[Timeout]
         (
             EntityId      UNIQUEIDENTIFIER NOT NULL,
             EntityModelId UNIQUEIDENTIFIER NOT NULL,
             EventNumber   SMALLINT         NOT NULL,
+            Type          UNIQUEIDENTIFIER NOT NULL,
+            Data          VARBINARY(MAX),
+            --Data          VARCHAR(MAX),
             Deadline      DATETIME2(2)     NOT NULL,
             CorrelationId VARCHAR(36)      NOT NULL,
             Attempt       INT              NOT NULL
@@ -78,123 +99,35 @@ public class CreateSchema {
         CREATE UNIQUE INDEX ixEntityId ON [{schema}].[Timeout] (EntityId);
         CREATE INDEX ixDeadline ON [{schema}].[Timeout] (Deadline);
 
-        CREATE TABLE [{schema}].[InboxRequest]
+        CREATE TABLE [{schema}].[ConditionTrigger]
         (
-            Id                   UNIQUEIDENTIFIER NOT NULL,
-            EntityId             UNIQUEIDENTIFIER NOT NULL,
-            EventNumber          SMALLINT         NOT NULL,
-            Timestamp            DATETIME2        NOT NULL,
-            MessageId            VARCHAR(100),
-            ClientId             VARCHAR(100)     NOT NULL,
-            Digest               BINARY(32),
-            Data                 VARCHAR(MAX)     NOT NULL,
-            CONSTRAINT [pkInboxRequest] PRIMARY KEY (Id),
-            CONSTRAINT [fkInboxRequest_Event_EntityId_EventNumber] FOREIGN KEY (EntityId, EventNumber) references [{schema}].[Event] (EntityId, EventNumber)
+            Id            UNIQUEIDENTIFIER NOT NULL,
+            EntityId      UNIQUEIDENTIFIER NOT NULL,
+            EntityModelId UNIQUEIDENTIFIER NOT NULL,
+            TriggerEntityId    UNIQUEIDENTIFIER NOT NULL,
+            TriggerEventNumber INT              NOT NULL,
+            Type          UNIQUEIDENTIFIER NOT NULL,
+            Data          VARBINARY(MAX),
+            Timestamp     DATETIME2        NOT NULL,
+            LastTypes     VARCHAR(370)     NOT NULL, -- Comma separated event type ids, at most 10
+            ReferenceType UNIQUEIDENTIFIER NOT NULL,
+            IndexKey      VARBINARY(1700)  NOT NULL,
+            CorrelationId VARCHAR(36)      NOT NULL,
+            CONSTRAINT [pkConditionTrigger] PRIMARY KEY (Id)
         );
-        GRANT INSERT, SELECT ON [{schema}].[InboxRequest] TO [{role}];
-        CREATE UNIQUE INDEX ixMessageId_ClientId ON [{schema}].[InboxRequest] (MessageId, ClientId)
-            WHERE [MessageId] IS NOT NULL AND [ClientId] IS NOT NULL;
-
-        CREATE TABLE [{schema}].[InboxResponse]
-        (
-            EntityId             UNIQUEIDENTIFIER NOT NULL,
-            EventNumber          SMALLINT         NOT NULL,
-            Timestamp            DATETIME2        NOT NULL,
-            Data                 VARCHAR(MAX)     NOT NULL,
-            RequestId            UNIQUEIDENTIFIER NOT NULL,
-            CONSTRAINT [pkInboxResponse] PRIMARY KEY (EntityId, EventNumber),
-            CONSTRAINT [fkInboxResponse_InboxRequest_RequestId] FOREIGN KEY (RequestId) references [{schema}].[InboxRequest] (Id)
-        );
-        GRANT INSERT, SELECT ON [{schema}].[InboxResponse] TO [{role}];
-
-        CREATE TABLE [{schema}].[OutboxRequest]
-        (
-            Id                 UNIQUEIDENTIFIER NOT NULL,
-            QueueId            UNIQUEIDENTIFIER NOT NULL,
-            EntityId           UNIQUEIDENTIFIER NOT NULL,
-            EventNumber        SMALLINT         NOT NULL,
-            Timestamp          DATETIME2        NOT NULL,
-            Data               VARCHAR(MAX)     NOT NULL,
-            CONSTRAINT [pkOutboxRequest] PRIMARY KEY (Id),
-            CONSTRAINT [fkOutboxRequest_Event] FOREIGN KEY (EntityId, EventNumber) REFERENCES [{schema}].[Event] (EntityId, EventNumber)
-        );
-        GRANT INSERT, SELECT ON [{schema}].[OutboxRequest] TO [{role}];
-
-        CREATE TABLE [{schema}].[OutboxResponse]
-        (
-            EntityId           UNIQUEIDENTIFIER NOT NULL,
-            EventNumber        SMALLINT         NOT NULL,
-            Timestamp          DATETIME2        NOT NULL,
-            Data               VARCHAR(MAX)     NOT NULL,
-            RequestId          UNIQUEIDENTIFIER NOT NULL,
-            CONSTRAINT [fkOutboxResponse_OutboxRequest] FOREIGN KEY (RequestId) REFERENCES [{schema}].[OutboxRequest] (Id)
-        );
-        GRANT INSERT, SELECT ON [{schema}].[OutboxResponse] TO [{role}];
-        
-        CREATE TABLE [{schema}].[OutboxQueue]
-        (
-            ElementId       ROWVERSION,
-            QueueId         UNIQUEIDENTIFIER NOT NULL,
-            EntityModelId   UNIQUEIDENTIFIER NOT NULL,
-            EntityId        UNIQUEIDENTIFIER NOT NULL,
-            EventNumber     SMALLINT         NOT NULL,
-            CreatorId       UNIQUEIDENTIFIER NOT NULL,
-            Timestamp       DATETIME2        NOT NULL,
-            Data            VARCHAR(MAX),
-            ParentEntityId  UNIQUEIDENTIFIER NULL,
-            Guaranteed      BIT              NOT NULL,
-            CorrelationId   VARCHAR(36)      NOT NULL,
-            RequestId       UNIQUEIDENTIFIER NOT NULL,
-            CONSTRAINT [pkOutboxQueue] PRIMARY KEY (ElementId),
-            CONSTRAINT [fkOutboxQueue_OutboxRequest_EntityId_EventNumber_Type] FOREIGN KEY (RequestId) REFERENCES [{schema}].[OutboxRequest] (Id)
-        );
-        GRANT INSERT, SELECT, DELETE ON [{schema}].[OutboxQueue] TO [{role}];
-        CREATE INDEX ixEntityId ON [{schema}].[OutboxQueue] (EntityId);
-
-        CREATE TABLE [{schema}].[OutboxDeadLetterQueue]
-        (
-            EntityId     UNIQUEIDENTIFIER NOT NULL,
-            EventNumber  SMALLINT         NOT NULL,
-            QueueId      UNIQUEIDENTIFIER NOT NULL,
-            Cause        VARCHAR(MAX),
-            RequestId    UNIQUEIDENTIFIER NOT NULL,
-            CONSTRAINT [pkOutboxDeadLetterQueue] PRIMARY KEY (EntityId)
-        );
-        GRANT INSERT, SELECT ON [{schema}].[OutboxDeadLetterQueue] TO [{role}];
-
-        CREATE TABLE [{schema}].[OutboxQueueProcessing]
-        (
-            ElementId        BINARY(8)        NOT NULL,
-            QueueId          UNIQUEIDENTIFIER NOT NULL,
-            EntityModelId    UNIQUEIDENTIFIER NOT NULL,
-            EntityId         UNIQUEIDENTIFIER NOT NULL,
-            EventNumber      SMALLINT         NOT NULL,
-            CreatorId        UNIQUEIDENTIFIER NOT NULL,
-            Data             VARCHAR(MAX)     NOT NULL,
-            EnqueuedAt       DATETIME2        NOT NULL,
-            Attempt          INT              NOT NULL,
-            NextAttemptAt    DATETIME2        NOT NULL,
-            Guaranteed       BIT              NOT NULL,
-            CorrelationId    VARCHAR(36)      NOT NULL,
-            RequestId        UNIQUEIDENTIFIER NOT NULL,
-            CONSTRAINT [pkOutboxQueueProcessing] PRIMARY KEY (EntityId, QueueId)
-        )
-        GRANT INSERT, SELECT, UPDATE, DELETE ON [{schema}].[OutboxQueueProcessing] TO [{role}];
-        CREATE INDEX ixNextAttemptAt ON [{schema}].[OutboxQueueProcessing] (NextAttemptAt ASC);
+        GRANT INSERT, DELETE, SELECT ON [{schema}].[ConditionTrigger] TO [{role}];
         """.replace("{schema}", schema)
             .replace("{checksum}", String.valueOf(checksum(coreSql)))
             .replace("{role}", role);
     return initSql + coreSql;
   }
 
-  private String sqlForEntity(EntityModel entityModel) {
-    var entity = entityModel.name();
-    var names = new SchemaNames(schema, entityModel);
-    var q = names.qualifiedNames();
+  private String sqlForIds(List<SecondaryIdModel<?>> ids) {
+    var names = new SchemaNames(schema, null);
     String sql = "";
-        for (var secondaryId : entityModel.secondaryIds()) {
-          String tableName = entity + "_" + secondaryId.name();
-          String qualifiedTableName = q.idTable(secondaryId);
+        for (SecondaryIdModel<?> secondaryId : ids) {
+          String tableName = "Id_" + secondaryId.name();
+          String qualifiedTableName = String.format("[%s].[%s]", schema, tableName);
           sql +=
               """
               CREATE TABLE {qualifiedTableName}
@@ -228,7 +161,7 @@ public class CreateSchema {
         )
         .flatMap(checksum -> checksum == checksum() ?
             Mono.just(0) :
-            Mono.error(new RuntimeException("Checksum mismatch on schema " + schema))
+            Mono.error(new RuntimeException("Checksum mismatch on schema " + schema + ". Used following clear text: " + coreSql()))
         )
         .switchIfEmpty(
             databaseClient.sql("CREATE SCHEMA [" + schema + "]").name("CreateSchema0").update()

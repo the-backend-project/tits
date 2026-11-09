@@ -1,24 +1,73 @@
 package com.github.thxmasj.statemachine;
 
+import static com.github.thxmasj.statemachine.Event.join;
+import static java.util.Collections.unmodifiableList;
+import static java.util.stream.Collectors.joining;
+
+import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.stream.Stream;
 
-import static java.util.Collections.unmodifiableList;
-
-public record EventLog(EntityModel entityModel, EntityId entityId, List<SecondaryId> secondaryIds, List<Event<?>> events) {
+public record EventLog(
+    EntityModel entityModel,
+    EntityId entityId,
+    List<SecondaryId<?>> secondaryIds,
+    List<Event<?>> events
+) {
 
   public int lastEventNumber() {
     return events.isEmpty() ? 0 : events.getLast().eventNumber();
   }
 
+  public <T> T number(int number, EventType<?, T> eventType) {
+    return events()
+        .stream()
+        .filter(e -> e.eventNumber() == number && eventType.equals(e.type()))
+        .findFirst()
+        .map(e -> eventType.outputDataType().unmarshal(e.data()))
+        .orElseThrow(() -> new NoSuchElementException("number(" + number + ", " + eventType.name() + "). Have:\n" + effectiveEvents().stream().map(e -> e.toString()).collect(joining("\n"))));
+  }
+
+  public <T> Optional<T> numberIfExists(int number, EventType<?, T> eventType) {
+    return events()
+        .stream()
+        .filter(e -> e.eventNumber() == number && eventType.equals(e.type()))
+        .findFirst()
+        .map(e -> eventType.outputDataType().unmarshal(e.data()));
+  }
+
+  public <T> T one(DataType<T> dataType) {
+    return effectiveEvents().stream()
+        .filter(e -> dataType.equals(e.type().outputDataType()))
+        .map(e -> dataType.unmarshal(e.data()))
+        .filter(e -> e != null)
+        .findFirst()
+        .orElseThrow(() -> new NoSuchElementException("one(" + dataType.name() + "). Have:\n" + effectiveEvents().stream().map(e -> e.toString()).collect(joining("\n"))));
+  }
+
+  public <T> T last(DataType<T> dataType) {
+    T result = effectiveEvents().reversed().stream()
+        .filter(e -> dataType.equals(e.type().outputDataType()))
+        .map(e -> ((Event<T>)e).getUnmarshalledData())
+        .findFirst()
+        .orElseThrow(() -> new NoSuchElementException("last(" + dataType.name() + ")"));
+    return result;
+  }
+
   public <T> T one(EventType<?, T> eventType) {
     return effectiveEvents().stream()
         .filter(e -> e.type().id().equals(eventType.id()))
-        .map(e -> ((Event<T>)e).getUnmarshalledData())
+        .map(e -> eventType.outputDataType().unmarshal(e.data()))
         .findFirst()
-        .orElseThrow();
+        .orElseThrow(() -> new NoSuchElementException(String.format("one(%s) on %s [log: %s]",
+            eventType.name(),
+            entityModel.name(),
+            events.stream().map(Event::typeName).collect(joining(","))
+        )));
   }
 
   @SafeVarargs
@@ -30,12 +79,19 @@ public record EventLog(EntityModel entityModel, EntityId entityId, List<Secondar
         .orElseThrow();
   }
 
+  public <T> Optional<T> oneIfExists(EventType<?, T> eventType) {
+    return effectiveEvents().stream()
+        .filter(e -> Stream.of(eventType).map(EventType::id).toList().contains(e.type().id()))
+        .map(e -> ((Event<T>)e).getUnmarshalledData())
+        .findFirst();
+  }
+
   public <T> T last(EventType<?, T> eventType) {
     return effectiveEvents().reversed().stream()
         .filter(e -> e.type().id().equals(eventType.id()))
         .map(e -> ((Event<T>)e).getUnmarshalledData())
         .findFirst()
-        .orElseThrow();
+        .orElseThrow(() -> new NoSuchElementException("last(" + eventType.name() + ")"));
   }
 
   public <T> Optional<T> lastIfExists(EventType<?, T> eventType) {
@@ -52,6 +108,27 @@ public record EventLog(EntityModel entityModel, EntityId entityId, List<Secondar
         .toList();
   }
 
+  public ZonedDateTime created() {
+    // TODO: Assumes empty log will never exist
+    return events().getFirst().timestamp();
+  }
+
+  public long sum(EventType<?, Long> eventType) {
+    return all(eventType).stream().mapToLong(l -> l).sum();
+  }
+
+  public long count(EventType<?, ?> eventType) {
+    return all(eventType).size();
+  }
+
+  public boolean exists(EventType<?, ?> eventType) {
+    return events().stream().anyMatch(e -> e.type().id().equals(eventType.id()));
+  }
+
+  public List<Event<?>> subLog(int fromEventNumber) {
+    return events.stream().filter(e -> e.eventNumber() >= fromEventNumber).toList();
+  }
+
   /**
    * Effective events, ignoring events that were rolled back.
    */
@@ -62,13 +139,42 @@ public record EventLog(EntityModel entityModel, EntityId entityId, List<Secondar
     for (Event<?> event : events.reversed()) {
       if (skipTo >= event.eventNumber()) {
         if (event.type() instanceof BasicEventType.Rollback rollbackType) {
-          skipTo = Event.unmarshal(rollbackType, event.data()).toNumber();
+          int toNumber = Event.unmarshal(rollbackType, event.data()).toNumber();
+          skipTo = toNumber >= 0 ? toNumber : event.eventNumber() - 1 + toNumber ;
         } else {
           effectiveEventsReversed.add(event);
         }
       }
     }
     return unmodifiableList(effectiveEventsReversed.reversed());
+  }
+
+  public <T> T id(SecondaryIdModel<T> model) {
+    return secondaryIds().stream()
+        .filter(id -> id.model() == model)
+        .map(id -> (T)id.data())
+        .findFirst()
+        .orElseThrow();
+  }
+
+  public <T> Optional<T> idIfExists(SecondaryIdModel<T> model) {
+    return secondaryIds().stream()
+        .filter(id -> id.model() == model)
+        .map(id -> (T)id.data())
+        .findFirst();
+  }
+
+  public EventLog withNewEvent(Event<?> newEvent) {
+    return new EventLog(
+        entityModel(),
+        entityId(),
+        secondaryIds(),
+        join(events(), newEvent)
+    );
+  }
+
+  public static EventLog empty(EntityId id, EntityModel model) {
+    return new EventLog(model, id, List.of(), List.of());
   }
 
 }

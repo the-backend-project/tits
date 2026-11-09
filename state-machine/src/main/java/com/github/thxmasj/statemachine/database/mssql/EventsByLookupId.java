@@ -1,6 +1,5 @@
 package com.github.thxmasj.statemachine.database.mssql;
 
-import static com.github.thxmasj.statemachine.database.mssql.Mappers.eventMapper;
 import static java.util.Optional.ofNullable;
 import static java.util.stream.Collectors.joining;
 
@@ -8,7 +7,9 @@ import com.github.thxmasj.statemachine.EntityId;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.Event;
 import com.github.thxmasj.statemachine.EventLog;
+import com.github.thxmasj.statemachine.EventType;
 import com.github.thxmasj.statemachine.SecondaryId;
+import com.github.thxmasj.statemachine.database.MappingFailure;
 import com.github.thxmasj.statemachine.database.UnknownEntity;
 import com.github.thxmasj.statemachine.database.jdbc.JDBCRow;
 import com.github.thxmasj.statemachine.database.mssql.SchemaNames.Column;
@@ -29,8 +30,8 @@ import reactor.core.publisher.Mono;
 public class EventsByLookupId {
 
   private final DataSource dataSource;
+  private final Map<SecondaryIdModel<?>, String> sql;
   private final Clock clock;
-  private final Map<SecondaryIdModel, String> sql;
 
   public EventsByLookupId(
       DataSource dataSource,
@@ -58,7 +59,7 @@ public class EventsByLookupId {
 
             SELECT @entityId;
             
-            SELECT EventNumber, Type, Timestamp, MessageId, ClientId, Data
+            SELECT EventNumber, Type, Timestamp, Data
             FROM [{schema}].Event WITH (INDEX(pkEvent))
             WHERE EntityId=@entityId
             ORDER BY EventNumber;
@@ -86,14 +87,14 @@ public class EventsByLookupId {
     }
   }
 
-  public Mono<EventLog> execute(EntityModel entityModel, SecondaryId secondaryId) {
+  public Mono<EventLog> execute(EntityModel entityModel, List<EventType<?, ?>> eventTypes, SecondaryId<?> secondaryId) {
     String sqlToPrepare = sql.get(secondaryId.model());
     if (sqlToPrepare == null) throw new IllegalArgumentException(String.format("Model %s for secondary id unknown", secondaryId.model().name()));
     return Mono.fromCallable(() -> {
           //noinspection SqlSourceToSinkFlow
           try (var connection = dataSource.getConnection(); var statement = connection.prepareStatement(sqlToPrepare)) {
             int index = 1;
-            for (var column : secondaryId.model().columns()) {
+            for (Column column : secondaryId.model().columns()) {
               statement.setObject(index++, column.value().apply(secondaryId.data()));
             }
             statement.execute();
@@ -108,9 +109,13 @@ public class EventsByLookupId {
             rs = statement.getResultSet();
             List<Event<?>> events = new ArrayList<>();
             while (rs.next()) {
-              events.add(eventMapper(entityModel, clock).apply(new JDBCRow(rs)));
+              try {
+                events.add(Mappers.eventMapper(eventTypes, clock).apply(entityId, new JDBCRow(rs)));
+              } catch (MappingFailure e) {
+                throw new MappingFailure("EventsBySecondaryId: Failed to map row to event for entity model " + entityModel.name(), e);
+              }
             }
-            List<SecondaryId> secondaryIds = new ArrayList<>();
+            List<SecondaryId<?>> secondaryIds = new ArrayList<>();
             for (var idModel2 : entityModel.secondaryIds()) {
               if (!statement.getMoreResults()) throw new IllegalStateException("Expected result for secondary id " + idModel2.name());
               rs = statement.getResultSet();
@@ -123,7 +128,7 @@ public class EventsByLookupId {
         })
         .onErrorMap(
             e -> e instanceof SQLServerException f && f.getErrorCode() == 50000,
-            _ -> new UnknownEntity(secondaryId)
+            _ -> new UnknownEntity(entityModel, secondaryId)
         )
         ;
   }
