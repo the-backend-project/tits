@@ -10,7 +10,6 @@ import com.github.thxmasj.statemachine.EventType;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;
 import com.github.thxmasj.statemachine.Validated;
 import com.github.thxmasj.statemachine.http.HttpClient;
-import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest.BatchedRequest;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import com.github.thxmasj.statemachine.message.http.TypedHttpRequest;
 import com.github.thxmasj.statemachine.message.http.TypedHttpResponse;
@@ -25,7 +24,7 @@ import java.util.function.Predicate;
 /// can be skipped, as it also offers the settings of the steps following it.
 ///
 /// The type of the request payload is introduced by [RequestPayloadTypeStep], the type of the response payload by
-/// [ResponsePayloadTypeStep], the type of the input by [BatchedStep], and the type of the input of the rollback models
+/// [ResponsePayloadTypeStep], and the type of the request payload of the rollback models
 /// by [RollbackOnAcceptedModelStep] or [RollbackOnUnknownModelStep]. Neither the input nor the rollback input is
 /// created by the outbox request; see [Dispatcher].
 public final class AtMostOnceBuilder {
@@ -159,37 +158,30 @@ public final class AtMostOnceBuilder {
 
   public interface IsRejectedByInvalidResponseStep<RQ, RS> {
 
-    BatchedStep<RQ> isRejectedByInvalidResponse(
+    RollbackOnAcceptedModelStep<RQ> isRejectedByInvalidResponse(
         Predicate<Tuple2<HttpResponseMessage, String>> isRejectedByInvalidResponse
     );
   }
 
-  /// Optional: the request defaults to not being batched, with the request message as its input. A batched request has
-  /// a [BatchedRequest] as its input, and references the batch given by its batch id.
-  public interface BatchedStep<RQ> extends RollbackOnAcceptedModelStep<TypedHttpRequest<RQ>, RQ> {
-
-    RollbackOnAcceptedModelStep<BatchedRequest<RQ>, RQ> batched();
-  }
-
   /// Optional: the rollback on accepted model defaults to none.
-  public interface RollbackOnAcceptedModelStep<I, RQ> extends BuildStep<I, RQ, Void> {
+  public interface RollbackOnAcceptedModelStep<RQ> extends BuildStep<RQ, Void> {
 
-    <RRI> RollbackOnUnknownModelStep<I, RQ, RRI> rollbackOnAcceptedModel(AtLeastOnce<RRI, ?> rollbackOnAcceptedModel);
+    <RRQ> RollbackOnUnknownModelStep<RQ, RRQ> rollbackOnAcceptedModel(AtLeastOnce<RRQ> rollbackOnAcceptedModel);
 
-    <RRI> BuildStep<I, RQ, RRI> rollbackOnUnknownModel(AtLeastOnce<RRI, ?> rollbackOnUnknownModel);
+    <RRQ> BuildStep<RQ, RRQ> rollbackOnUnknownModel(AtLeastOnce<RRQ> rollbackOnUnknownModel);
 
   }
 
   /// Optional: the rollback on unknown model defaults to none.
-  public interface RollbackOnUnknownModelStep<I, RQ, RRI> extends BuildStep<I, RQ, RRI> {
+  public interface RollbackOnUnknownModelStep<RQ, RRQ> extends BuildStep<RQ, RRQ> {
 
-    BuildStep<I, RQ, RRI> rollbackOnUnknownModel(AtLeastOnce<RRI, ?> rollbackOnUnknownModel);
+    BuildStep<RQ, RRQ> rollbackOnUnknownModel(AtLeastOnce<RRQ> rollbackOnUnknownModel);
 
   }
 
-  public interface BuildStep<I, RQ, RRI> {
+  public interface BuildStep<RQ, RRQ> {
 
-    AtMostOnce<I, RQ, RRI> build(String name, UUID id);
+    AtMostOnce<RQ, RRQ> build(String name, UUID id);
   }
 
   private static final class WithNothing implements RequestPayloadTypeStep {
@@ -350,7 +342,7 @@ public final class AtMostOnceBuilder {
 
   private static final class WithContentParser<RQ, RS> implements OnSuccessStep<RQ, RS>,
       OnFailureStep<RQ, RS>, OnValidResponseUnknownStep<RQ, RS>, IsAcceptedStep<RQ, RS>,
-      IsRejectedStep<RQ, RS>, IsRejectedByInvalidResponseStep<RQ, RS>, BatchedStep<RQ> {
+      IsRejectedStep<RQ, RS>, IsRejectedByInvalidResponseStep<RQ, RS>, RollbackOnAcceptedModelStep<RQ> {
 
     private final DataType<RQ> requestPayloadType;
     private final DataType<RS> responsePayloadType;
@@ -451,105 +443,65 @@ public final class AtMostOnceBuilder {
     }
 
     @Override
-    public BatchedStep<RQ> isRejectedByInvalidResponse(
+    public RollbackOnAcceptedModelStep<RQ> isRejectedByInvalidResponse(
         Predicate<Tuple2<HttpResponseMessage, String>> isRejectedByInvalidResponse
     ) {
       this.isRejectedByInvalidResponse = isRejectedByInvalidResponse;
       return this;
     }
 
-    @Override
-    public RollbackOnAcceptedModelStep<BatchedRequest<RQ>, RQ> batched() {
-      return new WithInputType<>(InputType.batched(requestPayloadType));
-    }
-
-    private WithInputType<TypedHttpRequest<RQ>> unbatched() {
-      return new WithInputType<>(InputType.unbatched(requestPayloadType));
-    }
-
-    @Override
-    public <RRI> RollbackOnUnknownModelStep<TypedHttpRequest<RQ>, RQ, RRI> rollbackOnAcceptedModel(
-        AtLeastOnce<RRI, ?> rollbackOnAcceptedModel
+    private <RRQ> BuildStep<RQ, RRQ> buildStep(
+        AtLeastOnce<RRQ> rollbackOnAcceptedModel,
+        AtLeastOnce<RRQ> rollbackOnUnknownModel
     ) {
-      return unbatched().rollbackOnAcceptedModel(rollbackOnAcceptedModel);
+      return (name, id) -> new AtMostOnce<>(
+          name,
+          id,
+          requestPayloadType,
+          responsePayloadType,
+          forwarder,
+          inflightTimeout,
+          processModel,
+          onPeerUnavailable,
+          onMissingResponse,
+          onSuccess,
+          onFailure,
+          onValidResponseUnknown,
+          onInvalidResponseRejection,
+          onInvalidResponseUnknown,
+          contentParser,
+          requestAwareContentParser,
+          isAccepted,
+          isRejected,
+          isRejectedByInvalidResponse,
+          rollbackOnAcceptedModel,
+          rollbackOnUnknownModel
+      );
     }
 
     @Override
-    public <RRI> BuildStep<TypedHttpRequest<RQ>, RQ, RRI> rollbackOnUnknownModel(
-        AtLeastOnce<RRI, ?> rollbackOnUnknownModel
-    ) {
-      return unbatched().rollbackOnUnknownModel(rollbackOnUnknownModel);
+    public <RRQ> RollbackOnUnknownModelStep<RQ, RRQ> rollbackOnAcceptedModel(AtLeastOnce<RRQ> rollbackOnAcceptedModel) {
+      return new RollbackOnUnknownModelStep<>() {
+        @Override
+        public BuildStep<RQ, RRQ> rollbackOnUnknownModel(AtLeastOnce<RRQ> rollbackOnUnknownModel) {
+          return buildStep(rollbackOnAcceptedModel, rollbackOnUnknownModel);
+        }
+
+        @Override
+        public AtMostOnce<RQ, RRQ> build(String name, UUID id) {
+          return buildStep(rollbackOnAcceptedModel, null).build(name, id);
+        }
+      };
     }
 
     @Override
-    public AtMostOnce<TypedHttpRequest<RQ>, RQ, Void> build(String name, UUID id) {
-      return unbatched().build(name, id);
+    public <RRQ> BuildStep<RQ, RRQ> rollbackOnUnknownModel(AtLeastOnce<RRQ> rollbackOnUnknownModel) {
+      return buildStep(null, rollbackOnUnknownModel);
     }
 
-    private final class WithInputType<I> implements RollbackOnAcceptedModelStep<I, RQ> {
-
-      private final InputType<I, RQ> inputType;
-
-      private WithInputType(InputType<I, RQ> inputType) {
-        this.inputType = inputType;
-      }
-
-      private <RRI> BuildStep<I, RQ, RRI> buildStep(
-          AtLeastOnce<RRI, ?> rollbackOnAcceptedModel,
-          AtLeastOnce<RRI, ?> rollbackOnUnknownModel
-      ) {
-        return (name, id) -> new AtMostOnce<>(
-            name,
-            id,
-            requestPayloadType,
-            responsePayloadType,
-            forwarder,
-            inflightTimeout,
-            processModel,
-            onPeerUnavailable,
-            onMissingResponse,
-            onSuccess,
-            onFailure,
-            onValidResponseUnknown,
-            onInvalidResponseRejection,
-            onInvalidResponseUnknown,
-            contentParser,
-            requestAwareContentParser,
-            isAccepted,
-            isRejected,
-            isRejectedByInvalidResponse,
-            inputType,
-            rollbackOnAcceptedModel,
-            rollbackOnUnknownModel
-        );
-      }
-
-      @Override
-      public <RRI> RollbackOnUnknownModelStep<I, RQ, RRI> rollbackOnAcceptedModel(
-          AtLeastOnce<RRI, ?> rollbackOnAcceptedModel
-      ) {
-        return new RollbackOnUnknownModelStep<>() {
-          @Override
-          public BuildStep<I, RQ, RRI> rollbackOnUnknownModel(AtLeastOnce<RRI, ?> rollbackOnUnknownModel) {
-            return buildStep(rollbackOnAcceptedModel, rollbackOnUnknownModel);
-          }
-
-          @Override
-          public AtMostOnce<I, RQ, RRI> build(String name, UUID id) {
-            return buildStep(rollbackOnAcceptedModel, null).build(name, id);
-          }
-        };
-      }
-
-      @Override
-      public <RRI> BuildStep<I, RQ, RRI> rollbackOnUnknownModel(AtLeastOnce<RRI, ?> rollbackOnUnknownModel) {
-        return buildStep(null, rollbackOnUnknownModel);
-      }
-
-      @Override
-      public AtMostOnce<I, RQ, Void> build(String name, UUID id) {
-        return this.<Void>buildStep(null, null).build(name, id);
-      }
+    @Override
+    public AtMostOnce<RQ, Void> build(String name, UUID id) {
+      return this.<Void>buildStep(null, null).build(name, id);
     }
   }
 

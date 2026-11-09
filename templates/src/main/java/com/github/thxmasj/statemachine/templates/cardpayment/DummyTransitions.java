@@ -36,7 +36,6 @@ import com.github.thxmasj.statemachine.http.outbox.AtMostOnce;
 import com.github.thxmasj.statemachine.http.outbox.AtMostOnceDispatcher;
 import com.github.thxmasj.statemachine.http.outbox.AtMostOnceWithRollbackDispatcher;
 import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest;
-import com.github.thxmasj.statemachine.message.http.TypedHttpRequest;
 import java.time.Duration;
 import java.util.UUID;
 import reactor.core.publisher.Mono;
@@ -77,17 +76,17 @@ public class DummyTransitions {
   public record Response() {}
 
   /// A dispatcher which creates no request messages, for outbox requests which are not exercised.
-  public static <X> AtLeastOnceDispatcher<X, TypedHttpRequest<Request>> dispatcher(AtLeastOnce<TypedHttpRequest<Request>, Request> outbox) {
+  public static <X> AtLeastOnceDispatcher<X, Request> dispatcher(AtLeastOnce<Request> outbox) {
     return AtLeastOnceDispatcher.of(outbox, _ -> null);
   }
 
   /// A dispatcher which creates no request messages, for outbox requests which are not exercised.
-  public static <X> AtMostOnceDispatcher<X, TypedHttpRequest<Request>> dispatcher(AtMostOnce<TypedHttpRequest<Request>, Request, Void> outbox) {
+  public static <X> AtMostOnceDispatcher<X, Request> dispatcher(AtMostOnce<Request, Void> outbox) {
     return AtMostOnceDispatcher.of(outbox, _ -> null);
   }
 
   /// A dispatcher which creates no request messages, for outbox requests which are not exercised.
-  public static <X, Y> AtMostOnceWithRollbackDispatcher<X, TypedHttpRequest<Request>, Y> reversibleDispatcher(
+  public static <X, Y> AtMostOnceWithRollbackDispatcher<X, Request, Y> reversibleDispatcher(
       Identifiable id,
       Identifiable rollbackOnAcceptedId,
       Identifiable rollbackOnUnknownId
@@ -95,7 +94,7 @@ public class DummyTransitions {
     return AtMostOnceWithRollbackDispatcher.of(atMostOnce(id, rollbackOnAcceptedId, rollbackOnUnknownId), _ -> null, (_, _) -> Mono.empty());
   }
 
-  public static AtMostOnce<TypedHttpRequest<Request>, Request, Void> atMostOnce(Identifiable id) {
+  public static AtMostOnce<Request, Void> atMostOnce(Identifiable id) {
     return HttpOutboxRequest.atMostOnce()
         .requestPayloadType(DataType.json(Request.class))
         .responsePayloadType(DataType.json(Response.class))
@@ -108,7 +107,7 @@ public class DummyTransitions {
         .build(id.name(), id.id());
   }
 
-  public static AtMostOnce<TypedHttpRequest<Request>, Request, TypedHttpRequest<Request>> atMostOnce(Identifiable id, Identifiable rollbackOnAcceptedId, Identifiable rollbackOnUnknownId) {
+  public static AtMostOnce<Request, Request> atMostOnce(Identifiable id, Identifiable rollbackOnAcceptedId, Identifiable rollbackOnUnknownId) {
     return HttpOutboxRequest.atMostOnce()
         .requestPayloadType(DataType.json(Request.class))
         .responsePayloadType(DataType.json(Response.class))
@@ -123,7 +122,7 @@ public class DummyTransitions {
         .build(id.name(), id.id());
   }
 
-  public static AtLeastOnce<TypedHttpRequest<Request>, Request> atLeastOnce(Identifiable id) {
+  public static AtLeastOnce<Request> atLeastOnce(Identifiable id) {
     return HttpOutboxRequest.atLeastOnce()
         .requestPayloadType(DataType.json(Request.class))
         .responsePayloadType(DataType.json(Response.class))

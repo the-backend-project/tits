@@ -81,8 +81,8 @@ import com.github.thxmasj.statemachine.Tuples.Tuple5;
 import com.github.thxmasj.statemachine.Tuples.Tuple6;
 import com.github.thxmasj.statemachine.Tuples.Tuple7;
 import com.github.thxmasj.statemachine.Tuples.Tuple8;
-import com.github.thxmasj.statemachine.http.outbox.AtMostOnceWithRollbackDispatcher;
 import com.github.thxmasj.statemachine.http.outbox.Dispatcher;
+import com.github.thxmasj.statemachine.http.outbox.DispatcherWithRollback;
 import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest;
 import com.github.thxmasj.statemachine.templates.cardpayment.AuthenticationDataCreator.AuthenticationData;
 import com.github.thxmasj.statemachine.templates.cardpayment.CaptureRequestDataCreator.CaptureRequestData;
@@ -148,10 +148,10 @@ public class PaymentTransitions {
   private final Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> outboxTransitions;
 
   // To acquirer
-  private final AtMostOnceWithRollbackDispatcher<Tuple4<Authorisation, Merchant, AuthenticationResult, PaymentToken>, ?, Tuple2<ReversalData, Merchant>> preauthorisation;
-  private final AtMostOnceWithRollbackDispatcher<Tuple6<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, UUID>, ?, Tuple4<ReversalData, Merchant, AcquirerBatchNumber, UUID>> authorisation;
+  private final DispatcherWithRollback<Tuple4<Authorisation, Merchant, AuthenticationResult, PaymentToken>, ?, Tuple2<ReversalData, Merchant>> preauthorisation;
+  private final DispatcherWithRollback<Tuple6<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, UUID>, ?, Tuple4<ReversalData, Merchant, AcquirerBatchNumber, UUID>> authorisation;
   private final Dispatcher<Tuple8<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, AcquirerResponse, Capture, UUID>, ?> capture;
-  private final AtMostOnceWithRollbackDispatcher<Tuple7<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, Refund, UUID>, ?, Tuple4<ReversalData, Merchant, AcquirerBatchNumber, UUID>> refund;
+  private final DispatcherWithRollback<Tuple7<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, Refund, UUID>, ?, Tuple4<ReversalData, Merchant, AcquirerBatchNumber, UUID>> refund;
   private final Dispatcher<Tuple4<Authorisation, Merchant, FailedAuthenticationResult, PaymentToken>, ?> failedAuthentication;
   private final Dispatcher<Tuple5<Authorisation, Merchant, AuthenticationResult, Capture, PaymentToken>, ?> captureRequestedTooLate;
 
@@ -167,15 +167,15 @@ public class PaymentTransitions {
   private final Dispatcher<Tuple5<Authorisation, Merchant, AcquirerResponse, BatchNumber, Refund>, ?> approvedRefund;
   private final Dispatcher<Tuple3<Authorisation, Merchant, AcquirerResponse>, ?> declinedRefund;
 
-  public AtMostOnceWithRollbackDispatcher<Tuple6<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, UUID>, ?, Tuple4<ReversalData, Merchant, AcquirerBatchNumber, UUID>> authorisation() {
+  public DispatcherWithRollback<Tuple6<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, UUID>, ?, Tuple4<ReversalData, Merchant, AcquirerBatchNumber, UUID>> authorisation() {
     return authorisation;
   }
 
-  public AtMostOnceWithRollbackDispatcher<Tuple4<Authorisation, Merchant, AuthenticationResult, PaymentToken>, ?, Tuple2<ReversalData, Merchant>> preauthorisation() {
+  public DispatcherWithRollback<Tuple4<Authorisation, Merchant, AuthenticationResult, PaymentToken>, ?, Tuple2<ReversalData, Merchant>> preauthorisation() {
     return preauthorisation;
   }
 
-  public List<HttpOutboxRequest<?, ?>> acquirerOutboxRequestModels() {
+  public List<HttpOutboxRequest<?>> acquirerOutboxRequestModels() {
     return outboxes(authorisation, preauthorisation, capture, refund, failedAuthentication, captureRequestedTooLate);
   }
 
@@ -183,11 +183,11 @@ public class PaymentTransitions {
     return approvedCapture;
   }
 
-  public List<HttpOutboxRequest<?, ?>> merchantRefundRequestModels() {
+  public List<HttpOutboxRequest<?>> merchantRefundRequestModels() {
     return outboxes(approvedRefund, declinedRefund, failedRefund);
   }
 
-  public List<HttpOutboxRequest<?, ?>> merchantOutboxRequestModels() {
+  public List<HttpOutboxRequest<?>> merchantOutboxRequestModels() {
     return outboxes(
         rolledBackAuthorisationRequest,
         rolledBackPreauthorisationRequest,
@@ -220,10 +220,10 @@ public class PaymentTransitions {
       Function<String, PaymentToken> tokenDecrypter,
       Dispatcher<AuthenticationData, I1> authentication,
       // To acquirer
-      AtMostOnceWithRollbackDispatcher<Tuple4<Authorisation, Merchant, AuthenticationResult, PaymentToken>, I2, Tuple2<ReversalData, Merchant>> preauthorisation,
-      AtMostOnceWithRollbackDispatcher<Tuple6<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, UUID>, I3, Tuple4<ReversalData, Merchant, AcquirerBatchNumber, UUID>> authorisation,
+      DispatcherWithRollback<Tuple4<Authorisation, Merchant, AuthenticationResult, PaymentToken>, I2, Tuple2<ReversalData, Merchant>> preauthorisation,
+      DispatcherWithRollback<Tuple6<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, UUID>, I3, Tuple4<ReversalData, Merchant, AcquirerBatchNumber, UUID>> authorisation,
       Dispatcher<Tuple8<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, AcquirerResponse, Capture, UUID>, I4> capture,
-      AtMostOnceWithRollbackDispatcher<Tuple7<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, Refund, UUID>, I5, Tuple4<ReversalData, Merchant, AcquirerBatchNumber, UUID>> refund,
+      DispatcherWithRollback<Tuple7<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, Refund, UUID>, I5, Tuple4<ReversalData, Merchant, AcquirerBatchNumber, UUID>> refund,
       Dispatcher<Tuple5<Authorisation, Merchant, AuthenticationResult, Capture, PaymentToken>, I6> captureRequestedTooLate,
       Dispatcher<Tuple4<Authorisation, Merchant, FailedAuthenticationResult, PaymentToken>, I7> failedAuthentication,
       // To merchant
@@ -676,8 +676,8 @@ public class PaymentTransitions {
     return transitions;
   }
 
-  private static List<HttpOutboxRequest<?, ?>> outboxes(Dispatcher<?, ?>... dispatchers) {
-    return Stream.of(dispatchers).<HttpOutboxRequest<?, ?>>map(Dispatcher::outbox).toList();
+  private static List<HttpOutboxRequest<?>> outboxes(Dispatcher<?, ?>... dispatchers) {
+    return Stream.of(dispatchers).<HttpOutboxRequest<?>>map(Dispatcher::outbox).toList();
   }
 
   private Merchant merchant(Merchant merchant, MerchantDetails merchantDetails) {
@@ -773,7 +773,7 @@ public class PaymentTransitions {
   private <I1, I2, I3, I4> Map<State, List<TransitionModel<?, ?>>> refundTransitions(
       State anchor,
       int i,
-      AtMostOnceWithRollbackDispatcher<Tuple7<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, Refund, UUID>, I1, Tuple4<ReversalData, Merchant, AcquirerBatchNumber, UUID>> refundAuthorisationToAcquirer,
+      DispatcherWithRollback<Tuple7<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, Refund, UUID>, I1, Tuple4<ReversalData, Merchant, AcquirerBatchNumber, UUID>> refundAuthorisationToAcquirer,
       Dispatcher<Tuple2<Authorisation, Merchant>, I2> failedRefund,
       Dispatcher<Tuple5<Authorisation, Merchant, AcquirerResponse, BatchNumber, Refund>, I3> approvedRefund,
       Dispatcher<Tuple3<Authorisation, Merchant, AcquirerResponse>, I4> declinedRefund

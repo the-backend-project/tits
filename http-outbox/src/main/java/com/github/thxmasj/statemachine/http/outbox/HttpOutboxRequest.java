@@ -22,11 +22,12 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-/// An outbox request, which dispatches request messages with payloads of type `RQ`. Its input, of type `I`, is the
-/// request message, or a [BatchedRequest] if the outbox request is batched. The input is created outside of it, by the
-/// dispatcher of the request, so that the outbox request is independent of where it is used. See [Dispatcher] for a
-/// way to pair an outbox request with the creator of its input.
-public sealed interface HttpOutboxRequest<I, RQ> extends com.github.thxmasj.statemachine.EntityModel permits AtLeastOnce, AtMostOnce {
+/// An outbox request, which dispatches request messages with payloads of type `RQ`. A request is dispatched with its
+/// request message by [#requestDispatched()], or, as part of a batch, with a [BatchedRequest] by
+/// [#batchedRequestDispatched()]. The request messages are created outside of it, by the dispatcher of the request, so
+/// that the outbox request is independent of where it is used. See [Dispatcher] for ways to pair an outbox request with
+/// the creator of its request messages.
+public sealed interface HttpOutboxRequest<RQ> extends com.github.thxmasj.statemachine.EntityModel permits AtLeastOnce, AtMostOnce {
 
   Map<State, List<TransitionModelBuilder.TransitionModel<?, ?>>> transitions();
 
@@ -39,7 +40,10 @@ public sealed interface HttpOutboxRequest<I, RQ> extends com.github.thxmasj.stat
         .toList();
   }
 
-  EventType<I, ?> requestDispatched();
+  EventType<TypedHttpRequest<RQ>, ?> requestDispatched();
+
+  /// Dispatches a request which belongs to a batch, which the request references.
+  EventType<BatchedRequest<RQ>, ?> batchedRequestDispatched();
 
   DataType<RQ> requestPayloadType();
 
@@ -106,8 +110,8 @@ public sealed interface HttpOutboxRequest<I, RQ> extends com.github.thxmasj.stat
     return new HttpRequestMessage(request.method(), request.uri(), request.headers(), payloadType.marshal(request.payload()));
   }
 
-  /// The input of a batched outbox request: the request message to dispatch, and the id of the batch which the request
-  /// belongs to. The input of an outbox request which is not batched is the request message only.
+  /// The input of a batched request: the request message to dispatch, and the id of the batch which the request belongs
+  /// to.
   record BatchedRequest<RQ>(TypedHttpRequest<RQ> request, UUID batchId) {
 
     public BatchedRequest {

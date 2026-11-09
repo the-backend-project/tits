@@ -107,8 +107,8 @@ public class HttpInboxTest {
     }
   }
 
-  private static HttpOutboxRequest<TypedHttpRequest<Void>, Void> Process0Outbox;
-  private static HttpOutboxRequest<TypedHttpRequest<Void>, Void> Process3Outbox;
+  private static HttpOutboxRequest<Void> Process0Outbox;
+  private static HttpOutboxRequest<Void> Process3Outbox;
 
   private static Map<State, List<TransitionModel<?, ?>>> lampTransitions() {
     return Map.of(
@@ -317,7 +317,7 @@ public class HttpInboxTest {
       EntityModel entityModel,
       Map<State, List<TransitionModel<?, ?>>> processTransitions,
       List<HttpRequestRoute<?>> routes,
-      List<HttpOutboxRequest<?, ?>> outboxes
+      List<HttpOutboxRequest<?>> outboxes
   ) {
     Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions = new HashMap<>();
     transitions.put(entityModel, processTransitions);
@@ -325,7 +325,7 @@ public class HttpInboxTest {
     transitions.put(RequestDispatching, requestDispatchingTransitions(routes, List.of()));
     for (var outbox : outboxes) {
       transitions.put(outbox, outbox.transitions());
-      if (outbox instanceof AtMostOnce<?, ?, ?> amo) {
+      if (outbox instanceof AtMostOnce<?, ?> amo) {
         if (amo.rollbackOnAcceptedModel() != null)
           transitions.put(amo.rollbackOnAcceptedModel(), amo.rollbackOnAcceptedModel().transitions());
         if (amo.rollbackOnUnknownModel() != null)

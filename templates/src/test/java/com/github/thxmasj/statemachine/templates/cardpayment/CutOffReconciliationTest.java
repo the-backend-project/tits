@@ -62,7 +62,7 @@ import com.github.thxmasj.statemachine.http.outbox.AtLeastOnce;
 import com.github.thxmasj.statemachine.http.outbox.AtLeastOnceDispatcher;
 import com.github.thxmasj.statemachine.http.outbox.AtMostOnce;
 import com.github.thxmasj.statemachine.http.outbox.AtMostOnceDispatcher;
-import com.github.thxmasj.statemachine.http.outbox.AtMostOnceWithRollbackDispatcher;
+import com.github.thxmasj.statemachine.http.outbox.BatchedAtMostOnceWithRollbackDispatcher;
 import com.github.thxmasj.statemachine.http.outbox.Dispatcher;
 import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest.BatchedRequest;
 import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest;
@@ -271,7 +271,7 @@ public class CutOffReconciliationTest {
         .build(Authentication.name(), Authentication.id());
     Dispatcher<AuthenticationData, TypedHttpRequest<Request>> authenticationDispatcher = AtMostOnceDispatcher.of(authentication, _ -> request(Authentication));
 
-    AtMostOnce<BatchedRequest<AcquirerAuthorisationRequest>, AcquirerAuthorisationRequest, TypedHttpRequest<Request>> acquirerAuthorisation =
+    AtMostOnce<AcquirerAuthorisationRequest, Request> acquirerAuthorisation =
         HttpOutboxRequest.atMostOnce()
             .requestPayloadType(DataType.json(AcquirerAuthorisationRequest.class))
             .responsePayloadType(DataType.json(AcquirerResponse.class))
@@ -289,7 +289,6 @@ public class CutOffReconciliationTest {
             .isAccepted(_ -> true)
             .isRejected(_ -> false)
             .isRejectedByInvalidResponse(_ -> false)
-            .batched()
             .rollbackOnAcceptedModel(
                 DummyTransitions.atLeastOnce(AuthorisationRollbackOnAccepted)
             )
@@ -298,8 +297,8 @@ public class CutOffReconciliationTest {
                 PaymentTransitions.OutboxRequestModelIds.Authorisation.name(),
                 PaymentTransitions.OutboxRequestModelIds.Authorisation.id()
             );
-    AtMostOnceWithRollbackDispatcher<Tuple6<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, UUID>, BatchedRequest<AcquirerAuthorisationRequest>, Tuple4<ReversalData, Merchant, AcquirerBatchNumber, UUID>> acquirerAuthorisationDispatcher =
-        AtMostOnceWithRollbackDispatcher.of(
+    BatchedAtMostOnceWithRollbackDispatcher<Tuple6<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, UUID>, AcquirerAuthorisationRequest, Tuple4<ReversalData, Merchant, AcquirerBatchNumber, UUID>> acquirerAuthorisationDispatcher =
+        BatchedAtMostOnceWithRollbackDispatcher.of(
             acquirerAuthorisation,
             (Tuple6<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, UUID> d) -> new BatchedRequest<>(TypedHttpRequest.create(
                 POST,
@@ -389,7 +388,7 @@ public class CutOffReconciliationTest {
     });
   }
 
-  private static AtLeastOnce<TypedHttpRequest<Request>, Request> atLeastOnce(Identifiable id) {
+  private static AtLeastOnce<Request> atLeastOnce(Identifiable id) {
     return HttpOutboxRequest.atLeastOnce()
         .requestPayloadType(DataType.json(Request.class))
         .responsePayloadType(DataType.json(Response.class))

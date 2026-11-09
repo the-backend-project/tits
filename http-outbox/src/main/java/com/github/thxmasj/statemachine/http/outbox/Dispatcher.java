@@ -11,16 +11,18 @@ import reactor.core.publisher.Mono;
 
 /// Pairs an outbox request with the creator of its input (of type `I`), which creates it from data of type `X`, so
 /// that the outbox request is reusable regardless of where its request messages come from. The input is the request
-/// message, or a [HttpOutboxRequest.BatchedRequest] for a batched outbox request.
+/// message, or, for a batched dispatcher, a [HttpOutboxRequest.BatchedRequest] with the request message and the id of
+/// the batch which the request belongs to.
 /// ```
 /// .trigger(dispatcher.requestDispatched())
 /// .withReactive((c, d) -> dispatcher.input(c, x))
 /// .on(dispatcher.outbox())
 /// .identifiedBy(newEntityId())
 /// ```
-public sealed interface Dispatcher<X, I> permits AtLeastOnceDispatcher, AtMostOnceDispatcher, AtMostOnceWithRollbackDispatcher {
+public sealed interface Dispatcher<X, I> permits AtLeastOnceDispatcher, BatchedAtLeastOnceDispatcher,
+    AtMostOnceDispatcher, BatchedAtMostOnceDispatcher, DispatcherWithRollback {
 
-  HttpOutboxRequest<I, ?> outbox();
+  HttpOutboxRequest<?> outbox();
 
   EventType<I, ?> requestDispatched();
 

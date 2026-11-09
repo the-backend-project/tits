@@ -40,7 +40,6 @@ import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;
 import com.github.thxmasj.statemachine.http.NettyHttpClient;
 import com.github.thxmasj.statemachine.http.NettyHttpClientBuilder;
-import com.github.thxmasj.statemachine.http.outbox.AtMostOnceDispatcher;
 import com.github.thxmasj.statemachine.http.outbox.AtMostOnceWithRollbackDispatcher;
 import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest.BatchedRequest;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
@@ -77,7 +76,7 @@ public class HttpOutboxTest {
   private static StateMachine stateMachine(
       EntityModel entityModel,
       Map<State, List<TransitionModel<?, ?>>> processTransitions,
-      List<HttpOutboxRequest<?, ?>> outboxes
+      List<HttpOutboxRequest<?>> outboxes
   ) {
     Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> outboxTransitions = new HashMap<>();
     for (var outbox : outboxes) {
@@ -248,18 +247,17 @@ public class HttpOutboxTest {
         .isAccepted(_ -> true)
         .isRejected(_ -> false)
         .isRejectedByInvalidResponse(_ -> false)
-        .batched()
         .build("BatchedExchange", UUID.randomUUID());
     UUID batchId = UUID.randomUUID();
-    AtMostOnceDispatcher<String, BatchedRequest<String>> dispatcher = AtMostOnceDispatcher.of(
+    BatchedAtMostOnceDispatcher<String, String> dispatcher = BatchedAtMostOnceDispatcher.of(
         outbox,
         (String path) -> new BatchedRequest<>(requestMessage(path, "payload"), batchId)
     );
 
     assertEquals(outbox, dispatcher.outbox());
-    assertEquals(outbox.requestDispatched(), dispatcher.requestDispatched());
+    assertEquals(outbox.batchedRequestDispatched(), dispatcher.requestDispatched());
     assertEquals(new BatchedRequest<>(requestMessage("/test", "payload"), batchId), dispatcher.input(null, "/test").block());
-    assertEquals("(HTTP request<string>, uuid)", outbox.requestDispatched().inputDataType().name());
+    assertEquals("(HTTP request<string>, uuid)", outbox.batchedRequestDispatched().inputDataType().name());
   }
 
   @Test
@@ -304,7 +302,7 @@ public class HttpOutboxTest {
     EventType<String, String> processed = BasicEventType.of("Processed", UUID.randomUUID(), DataType.string(), DataType.string());
     EventType<Void, Void> failed = BasicEventType.of("Failed", UUID.randomUUID());
     String path = "/" + UUID.randomUUID();
-    HttpOutboxRequest<TypedHttpRequest<String>, String> exchange = HttpOutboxRequest.atMostOnce()
+    HttpOutboxRequest<String> exchange = HttpOutboxRequest.atMostOnce()
         .requestPayloadType(DataType.string())
         .responsePayloadType(DataType.string())
         .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
@@ -463,7 +461,7 @@ public class HttpOutboxTest {
   public void atLeastOnceSuccessTransitionIdentifiesProcessEntity() {
     EntityModel process = EntityModel.of("Process", UUID.fromString("dda0cc10-3356-4522-8527-ca4f7006c566"));
     EventType<Void, Void> processed = BasicEventType.of("Processed", UUID.fromString("433d18b2-8429-4615-aeb0-5de2240413ea"));
-    AtLeastOnce<TypedHttpRequest<Void>, Void> alo = HttpOutboxRequest.atLeastOnce()
+    AtLeastOnce<Void> alo = HttpOutboxRequest.atLeastOnce()
         .requestPayloadType(DataType.none())
         .responsePayloadType(DataType.none())
         .repeatMessageCreator((_, o) -> o)
@@ -519,7 +517,7 @@ public class HttpOutboxTest {
   @Test
   public void atLeastOnceBeginRequestDispatchedOutputsTriggerEntityId() {
     EntityModel process = EntityModel.of("Process", UUID.fromString("dda0cc10-3356-4522-8527-ca4f7006c566"));
-    AtLeastOnce<TypedHttpRequest<Void>, Void> alo = HttpOutboxRequest.atLeastOnce()
+    AtLeastOnce<Void> alo = HttpOutboxRequest.atLeastOnce()
         .requestPayloadType(DataType.none())
         .responsePayloadType(DataType.none())
         .repeatMessageCreator((_, o) -> o)
@@ -577,7 +575,7 @@ public class HttpOutboxTest {
       EventType<Void, Void> failed,
       EventType<Void, Void> missingResponse,
       EventType<Void, Void> unknown,
-      AtMostOnce<TypedHttpRequest<Void>, Void, TypedHttpRequest<Void>> exchange,
+      AtMostOnce<Void, Void> exchange,
       StateMachine machine,
       String path
   ) {
@@ -596,7 +594,7 @@ public class HttpOutboxTest {
       EventType<Void, Void> missingResponse = BasicEventType.of("Missing response", UUID.fromString("7cd9c1f1-1ce0-4249-a709-5e11ea2f6404"));
       EventType<Void, Void> unknown = BasicEventType.of("Unknown", UUID.fromString("46cf31dd-56ed-41cb-b2ca-501930a23e44"));
       String path = "/" + UUID.randomUUID();
-      AtMostOnce<TypedHttpRequest<Void>, Void, TypedHttpRequest<Void>> Exchange = HttpOutboxRequest.atMostOnce()
+      AtMostOnce<Void, Void> Exchange = HttpOutboxRequest.atMostOnce()
           .requestPayloadType(DataType.none())
           .responsePayloadType(DataType.none())
           .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
@@ -641,7 +639,7 @@ public class HttpOutboxTest {
               .build("ExchangeRollbackOnUnknown", UUID.fromString("ec3848a3-4b03-3a69-7d94-a448a83e792b"))
           )
           .build("Exchange", UUID.fromString("a3778c63-144f-4748-9e8b-cc10ee20db3f"));
-      AtMostOnceWithRollbackDispatcher<Void, TypedHttpRequest<Void>, Void> dispatcher = AtMostOnceWithRollbackDispatcher.of(
+      AtMostOnceWithRollbackDispatcher<Void, Void, Void> dispatcher = AtMostOnceWithRollbackDispatcher.of(
           Exchange,
           (Void _) -> requestMessage(path),
           (_, d) -> Mono.just(requestMessage(d.t2().uri().getPath() + "/rollback"))
@@ -690,7 +688,7 @@ public class HttpOutboxTest {
       EventType<Void, Void> processed = BasicEventType.of("Processed", UUID.randomUUID());
       EventType<Void, Void> failed = BasicEventType.of("Failed", UUID.randomUUID());
       String path = "/" + UUID.randomUUID();
-      HttpOutboxRequest<TypedHttpRequest<Void>, Void> Exchange = HttpOutboxRequest.atMostOnce()
+      HttpOutboxRequest<Void> Exchange = HttpOutboxRequest.atMostOnce()
           .requestPayloadType(DataType.none())
           .responsePayloadType(DataType.none())
           .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
@@ -741,7 +739,7 @@ public class HttpOutboxTest {
       EntityModel process = EntityModel.of("Process", UUID.randomUUID());
       EventType<Void, Void> doProcess = BasicEventType.of("Do process", UUID.randomUUID());
       String path = "/" + UUID.randomUUID();
-      HttpOutboxRequest<TypedHttpRequest<Void>, Void> Exchange = HttpOutboxRequest.atMostOnce()
+      HttpOutboxRequest<Void> Exchange = HttpOutboxRequest.atMostOnce()
           .requestPayloadType(DataType.none())
           .responsePayloadType(DataType.none())
           .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
@@ -786,7 +784,7 @@ public class HttpOutboxTest {
       EntityModel process = EntityModel.of("Process", UUID.randomUUID());
       EventType<Void, Void> doProcess = BasicEventType.of("Do process", UUID.randomUUID());
       String path = "/" + UUID.randomUUID();
-      HttpOutboxRequest<TypedHttpRequest<Void>, Void> Exchange = HttpOutboxRequest.atMostOnce()
+      HttpOutboxRequest<Void> Exchange = HttpOutboxRequest.atMostOnce()
           .requestPayloadType(DataType.<Void>unknown())
           .responsePayloadType(DataType.unknown())
           .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
@@ -823,12 +821,12 @@ public class HttpOutboxTest {
 
   record ProcessModelWithDefaultMissingResponse(
       EntityModel process,
-      HttpOutboxRequest<TypedHttpRequest<Void>, Void> exchange
+      HttpOutboxRequest<Void> exchange
   ) {
     static ProcessModelWithDefaultMissingResponse create() {
       EntityModel process = EntityModel.of("Process", UUID.randomUUID());
       String path = "/" + UUID.randomUUID();
-      HttpOutboxRequest<TypedHttpRequest<Void>, Void> exchange = HttpOutboxRequest.atMostOnce()
+      HttpOutboxRequest<Void> exchange = HttpOutboxRequest.atMostOnce()
           .requestPayloadType(DataType.<Void>unknown())
           .responsePayloadType(DataType.unknown())
           .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
