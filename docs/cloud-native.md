@@ -96,9 +96,10 @@ without changing the libraries.
   `CleartextHttp2ServerUpgradeHandler`, used by the reactor-netty HTTP server, holds a direct buffer, which fails the
   build with GraalVM 25. The demo initializes that class at run time instead. The HTTP inbox could ship this setting, or
   it could go away with a later Netty version.
-- **Runtime dependencies the server does not use.** The state machine depends on PlantUML (for diagrams) and Hibernate
-  Validator, and reactor-netty brings QUIC and macOS DNS support. They end up on the runtime classpath of every
-  application, lengthening native compilation. Diagram generation could be a separate module, and the others optional.
+- **Runtime dependencies the server does not use.** The state machine depends on Hibernate Validator, and reactor-netty
+  brings QUIC and macOS DNS support. They end up on the runtime classpath of every application, lengthening native
+  compilation. They could be optional, the way diagram generation with PlantUML is kept in the separate `diagram`
+  module.
 - **No fully static executable on arm64.** Fully static executables require musl, which the GraalVM builder images only
   support on amd64. The demo links glibc dynamically and copies it into the image, which works on both architectures.
 

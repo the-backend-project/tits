@@ -104,10 +104,6 @@
       <groupId>org.hibernate.validator</groupId>
       <artifactId>hibernate-validator</artifactId>
     </dependency>
-    <dependency>
-      <groupId>net.sourceforge.plantuml</groupId>
-      <artifactId>plantuml-mit</artifactId>
-    </dependency>
   </dependencies>
 
 </project>

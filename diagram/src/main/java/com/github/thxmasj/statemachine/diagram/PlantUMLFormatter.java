@@ -1,4 +1,4 @@
-package com.github.thxmasj.statemachine;
+package com.github.thxmasj.statemachine.diagram;
 
 import static com.github.thxmasj.statemachine.EntityModel.Begin;
 import static java.util.Optional.ofNullable;
@@ -6,6 +6,11 @@ import static java.util.function.Predicate.not;
 import static java.util.stream.Collectors.joining;
 import static java.util.stream.Collectors.toMap;
 
+import com.github.thxmasj.statemachine.DataType;
+import com.github.thxmasj.statemachine.EntityModel;
+import com.github.thxmasj.statemachine.EventType;
+import com.github.thxmasj.statemachine.IndexEntityModel;
+import com.github.thxmasj.statemachine.State;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import java.io.BufferedWriter;
 import java.io.File;

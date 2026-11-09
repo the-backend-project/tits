@@ -47,7 +47,7 @@ import com.github.thxmasj.statemachine.Event;
 import com.github.thxmasj.statemachine.EventTrigger;
 import com.github.thxmasj.statemachine.EventType;
 import com.github.thxmasj.statemachine.test.Init;
-import com.github.thxmasj.statemachine.PlantUMLFormatter;
+import com.github.thxmasj.statemachine.diagram.PlantUMLFormatter;
 import com.github.thxmasj.statemachine.State;
 import com.github.thxmasj.statemachine.StateMachine;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionContext;

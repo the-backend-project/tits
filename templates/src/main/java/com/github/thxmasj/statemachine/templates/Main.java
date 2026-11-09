@@ -12,7 +12,7 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.DummyTransit
 import static com.github.thxmasj.statemachine.templates.cardpayment.DummyTransitions.atMostOnce;
 
 import com.github.thxmasj.statemachine.Identifiable;
-import com.github.thxmasj.statemachine.PlantUMLFormatter;
+import com.github.thxmasj.statemachine.diagram.PlantUMLFormatter;
 import com.github.thxmasj.statemachine.templates.cardpayment.DummyTransitions;
 import java.io.IOException;
 import java.util.List;
