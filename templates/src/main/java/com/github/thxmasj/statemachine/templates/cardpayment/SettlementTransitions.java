@@ -66,6 +66,7 @@ public class SettlementTransitions {
   }
   private final Map<State, List<TransitionModel<?, ?>>> transitions;
   private final List<EntityModel> outboxRequestModels;
+  private final Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> outboxTransitions;
   private final Dispatcher<Tuple3<BatchNumber, AcquirerBatchNumber, Merchant>, Void> reconciliation;
   private final Dispatcher<Tuple2<CutOff, ReconciliationValues>, Void> approvedCutOff;
 
@@ -85,6 +86,11 @@ public class SettlementTransitions {
     return outboxRequestModels;
   }
 
+  /// The transitions to register for the outbox requests.
+  public Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> outboxTransitions() {
+    return outboxTransitions;
+  }
+
   public SettlementTransitions(
       // validateSettlementResponse()
       Dispatcher<Tuple3<BatchNumber, AcquirerBatchNumber, Merchant>, Void> reconciliationToAcquirer,
@@ -96,6 +102,7 @@ public class SettlementTransitions {
         reconciliationToAcquirer.outbox(),
         approvedCutOffToMerchant.outbox()
     );
+    this.outboxTransitions = PaymentTransitions.transitions(List.of(reconciliationToAcquirer, approvedCutOffToMerchant));
 
     this.transitions = Map.of(
         Begin, List.of(

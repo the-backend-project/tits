@@ -85,10 +85,10 @@ public class DummyTransitions {
       Identifiable rollbackOnAcceptedId,
       Identifiable rollbackOnUnknownId
   ) {
-    return Dispatcher.of(DummyTransitions.<Y>atMostOnce(id, rollbackOnAcceptedId, rollbackOnUnknownId), _ -> null);
+    return Dispatcher.of(atMostOnce(id, rollbackOnAcceptedId, rollbackOnUnknownId), _ -> null, (_, _) -> Mono.empty());
   }
 
-  public static AtMostOnce<TypedHttpRequest<Request>, Request, Void, Void> atMostOnce(Identifiable id) {
+  public static AtMostOnce<TypedHttpRequest<Request>, Request, Void> atMostOnce(Identifiable id) {
     return HttpOutboxRequest.atMostOnce()
         .requestPayloadType(DataType.json(Request.class))
         .responsePayloadType(DataType.json(Response.class))
@@ -101,7 +101,7 @@ public class DummyTransitions {
         .build(id.name(), id.id());
   }
 
-  public static <RI> AtMostOnce<TypedHttpRequest<Request>, Request, RI, TypedHttpRequest<Request>> atMostOnce(Identifiable id, Identifiable rollbackOnAcceptedId, Identifiable rollbackOnUnknownId) {
+  public static AtMostOnce<TypedHttpRequest<Request>, Request, TypedHttpRequest<Request>> atMostOnce(Identifiable id, Identifiable rollbackOnAcceptedId, Identifiable rollbackOnUnknownId) {
     return HttpOutboxRequest.atMostOnce()
         .requestPayloadType(DataType.json(Request.class))
         .responsePayloadType(DataType.json(Response.class))
@@ -113,7 +113,6 @@ public class DummyTransitions {
         .isRejectedByInvalidResponse(_ -> true)
         .rollbackOnAcceptedModel(DummyTransitions.atLeastOnce(rollbackOnAcceptedId))
         .rollbackOnUnknownModel(DummyTransitions.atLeastOnce(rollbackOnUnknownId))
-        .<RI>rollbackMessageCreator((_, _) -> Mono.empty())
         .build(id.name(), id.id());
   }
 

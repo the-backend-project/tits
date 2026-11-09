@@ -78,17 +78,20 @@ public class HttpOutboxTest {
       Map<State, List<TransitionModel<?, ?>>> processTransitions,
       List<HttpOutboxRequest<?, ?>> outboxes
   ) {
-    Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions = new HashMap<>();
-    transitions.put(entityModel, processTransitions);
+    Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> outboxTransitions = new HashMap<>();
     for (var outbox : outboxes) {
-      transitions.put(outbox, outbox.transitions());
-      if (outbox instanceof AtMostOnce<?, ?, ?, ?> amo) {
-        if (amo.rollbackOnAcceptedModel() != null)
-          transitions.put(amo.rollbackOnAcceptedModel(), amo.rollbackOnAcceptedModel().transitions());
-        if (amo.rollbackOnUnknownModel() != null)
-          transitions.put(amo.rollbackOnUnknownModel(), amo.rollbackOnUnknownModel().transitions());
-      }
+      outboxTransitions.put(outbox, outbox.transitions());
     }
+    return stateMachine(entityModel, processTransitions, outboxTransitions);
+  }
+
+  private static StateMachine stateMachine(
+      EntityModel entityModel,
+      Map<State, List<TransitionModel<?, ?>>> processTransitions,
+      Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> outboxTransitions
+  ) {
+    Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions = new HashMap<>(outboxTransitions);
+    transitions.put(entityModel, processTransitions);
     transitions.put(Index, Index.transitions());
     return Init.stateMachine(transitions);
   }
@@ -574,7 +577,7 @@ public class HttpOutboxTest {
       EventType<Void, Void> failed,
       EventType<Void, Void> missingResponse,
       EventType<Void, Void> unknown,
-      AtMostOnce<TypedHttpRequest<Void>, Void, Void, TypedHttpRequest<Void>> exchange,
+      AtMostOnce<TypedHttpRequest<Void>, Void, TypedHttpRequest<Void>> exchange,
       StateMachine machine,
       String path
   ) {
@@ -593,7 +596,7 @@ public class HttpOutboxTest {
       EventType<Void, Void> missingResponse = BasicEventType.of("Missing response", UUID.fromString("7cd9c1f1-1ce0-4249-a709-5e11ea2f6404"));
       EventType<Void, Void> unknown = BasicEventType.of("Unknown", UUID.fromString("46cf31dd-56ed-41cb-b2ca-501930a23e44"));
       String path = "/" + UUID.randomUUID();
-      AtMostOnce<TypedHttpRequest<Void>, Void, Void, TypedHttpRequest<Void>> Exchange = HttpOutboxRequest.atMostOnce()
+      AtMostOnce<TypedHttpRequest<Void>, Void, TypedHttpRequest<Void>> Exchange = HttpOutboxRequest.atMostOnce()
           .requestPayloadType(DataType.none())
           .responsePayloadType(DataType.none())
           .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
@@ -637,16 +640,20 @@ public class HttpOutboxTest {
               .backoffAlgorithm(c -> new DelaySpecification(Duration.ofSeconds(10), Duration.ofMinutes(10), Duration.ofHours(5), 1.5).calculateDelay(c.attemptNumber()))
               .build("ExchangeRollbackOnUnknown", UUID.fromString("ec3848a3-4b03-3a69-7d94-a448a83e792b"))
           )
-          .<Void>rollbackMessageCreator((_, d) -> Mono.just(requestMessage(d.t2().uri().getPath() + "/rollback")))
           .build("Exchange", UUID.fromString("a3778c63-144f-4748-9e8b-cc10ee20db3f"));
+      Dispatcher<Void, Void> dispatcher = Dispatcher.of(
+          Exchange,
+          (Void _) -> requestMessage(path),
+          (_, d) -> Mono.just(requestMessage(d.t2().uri().getPath() + "/rollback"))
+      );
 
       Map<State, List<TransitionModel<?, ?>>> processTransitions = Map.of(
           Begin, List.of(
               onEvent(doProcess).to(States.WaitingForResponse)
-                  .trigger(Exchange.requestDispatched()).with(_ -> requestMessage(path)).on(Exchange).identifiedBy(newEntityId())
+                  .trigger(dispatcher.requestDispatched()).withReactive((c, _) -> dispatcher.input(c, null)).on(dispatcher.outbox()).identifiedBy(newEntityId())
                   .reversible(
                       assemble((log, _) -> log.one(doProcess))
-                          .trigger(Exchange.rollbackDispatched()).on(Exchange).identifiedBy(d -> entityId(d))
+                          .trigger(dispatcher.rollbackDispatched()).on(dispatcher.outbox()).identifiedBy(d -> entityId(d))
                   )
                   .output(d -> d.t2().accepted().event().entityId())
           ),
@@ -662,7 +669,7 @@ public class HttpOutboxTest {
       var machine = stateMachine(
           process,
           processTransitions,
-          List.of(Exchange)
+          dispatcher.transitions()
       );
       return new ProcessModel(process, doProcess, processed, failed, missingResponse, unknown, Exchange, machine, path);
     }

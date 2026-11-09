@@ -99,6 +99,7 @@ import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Refund
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.ReversalData;
 import com.github.thxmasj.statemachine.templates.cardpayment.RefundRequestDataCreator.RefundRequestData;
 import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -143,6 +144,7 @@ public class PaymentTransitions {
   private final Map<State, List<TransitionModel<?, ?>>> transitions;
   private final Function<String, PaymentToken> tokenDecrypter;
   private final List<EntityModel> outboxRequestModels;
+  private final Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> outboxTransitions;
 
   // To acquirer
   private final Dispatcher<Tuple4<Authorisation, Merchant, AuthenticationResult, PaymentToken>, Tuple2<ReversalData, Merchant>> preauthorisation;
@@ -207,6 +209,11 @@ public class PaymentTransitions {
     return outboxRequestModels;
   }
 
+  /// The transitions to register for the outbox requests, including their rollback models.
+  public Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> outboxTransitions() {
+    return outboxTransitions;
+  }
+
   public PaymentTransitions(
       Function<String, PaymentToken> tokenDecrypter,
       Dispatcher<AuthenticationData, Void> authentication,
@@ -247,7 +254,7 @@ public class PaymentTransitions {
     this.approvedRefund = approvedRefund;
     this.declinedRefund = declinedRefund;
 
-    this.outboxRequestModels = List.<EntityModel>copyOf(outboxes(
+    List<Dispatcher<?, ?>> dispatchers = List.of(
         authentication,
         authorisation,
         failedAuthentication,
@@ -265,7 +272,9 @@ public class PaymentTransitions {
         failedRefund,
         approvedRefund,
         declinedRefund
-    ));
+    );
+    this.outboxRequestModels = dispatchers.stream().<EntityModel>map(Dispatcher::outbox).toList();
+    this.outboxTransitions = transitions(dispatchers);
 
     this.transitions = mergeModels(Map.of(
             Begin, List.of(
@@ -664,6 +673,12 @@ public class PaymentTransitions {
             declinedRefund
         )
     );
+  }
+
+  static Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions(List<Dispatcher<?, ?>> dispatchers) {
+    var transitions = new LinkedHashMap<EntityModel, Map<State, List<TransitionModel<?, ?>>>>();
+    dispatchers.forEach(d -> transitions.putAll(d.transitions()));
+    return transitions;
   }
 
   private static List<HttpOutboxRequest<?, ?>> outboxes(Dispatcher<?, ?>... dispatchers) {

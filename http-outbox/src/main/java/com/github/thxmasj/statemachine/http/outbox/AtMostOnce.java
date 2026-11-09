@@ -43,15 +43,15 @@ import java.util.function.Predicate;
 import reactor.core.publisher.Mono;
 
 /// An outbox request which is dispatched at most once, with input of type `I` and request payloads of type `RQ`. It can
-/// be rolled back with data of type `RI`, which the input of the rollback models, of type `RRI`, is created from
-/// together with the request being rolled back. The rollback request is dispatched by the rollback models.
-public final class AtMostOnce<I, RQ, RI, RRI> implements HttpOutboxRequest<I, RQ> {
+/// be rolled back by rollback models with input of type `RRI`. The rollback input is created by a rollback message
+/// creator, from the data the rollback is dispatched with and the request being rolled back. Like the creator of the
+/// input, it is kept outside the outbox request; it is given to [#transitions(BiFunction)], e.g. by a [Dispatcher].
+public final class AtMostOnce<I, RQ, RRI> implements HttpOutboxRequest<I, RQ> {
 
   private final String name;
   private final UUID id;
   private final AtLeastOnce<RRI, ?> rollbackOnAcceptedModel;
   private final AtLeastOnce<RRI, ?> rollbackOnUnknownModel;
-  private final BiFunction<TransitionContext<?>, Tuple2<RI, TypedHttpRequest<RQ>>, Mono<RRI>> rollbackMessageCreator;
   private final Shape<I, ?, ?, ?, ?, ?, ?, ?, RQ, ?> shape;
 
   private record Shape<I, T1, T2, T3, T4, T5, T6, T7, RQ, RS>(
@@ -153,9 +153,9 @@ public final class AtMostOnce<I, RQ, RI, RRI> implements HttpOutboxRequest<I, RQ
     return shape.requestDispatched();
   }
 
-  /// Rolls this request back. The rollback request is dispatched by the rollback on accepted model if this request was
-  /// accepted, and by the rollback on unknown model if its outcome is unknown.
-  public EventType<RI, Void> rollbackDispatched() {
+  /// Rolls this request back with data of type `RI`. The rollback request is dispatched by the rollback on accepted
+  /// model if this request was accepted, and by the rollback on unknown model if its outcome is unknown.
+  public <RI> EventType<RI, Void> rollbackDispatched() {
     return BasicEventType.of(
         "Rollback dispatched",
         RollbackDispatchedId,
@@ -220,8 +220,7 @@ public final class AtMostOnce<I, RQ, RI, RRI> implements HttpOutboxRequest<I, RQ
       Predicate<Tuple2<HttpResponseMessage, String>> isRejectedByInvalidResponse,
       InputType<I, RQ> inputType,
       AtLeastOnce<RRI, ?> rollbackOnAcceptedModel,
-      AtLeastOnce<RRI, ?> rollbackOnUnknownModel,
-      BiFunction<TransitionContext<?>, Tuple2<RI, TypedHttpRequest<RQ>>, Mono<RRI>> rollbackMessageCreator
+      AtLeastOnce<RRI, ?> rollbackOnUnknownModel
   ) {
     this(
         name,
@@ -245,8 +244,7 @@ public final class AtMostOnce<I, RQ, RI, RRI> implements HttpOutboxRequest<I, RQ
         isRejectedByInvalidResponse,
         inputType,
         _ -> rollbackOnAcceptedModel,
-        _ -> rollbackOnUnknownModel,
-        rollbackMessageCreator
+        _ -> rollbackOnUnknownModel
     );
   }
 
@@ -271,13 +269,11 @@ public final class AtMostOnce<I, RQ, RI, RRI> implements HttpOutboxRequest<I, RQ
       Predicate<TypedHttpResponse<RS>> isRejected,
       Predicate<Tuple2<HttpResponseMessage, String>> isRejectedByInvalidResponse,
       InputType<I, RQ> inputType,
-      Function<AtMostOnce<I, RQ, RI, RRI>, AtLeastOnce<RRI, ?>> rollbackOnAcceptedModelSupplier,
-      Function<AtMostOnce<I, RQ, RI, RRI>, AtLeastOnce<RRI, ?>> rollbackOnUnknownModelSupplier,
-      BiFunction<TransitionContext<?>, Tuple2<RI, TypedHttpRequest<RQ>>, Mono<RRI>> rollbackMessageCreator
+      Function<AtMostOnce<I, RQ, RRI>, AtLeastOnce<RRI, ?>> rollbackOnAcceptedModelSupplier,
+      Function<AtMostOnce<I, RQ, RRI>, AtLeastOnce<RRI, ?>> rollbackOnUnknownModelSupplier
   ) {
     this.name = name;
     this.id = id;
-    this.rollbackMessageCreator = rollbackMessageCreator;
     this.shape = new Shape<>(
         requestPayloadType,
         responsePayloadType,
@@ -302,7 +298,10 @@ public final class AtMostOnce<I, RQ, RI, RRI> implements HttpOutboxRequest<I, RQ
     this.rollbackOnUnknownModel = rollbackOnUnknownModelSupplier != null ? rollbackOnUnknownModelSupplier.apply(this) : null;
   }
 
-  private <T1, T2, T3, T4, T5, T6, T7, RS> Map<State, List<TransitionModel<?, ?>>> transitions(Shape<I, T1, T2, T3, T4, T5, T6, T7, RQ, RS> shape) {
+  private <RI, T1, T2, T3, T4, T5, T6, T7, RS> Map<State, List<TransitionModel<?, ?>>> transitions(
+      Shape<I, T1, T2, T3, T4, T5, T6, T7, RQ, RS> shape,
+      BiFunction<TransitionContext<?>, Tuple2<RI, TypedHttpRequest<RQ>>, Mono<RRI>> rollbackMessageCreator
+  ) {
     return Map.of(
         Begin, List.of(
             shape.inputType().isBatched() ?
@@ -345,7 +344,7 @@ public final class AtMostOnce<I, RQ, RI, RRI> implements HttpOutboxRequest<I, RQ
         ),
         InFlight, list(
             rollbackOnUnknownModel != null ?
-                onEvent(rollbackDispatched()).to(RolledBack)
+                onEvent(this.<RI>rollbackDispatched()).to(RolledBack)
                     .assemble(c -> tuple(c.input(), c.log().one(shape.requestDispatched()).t1()))
                     .trigger(rollbackOnUnknownModel.requestDispatched())
                     .withReactive(rollbackMessageCreator)
@@ -476,7 +475,7 @@ public final class AtMostOnce<I, RQ, RI, RRI> implements HttpOutboxRequest<I, RQ
         Intermediate, List.of(),
         Failed, List.of(),
         Accepted, rollbackOnAcceptedModel != null ? List.of(
-                onEvent(rollbackDispatched()).to(RolledBack)
+                onEvent(this.<RI>rollbackDispatched()).to(RolledBack)
                     .assemble(c -> tuple(c.input(), c.log().one(shape.requestDispatched()).t1()))
                     .trigger(rollbackOnAcceptedModel.requestDispatched())
                     .withReactive(rollbackMessageCreator)
@@ -485,7 +484,7 @@ public final class AtMostOnce<I, RQ, RI, RRI> implements HttpOutboxRequest<I, RQ
                     .output()
             ) : List.of(),
         Unknown, rollbackOnUnknownModel != null ? List.of(
-            onEvent(rollbackDispatched()).to(RolledBack)
+            onEvent(this.<RI>rollbackDispatched()).to(RolledBack)
                 .assemble(c -> tuple(c.input(), c.log().one(shape.requestDispatched()).t1()))
                 .trigger(rollbackOnUnknownModel.requestDispatched())
                 .withReactive(rollbackMessageCreator)
@@ -507,9 +506,22 @@ public final class AtMostOnce<I, RQ, RI, RRI> implements HttpOutboxRequest<I, RQ
     return id;
   }
 
+  /// The transitions of this outbox request, without a rollback message creator. Use [#transitions(BiFunction)] for
+  /// an outbox request which can be rolled back, as its rollback fails otherwise.
   @Override
   public Map<State, List<TransitionModel<?, ?>>> transitions() {
-    return transitions(shape);
+    return transitions((_, _) -> Mono.error(new IllegalStateException(
+        name + " has no rollback message creator. Use the transitions of its Dispatcher."
+    )));
+  }
+
+  /// The transitions of this outbox request, with the input of the rollback models created by the given rollback
+  /// message creator from the data the rollback is dispatched with (of type `RI`) and the request being rolled back.
+  /// The input is created in the context of the transition of this outbox request which dispatches the rollback.
+  public <RI> Map<State, List<TransitionModel<?, ?>>> transitions(
+      BiFunction<TransitionContext<?>, Tuple2<RI, TypedHttpRequest<RQ>>, Mono<RRI>> rollbackMessageCreator
+  ) {
+    return transitions(shape, rollbackMessageCreator);
   }
 
   @Override

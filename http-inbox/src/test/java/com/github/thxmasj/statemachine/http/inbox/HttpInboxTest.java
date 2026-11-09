@@ -325,7 +325,7 @@ public class HttpInboxTest {
     transitions.put(RequestDispatching, requestDispatchingTransitions(routes, List.of()));
     for (var outbox : outboxes) {
       transitions.put(outbox, outbox.transitions());
-      if (outbox instanceof AtMostOnce<?, ?, ?, ?> amo) {
+      if (outbox instanceof AtMostOnce<?, ?, ?> amo) {
         if (amo.rollbackOnAcceptedModel() != null)
           transitions.put(amo.rollbackOnAcceptedModel(), amo.rollbackOnAcceptedModel().transitions());
         if (amo.rollbackOnUnknownModel() != null)
@@ -383,7 +383,6 @@ public class HttpInboxTest {
             .backoffAlgorithm(c -> new DelaySpecification(Duration.ofSeconds(10), Duration.ofMinutes(10), Duration.ofHours(5), 1.5).calculateDelay(c.attemptNumber()))
             .build("Process0RollbackOutbox", UUID.fromString("513f7e3e-c03e-4016-b5f3-ddb981cb1ffe"))
         )
-        .rollbackMessageCreator((_, _) -> Mono.just(requestMessage("/rollback")))
         .build("Process0Outbox", UUID.fromString("2c68ffa2-0935-46fd-a032-2647ca51b801"));
     Process3Outbox = HttpOutboxRequest.atLeastOnce()
         .requestPayloadType(DataType.none())

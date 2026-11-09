@@ -7,7 +7,6 @@ import static com.github.thxmasj.statemachine.http.outbox.EventTypes.TimeoutExpi
 import com.github.thxmasj.statemachine.DataType;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.EventType;
-import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionContext;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;
 import com.github.thxmasj.statemachine.Validated;
 import com.github.thxmasj.statemachine.http.HttpClient;
@@ -20,18 +19,15 @@ import java.util.UUID;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Predicate;
-import reactor.core.publisher.Mono;
 
 /// Builder of [AtMostOnce] outboxes. The settings are given in the fixed order of the steps below, each step
 /// returning the next one, so that the order is enforced by the compiler. A step which has a default is optional and
 /// can be skipped, as it also offers the settings of the steps following it.
 ///
 /// The type of the request payload is introduced by [RequestPayloadTypeStep], the type of the response payload by
-/// [ResponsePayloadTypeStep], the type of the input by [BatchedStep], the type of the input of the rollback models by
-/// [RollbackOnAcceptedModelStep] or [RollbackOnUnknownModelStep], and the type of the data the rollback is dispatched
-/// with by [RollbackMessageCreatorStep]. The request messages are not created by the outbox, but given as the input
-/// when the request is dispatched. The rollback request messages are created by the outbox, as they depend on the
-/// request.
+/// [ResponsePayloadTypeStep], the type of the input by [BatchedStep], and the type of the input of the rollback models
+/// by [RollbackOnAcceptedModelStep] or [RollbackOnUnknownModelStep]. Neither the input nor the rollback input is
+/// created by the outbox request; see [Dispatcher].
 public final class AtMostOnceBuilder {
 
   private AtMostOnceBuilder() {}
@@ -176,35 +172,24 @@ public final class AtMostOnceBuilder {
   }
 
   /// Optional: the rollback on accepted model defaults to none.
-  public interface RollbackOnAcceptedModelStep<I, RQ> extends BuildStep<I, RQ, Void, Void> {
+  public interface RollbackOnAcceptedModelStep<I, RQ> extends BuildStep<I, RQ, Void> {
 
     <RRI> RollbackOnUnknownModelStep<I, RQ, RRI> rollbackOnAcceptedModel(AtLeastOnce<RRI, ?> rollbackOnAcceptedModel);
 
-    <RRI> RollbackMessageCreatorStep<I, RQ, RRI> rollbackOnUnknownModel(AtLeastOnce<RRI, ?> rollbackOnUnknownModel);
+    <RRI> BuildStep<I, RQ, RRI> rollbackOnUnknownModel(AtLeastOnce<RRI, ?> rollbackOnUnknownModel);
 
   }
 
   /// Optional: the rollback on unknown model defaults to none.
-  public interface RollbackOnUnknownModelStep<I, RQ, RRI> extends RollbackMessageCreatorStep<I, RQ, RRI> {
+  public interface RollbackOnUnknownModelStep<I, RQ, RRI> extends BuildStep<I, RQ, RRI> {
 
-    RollbackMessageCreatorStep<I, RQ, RRI> rollbackOnUnknownModel(AtLeastOnce<RRI, ?> rollbackOnUnknownModel);
-
-  }
-
-  /// The creator of the input of the rollback models (of type `RRI`), i.e. of the rollback request message, from the
-  /// data the rollback is dispatched with (of type `RI`) and the request being rolled back. It is created in the
-  /// context of the transition of this outbox request which dispatches the rollback.
-  public interface RollbackMessageCreatorStep<I, RQ, RRI> {
-
-    <RI> BuildStep<I, RQ, RI, RRI> rollbackMessageCreator(
-        BiFunction<TransitionContext<?>, Tuple2<RI, TypedHttpRequest<RQ>>, Mono<RRI>> rollbackMessageCreator
-    );
+    BuildStep<I, RQ, RRI> rollbackOnUnknownModel(AtLeastOnce<RRI, ?> rollbackOnUnknownModel);
 
   }
 
-  public interface BuildStep<I, RQ, RI, RRI> {
+  public interface BuildStep<I, RQ, RRI> {
 
-    AtMostOnce<I, RQ, RI, RRI> build(String name, UUID id);
+    AtMostOnce<I, RQ, RRI> build(String name, UUID id);
   }
 
   private static final class WithNothing implements RequestPayloadTypeStep {
@@ -490,14 +475,14 @@ public final class AtMostOnceBuilder {
     }
 
     @Override
-    public <RRI> RollbackMessageCreatorStep<TypedHttpRequest<RQ>, RQ, RRI> rollbackOnUnknownModel(
+    public <RRI> BuildStep<TypedHttpRequest<RQ>, RQ, RRI> rollbackOnUnknownModel(
         AtLeastOnce<RRI, ?> rollbackOnUnknownModel
     ) {
       return unbatched().rollbackOnUnknownModel(rollbackOnUnknownModel);
     }
 
     @Override
-    public AtMostOnce<TypedHttpRequest<RQ>, RQ, Void, Void> build(String name, UUID id) {
+    public AtMostOnce<TypedHttpRequest<RQ>, RQ, Void> build(String name, UUID id) {
       return unbatched().build(name, id);
     }
 
@@ -509,10 +494,9 @@ public final class AtMostOnceBuilder {
         this.inputType = inputType;
       }
 
-      private <RI, RRI> BuildStep<I, RQ, RI, RRI> buildStep(
+      private <RRI> BuildStep<I, RQ, RRI> buildStep(
           AtLeastOnce<RRI, ?> rollbackOnAcceptedModel,
-          AtLeastOnce<RRI, ?> rollbackOnUnknownModel,
-          BiFunction<TransitionContext<?>, Tuple2<RI, TypedHttpRequest<RQ>>, Mono<RRI>> rollbackMessageCreator
+          AtLeastOnce<RRI, ?> rollbackOnUnknownModel
       ) {
         return (name, id) -> new AtMostOnce<>(
             name,
@@ -536,23 +520,8 @@ public final class AtMostOnceBuilder {
             isRejectedByInvalidResponse,
             inputType,
             rollbackOnAcceptedModel,
-            rollbackOnUnknownModel,
-            rollbackMessageCreator
+            rollbackOnUnknownModel
         );
-      }
-
-      private <RRI> RollbackMessageCreatorStep<I, RQ, RRI> rollbackMessageCreatorStep(
-          AtLeastOnce<RRI, ?> rollbackOnAcceptedModel,
-          AtLeastOnce<RRI, ?> rollbackOnUnknownModel
-      ) {
-        return new RollbackMessageCreatorStep<>() {
-          @Override
-          public <RI> BuildStep<I, RQ, RI, RRI> rollbackMessageCreator(
-              BiFunction<TransitionContext<?>, Tuple2<RI, TypedHttpRequest<RQ>>, Mono<RRI>> rollbackMessageCreator
-          ) {
-            return buildStep(rollbackOnAcceptedModel, rollbackOnUnknownModel, rollbackMessageCreator);
-          }
-        };
       }
 
       @Override
@@ -561,27 +530,25 @@ public final class AtMostOnceBuilder {
       ) {
         return new RollbackOnUnknownModelStep<>() {
           @Override
-          public RollbackMessageCreatorStep<I, RQ, RRI> rollbackOnUnknownModel(AtLeastOnce<RRI, ?> rollbackOnUnknownModel) {
-            return rollbackMessageCreatorStep(rollbackOnAcceptedModel, rollbackOnUnknownModel);
+          public BuildStep<I, RQ, RRI> rollbackOnUnknownModel(AtLeastOnce<RRI, ?> rollbackOnUnknownModel) {
+            return buildStep(rollbackOnAcceptedModel, rollbackOnUnknownModel);
           }
 
           @Override
-          public <RI> BuildStep<I, RQ, RI, RRI> rollbackMessageCreator(
-              BiFunction<TransitionContext<?>, Tuple2<RI, TypedHttpRequest<RQ>>, Mono<RRI>> rollbackMessageCreator
-          ) {
-            return buildStep(rollbackOnAcceptedModel, null, rollbackMessageCreator);
+          public AtMostOnce<I, RQ, RRI> build(String name, UUID id) {
+            return buildStep(rollbackOnAcceptedModel, null).build(name, id);
           }
         };
       }
 
       @Override
-      public <RRI> RollbackMessageCreatorStep<I, RQ, RRI> rollbackOnUnknownModel(AtLeastOnce<RRI, ?> rollbackOnUnknownModel) {
-        return rollbackMessageCreatorStep(null, rollbackOnUnknownModel);
+      public <RRI> BuildStep<I, RQ, RRI> rollbackOnUnknownModel(AtLeastOnce<RRI, ?> rollbackOnUnknownModel) {
+        return buildStep(null, rollbackOnUnknownModel);
       }
 
       @Override
-      public AtMostOnce<I, RQ, Void, Void> build(String name, UUID id) {
-        return this.<Void, Void>buildStep(null, null, null).build(name, id);
+      public AtMostOnce<I, RQ, Void> build(String name, UUID id) {
+        return this.<Void>buildStep(null, null).build(name, id);
       }
     }
   }
