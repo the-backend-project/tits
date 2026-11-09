@@ -1,0 +1,9 @@
+:root > * {
+  --md-primary-fg-color: #4b5320;
+  --md-primary-fg-color--light: #6b7540;
+  --md-primary-fg-color--dark: #353b16;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-typeset-a-color: #a3b06a;
+}
