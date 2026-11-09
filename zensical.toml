@@ -16,6 +16,7 @@ nav = [
 ]
 
 [project.theme]
+variant = "classic"
 language = "en"
 features = [
   "navigation.tabs",
