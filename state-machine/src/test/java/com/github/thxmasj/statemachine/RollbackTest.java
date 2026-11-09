@@ -19,6 +19,7 @@ import static com.github.thxmasj.statemachine.TransitionModelBuilder.assemble;
 
 import com.github.thxmasj.statemachine.BasicEventType.Rollback.Data;
 import com.github.thxmasj.statemachine.StateMachine.RejectedEvent;
+import com.github.thxmasj.statemachine.test.Init;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;

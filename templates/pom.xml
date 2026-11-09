@@ -11,6 +11,10 @@
 
     <artifactId>templates</artifactId>
 
+    <properties>
+        <java.module.name>com.github.thxmasj.statemachine.templates</java.module.name>
+    </properties>
+
     <build>
         <plugins>
             <plugin>
