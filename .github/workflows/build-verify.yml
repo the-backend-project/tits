@@ -30,7 +30,7 @@ jobs:
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
-          java-version: '24'
+          java-version: '27'
           distribution: 'temurin'
           cache: maven
       - name: Build Java artifacts and run any verifications

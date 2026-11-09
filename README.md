@@ -4,7 +4,7 @@ Documentation is available at https://the-backend-project.github.io/tits/.
 
 ## Building
 
-Requires Java 24 and Maven 3.9 or later.
+Requires Java 27 and Maven 3.9 or later.
 
 ### Dependency checksums
 
