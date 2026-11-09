@@ -2,6 +2,9 @@
 
 Documentation is available at https://the-backend-project.github.io/tits/.
 
+The [demo](demo) module is a hello world web application following the principles of the twelve-factor app, compiled
+to a native executable. See [Cloud native demo](docs/cloud-native.md).
+
 ## Building
 
 Requires Java 27 and Maven 3.9 or later.

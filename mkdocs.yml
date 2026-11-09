@@ -6,6 +6,7 @@ nav:
       - Card payments:
           - Overview: cardpayments.md
           - PSD2 and PSD3 compliance: psd2.md
+  - Cloud native demo: cloud-native.md
 theme:
   name: material
   features:
