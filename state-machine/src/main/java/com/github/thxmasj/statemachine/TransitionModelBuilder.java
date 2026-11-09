@@ -581,9 +581,9 @@ public class TransitionModelBuilder<I, T, O> {
         return new ConditionalWithEventTypeAndData<>(this, dataAdapter, null);
       }
 
-      /// The data of the event is created reactively, in the context of the triggering transition. It is created when
-      /// the trigger is stored, not when its condition is met.
-      public ConditionalWithEventTypeAndData<I, T, O, I1, O1> withReactive(BiFunction<TransitionContext<?>, T, Mono<I1>> dataAdapter) {
+      /// The data of the event is created reactively. It is created when the trigger is stored, not when its condition is
+      /// met.
+      public ConditionalWithEventTypeAndData<I, T, O, I1, O1> withReactive(Function<T, Mono<I1>> dataAdapter) {
         return new ConditionalWithEventTypeAndData<>(this, createdReactively(eventType), dataAdapter);
       }
 
@@ -592,7 +592,7 @@ public class TransitionModelBuilder<I, T, O> {
     public record ConditionalWithEventTypeAndData<I, T, O, I1, O1>(
         ConditionalWithEventType<I, T, O, I1, O1> eventType,
         Function<T, I1> dataAdapter,
-        BiFunction<TransitionContext<?>, T, Mono<I1>> reactiveDataAdapter
+        Function<T, Mono<I1>> reactiveDataAdapter
     ) {
 
       public ConditionalWithEntity<I, T, O, I1, O1> on(EntityModel entityModel) {
@@ -623,7 +623,7 @@ public class TransitionModelBuilder<I, T, O> {
     public record WithEventTypeAndData<I, T, O, I1, O1>(
         WithEventType<I, T, O, I1, O1> eventType,
         Function<T, I1> dataAdapter,
-        BiFunction<TransitionContext<?>, T, Mono<I1>> reactiveDataAdapter
+        Function<T, Mono<I1>> reactiveDataAdapter
     ) {
 
       public WithEventTypeAndData(WithEventType<I, T, O, I1, O1> eventType, Function<T, I1> dataAdapter) {
@@ -709,9 +709,9 @@ public class TransitionModelBuilder<I, T, O> {
       return new WithEventTypeAndData<>(this, dataAdapter);
     }
 
-    /// The data of the event is created reactively, in the context of the triggering transition, e.g. when it needs a
-    /// value from an external source or the correlation id of the transition.
-    public WithEventTypeAndData<I, T, O, I1, O1> withReactive(BiFunction<TransitionContext<?>, T, Mono<I1>> dataAdapter) {
+    /// The data of the event is created reactively, e.g. when it needs a value from an external source. Data from the
+    /// context of the transition is assembled in the assemble step.
+    public WithEventTypeAndData<I, T, O, I1, O1> withReactive(Function<T, Mono<I1>> dataAdapter) {
       return new WithEventTypeAndData<>(this, createdReactively(eventType), dataAdapter);
     }
 
@@ -891,6 +891,18 @@ public class TransitionModelBuilder<I, T, O> {
   }
 
   public static <T> TransitionModelBuilder<Data, T, Data> assembleReactive(BiFunction<EventLog, EventType<Data, Data>, Mono<T>> assembler) {
+    return assembleReactiveWithContext((c, rollbackType) -> assembler.apply(c.log(), rollbackType));
+  }
+
+  /// A reverse model assembling its data from the context of the rolling back transition, e.g. its correlation id, and
+  /// the type of the rollback.
+  public static <T> TransitionModelBuilder<Data, T, Data> assembleWithContext(BiFunction<TransitionContext<Data>, EventType<Data, Data>, T> assembler) {
+    return assembleReactiveWithContext(assembler.andThen(Mono::just));
+  }
+
+  private static <T> TransitionModelBuilder<Data, T, Data> assembleReactiveWithContext(
+      BiFunction<TransitionContext<Data>, EventType<Data, Data>, Mono<T>> assembler
+  ) {
     return new TransitionModelBuilder<>(
         new ModelContext<>(true /* !! */, null, BuiltinEventTypes.Rollback, List.of(), List.of(), List.of(), null),
         initialChangeContext -> initialChangeContext.flatMap(
@@ -900,7 +912,7 @@ public class TransitionModelBuilder<I, T, O> {
               if (i.previous() != null && i.previous() instanceof ChangeContext.InitialChangeContext<?> pi)
                 rollbackEventType = (EventType<Data, Data>)pi.transitionModel().eventType();
               return assembler.apply(
-                  i.log(),
+                  i,
                   rollbackEventType
               ).map(assembled -> new AssembledChangeContext<>(i, assembled));
             }
@@ -967,7 +979,7 @@ public class TransitionModelBuilder<I, T, O> {
 
   private <I1, O1> TransitionModelBuilder<I, Tuple2<T, ProcessResult<O1>>, O> trigger(
       EventTrigger<T, I1, O1> eventTrigger,
-      BiFunction<TransitionContext<?>, T, Mono<I1>> reactiveDataAdapter
+      Function<T, Mono<I1>> reactiveDataAdapter
   ) {
     Function<Mono<ChangeContext<T>>, Mono<ChangeContext<Tuple2<T, ProcessResult<O1>>>>> f =
         changeContext -> changeContext
@@ -1041,7 +1053,7 @@ public class TransitionModelBuilder<I, T, O> {
 
   private <I1, O1> TransitionModelBuilder<I, T, O> triggerConditional(
       EventTrigger<T, I1, O1> conditionalTrigger,
-      BiFunction<TransitionContext<?>, T, Mono<I1>> reactiveDataAdapter
+      Function<T, Mono<I1>> reactiveDataAdapter
   ) {
     Function<Mono<ChangeContext<T>>, Mono<ChangeContext<T>>> f =
         changeContext -> changeContext
@@ -1087,12 +1099,12 @@ public class TransitionModelBuilder<I, T, O> {
   /// The trigger with its event data created by the reactive data adapter, if given.
   private static <T, I1, O1> Mono<EventTrigger<T, I1, O1>> withData(
       EventTrigger<T, I1, O1> eventTrigger,
-      BiFunction<TransitionContext<?>, T, Mono<I1>> reactiveDataAdapter,
+      Function<T, Mono<I1>> reactiveDataAdapter,
       ChangeContext<T> c
   ) {
     if (reactiveDataAdapter == null)
       return Mono.just(eventTrigger);
-    return reactiveDataAdapter.apply(c.initialChangeContext(), c.stepOutput())
+    return reactiveDataAdapter.apply(c.stepOutput())
         .switchIfEmpty(Mono.error(() -> new IllegalStateException(
             "No data created for " + eventTrigger.eventSpec().eventType().name()
         )))

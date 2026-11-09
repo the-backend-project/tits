@@ -648,7 +648,8 @@ public class HttpOutboxTest {
       Map<State, List<TransitionModel<?, ?>>> processTransitions = Map.of(
           Begin, List.of(
               onEvent(doProcess).to(States.WaitingForResponse)
-                  .trigger(dispatcher.requestDispatched()).withReactive((c, _) -> dispatcher.input(c, null)).on(dispatcher.outbox()).identifiedBy(newEntityId())
+                  .assemble(DispatchContext::of)
+                  .trigger(dispatcher.requestDispatched()).withReactive(d -> dispatcher.input(d, null)).on(dispatcher.outbox()).identifiedBy(newEntityId())
                   .reversible(
                       assemble((log, _) -> log.one(doProcess))
                           .trigger(dispatcher.rollbackDispatched()).on(dispatcher.outbox()).identifiedBy(d -> entityId(d))

@@ -3,7 +3,6 @@ package com.github.thxmasj.statemachine.http.outbox;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.EventType;
 import com.github.thxmasj.statemachine.State;
-import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -17,13 +16,13 @@ abstract class BaseDispatcher<X, I> {
 
   private final HttpOutboxRequest<?> outbox;
   private final EventType<I, ?> requestDispatched;
-  private final BiFunction<TransitionContext<?>, X, Mono<I>> inputCreator;
+  private final BiFunction<DispatchContext, X, Mono<I>> inputCreator;
   private final Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions;
 
   BaseDispatcher(
       HttpOutboxRequest<?> outbox,
       EventType<I, ?> requestDispatched,
-      BiFunction<TransitionContext<?>, X, Mono<I>> inputCreator,
+      BiFunction<DispatchContext, X, Mono<I>> inputCreator,
       Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions
   ) {
     this.outbox = outbox;
@@ -40,7 +39,7 @@ abstract class BaseDispatcher<X, I> {
     return requestDispatched;
   }
 
-  public Mono<I> input(TransitionContext<?> context, X data) {
+  public Mono<I> input(DispatchContext context, X data) {
     return inputCreator.apply(context, data);
   }
 
@@ -48,7 +47,7 @@ abstract class BaseDispatcher<X, I> {
     return transitions;
   }
 
-  static <X, I> BiFunction<TransitionContext<?>, X, Mono<I>> reactive(Function<X, I> inputCreator) {
+  static <X, I> BiFunction<DispatchContext, X, Mono<I>> reactive(Function<X, I> inputCreator) {
     return (_, x) -> Mono.just(inputCreator.apply(x));
   }
 

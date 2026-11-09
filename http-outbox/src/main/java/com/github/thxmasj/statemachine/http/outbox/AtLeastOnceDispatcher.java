@@ -1,6 +1,5 @@
 package com.github.thxmasj.statemachine.http.outbox;
 
-import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionContext;
 import com.github.thxmasj.statemachine.message.http.TypedHttpRequest;
 import java.util.Map;
 import java.util.function.BiFunction;
@@ -10,7 +9,7 @@ import reactor.core.publisher.Mono;
 /// A [Dispatcher] of requests to an [AtLeastOnce] outbox request.
 public final class AtLeastOnceDispatcher<X, RQ> extends BaseDispatcher<X, TypedHttpRequest<RQ>> implements Dispatcher<X, TypedHttpRequest<RQ>> {
 
-  private AtLeastOnceDispatcher(AtLeastOnce<RQ> outbox, BiFunction<TransitionContext<?>, X, Mono<TypedHttpRequest<RQ>>> inputCreator) {
+  private AtLeastOnceDispatcher(AtLeastOnce<RQ> outbox, BiFunction<DispatchContext, X, Mono<TypedHttpRequest<RQ>>> inputCreator) {
     super(outbox, outbox.requestDispatched(), inputCreator, Map.of(outbox, outbox.transitions()));
   }
 
@@ -18,11 +17,11 @@ public final class AtLeastOnceDispatcher<X, RQ> extends BaseDispatcher<X, TypedH
     return reactive(outbox, BaseDispatcher.reactive(inputCreator));
   }
 
-  /// A dispatcher with a creator which creates the input reactively, in the context of the transition dispatching the
-  /// request.
+  /// A dispatcher with a creator which creates the input reactively, from the data and the context of the transition
+  /// dispatching the request.
   public static <X, RQ> AtLeastOnceDispatcher<X, RQ> reactive(
       AtLeastOnce<RQ> outbox,
-      BiFunction<TransitionContext<?>, X, Mono<TypedHttpRequest<RQ>>> inputCreator
+      BiFunction<DispatchContext, X, Mono<TypedHttpRequest<RQ>>> inputCreator
   ) {
     return new AtLeastOnceDispatcher<>(outbox, inputCreator);
   }
