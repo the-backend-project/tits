@@ -1,6 +1,7 @@
 package com.github.thxmasj.statemachine.templates.cardpayment;
 
 import com.github.thxmasj.statemachine.EventReference;
+import com.github.thxmasj.statemachine.http.outbox.DispatchContext;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.AuthenticationResult;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Authorisation;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.PaymentToken;
@@ -17,6 +18,7 @@ public class RefundRequestDataCreator {
       long alreadyCapturedAmount,
       long alreadyRefundedAmount,
       String simulation,
-      EventReference eventReference
+      EventReference eventReference,
+      DispatchContext dispatchContext
   ) {}
 }

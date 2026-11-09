@@ -26,6 +26,7 @@ import com.github.thxmasj.statemachine.Tuples.Tuple2;
 import com.github.thxmasj.statemachine.Validated;
 import com.github.thxmasj.statemachine.http.HttpClient;
 import com.github.thxmasj.statemachine.http.HttpDataType;
+import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest.BatchedRequest;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import com.github.thxmasj.statemachine.message.http.TypedHttpRequest;
 import com.github.thxmasj.statemachine.message.http.TypedHttpResponse;
@@ -33,23 +34,21 @@ import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Predicate;
-import reactor.core.publisher.Mono;
 
-public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
+public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
 
   private final String name;
   private final UUID id;
-  private final Shape<I, ?, ?, ?> shape;
+  private final Shape<RQ, ?, ?> shape;
 
-  private record Shape<I, RQ, RS, S>(
-      DataType<I> inputDataType,
+  private record Shape<RQ, RS, S>(
       DataType<RQ> requestPayloadType,
       DataType<RS> responsePayloadType,
-      Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator,
       BiFunction<TransitionContext<Void>, TypedHttpRequest<RQ>, TypedHttpRequest<RQ>> repeatMessageCreator,
       ForwardAction forward,
       Duration inflightTimeout,
@@ -62,8 +61,7 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
       Predicate<Tuple2<HttpResponseMessage, String>> isRejectedByInvalidResponse,
       Predicate<Tuple2<HttpResponseMessage, String>> isFailureByInvalidResponseTransient,
       Predicate<RetryContext> isAttemptAvailable,
-      Function<RetryContext, Duration> backoffAlgorithm,
-      Function<I, UUID> batchIdExtractor
+      Function<RetryContext, Duration> backoffAlgorithm
   ) {
 
     Function<TransitionContext<Void>, RetryContext> retry() {
@@ -94,13 +92,31 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
       );
     }
 
-    EventType<I, Tuple2<TypedHttpRequest<RQ>, UUID>> requestDispatched() {
+    EventType<TypedHttpRequest<RQ>, Tuple2<TypedHttpRequest<RQ>, UUID>> requestDispatched() {
       return BasicEventType.of(
           "Request dispatched",
           UUID.fromString("736f1f23-dba8-467e-a503-a9e2c516197e"),
-          inputDataType,
+          HttpDataType.forRequest(requestPayloadType),
           DataType.tuple(HttpDataType.forRequest(requestPayloadType), DataType.uuid())
       );
+    }
+
+    EventType<BatchedRequest<RQ>, Tuple2<TypedHttpRequest<RQ>, UUID>> batchedRequestDispatched() {
+      return BasicEventType.of(
+          "Batched request dispatched",
+          UUID.fromString("a0f1c0d9-3d55-4a0e-9a8f-5d3a6d9c2b71"),
+          BatchedRequest.dataType(requestPayloadType),
+          DataType.tuple(HttpDataType.forRequest(requestPayloadType), DataType.uuid())
+      );
+    }
+
+    /// The request message and the process id of the dispatched request, whether batched or not.
+    Tuple2<TypedHttpRequest<RQ>, UUID> dispatched(EventLog log) {
+      return log.one(requestDispatched(), batchedRequestDispatched());
+    }
+
+    Optional<Tuple2<TypedHttpRequest<RQ>, UUID>> dispatchedIfExists(EventLog log) {
+      return log.oneIfExists(requestDispatched()).or(() -> log.oneIfExists(batchedRequestDispatched()));
     }
 
     EventType<Void, TypedHttpRequest<RQ>> requestRedispatched() {
@@ -170,18 +186,17 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
   }
 
   @Override
-  public EventType<I, ?> requestDispatched() {
+  public EventType<TypedHttpRequest<RQ>, ?> requestDispatched() {
     return shape.requestDispatched();
   }
 
-
   @Override
-  public DataType<I> inputDataType() {
-    return shape.inputDataType();
+  public EventType<BatchedRequest<RQ>, ?> batchedRequestDispatched() {
+    return shape.batchedRequestDispatched();
   }
 
   @Override
-  public DataType<?> requestPayloadType() {
+  public DataType<RQ> requestPayloadType() {
     return shape.requestPayloadType();
   }
 
@@ -191,7 +206,7 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
   }
 
   @Override
-  public TypedHttpRequest<?> request(EventLog log) {
+  public TypedHttpRequest<RQ> request(EventLog log) {
     return request(false, shape, log);
   }
 
@@ -199,23 +214,19 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
     return log.exists(shape.attemptsAvailable());
   }
 
-  public TypedHttpRequest<?> redispatchedRequest(EventLog log) {
-    return redispatchedRequest(shape, log);
-  }
-
-  private <RQ> TypedHttpRequest<RQ> redispatchedRequest(Shape<I, RQ, ?, ?> shape, EventLog log) {
+  public TypedHttpRequest<RQ> redispatchedRequest(EventLog log) {
     return log.oneIfExists(shape.requestRedispatched()).orElse(null);
   }
 
-  public TypedHttpRequest<?> request(boolean optional, EventLog log) {
+  public TypedHttpRequest<RQ> request(boolean optional, EventLog log) {
     return request(optional, shape, log);
   }
 
-  private <RQ> TypedHttpRequest<RQ> request(boolean optional, Shape<I, RQ, ?, ?> shape, EventLog log) {
+  private TypedHttpRequest<RQ> request(boolean optional, Shape<RQ, ?, ?> shape, EventLog log) {
     return optional ?
         log.oneIfExists(shape.requestRedispatched())
-            .orElse(log.oneIfExists(shape.requestDispatched()).map(d -> d.t1()).orElse(null)) :
-        log.one(shape.requestDispatched()).t1();
+            .orElse(shape.dispatchedIfExists(log).map(d -> d.t1()).orElse(null)) :
+        shape.dispatched(log).t1();
   }
 
   @Override
@@ -223,7 +234,7 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
     return response(shape, log);
   }
 
-  private <RS> TypedHttpResponse<RS> response(Shape<I, ?, RS, ?> shape, EventLog log) {
+  private <RS> TypedHttpResponse<RS> response(Shape<RQ, RS, ?> shape, EventLog log) {
     return log.oneIfExists(shape.requestAccepted())
         .orElse(log.oneIfExists(shape.invalidResponseAndRejectedPermanently())
             .map(d -> new TypedHttpResponse<>(d.statusCode(), d.reasonPhrase(), d.headers(), (RS) null))
@@ -237,13 +248,11 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
       long attemptNumber
   ) {}
 
-  public <S, RQ, RS> AtLeastOnce(
+  public <S, RS> AtLeastOnce(
       String name,
       UUID id,
-      DataType<I> inputDataType,
       DataType<RQ> requestPayloadType,
       DataType<RS> responsePayloadType,
-      Function<TransitionContext<I>, Mono<TypedHttpRequest<RQ>>> messageCreator,
       BiFunction<TransitionContext<Void>, TypedHttpRequest<RQ>, TypedHttpRequest<RQ>> repeatMessageCreator,
       HttpClient forwarder,
       Duration inflightTimeout,
@@ -256,16 +265,13 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
       Predicate<Tuple2<HttpResponseMessage, String>> isRejectedByInvalidResponse,
       Predicate<Tuple2<HttpResponseMessage, String>> isFailureByInvalidResponseTransient,
       Predicate<RetryContext> isAttemptAvailable,
-      Function<RetryContext, Duration> backoffAlgorithm,
-      Function<I, UUID> batchIdExtractor
+      Function<RetryContext, Duration> backoffAlgorithm
   ) {
     this.name = name;
     this.id = id;
     this.shape = new Shape<>(
-        inputDataType,
         requestPayloadType,
         responsePayloadType,
-        messageCreator,
         repeatMessageCreator,
         new ForwardAction(forwarder),
         inflightTimeout,
@@ -278,8 +284,7 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
         isRejectedByInvalidResponse,
         isFailureByInvalidResponseTransient,
         isAttemptAvailable,
-        backoffAlgorithm,
-        batchIdExtractor
+        backoffAlgorithm
     );
   }
 
@@ -287,8 +292,8 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
     return inflightTransitions(shape);
   }
 
-  private <RQ, RS, S> Map<State, List<TransitionModel<?, ?>>> inflightTransitions(
-      Shape<I, RQ, RS, S> shape
+  private <RS, S> Map<State, List<TransitionModel<?, ?>>> inflightTransitions(
+      Shape<RQ, RS, S> shape
   ) {
     // Intermediate
     EventType<Tuple2<HttpResponseMessage, String>, Tuple2<HttpResponseMessage, String>> invalidResponse = BasicEventType.of(
@@ -356,9 +361,7 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
                     c.input(),
                     shape.requestAwareContentParser != null ?
                         shape.requestAwareContentParser.apply(
-                            c.log()
-                                .last(shape.requestDispatched())
-                                .t1(), // NB: Using last as this transition might be a follow-up rollback on AtMostOnce
+                            shape.dispatched(c.log()).t1(),
                             c.input()
                         ) :
                         shape.contentParser.apply(c.input())
@@ -419,7 +422,7 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
         ),
         Compensating, List.of(
             onEvent(shape.requestRedispatched()).to(InFlight)
-                .assemble(c -> shape.repeatMessageCreator().apply(c, c.log().one(shape.requestDispatched()).t1()))
+                .assemble(c -> shape.repeatMessageCreator().apply(c, shape.dispatched(c.log()).t1()))
                 .trigger(shape.forward()).with(d -> toHttpRequest(d, shape.requestPayloadType()))
                 .output(d -> d)
         ),
@@ -429,8 +432,8 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
     );
   }
 
-  private <RQ, RS, S> TransitionModel<TypedHttpResponse<RS>, TypedHttpResponse<RS>> validResponseTransition(
-      Shape<I, RQ, RS, S> shape
+  private <RS, S> TransitionModel<TypedHttpResponse<RS>, TypedHttpResponse<RS>> validResponseTransition(
+      Shape<RQ, RS, S> shape
   ) {
     return onEvent(shape.validResponse()).to(Intermediate)
             .assemble(c -> c.input())
@@ -439,12 +442,12 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
             .otherwise(requestReceivedAndRejectedTransition(shape));
   }
 
-  private <RQ, RS, S> TransitionModel<TypedHttpResponse<RS>, TypedHttpResponse<RS>> requestAcceptedTransition(
-      Shape<I, RQ, RS, S> shape
+  private <RS, S> TransitionModel<TypedHttpResponse<RS>, TypedHttpResponse<RS>> requestAcceptedTransition(
+      Shape<RQ, RS, S> shape
   ) {
     return shape.onSuccess() != null ?
         onEvent(shape.requestAccepted()).to(Accepted)
-            .assemble(c -> tuple(c.input(), c.log().one(shape.requestDispatched()).t2()))
+            .assemble(c -> tuple(c.input(), shape.dispatched(c.log()).t2()))
             .trigger(shape.onSuccess().eventType())
             .with(d -> shape.onSuccess().dataAdapter().apply(d.t1()))
             .on(shape.processModel())
@@ -455,8 +458,8 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
             .output(d -> d);
   }
 
-  private <RQ, RS, S> TransitionModel<TypedHttpResponse<RS>, TypedHttpResponse<RS>> requestReceivedAndRejectedTransition(
-      Shape<I, RQ, RS, S> shape
+  private <RS, S> TransitionModel<TypedHttpResponse<RS>, TypedHttpResponse<RS>> requestReceivedAndRejectedTransition(
+      Shape<RQ, RS, S> shape
   ) {
     return onEvent(shape.requestReceivedAndRejected()).to(Intermediate)
         .assembleInput()
@@ -501,55 +504,54 @@ public final class AtLeastOnce<I> implements HttpOutboxRequest<I> {
     return transitions(shape);
   }
 
-  private <RQ, RS, S> Map<State, List<TransitionModel<?, ?>>> transitions(Shape<I, RQ, RS, S> shape) {
+  private <RS, S> Map<State, List<TransitionModel<?, ?>>> transitions(Shape<RQ, RS, S> shape) {
     return HttpOutboxRequest.combine(
         Map.of(
             Begin, List.of(
-                shape.batchIdExtractor != null ?
-                    onEvent(shape.requestDispatched()).to(InFlight)
-                        .assembleReactive(c -> shape.messageCreator().apply(c)
-                            .zipWith(Mono.just(tuple(
-                                c.triggerEvent(), // process id
-                                c.log().entityId(), // my id
-                                shape.batchIdExtractor.apply(c.input()) // batch id
-                            ))))
+                onEvent(shape.requestDispatched()).to(InFlight)
+                    .assemble(c -> tuple(
+                        c.input(),
+                        c.triggerEvent(), // process id
+                        c.log().entityId() // my id
+                    ))
 
-                        .trigger(ProcessReferenced)
-                        .with(d -> d.getT2().t1().entityId())
-                        .on(Index)
-                        .identifiedBy(d -> newEntityId(d.getT2().t2().value()))
+                    .trigger(ProcessReferenced)
+                    .with(d -> d.t2().entityId())
+                    .on(Index)
+                    .identifiedBy(d -> newEntityId(d.t3().value()))
 
-                        .trigger(BatchReferenced)
-                        .with(d -> d.t1().getT2().t3())
-                        .on(Index)
-                        .identifiedBy(d -> entityId(d.t1().getT2().t2().value()))
+                    .trigger(shape.forward)
+                    .with(d -> toHttpRequest(d.t1().t1(), shape.requestPayloadType))
 
-                        .trigger(shape.forward)
-                        .with(d -> toHttpRequest(d.t1().t1().getT1(), shape.requestPayloadType))
+                    .trigger(TimeoutExpired)
+                    .after(_ -> shape.inflightTimeout)
 
-                        .trigger(TimeoutExpired)
-                        .after(_ -> shape.inflightTimeout)
+                    .output(d -> tuple(d.t1().t1(), d.t1().t2().entityId())),
+                onEvent(shape.batchedRequestDispatched()).to(InFlight)
+                    .assemble(c -> tuple(
+                        c.input().request(),
+                        c.triggerEvent(), // process id
+                        c.log().entityId(), // my id
+                        c.input().batchId()
+                    ))
 
-                        .output(d -> tuple(d.t1().t1().getT1(), d.t1().t1().getT2().t1().entityId())) :
-                    onEvent(shape.requestDispatched()).to(InFlight)
-                        .assembleReactive(c -> shape.messageCreator().apply(c)
-                            .zipWith(Mono.just(tuple(
-                                c.triggerEvent(), // process id
-                                c.log().entityId() // my id
-                            ))))
+                    .trigger(ProcessReferenced)
+                    .with(d -> d.t2().entityId())
+                    .on(Index)
+                    .identifiedBy(d -> newEntityId(d.t3().value()))
 
-                        .trigger(ProcessReferenced)
-                        .with(d -> d.getT2().t1().entityId())
-                        .on(Index)
-                        .identifiedBy(d -> newEntityId(d.getT2().t2().value()))
+                    .trigger(BatchReferenced)
+                    .with(d -> d.t1().t4())
+                    .on(Index)
+                    .identifiedBy(d -> entityId(d.t1().t3().value()))
 
-                        .trigger(shape.forward)
-                        .with(d -> toHttpRequest(d.t1().getT1(), shape.requestPayloadType))
+                    .trigger(shape.forward)
+                    .with(d -> toHttpRequest(d.t1().t1().t1(), shape.requestPayloadType))
 
-                        .trigger(TimeoutExpired)
-                        .after(_ -> shape.inflightTimeout)
+                    .trigger(TimeoutExpired)
+                    .after(_ -> shape.inflightTimeout)
 
-                        .output(d -> tuple(d.t1().getT1(), d.t1().getT2().t1().entityId()))
+                    .output(d -> tuple(d.t1().t1().t1(), d.t1().t1().t2().entityId()))
             )
         ), inflightTransitions(shape)
     );

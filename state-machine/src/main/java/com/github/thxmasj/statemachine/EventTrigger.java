@@ -95,6 +95,11 @@ public class EventTrigger<T, I, O> {
     return eventSpec;
   }
 
+  /// This trigger with the input of the event adapted by the given adapter.
+  public EventTrigger<T, I, O> withInputAdapter(Function<T, I> inputAdapter) {
+    return new EventTrigger<>(new EventSpec<>(eventSpec.eventType(), inputAdapter), entitySelectors, entityModel, createEntity, condition, triggerType, triggerId);
+  }
+
   public EventTrigger<T, I, O> withFallbackSelector() {
     return new EventTrigger<>(eventSpec, replaceFallbackSelector(), entityModel(), createEntity(), condition, triggerType, triggerId);
   }

@@ -11,16 +11,23 @@ import com.github.thxmasj.statemachine.IndexEntityModel;
 import com.github.thxmasj.statemachine.State;
 import com.github.thxmasj.statemachine.TransitionModelBuilder;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
+import com.github.thxmasj.statemachine.http.HttpDataType;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.TypedHttpRequest;
 import com.github.thxmasj.statemachine.message.http.TypedHttpResponse;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-public sealed interface HttpOutboxRequest<I> extends com.github.thxmasj.statemachine.EntityModel permits AtLeastOnce, AtMostOnce {
+/// An outbox request, which dispatches request messages with payloads of type `RQ`. A request is dispatched with its
+/// request message by [#requestDispatched()], or, as part of a batch, with a [BatchedRequest] by
+/// [#batchedRequestDispatched()]. The request messages are created outside of it, by the dispatcher of the request, so
+/// that the outbox request is independent of where it is used. See [Dispatcher] for ways to pair an outbox request with
+/// the creator of its request messages.
+public sealed interface HttpOutboxRequest<RQ> extends com.github.thxmasj.statemachine.EntityModel permits AtLeastOnce, AtMostOnce {
 
   Map<State, List<TransitionModelBuilder.TransitionModel<?, ?>>> transitions();
 
@@ -33,15 +40,16 @@ public sealed interface HttpOutboxRequest<I> extends com.github.thxmasj.statemac
         .toList();
   }
 
-  EventType<I, ?> requestDispatched();
+  EventType<TypedHttpRequest<RQ>, ?> requestDispatched();
 
-  DataType<I> inputDataType();
+  /// Dispatches a request which belongs to a batch, which the request references.
+  EventType<BatchedRequest<RQ>, ?> batchedRequestDispatched();
 
-  DataType<?> requestPayloadType();
+  DataType<RQ> requestPayloadType();
 
   DataType<?> responsePayloadType();
 
-  TypedHttpRequest<?> request(EventLog log);
+  TypedHttpRequest<RQ> request(EventLog log);
 
   TypedHttpResponse<?> response(EventLog log);
 
@@ -102,6 +110,54 @@ public sealed interface HttpOutboxRequest<I> extends com.github.thxmasj.statemac
     return new HttpRequestMessage(request.method(), request.uri(), request.headers(), payloadType.marshal(request.payload()));
   }
 
+  /// The input of a batched request: the request message to dispatch, and the id of the batch which the request belongs
+  /// to.
+  record BatchedRequest<RQ>(TypedHttpRequest<RQ> request, UUID batchId) {
 
+    public BatchedRequest {
+      Objects.requireNonNull(request);
+      Objects.requireNonNull(batchId);
+    }
+
+    public static <RQ> DataType<BatchedRequest<RQ>> dataType(DataType<RQ> requestPayloadType) {
+      return new BatchedRequestDataType<>(HttpDataType.forRequest(requestPayloadType));
+    }
+
+    private static final class BatchedRequestDataType<RQ> implements DataType<BatchedRequest<RQ>> {
+
+      private final DataType<TypedHttpRequest<RQ>> requestType;
+      private final DataType<UUID> batchIdType = DataType.uuid();
+
+      private BatchedRequestDataType(DataType<TypedHttpRequest<RQ>> requestType) {
+        this.requestType = requestType;
+      }
+
+      @Override
+      public String name() {
+        return "(" + requestType.name() + ", uuid)";
+      }
+
+      @Override
+      public BatchedRequest<RQ> unmarshal(byte[] value) {
+        List<byte[]> split = DataType.split(value);
+        return new BatchedRequest<>(requestType.unmarshal(split.getFirst()), batchIdType.unmarshal(split.get(1)));
+      }
+
+      @Override
+      public byte[] marshal(BatchedRequest<RQ> value) {
+        return DataType.concat(requestType.marshal(value.request()), batchIdType.marshal(value.batchId()));
+      }
+
+      @Override
+      public boolean equals(Object o) {
+        return o instanceof BatchedRequestDataType<?> that && Objects.equals(requestType, that.requestType);
+      }
+
+      @Override
+      public int hashCode() {
+        return Objects.hashCode(requestType);
+      }
+    }
+  }
 
 }

@@ -11,6 +11,7 @@ import static com.github.thxmasj.statemachine.State.Intermediate;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel.mergeModels;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.assemble;
+import static com.github.thxmasj.statemachine.TransitionModelBuilder.assembleWithContext;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.rollbackOn;
 import static com.github.thxmasj.statemachine.Tuples.tuple;
 import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.CompleteInvalidRequest;
@@ -70,6 +71,7 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.validators.V
 import static com.github.thxmasj.statemachine.templates.cardpayment.validators.ValidatedTransactionTime.validateTransactionTime;
 
 import com.github.thxmasj.statemachine.EntityModel;
+import com.github.thxmasj.statemachine.EventLog;
 import com.github.thxmasj.statemachine.Identifiable;
 import com.github.thxmasj.statemachine.State;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionContext;
@@ -81,8 +83,9 @@ import com.github.thxmasj.statemachine.Tuples.Tuple5;
 import com.github.thxmasj.statemachine.Tuples.Tuple6;
 import com.github.thxmasj.statemachine.Tuples.Tuple7;
 import com.github.thxmasj.statemachine.Tuples.Tuple8;
-import com.github.thxmasj.statemachine.http.outbox.AtLeastOnce;
-import com.github.thxmasj.statemachine.http.outbox.AtMostOnce;
+import com.github.thxmasj.statemachine.http.outbox.DispatchContext;
+import com.github.thxmasj.statemachine.http.outbox.Dispatcher;
+import com.github.thxmasj.statemachine.http.outbox.DispatcherWithRollback;
 import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest;
 import com.github.thxmasj.statemachine.templates.cardpayment.AuthenticationDataCreator.AuthenticationData;
 import com.github.thxmasj.statemachine.templates.cardpayment.CaptureRequestDataCreator.CaptureRequestData;
@@ -100,10 +103,12 @@ import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Refund
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.ReversalData;
 import com.github.thxmasj.statemachine.templates.cardpayment.RefundRequestDataCreator.RefundRequestData;
 import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.stream.Stream;
 
 public class PaymentTransitions {
   
@@ -143,49 +148,50 @@ public class PaymentTransitions {
   private final Map<State, List<TransitionModel<?, ?>>> transitions;
   private final Function<String, PaymentToken> tokenDecrypter;
   private final List<EntityModel> outboxRequestModels;
+  private final Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> outboxTransitions;
 
   // To acquirer
-  private final AtMostOnce<Tuple4<Authorisation, Merchant, AuthenticationResult, PaymentToken>, ?, Tuple2<ReversalData, Merchant>> preauthorisation;
-  private final AtMostOnce<Tuple6<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, UUID>, ?, Tuple4<ReversalData, Merchant, AcquirerBatchNumber, UUID>> authorisation;
-  private final AtLeastOnce<Tuple8<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, AcquirerResponse, Capture, UUID>> capture;
-  private final AtMostOnce<Tuple7<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, Refund, UUID>, ?, Tuple4<ReversalData, Merchant, AcquirerBatchNumber, UUID>> refund;
-  private final AtLeastOnce<Tuple4<Authorisation, Merchant, FailedAuthenticationResult, PaymentToken>> failedAuthentication;
-  private final AtLeastOnce<Tuple5<Authorisation, Merchant, AuthenticationResult, Capture, PaymentToken>> captureRequestedTooLate;
+  private final DispatcherWithRollback<Tuple4<Authorisation, Merchant, AuthenticationResult, PaymentToken>, ?, Tuple2<ReversalData, Merchant>> preauthorisation;
+  private final DispatcherWithRollback<Tuple6<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, UUID>, ?, Tuple4<ReversalData, Merchant, AcquirerBatchNumber, UUID>> authorisation;
+  private final Dispatcher<Tuple8<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, AcquirerResponse, Capture, UUID>, ?> capture;
+  private final DispatcherWithRollback<Tuple7<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, Refund, UUID>, ?, Tuple4<ReversalData, Merchant, AcquirerBatchNumber, UUID>> refund;
+  private final Dispatcher<Tuple4<Authorisation, Merchant, FailedAuthenticationResult, PaymentToken>, ?> failedAuthentication;
+  private final Dispatcher<Tuple5<Authorisation, Merchant, AuthenticationResult, Capture, PaymentToken>, ?> captureRequestedTooLate;
 
   // To merchant
-  private final AtLeastOnce<Tuple3<ReversalData, Merchant, BatchNumber>> rolledBackAuthorisationRequest;
-  private final AtLeastOnce<Tuple2<ReversalData, Merchant>> rolledBackPreauthorisationRequest;
-  private final AtLeastOnce<Tuple3<Authorisation, Merchant, AcquirerResponse>> approvedPreauthorisation;
-  private final AtLeastOnce<Tuple2<Authorisation, Merchant>> failedAuthorisation;
-  private final AtLeastOnce<Tuple4<Authorisation, Merchant, BatchNumber, AcquirerResponse>> approvedAuthorisation;
-  private final AtLeastOnce<Tuple3<Authorisation, Merchant, AcquirerResponse>> declinedAuthorisation;
-  private final AtLeastOnce<Tuple4<Authorisation, Merchant, BatchNumber, AcquirerResponse>> approvedCapture;
-  private final AtLeastOnce<Tuple2<Authorisation, Merchant>> failedRefund;
-  private final AtLeastOnce<Tuple5<Authorisation, Merchant, AcquirerResponse, BatchNumber, Refund>> approvedRefund;
-  private final AtLeastOnce<Tuple3<Authorisation, Merchant, AcquirerResponse>> declinedRefund;
+  private final Dispatcher<Tuple3<ReversalData, Merchant, BatchNumber>, ?> rolledBackAuthorisationRequest;
+  private final Dispatcher<Tuple2<ReversalData, Merchant>, ?> rolledBackPreauthorisationRequest;
+  private final Dispatcher<Tuple3<Authorisation, Merchant, AcquirerResponse>, ?> approvedPreauthorisation;
+  private final Dispatcher<Tuple2<Authorisation, Merchant>, ?> failedAuthorisation;
+  private final Dispatcher<Tuple4<Authorisation, Merchant, BatchNumber, AcquirerResponse>, ?> approvedAuthorisation;
+  private final Dispatcher<Tuple3<Authorisation, Merchant, AcquirerResponse>, ?> declinedAuthorisation;
+  private final Dispatcher<Tuple4<Authorisation, Merchant, BatchNumber, AcquirerResponse>, ?> approvedCapture;
+  private final Dispatcher<Tuple2<Authorisation, Merchant>, ?> failedRefund;
+  private final Dispatcher<Tuple5<Authorisation, Merchant, AcquirerResponse, BatchNumber, Refund>, ?> approvedRefund;
+  private final Dispatcher<Tuple3<Authorisation, Merchant, AcquirerResponse>, ?> declinedRefund;
 
-  public AtMostOnce<Tuple6<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, UUID>, ?, Tuple4<ReversalData, Merchant, AcquirerBatchNumber, UUID>> authorisation() {
+  public DispatcherWithRollback<Tuple6<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, UUID>, ?, Tuple4<ReversalData, Merchant, AcquirerBatchNumber, UUID>> authorisation() {
     return authorisation;
   }
 
-  public AtMostOnce<Tuple4<Authorisation, Merchant, AuthenticationResult, PaymentToken>, ?, Tuple2<ReversalData, Merchant>> preauthorisation() {
+  public DispatcherWithRollback<Tuple4<Authorisation, Merchant, AuthenticationResult, PaymentToken>, ?, Tuple2<ReversalData, Merchant>> preauthorisation() {
     return preauthorisation;
   }
 
   public List<HttpOutboxRequest<?>> acquirerOutboxRequestModels() {
-    return List.of(authorisation, preauthorisation, capture, refund, failedAuthentication, captureRequestedTooLate);
+    return outboxes(authorisation, preauthorisation, capture, refund, failedAuthentication, captureRequestedTooLate);
   }
 
-  public AtLeastOnce<Tuple4<Authorisation, Merchant, BatchNumber, AcquirerResponse>> approvedCapture() {
+  public Dispatcher<Tuple4<Authorisation, Merchant, BatchNumber, AcquirerResponse>, ?> approvedCapture() {
     return approvedCapture;
   }
 
   public List<HttpOutboxRequest<?>> merchantRefundRequestModels() {
-    return List.of(approvedRefund, declinedRefund, failedRefund);
+    return outboxes(approvedRefund, declinedRefund, failedRefund);
   }
 
   public List<HttpOutboxRequest<?>> merchantOutboxRequestModels() {
-    return List.of(
+    return outboxes(
         rolledBackAuthorisationRequest,
         rolledBackPreauthorisationRequest,
         approvedPreauthorisation,
@@ -207,27 +213,33 @@ public class PaymentTransitions {
     return outboxRequestModels;
   }
 
-  public PaymentTransitions(
+  /// The transitions to register for the outbox requests, including their rollback models.
+  public Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> outboxTransitions() {
+    return outboxTransitions;
+  }
+
+  /// The input types of the outbox requests are inferred from the dispatchers.
+  public <I1, I2, I3, I4, I5, I6, I7, I8, I9, I10, I11, I12, I13, I14, I15, I16, I17> PaymentTransitions(
       Function<String, PaymentToken> tokenDecrypter,
-      AtMostOnce<AuthenticationData, ?, Void> authentication,
+      Dispatcher<AuthenticationData, I1> authentication,
       // To acquirer
-      AtMostOnce<Tuple4<Authorisation, Merchant, AuthenticationResult, PaymentToken>, ?, Tuple2<ReversalData, Merchant>> preauthorisation,
-      AtMostOnce<Tuple6<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, UUID>, ?, Tuple4<ReversalData, Merchant, AcquirerBatchNumber, UUID>> authorisation,
-      AtLeastOnce<Tuple8<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, AcquirerResponse, Capture, UUID>> capture,
-      AtMostOnce<Tuple7<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, Refund, UUID>, ?, Tuple4<ReversalData, Merchant, AcquirerBatchNumber, UUID>> refund,
-      AtLeastOnce<Tuple5<Authorisation, Merchant, AuthenticationResult, Capture, PaymentToken>> captureRequestedTooLate,
-      AtLeastOnce<Tuple4<Authorisation, Merchant, FailedAuthenticationResult, PaymentToken>> failedAuthentication,
+      DispatcherWithRollback<Tuple4<Authorisation, Merchant, AuthenticationResult, PaymentToken>, I2, Tuple2<ReversalData, Merchant>> preauthorisation,
+      DispatcherWithRollback<Tuple6<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, UUID>, I3, Tuple4<ReversalData, Merchant, AcquirerBatchNumber, UUID>> authorisation,
+      Dispatcher<Tuple8<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, AcquirerResponse, Capture, UUID>, I4> capture,
+      DispatcherWithRollback<Tuple7<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, Refund, UUID>, I5, Tuple4<ReversalData, Merchant, AcquirerBatchNumber, UUID>> refund,
+      Dispatcher<Tuple5<Authorisation, Merchant, AuthenticationResult, Capture, PaymentToken>, I6> captureRequestedTooLate,
+      Dispatcher<Tuple4<Authorisation, Merchant, FailedAuthenticationResult, PaymentToken>, I7> failedAuthentication,
       // To merchant
-      AtLeastOnce<Tuple3<ReversalData, Merchant, BatchNumber>> rolledBackAuthorisationRequest,
-      AtLeastOnce<Tuple2<ReversalData, Merchant>> rolledBackPreauthorisationRequest,
-      AtLeastOnce<Tuple3<Authorisation, Merchant, AcquirerResponse>> approvedPreauthorisation,
-      AtLeastOnce<Tuple2<Authorisation, Merchant>> failedAuthorisation,
-      AtLeastOnce<Tuple4<Authorisation, Merchant, BatchNumber, AcquirerResponse>> approvedAuthorisation,
-      AtLeastOnce<Tuple3<Authorisation, Merchant, AcquirerResponse>> declinedAuthorisation,
-      AtLeastOnce<Tuple4<Authorisation, Merchant, BatchNumber, AcquirerResponse>> approvedCapture,
-      AtLeastOnce<Tuple2<Authorisation, Merchant>> failedRefund,
-      AtLeastOnce<Tuple5<Authorisation, Merchant, AcquirerResponse, BatchNumber, Refund>> approvedRefund,
-      AtLeastOnce<Tuple3<Authorisation, Merchant, AcquirerResponse>> declinedRefund
+      Dispatcher<Tuple3<ReversalData, Merchant, BatchNumber>, I8> rolledBackAuthorisationRequest,
+      Dispatcher<Tuple2<ReversalData, Merchant>, I9> rolledBackPreauthorisationRequest,
+      Dispatcher<Tuple3<Authorisation, Merchant, AcquirerResponse>, I10> approvedPreauthorisation,
+      Dispatcher<Tuple2<Authorisation, Merchant>, I11> failedAuthorisation,
+      Dispatcher<Tuple4<Authorisation, Merchant, BatchNumber, AcquirerResponse>, I12> approvedAuthorisation,
+      Dispatcher<Tuple3<Authorisation, Merchant, AcquirerResponse>, I13> declinedAuthorisation,
+      Dispatcher<Tuple4<Authorisation, Merchant, BatchNumber, AcquirerResponse>, I14> approvedCapture,
+      Dispatcher<Tuple2<Authorisation, Merchant>, I15> failedRefund,
+      Dispatcher<Tuple5<Authorisation, Merchant, AcquirerResponse, BatchNumber, Refund>, I16> approvedRefund,
+      Dispatcher<Tuple3<Authorisation, Merchant, AcquirerResponse>, I17> declinedRefund
   ) {
     this.tokenDecrypter = tokenDecrypter;
     this.authorisation = authorisation;
@@ -247,7 +259,7 @@ public class PaymentTransitions {
     this.approvedRefund = approvedRefund;
     this.declinedRefund = declinedRefund;
 
-    this.outboxRequestModels = List.of(
+    List<Dispatcher<?, ?>> dispatchers = List.of(
         authentication,
         authorisation,
         failedAuthentication,
@@ -266,6 +278,8 @@ public class PaymentTransitions {
         approvedRefund,
         declinedRefund
     );
+    this.outboxRequestModels = dispatchers.stream().<EntityModel>map(Dispatcher::outbox).toList();
+    this.outboxTransitions = transitions(dispatchers);
 
     this.transitions = mergeModels(Map.of(
             Begin, List.of(
@@ -326,9 +340,9 @@ public class PaymentTransitions {
                     )
                     .otherwise(
                         onEvent(ValidPaymentRequest).to(ProcessingAuthentication)
-                            .assembleInput()
-                            .trigger(authentication.requestDispatched()).with(Tuple3::t3).on(authentication).identifiedBy(newEntityId())
-                            .output(d -> tuple(d.t1().t1(), merchant(d.t1().t2(), d.t1().t1().merchantDetails()))),
+                            .assemble(c -> tuple(c.input(), DispatchContext.of(c)))
+                            .trigger(authentication.requestDispatched()).withReactive(d -> authentication.input(d.t2(), d.t1().t3())).on(authentication.outbox()).identifiedBy(newEntityId())
+                            .output(d -> tuple(d.t1().t1().t1(), merchant(d.t1().t1().t2(), d.t1().t1().t1().merchantDetails()))),
                         d -> tuple(d.t1().t1(), d.t2().accepted().event().getUnmarshalledData(), d.t1().t2())
                     )
             ),
@@ -371,11 +385,11 @@ public class PaymentTransitions {
                                 c.log().one(ValidPaymentRequest).t1(),
                                 c.log().one(ValidPaymentRequest).t2(),
                                 c.input(),
-                                c.eventReference()
+                                c.eventReference(),
+                                DispatchContext.of(c)
                             ))
-                            .trigger(failedAuthentication.requestDispatched())
-                            .with(d -> tuple(d.t1(), d.t2(), d.t3(), tokenDecrypter.apply(d.t1().authenticationData())))
-                            .on(failedAuthentication)
+                            .trigger(failedAuthentication.requestDispatched()).withReactive(d -> failedAuthentication.input(d.t5(), tuple(d.t1(), d.t2(), d.t3(), tokenDecrypter.apply(d.t1().authenticationData()))))
+                            .on(failedAuthentication.outbox())
                             .identifiedBy(newEntityId())
                             .trigger(CompleteInvalidRequest)
                             .with(d -> tuple("Authentication failed", d.t1().t4()))
@@ -392,11 +406,11 @@ public class PaymentTransitions {
                                 c.log().one(ValidPaymentRequest).t2(),
                                 c.input(),
                                 tokenDecrypter.apply(c.log().one(ValidPaymentRequest).t1().authenticationData()),
-                                c.eventReference()
+                                c.eventReference(),
+                                DispatchContext.of(c)
                             ))
-                            .trigger(failedAuthentication.requestDispatched())
-                            .with(d -> tuple(d.t1(), d.t2(), d.t3(), d.t4()))
-                            .on(failedAuthentication)
+                            .trigger(failedAuthentication.requestDispatched()).withReactive(d -> failedAuthentication.input(d.t6(), tuple(d.t1(), d.t2(), d.t3(), d.t4())))
+                            .on(failedAuthentication.outbox())
                             .identifiedBy(newEntityId())
                             .trigger(CompleteInvalidRequest)
                             .with(d -> tuple("Payment token is not accessible", d.t1().t5()))
@@ -424,27 +438,28 @@ public class PaymentTransitions {
                             .assemble(c -> tuple(
                                 c.log().one(ValidPaymentRequest),
                                 c.input(),
-                                c.eventReference()
+                                c.eventReference(),
+                                DispatchContext.of(c)
                             ))
                             .trigger(GetAcquirerBatchNumber)
                             .with(d -> new MerchantId(d.t1().t2().id()))
                             .on(Settlement)
                             .identifiedBy(d -> lastInIdGroup(BatchNumber, d.t1().t2().id(), CreateIfNotExists))
-                            .trigger(authorisation.requestDispatched())
-                            .with(d -> tuple(
+                            .trigger(authorisation.requestDispatched()).withReactive(d -> authorisation.input(d.t1().t4(), tuple(
                                 d.t1().t1().t1(),
                                 d.t1().t1().t2(),
                                 d.t1().t2(),
                                 tokenDecrypter.apply(d.t1().t1().t1().authenticationData()),
                                 d.t2().accepted().event().getUnmarshalledData(),
                                 d.t2().accepted().event().entityId()
-                            ))
-                            .on(authorisation)
+                            )))
+                            .on(authorisation.outbox())
                             .identifiedBy(newEntityId())
                             .trigger(CompleteRequest).with(d -> tuple("", d.t1().t1().t3())).on(RequestDispatching)
                             .identifiedBy(entityIdFromSession())
                             .reversible(
-                                assemble((log, rollbackType) -> {
+                                assembleWithContext((c, rollbackType) -> {
+                                  EventLog log = c.log();
                                   Authorisation paymentData = log.one(ValidPaymentRequest).t1();
                                   PaymentEvent.Merchant merchant = log.one(ValidPaymentRequest).t2();
                                   AcquirerResponse acquirerResponse = log.lastIfExists(AuthorisationApproved).orElse(null);
@@ -460,7 +475,8 @@ public class PaymentTransitions {
                                           paymentData.simulation()
                                       ),
                                       merchant,
-                                      acquirerRequestId
+                                      acquirerRequestId,
+                                      DispatchContext.of(c)
                                   );
                                 })
                                     .trigger(GetAcquirerBatchNumber)
@@ -473,7 +489,7 @@ public class PaymentTransitions {
                                     .identifiedBy(d -> entityId(d.t2().accepted().event().entityId()))
                                     .trigger(authorisation.rollbackDispatched())
                                     .with(d -> tuple(d.t1().t1().t1(), d.t1().t1().t2(), d.t1().t2().accepted().event().getUnmarshalledData(), d.t2().accepted().event().entityId()))
-                                    .on(authorisation)
+                                    .on(authorisation.outbox())
                                     .identifiedBy(d -> entityId(d.t1().t1().t3()))
                                     //.trigger(authorisationReversal.requestDispatched())
                                     //.with(d -> tuple(d.t1().t1(), d.t1().t2().accepted().event().getUnmarshalledData()))
@@ -484,9 +500,8 @@ public class PaymentTransitions {
 //                                    .to(Acquirer)
 //                                    .guaranteed()
 //                                    .responseValidator(validateAuthorisationReversalResponse())
-                                    .trigger(rolledBackAuthorisationRequest.requestDispatched())
-                                    .with(d -> tuple(d.t1().t1().t1().t1(), d.t1().t1().t1().t2(), d.t1().t2().accepted().event().getUnmarshalledData()))
-                                    .on(rolledBackAuthorisationRequest)
+                                    .trigger(rolledBackAuthorisationRequest.requestDispatched()).withReactive(d -> rolledBackAuthorisationRequest.input(d.t1().t1().t1().t4(), tuple(d.t1().t1().t1().t1(), d.t1().t1().t1().t2(), d.t1().t2().accepted().event().getUnmarshalledData())))
+                                    .on(rolledBackAuthorisationRequest.outbox())
                                     .identifiedBy(newEntityId())
 //                                    .trigger(rolledBackAuthorisationRequest())
 //                                    .with(d -> tuple(d.t1().t1(), d.t2().accepted().event().getUnmarshalledData()))
@@ -504,13 +519,15 @@ public class PaymentTransitions {
                                 c.log().one(ValidPaymentRequest).t2(),
                                 c.input(),
                                 tokenDecrypter.apply(c.log().one(ValidPaymentRequest).t1().authenticationData()),
-                                c.eventReference()
+                                c.eventReference(),
+                                DispatchContext.of(c)
                             ))
-                            .trigger(preauthorisation.requestDispatched()).with(d -> tuple(d.t1(), d.t2(), d.t3(), d.t4())).on(preauthorisation).identifiedBy(newEntityId())
+                            .trigger(preauthorisation.requestDispatched()).withReactive(d -> preauthorisation.input(d.t6(), tuple(d.t1(), d.t2(), d.t3(), d.t4()))).on(preauthorisation.outbox()).identifiedBy(newEntityId())
 //                            .trigger(preauthorisation()).with(d -> tuple(d.t1(), d.t2(), d.t3(), d.t4())).to(Acquirer).responseValidator(validatePreauthorisationResponse())
                             .trigger(CompleteRequest).with(d -> tuple("", d.t1().t5())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                             .reversible(
-                                assemble((log, rollbackType) -> {
+                                assembleWithContext((c, rollbackType) -> {
+                                  EventLog log = c.log();
                                   Tuple2<Authorisation, Merchant> paymentData = log.one(ValidPaymentRequest);
                                   AcquirerResponse acquirerResponse = log.lastIfExists(PreauthorisationApproved).orElse(null);
                                   UUID acquirerRequestId = log.one(Preauthorisation).requestId();
@@ -525,16 +542,16 @@ public class PaymentTransitions {
                                           paymentData.t1().simulation()
                                       ),
                                       paymentData.t2(),
-                                      acquirerRequestId
+                                      acquirerRequestId,
+                                      DispatchContext.of(c)
                                   );
                                 })
                                     .trigger(preauthorisation.rollbackDispatched())
                                     .with(d -> tuple(d.t1(), d.t2()))
-                                    .on(preauthorisation)
+                                    .on(preauthorisation.outbox())
                                     .identifiedBy(d -> entityId(d.t3()))
-                                    .trigger(rolledBackPreauthorisationRequest.requestDispatched())
-                                    .with(d -> tuple(d.t1().t1(), d.t1().t2()))
-                                    .on(rolledBackPreauthorisationRequest)
+                                    .trigger(rolledBackPreauthorisationRequest.requestDispatched()).withReactive(d -> rolledBackPreauthorisationRequest.input(d.t1().t4(), tuple(d.t1().t1(), d.t1().t2())))
+                                    .on(rolledBackPreauthorisationRequest.outbox())
                                     .identifiedBy(newEntityId())
                             )
                             .output(d -> new AcquirerAuthorisation(d.t1().t1().t3(), d.t1().t2().accepted().event().entityId())),
@@ -547,18 +564,19 @@ public class PaymentTransitions {
                     .when(d -> "00".equals(d.t1().responseCode()) && d.t2())
                     .then(
                         onEvent(PreauthorisationApproved).to(Preauthorised)
-                            .assemble(((input, log) -> tuple(log.one(ValidPaymentRequest).t1(), log.one(ValidPaymentRequest).t2(), input)))
-                            .trigger(approvedPreauthorisation.requestDispatched()).with(d -> d).on(approvedPreauthorisation).identifiedBy(newEntityId())
+                            .assemble(c -> tuple(c.log().one(ValidPaymentRequest).t1(), c.log().one(ValidPaymentRequest).t2(), c.input(), DispatchContext.of(c)))
+                            .trigger(approvedPreauthorisation.requestDispatched()).withReactive(d -> approvedPreauthorisation.input(d.t4(), tuple(d.t1(), d.t2(), d.t3()))).on(approvedPreauthorisation.outbox()).identifiedBy(newEntityId())
                             .output(d -> d.t1().t3()),
                         d -> d.t1()
                     )
                     .when(d -> "00".equals(d.t1().responseCode()) && !d.t2())
                     .then(
                         onEvent(AuthorisationApproved).to(Authorised)
-                            .assemble((input, log) -> tuple(
-                                log.one(ValidPaymentRequest).t1(),
-                                log.one(ValidPaymentRequest).t2(),
-                                input
+                            .assemble(c -> tuple(
+                                c.log().one(ValidPaymentRequest).t1(),
+                                c.log().one(ValidPaymentRequest).t2(),
+                                c.input(),
+                                DispatchContext.of(c)
                             ))
                             .trigger(GetBatchNumber)
                             .with(d -> new AcquirerBatchNumber(d.t1().merchantId(), d.t3().batchNumber()))
@@ -574,14 +592,13 @@ public class PaymentTransitions {
                             .with(d -> d.t1().t1().amount().requested())
                             .on(Settlement)
                             .identifiedBy(d -> entityId(d.t2().accepted().event().entityId()))
-                            .trigger(approvedAuthorisation.requestDispatched())
-                            .with(d -> tuple(
+                            .trigger(approvedAuthorisation.requestDispatched()).withReactive(d -> approvedAuthorisation.input(d.t1().t1().t4(), tuple(
                                 d.t1().t1().t1(),
                                 d.t1().t1().t2(),
                                 d.t1().t2().accepted().event().getUnmarshalledData(),
                                 d.t1().t1().t3()
-                            ))
-                            .on(approvedAuthorisation)
+                            )))
+                            .on(approvedAuthorisation.outbox())
                             .identifiedBy(newEntityId())
                             .trigger(AssignAcquirerBatchNumber)
                             .with(d -> new AcquirerBatchNumber(d.t1().t1().t1().t1().merchantId(), d.t1().t1().t1().t3().batchNumber()))
@@ -597,25 +614,27 @@ public class PaymentTransitions {
                     )
                     .otherwise(
                         onEvent(AcquirerDeclined).to(AuthorisationFailed)
-                            .assemble((input, log) -> tuple(log.one(ValidPaymentRequest).t1(), log.one(ValidPaymentRequest).t2(), input))
-                            .trigger(declinedAuthorisation.requestDispatched()).with(d -> d).on(declinedAuthorisation).identifiedBy(newEntityId())
+                            .assemble(c -> tuple(c.log().one(ValidPaymentRequest).t1(), c.log().one(ValidPaymentRequest).t2(), c.input(), DispatchContext.of(c)))
+                            .trigger(declinedAuthorisation.requestDispatched()).withReactive(d -> declinedAuthorisation.input(d.t4(), tuple(d.t1(), d.t2(), d.t3()))).on(declinedAuthorisation.outbox()).identifiedBy(newEntityId())
                             .output(d -> d.t1().t3()),
                         d -> d.t1()
                     ),
                 onEvent(InvalidResponse /* TODO: This is the default for invalidResponseAndRejected for AtMostOnce. Consider a better name. Perhaps BadRequest or InvalidRequest? */).to(AuthorisationFailed)
-                    .assemble((input, log) -> tuple(
-                        log.one(ValidPaymentRequest).t1(),
-                        log.one(ValidPaymentRequest).t2(),
-                        input
+                    .assemble(c -> tuple(
+                        c.log().one(ValidPaymentRequest).t1(),
+                        c.log().one(ValidPaymentRequest).t2(),
+                        c.input(),
+                        DispatchContext.of(c)
                     ))
-                    .trigger(failedAuthorisation.requestDispatched()).with(d -> tuple(d.t1(), d.t2())).on(failedAuthorisation).identifiedBy(newEntityId())
+                    .trigger(failedAuthorisation.requestDispatched()).withReactive(d -> failedAuthorisation.input(d.t4(), tuple(d.t1(), d.t2()))).on(failedAuthorisation.outbox()).identifiedBy(newEntityId())
                     .output(d -> d.t1().t3()),
                 onEvent(ServiceUnavailable).to(AuthorisationFailed)
-                    .assemble((_, log) -> tuple(
-                        log.one(ValidPaymentRequest).t1(),
-                        log.one(ValidPaymentRequest).t2()
+                    .assemble(c -> tuple(
+                        c.log().one(ValidPaymentRequest).t1(),
+                        c.log().one(ValidPaymentRequest).t2(),
+                        DispatchContext.of(c)
                     ))
-                    .trigger(failedAuthorisation.requestDispatched()).with(d -> d).on(failedAuthorisation).identifiedBy(newEntityId())
+                    .trigger(failedAuthorisation.requestDispatched()).withReactive(d -> failedAuthorisation.input(d.t3(), tuple(d.t1(), d.t2()))).on(failedAuthorisation.outbox()).identifiedBy(newEntityId())
                     .output()
             ),
             AuthenticationFailed, List.of(),
@@ -623,7 +642,7 @@ public class PaymentTransitions {
             Rejected, List.of(),
             ProcessingCapture, List.of(
                 onEvent(CaptureApproved).to(Authorised)
-                    .assemble((input, log) -> tuple(log.one(ValidPaymentRequest).t1(), log.one(ValidPaymentRequest).t2(), input))
+                    .assemble(c -> tuple(c.log().one(ValidPaymentRequest).t1(), c.log().one(ValidPaymentRequest).t2(), c.input(), DispatchContext.of(c)))
                     .trigger(GetBatchNumber).with(d -> new AcquirerBatchNumber(d.t1().merchantId(), d.t3().batchNumber())).on(Settlement)
                         .identifiedBy(
                             d -> secondaryId(
@@ -635,9 +654,8 @@ public class PaymentTransitions {
                         )
                     .trigger(MerchantCredit).with(d -> d.t1().t3().amount()).on(Settlement)
                         .identifiedBy(d -> entityId(d.t2().accepted().event().entityId()))
-                    .trigger(approvedCapture.requestDispatched())
-                    .with(d -> tuple(d.t1().t1().t1(), d.t1().t1().t2(), d.t1().t2().accepted().event().getUnmarshalledData(), d.t1().t1().t3()))
-                    .on(approvedCapture)
+                    .trigger(approvedCapture.requestDispatched()).withReactive(d -> approvedCapture.input(d.t1().t1().t4(), tuple(d.t1().t1().t1(), d.t1().t1().t2(), d.t1().t2().accepted().event().getUnmarshalledData(), d.t1().t1().t3())))
+                    .on(approvedCapture.outbox())
                     .identifiedBy(newEntityId())
                     .trigger(AssignAcquirerBatchNumber)
                     .with(d -> new AcquirerBatchNumber(d.t1().t1().t1().t1().merchantId(), d.t1().t1().t1().t3().batchNumber()))
@@ -666,6 +684,16 @@ public class PaymentTransitions {
     );
   }
 
+  static Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions(List<Dispatcher<?, ?>> dispatchers) {
+    var transitions = new LinkedHashMap<EntityModel, Map<State, List<TransitionModel<?, ?>>>>();
+    dispatchers.forEach(d -> transitions.putAll(d.transitions()));
+    return transitions;
+  }
+
+  private static List<HttpOutboxRequest<?>> outboxes(Dispatcher<?, ?>... dispatchers) {
+    return Stream.of(dispatchers).<HttpOutboxRequest<?>>map(Dispatcher::outbox).toList();
+  }
+
   private Merchant merchant(Merchant merchant, MerchantDetails merchantDetails) {
     return merchant.superMerchant() ?
         new Merchant(
@@ -684,9 +712,9 @@ public class PaymentTransitions {
         && merchantDetails.location() != null && merchantDetails.location().city() != null;
   }
 
-  private TransitionModel<?, ?> captureRequestTransition(
-      AtLeastOnce<Tuple5<Authorisation, Merchant, AuthenticationResult, Capture, PaymentToken>> captureRequestedTooLate,
-      AtLeastOnce<Tuple8<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, AcquirerResponse, Capture, UUID>> capture
+  private <I1, I2> TransitionModel<?, ?> captureRequestTransition(
+      Dispatcher<Tuple5<Authorisation, Merchant, AuthenticationResult, Capture, PaymentToken>, I1> captureRequestedTooLate,
+      Dispatcher<Tuple8<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, AcquirerResponse, Capture, UUID>, I2> capture
   ) {
     return onEvent(CaptureRequest).to(ProcessingCapture)
         .assemble(c -> new CaptureRequestData(
@@ -718,11 +746,11 @@ public class PaymentTransitions {
                     c.log().one(PaymentEvent.Authorisation, Preauthorisation).authenticationResult(),
                     c.input(),
                     tokenDecrypter.apply(c.log().one(ValidPaymentRequest).t1().authenticationData()),
-                    c.eventReference()
+                    c.eventReference(),
+                    DispatchContext.of(c)
                 ))
-                .trigger(captureRequestedTooLate.requestDispatched())
-                .with(d -> tuple(d.t1(), d.t2(), d.t3(), d.t4(), d.t5()))
-                .on(captureRequestedTooLate)
+                .trigger(captureRequestedTooLate.requestDispatched()).withReactive(d -> captureRequestedTooLate.input(d.t7(), tuple(d.t1(), d.t2(), d.t3(), d.t4(), d.t5())))
+                .on(captureRequestedTooLate.outbox())
                 .identifiedBy(newEntityId())
 //                .trigger(captureRequestedTooLate())
 //                .with(d -> tuple(d.t1(), d.t2(), d.t3(), d.t4(), d.t5()))
@@ -736,12 +764,11 @@ public class PaymentTransitions {
         )
         .otherwise(
             onEvent(ValidCaptureRequest).to(ProcessingCapture)
-                .assemble(c -> tuple(c.input(), c.eventReference()))
+                .assemble(c -> tuple(c.input(), c.eventReference(), DispatchContext.of(c)))
                 .trigger(GetAcquirerBatchNumber)
                 .with(d -> new MerchantId(d.t1().merchant().id()))
                 .on(Settlement).identifiedBy(d -> lastInIdGroup(BatchNumber, d.t1().merchant().id(), CreateIfNotExists))
-                .trigger(capture.requestDispatched())
-                .with(d -> tuple(
+                .trigger(capture.requestDispatched()).withReactive(d -> capture.input(d.t1().t3(), tuple(
                     d.t1().t1().authorisationData(),
                     d.t1().t1().merchant(),
                     d.t1().t1().authenticationResult(),
@@ -750,21 +777,21 @@ public class PaymentTransitions {
                     d.t1().t1().bankResponse(),
                     d.t1().t1().captureData(),
                     d.t2().accepted().event().entityId()
-                ))
-                .on(capture)
+                )))
+                .on(capture.outbox())
                 .identifiedBy(newEntityId())
                 .trigger(CompleteRequest).with(d -> tuple("", d.t1().t1().t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t1().t1().t1().captureData())
         );
   }
 
-  private Map<State, List<TransitionModel<?, ?>>> refundTransitions(
+  private <I1, I2, I3, I4> Map<State, List<TransitionModel<?, ?>>> refundTransitions(
       State anchor,
       int i,
-      AtMostOnce<Tuple7<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, Refund, UUID>, ?, Tuple4<ReversalData, Merchant, AcquirerBatchNumber, UUID>> refundAuthorisationToAcquirer,
-      AtLeastOnce<Tuple2<Authorisation, Merchant>> failedRefund,
-      AtLeastOnce<Tuple5<Authorisation, Merchant, AcquirerResponse, BatchNumber, Refund>> approvedRefund,
-      AtLeastOnce<Tuple3<Authorisation, Merchant, AcquirerResponse>> declinedRefund
+      DispatcherWithRollback<Tuple7<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, Refund, UUID>, I1, Tuple4<ReversalData, Merchant, AcquirerBatchNumber, UUID>> refundAuthorisationToAcquirer,
+      Dispatcher<Tuple2<Authorisation, Merchant>, I2> failedRefund,
+      Dispatcher<Tuple5<Authorisation, Merchant, AcquirerResponse, BatchNumber, Refund>, I3> approvedRefund,
+      Dispatcher<Tuple3<Authorisation, Merchant, AcquirerResponse>, I4> declinedRefund
   ) {
     State processingState = new State() {
       @Override
@@ -792,8 +819,7 @@ public class PaymentTransitions {
                         .trigger(GetAcquirerBatchNumber)
                         .with(d -> new MerchantId(d.merchant().id()))
                         .on(Settlement).identifiedBy(d -> lastInIdGroup(BatchNumber, d.merchant().id()))
-                        .trigger(refundAuthorisationToAcquirer.requestDispatched())
-                        .with(d -> tuple(
+                        .trigger(refundAuthorisationToAcquirer.requestDispatched()).withReactive(d -> refundAuthorisationToAcquirer.input(d.t1().dispatchContext(), tuple(
                             d.t1().authorisationData(),
                             d.t1().merchant(),
                             d.t1().authenticationResult(),
@@ -801,8 +827,8 @@ public class PaymentTransitions {
                             d.t2().accepted().event().getUnmarshalledData(),
                             d.t1().refundData(),
                             d.t2().accepted().event().entityId()
-                        ))
-                        .on(refundAuthorisationToAcquirer)
+                        )))
+                        .on(refundAuthorisationToAcquirer.outbox())
                         .identifiedBy(newEntityId())
                         .trigger(CompleteRequest).with(d -> tuple("", d.t1().t1().eventReference())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                         .reversible(
@@ -835,7 +861,7 @@ public class PaymentTransitions {
                                     d.t2().accepted().event().getUnmarshalledData(),
                                     d.t2().accepted().event().entityId()
                                 ))
-                                .on(refundAuthorisationToAcquirer)
+                                .on(refundAuthorisationToAcquirer.outbox())
                                 .identifiedBy(d -> entityId(d.t1().t3()))
                         )
                         .output(d -> new AcquirerRefund(d.t1().t1().t1().refundData(), d.t1().t2().accepted().event().entityId())),
@@ -855,24 +881,22 @@ public class PaymentTransitions {
         processingState,
         List.of(
             onEvent(InvalidResponse).to(anchor)
-                .assemble((input, log) -> tuple(log.one(ValidPaymentRequest), input))
-                .trigger(failedRefund.requestDispatched())
-                .with(d -> d.t1())
-                .on(failedRefund)
+                .assemble(c -> tuple(c.log().one(ValidPaymentRequest), c.input(), DispatchContext.of(c)))
+                .trigger(failedRefund.requestDispatched()).withReactive(d -> failedRefund.input(d.t3(), d.t1()))
+                .on(failedRefund.outbox())
                 .identifiedBy(newEntityId())
                 .output(d -> d.t1().t2()),
             onEvent(ServiceUnavailable).to(anchor)
-                .assemble((_, log) -> log.one(ValidPaymentRequest))
-                .trigger(failedRefund.requestDispatched())
-                .with(d -> d)
-                .on(failedRefund)
+                .assemble(c -> tuple(c.log().one(ValidPaymentRequest), DispatchContext.of(c)))
+                .trigger(failedRefund.requestDispatched()).withReactive(d -> failedRefund.input(d.t2(), d.t1()))
+                .on(failedRefund.outbox())
                 .identifiedBy(newEntityId())
                 .output(),
             onEvent(RefundApproved).to(anchor)
-                .assemble((input, log) -> {
-                  Tuple2<Authorisation, Merchant> paymentData = log.one(ValidPaymentRequest);
-                  Refund refundData = log.last(ValidRefundRequest).refund();
-                  return tuple(paymentData.t1(), paymentData.t2(), input, refundData);
+                .assemble(c -> {
+                  Tuple2<Authorisation, Merchant> paymentData = c.log().one(ValidPaymentRequest);
+                  Refund refundData = c.log().last(ValidRefundRequest).refund();
+                  return tuple(paymentData.t1(), paymentData.t2(), c.input(), refundData, DispatchContext.of(c));
                 })
                 .trigger(GetBatchNumber).with(d -> new AcquirerBatchNumber(d.t2().id(), d.t3().batchNumber())).on(Settlement)
                     .identifiedBy(
@@ -885,9 +909,8 @@ public class PaymentTransitions {
                     )
                 .trigger(MerchantDebit).with(d -> d.t1().t3().amount()).on(Settlement)
                     .identifiedBy(d -> entityId(d.t2().accepted().event().entityId()))
-                .trigger(approvedRefund.requestDispatched())
-                .with(d -> tuple(d.t1().t1().t1(), d.t1().t1().t2(), d.t1().t1().t3(), d.t1().t2().accepted().event().getUnmarshalledData(), d.t1().t1().t4()))
-                .on(approvedRefund)
+                .trigger(approvedRefund.requestDispatched()).withReactive(d -> approvedRefund.input(d.t1().t1().t5(), tuple(d.t1().t1().t1(), d.t1().t1().t2(), d.t1().t1().t3(), d.t1().t2().accepted().event().getUnmarshalledData(), d.t1().t1().t4())))
+                .on(approvedRefund.outbox())
                 .identifiedBy(newEntityId())
                 .trigger(AssignAcquirerBatchNumber)
                 .with(d -> new AcquirerBatchNumber(d.t1().t1().t1().t2().id(), d.t1().t1().t1().t3().batchNumber()))
@@ -900,10 +923,9 @@ public class PaymentTransitions {
                 )
                 .output(d -> d.t1().t1().t1().t1().t3()),
             onEvent(AcquirerDeclined).to(anchor)
-                .assemble((input, log) -> tuple(log.one(ValidPaymentRequest).t1(), log.one(ValidPaymentRequest).t2(), input))
-                .trigger(declinedRefund.requestDispatched())
-                .with(d -> d)
-                .on(declinedRefund)
+                .assemble(c -> tuple(c.log().one(ValidPaymentRequest).t1(), c.log().one(ValidPaymentRequest).t2(), c.input(), DispatchContext.of(c)))
+                .trigger(declinedRefund.requestDispatched()).withReactive(d -> declinedRefund.input(d.t4(), tuple(d.t1(), d.t2(), d.t3())))
+                .on(declinedRefund.outbox())
                 .identifiedBy(newEntityId())
 //                .trigger(declinedRefund()).with(d -> d).to(Queues.Merchant).guaranteed()
                 .output(d -> d.t1().t3())
@@ -936,7 +958,8 @@ public class PaymentTransitions {
           alreadyCapturedAmount,
           alreadyRefundedAmount,
           c.input().simulation(),
-          c.eventReference()
+          c.eventReference(),
+          DispatchContext.of(c)
       );
     };
   }
