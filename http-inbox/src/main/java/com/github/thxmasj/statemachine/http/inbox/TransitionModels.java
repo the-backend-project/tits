@@ -12,6 +12,7 @@ import static com.github.thxmasj.statemachine.Tuples.tuple;
 import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.AcceptRequest;
 import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.AcceptRollbackRequest;
 import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.CompleteDuplicatedRequest;
+import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.CompleteFailedRequest;
 import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.CompleteInvalidRequest;
 import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.CompleteRejectedRequest;
 import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.CompleteRequest;
@@ -63,6 +64,7 @@ import com.github.thxmasj.statemachine.message.http.Created;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.HttpResponseCreator;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
+import com.github.thxmasj.statemachine.message.http.InternalServerError;
 import com.github.thxmasj.statemachine.message.http.UnprocessableEntity;
 import jakarta.annotation.Nullable;
 import java.time.ZonedDateTime;
@@ -396,6 +398,10 @@ public interface TransitionModels {
                     .output(Tuple2::t1),
                 onEvent(CompleteInvalidRequest).to(Completed)
                     .assemble(c -> tuple(createResponseMessage(new BadRequest(), c.input().t2(), c.correlationId(), c.timestamp(), c.input().t1()), c.input().t2()))
+                    .trigger(Respond).with(d -> d.t1()).on(RequestRouting).identifiedBy(entityIdFromSession())
+                    .output(Tuple2::t1),
+                onEvent(CompleteFailedRequest).to(Completed)
+                    .assemble(c -> tuple(createResponseMessage(new InternalServerError(), c.input().t2(), c.correlationId(), c.timestamp(), c.input().t1()), c.input().t2()))
                     .trigger(Respond).with(d -> d.t1()).on(RequestRouting).identifiedBy(entityIdFromSession())
                     .output(Tuple2::t1)
             ),

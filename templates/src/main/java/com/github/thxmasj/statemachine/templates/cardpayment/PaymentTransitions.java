@@ -14,6 +14,7 @@ import static com.github.thxmasj.statemachine.TransitionModelBuilder.assemble;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.assembleWithContext;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.rollbackOn;
 import static com.github.thxmasj.statemachine.Tuples.tuple;
+import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.CompleteFailedRequest;
 import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.CompleteInvalidRequest;
 import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.CompleteRequest;
 import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.EntityModels.RequestDispatching;
@@ -349,7 +350,7 @@ public class PaymentTransitions {
             ProcessingAuthentication, List.of(
                 onEvent(AuthenticationUnavailable).to(AuthenticationFailed)
                     .assemble(c -> c.eventReference())
-                    .trigger(CompleteInvalidRequest)
+                    .trigger(CompleteFailedRequest)
                     .with(d -> tuple("Authentication unavailable", d))
                     .on(RequestDispatching)
                     .identifiedBy(entityIdFromSession())
@@ -424,7 +425,7 @@ public class PaymentTransitions {
                         //       How can we maintain the visual model/diagram for that?
                         onEvent(AuthenticationUnavailable).to(AuthenticationFailed)
                             .assemble(c -> c.eventReference())
-                            .trigger(CompleteInvalidRequest)
+                            .trigger(CompleteFailedRequest)
                             .with(d -> tuple("Unknown authentication status", d))
                             .on(RequestDispatching)
                             .identifiedBy(entityIdFromSession())
