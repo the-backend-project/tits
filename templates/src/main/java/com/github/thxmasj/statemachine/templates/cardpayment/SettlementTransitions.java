@@ -67,8 +67,8 @@ public class SettlementTransitions {
   private final Map<State, List<TransitionModel<?, ?>>> transitions;
   private final List<EntityModel> outboxRequestModels;
   private final Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> outboxTransitions;
-  private final Dispatcher<Tuple3<BatchNumber, AcquirerBatchNumber, Merchant>, Void> reconciliation;
-  private final Dispatcher<Tuple2<CutOff, ReconciliationValues>, Void> approvedCutOff;
+  private final Dispatcher<Tuple3<BatchNumber, AcquirerBatchNumber, Merchant>> reconciliation;
+  private final Dispatcher<Tuple2<CutOff, ReconciliationValues>> approvedCutOff;
 
   public Map<State, List<TransitionModel<?, ?>>> transitions() {
     return transitions;
@@ -78,7 +78,7 @@ public class SettlementTransitions {
     return List.of(reconciliation.outbox());
   }
 
-  public Dispatcher<Tuple2<CutOff, ReconciliationValues>, Void> approvedCutOff() {
+  public Dispatcher<Tuple2<CutOff, ReconciliationValues>> approvedCutOff() {
     return approvedCutOff;
   }
 
@@ -93,8 +93,8 @@ public class SettlementTransitions {
 
   public SettlementTransitions(
       // validateSettlementResponse()
-      Dispatcher<Tuple3<BatchNumber, AcquirerBatchNumber, Merchant>, Void> reconciliationToAcquirer,
-      Dispatcher<Tuple2<CutOff, ReconciliationValues>, Void> approvedCutOffToMerchant
+      Dispatcher<Tuple3<BatchNumber, AcquirerBatchNumber, Merchant>> reconciliationToAcquirer,
+      Dispatcher<Tuple2<CutOff, ReconciliationValues>> approvedCutOffToMerchant
   ) {
     this.reconciliation = reconciliationToAcquirer;
     this.approvedCutOff = approvedCutOffToMerchant;
@@ -170,7 +170,7 @@ public class SettlementTransitions {
                             input
                         ))
                         .trigger(approvedCutOff.requestDispatched())
-                        .withReactive((ctx, d) -> approvedCutOff.input(ctx, new Tuple2<>(d.t1(), d.t2())))
+                        .with(d -> new Tuple2<>(d.t1(), d.t2()))
                         .on(approvedCutOff.outbox())
                         .identifiedBy(newEntityId())
 //                        .trigger(approvedCutOff())
@@ -221,7 +221,7 @@ public class SettlementTransitions {
             .trigger(reconciliation.requestDispatched())
             // A rolled back request is settled too, as its reversal is a request referencing the batch on its own
             .when(BatchReferenced, d -> d.t1().t5()).is(HttpOutboxRequest.requestAccepted(), HttpOutboxRequest.rollbackDispatched())
-            .withReactive((ctx, d) -> reconciliation.input(ctx, tuple(d.t1().t2(), d.t1().t3(), d.t2().accepted().event().getUnmarshalledData())))
+            .with(d -> tuple(d.t1().t2(), d.t1().t3(), d.t2().accepted().event().getUnmarshalledData()))
             .on(reconciliation.outbox())
             .identifiedBy(newEntityId())
             .trigger(SettlementEvent.Open).with(d -> d.t1().t3().next()).on(Settlement).identifiedBy(newEntityId())

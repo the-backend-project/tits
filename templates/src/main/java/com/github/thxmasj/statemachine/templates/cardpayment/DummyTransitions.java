@@ -31,8 +31,9 @@ import com.github.thxmasj.statemachine.DataType;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.Identifiable;
 import com.github.thxmasj.statemachine.http.outbox.AtLeastOnce;
+import com.github.thxmasj.statemachine.http.outbox.AtLeastOnceDispatcher;
 import com.github.thxmasj.statemachine.http.outbox.AtMostOnce;
-import com.github.thxmasj.statemachine.http.outbox.Dispatcher;
+import com.github.thxmasj.statemachine.http.outbox.AtMostOnceDispatcher;
 import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest;
 import com.github.thxmasj.statemachine.message.http.TypedHttpRequest;
 import java.time.Duration;
@@ -75,17 +76,22 @@ public class DummyTransitions {
   public record Response() {}
 
   /// A dispatcher which creates no request messages, for outbox requests which are not exercised.
-  public static <X> Dispatcher<X, Void> dispatcher(HttpOutboxRequest<TypedHttpRequest<Request>, Request> outbox) {
-    return Dispatcher.of(outbox, _ -> null);
+  public static <X> AtLeastOnceDispatcher<X> dispatcher(AtLeastOnce<TypedHttpRequest<Request>, Request> outbox) {
+    return AtLeastOnceDispatcher.of(outbox, _ -> null);
   }
 
   /// A dispatcher which creates no request messages, for outbox requests which are not exercised.
-  public static <X, Y> Dispatcher<X, Y> reversibleDispatcher(
+  public static <X> AtMostOnceDispatcher<X, Void> dispatcher(AtMostOnce<TypedHttpRequest<Request>, Request, Void> outbox) {
+    return AtMostOnceDispatcher.of(outbox, _ -> null);
+  }
+
+  /// A dispatcher which creates no request messages, for outbox requests which are not exercised.
+  public static <X, Y> AtMostOnceDispatcher<X, Y> reversibleDispatcher(
       Identifiable id,
       Identifiable rollbackOnAcceptedId,
       Identifiable rollbackOnUnknownId
   ) {
-    return Dispatcher.of(atMostOnce(id, rollbackOnAcceptedId, rollbackOnUnknownId), _ -> null, (_, _) -> Mono.empty());
+    return AtMostOnceDispatcher.of(atMostOnce(id, rollbackOnAcceptedId, rollbackOnUnknownId), _ -> null, (_, _) -> Mono.empty());
   }
 
   public static AtMostOnce<TypedHttpRequest<Request>, Request, Void> atMostOnce(Identifiable id) {

@@ -59,10 +59,12 @@ import com.github.thxmasj.statemachine.http.NettyHttpClientBuilder;
 import com.github.thxmasj.statemachine.http.inbox.HttpInbox.RoutedRequest;
 import com.github.thxmasj.statemachine.http.inbox.HttpRequestRoute;
 import com.github.thxmasj.statemachine.http.outbox.AtLeastOnce;
+import com.github.thxmasj.statemachine.http.outbox.AtLeastOnceDispatcher;
 import com.github.thxmasj.statemachine.http.outbox.AtMostOnce;
+import com.github.thxmasj.statemachine.http.outbox.AtMostOnceDispatcher;
 import com.github.thxmasj.statemachine.http.outbox.Dispatcher;
-import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest;
 import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest.BatchedRequest;
+import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.TypedHttpRequest;
 import com.github.thxmasj.statemachine.message.http.TypedHttpResponse;
@@ -266,7 +268,7 @@ public class CutOffReconciliationTest {
         .isRejected(_ -> false)
         .isRejectedByInvalidResponse(_ -> false)
         .build(Authentication.name(), Authentication.id());
-    Dispatcher<AuthenticationData, Void> authenticationDispatcher = Dispatcher.of(authentication, _ -> request(Authentication));
+    Dispatcher<AuthenticationData> authenticationDispatcher = AtMostOnceDispatcher.of(authentication, _ -> request(Authentication));
 
     AtMostOnce<BatchedRequest<AcquirerAuthorisationRequest>, AcquirerAuthorisationRequest, TypedHttpRequest<Request>> acquirerAuthorisation =
         HttpOutboxRequest.atMostOnce()
@@ -295,8 +297,8 @@ public class CutOffReconciliationTest {
                 PaymentTransitions.OutboxRequestModelIds.Authorisation.name(),
                 PaymentTransitions.OutboxRequestModelIds.Authorisation.id()
             );
-    Dispatcher<Tuple6<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, UUID>, Tuple4<ReversalData, Merchant, AcquirerBatchNumber, UUID>> acquirerAuthorisationDispatcher =
-        Dispatcher.of(
+    AtMostOnceDispatcher<Tuple6<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, UUID>, Tuple4<ReversalData, Merchant, AcquirerBatchNumber, UUID>> acquirerAuthorisationDispatcher =
+        AtMostOnceDispatcher.of(
             acquirerAuthorisation,
             (Tuple6<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, UUID> d) -> new BatchedRequest<>(TypedHttpRequest.create(
                 POST,
@@ -314,7 +316,7 @@ public class CutOffReconciliationTest {
             ), d.t6()),
             (_, _) -> Mono.empty()
         );
-    Dispatcher<Tuple3<BatchNumber, AcquirerBatchNumber, Merchant>, Void> reconciliation = dispatcher(
+    Dispatcher<Tuple3<BatchNumber, AcquirerBatchNumber, Merchant>> reconciliation = dispatcher(
         Reconciliation,
         reconciliationInput::set
     );
@@ -375,12 +377,12 @@ public class CutOffReconciliationTest {
     );
   }
 
-  private static <X> Dispatcher<X, Void> dispatcher(Identifiable id) {
+  private static <X> Dispatcher<X> dispatcher(Identifiable id) {
     return dispatcher(id, _ -> {});
   }
 
-  private static <X> Dispatcher<X, Void> dispatcher(Identifiable id, Consumer<X> dataListener) {
-    return Dispatcher.of(atLeastOnce(id), x -> {
+  private static <X> Dispatcher<X> dispatcher(Identifiable id, Consumer<X> dataListener) {
+    return AtLeastOnceDispatcher.of(atLeastOnce(id), x -> {
       dataListener.accept(x);
       return request(id);
     });
