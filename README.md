@@ -1,6 +1,6 @@
 # The Integratable Transaction Server
 
-Documentation coming soon.
+Documentation is available at https://the-backend-project.github.io/tits/.
 
 ## Building
 
