@@ -2,6 +2,7 @@
 site_name = "The Integratable Transaction Server"
 repo_url = "https://github.com/the-backend-project/tits"
 repo_name = "the-backend-project/tits"
+copyright = "Background photo by <a href=\"https://unsplash.com/@annaval\">Anna Valberg</a> on <a href=\"https://unsplash.com/photos/s990e8olqU4\">Unsplash</a>"
 extra_css = ["stylesheets/extra.css"]
 nav = [
   { "Overview" = "index.md" },
