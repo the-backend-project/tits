@@ -1,11 +1,10 @@
 module com.github.thxmasj.statemachine {
-  requires transitive com.fasterxml.jackson.databind;
+  requires transitive tools.jackson.databind;
   requires transitive java.sql;
   requires transitive org.reactivestreams;
   requires transitive reactor.core;
   requires transitive reactor.netty.core;
   requires transitive reactor.netty.http;
-  requires com.fasterxml.jackson.datatype.jsr310;
   requires com.microsoft.sqlserver.jdbc;
   requires com.zaxxer.hikari;
   requires io.netty.buffer;
