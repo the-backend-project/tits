@@ -54,7 +54,7 @@ with `SIGTERM` (Ctrl-C).
 | VI. Processes | The process is stateless. Every request is handled by the state machine, which keeps all state in the database, so any process can handle any request. |
 | VII. Port binding | The process serves HTTP by itself, with reactor-netty, on `$PORT`. |
 | VIII. Concurrency | Scale out by running more processes against the same database. |
-| IX. Disposability | The native executable is listening after a few tens of milliseconds. On `SIGTERM` it stops accepting requests and lets those in flight complete. |
+| IX. Disposability | The native executable is listening after a few tens of milliseconds. On `SIGTERM` it stops accepting requests and lets those in flight complete, then stops the state machine's workers once their ongoing work completes, and closes the database connection pool. |
 | X. Dev/prod parity | Locally, Compose runs the same image against the same kind of database as other environments. |
 | XI. Logs | Logs are written unbuffered to stdout, one line per event. |
 | XII. Admin processes | The schema is created by `demo migrate`, run as a one-off process from the same image with the same configuration, but with credentials allowed to create the schema. |
@@ -121,13 +121,6 @@ without changing the libraries.
   models would avoid this.
 - **No schema evolution.** A schema that differs from what the code expects is rejected with a checksum mismatch.
   There is no way to migrate an existing schema to a new version.
-
-### Disposability
-
-- **The state machine cannot be stopped.** It runs workers resolving deadlines and condition triggers on threads which
-  can not be stopped, and the database connection pool is never closed. On `SIGTERM` the demo stops its HTTP server and
-  relies on the process exiting. A `close()` method that stops the workers, waits for ongoing work and closes the pool
-  would allow a proper graceful shutdown.
 
 ### Logs
 

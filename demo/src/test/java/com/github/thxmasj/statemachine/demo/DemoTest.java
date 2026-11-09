@@ -2,6 +2,7 @@ package com.github.thxmasj.statemachine.demo;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.github.thxmasj.statemachine.StateMachine;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -19,17 +20,21 @@ import reactor.netty.DisposableServer;
 public class DemoTest {
 
   private static final String schema = UUID.randomUUID().toString();
+  private static StateMachine stateMachine;
   private static DisposableServer server;
 
   @BeforeAll
   public static void setUp() {
     Demo.migrate(config("sa", "A_Str0ng_Required_Password"));
-    server = Demo.serve(config("testlogin", "Please_hide_me!"));
+    Config config = config("testlogin", "Please_hide_me!");
+    stateMachine = Demo.stateMachine(config);
+    server = Demo.serve(stateMachine, config.port());
   }
 
   @AfterAll
-  public static void tearDown() {
+  public static void tearDown() throws Exception {
     server.disposeNow();
+    stateMachine.close();
   }
 
   private static Config config(String user, String password) {

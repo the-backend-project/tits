@@ -1,17 +1,21 @@
 package com.github.thxmasj.statemachine;
 
 import java.time.Duration;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
 public class Looper<STATUS> {
 
   private final String name;
   private final Supplier<Flux<STATUS>> runnable;
   private final Function<STATUS, Duration> delayStrategy;
-  private boolean stopped;
+  private final ReentrantLock lock = new ReentrantLock();
+  private final Condition stopSignal = lock.newCondition();
+  private volatile boolean stopped;
+  private Thread thread;
 
   public Looper(
       String name,
@@ -25,23 +29,49 @@ public class Looper<STATUS> {
     this.delayStrategy = delayStrategy;
   }
 
+  /// Stops looping after the ongoing iteration. A delay between iterations is cut short.
   public void stop() {
-    stopped = true;
+    lock.lock();
+    try {
+      stopped = true;
+      stopSignal.signalAll();
+    } finally {
+      lock.unlock();
+    }
+  }
+
+  /// Waits for the loop to stop.
+  ///
+  /// @return `true` if the loop has stopped, `false` if it did not stop within the timeout
+  public boolean awaitStopped(Duration timeout) throws InterruptedException {
+    return thread == null || thread.join(timeout);
   }
 
   public void loop() {
     stopped = false;
-    new Thread(
+    thread = new Thread(
         () -> {
           while (!stopped) {
-            runnable.get()
-                .flatMap(status -> Mono.just("").delayElement(delayStrategy.apply(status)))
-                .switchIfEmpty(Mono.just("").delayElement(Duration.ofSeconds(10)))
-                .blockLast();
+            STATUS status = runnable.get().blockLast();
+            await(status != null ? delayStrategy.apply(status) : Duration.ofSeconds(10));
           }
         },
         name
-    ).start();
+    );
+    thread.start();
+  }
+
+  private void await(Duration delay) {
+    lock.lock();
+    try {
+      long nanos = delay.toNanos();
+      while (!stopped && nanos > 0)
+        nanos = stopSignal.awaitNanos(nanos);
+    } catch (InterruptedException _) {
+      stopped = true;
+    } finally {
+      lock.unlock();
+    }
   }
 
 }

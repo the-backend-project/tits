@@ -67,15 +67,15 @@ import reactor.core.publisher.Sinks;
 import reactor.core.publisher.Sinks.Many;
 import reactor.util.retry.RetrySpec;
 
-public class StateMachine {
+public class StateMachine implements AutoCloseable {
 
   private static final int MAX_CONDITION_TRIGGERS_PER_POLL = 10;
 
   private final Function<List<String>, Mono<Void>> delayer;
   private final Clock clock;
   private final Listener listener;
-  @SuppressWarnings("ALL")
   private final List<Looper<?>> workers = new ArrayList<>();
+  private final DataSource dataSource;
   private final ChangeState changeState;
   private final EventsByEntityId eventsByEntityId;
   private final EventsByLookupId eventsByLookupId;
@@ -150,6 +150,7 @@ public class StateMachine {
           .block();
     }
     this.clock = clock;
+    this.dataSource = dataSource;
     var jdbcClient = new JDBCClient(dataSource);
     this.changeState = new ChangeState(jdbcClient, schemaName, clock);
     this.eventsByEntityId = new EventsByEntityId(dataSource, entityModels, schemaName, clock);
@@ -188,6 +189,18 @@ public class StateMachine {
       workers.add(conditionTriggerLooper);
     }
     System.out.println("Initialized " + getClass().getName() + " on database schema " + schemaName);
+  }
+
+  /// Stops the workers resolving deadlines and condition triggers, waits for their ongoing work to complete, and closes
+  /// the data source if it is closeable, e.g. a connection pool. Requests should be stopped before this is called.
+  @Override
+  public void close() throws Exception {
+    workers.forEach(Looper::stop);
+    for (var worker : workers)
+      if (!worker.awaitStopped(ofSeconds(30)))
+        System.out.println("Gave up waiting for a worker to stop");
+    if (dataSource instanceof AutoCloseable closeable)
+      closeable.close();
   }
 
   private EventLog emptyEventLog(EntityModel entityModel) {
