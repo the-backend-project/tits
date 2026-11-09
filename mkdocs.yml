@@ -56,8 +56,8 @@ markdown_extensions:
   - pymdownx.caret
   - pymdownx.details
   - pymdownx.emoji:
-      emoji_index: tag:yaml.org,2002:python/name:material.extensions.emoji.twemoji
-      emoji_generator: tag:yaml.org,2002:python/name:material.extensions.emoji.to_svg
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
   - pymdownx.highlight
   - pymdownx.inlinehilite
   - pymdownx.keys
@@ -67,7 +67,7 @@ markdown_extensions:
       custom_fences:
         - name: mermaid
           class: mermaid
-          format: tag:yaml.org,2002:python/name:pymdownx.superfences.fence_code_format
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.snippets
   - pymdownx.tabbed:
       alternate_style: true
