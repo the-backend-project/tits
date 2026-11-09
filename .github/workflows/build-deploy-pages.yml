@@ -20,7 +20,7 @@ jobs:
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
-          java-version: '24'
+          java-version: '27'
           distribution: 'temurin'
           cache: maven
       - name: Set up Python 3
@@ -38,7 +38,7 @@ jobs:
       - name: Build the templates
         run: mvn -B package -am -pl templates -DskipTests -Daether.artifactResolver.postProcessor.trustedChecksums.failIfMissing=true
       - name: Generate diagrams from the templates
-        run: java --enable-preview -jar templates/target/templates-0.3.0-SNAPSHOT.jar
+        run: java -jar templates/target/templates-0.3.0-SNAPSHOT.jar
       - name: Build Pages
         run: mkdocs build
       - name: Upload Pages
