@@ -18,7 +18,6 @@ import static com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Me
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.github.thxmasj.statemachine.BasicEventType;
@@ -41,6 +40,8 @@ import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;
 import com.github.thxmasj.statemachine.http.NettyHttpClient;
 import com.github.thxmasj.statemachine.http.NettyHttpClientBuilder;
+import com.github.thxmasj.statemachine.http.outbox.AtMostOnceDispatcher;
+import com.github.thxmasj.statemachine.http.outbox.AtMostOnceWithRollbackDispatcher;
 import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest.BatchedRequest;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import com.github.thxmasj.statemachine.message.http.TypedHttpRequest;
@@ -250,7 +251,7 @@ public class HttpOutboxTest {
         .batched()
         .build("BatchedExchange", UUID.randomUUID());
     UUID batchId = UUID.randomUUID();
-    AtMostOnceDispatcher<String, Void> dispatcher = AtMostOnceDispatcher.of(
+    AtMostOnceDispatcher<String> dispatcher = AtMostOnceDispatcher.of(
         outbox,
         (String path) -> new BatchedRequest<>(requestMessage(path, "payload"), batchId)
     );
@@ -259,7 +260,6 @@ public class HttpOutboxTest {
     assertEquals(outbox.requestDispatched(), dispatcher.requestDispatched().eventType());
     assertEquals(new BatchedRequest<>(requestMessage("/test", "payload"), batchId), dispatcher.requestDispatched().dataCreator().apply(null, "/test").block());
     assertEquals("(HTTP request<string>, uuid)", outbox.requestDispatched().inputDataType().name());
-    assertThrows(IllegalStateException.class, dispatcher::rollbackDispatched);
   }
 
   @Test
@@ -641,7 +641,7 @@ public class HttpOutboxTest {
               .build("ExchangeRollbackOnUnknown", UUID.fromString("ec3848a3-4b03-3a69-7d94-a448a83e792b"))
           )
           .build("Exchange", UUID.fromString("a3778c63-144f-4748-9e8b-cc10ee20db3f"));
-      AtMostOnceDispatcher<Void, Void> dispatcher = AtMostOnceDispatcher.of(
+      AtMostOnceWithRollbackDispatcher<Void, Void> dispatcher = AtMostOnceWithRollbackDispatcher.of(
           Exchange,
           (Void _) -> requestMessage(path),
           (_, d) -> Mono.just(requestMessage(d.t2().uri().getPath() + "/rollback"))

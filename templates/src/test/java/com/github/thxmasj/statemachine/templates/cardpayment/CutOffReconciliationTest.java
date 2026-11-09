@@ -62,6 +62,7 @@ import com.github.thxmasj.statemachine.http.outbox.AtLeastOnce;
 import com.github.thxmasj.statemachine.http.outbox.AtLeastOnceDispatcher;
 import com.github.thxmasj.statemachine.http.outbox.AtMostOnce;
 import com.github.thxmasj.statemachine.http.outbox.AtMostOnceDispatcher;
+import com.github.thxmasj.statemachine.http.outbox.AtMostOnceWithRollbackDispatcher;
 import com.github.thxmasj.statemachine.http.outbox.Dispatcher;
 import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest.BatchedRequest;
 import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest;
@@ -297,8 +298,8 @@ public class CutOffReconciliationTest {
                 PaymentTransitions.OutboxRequestModelIds.Authorisation.name(),
                 PaymentTransitions.OutboxRequestModelIds.Authorisation.id()
             );
-    AtMostOnceDispatcher<Tuple6<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, UUID>, Tuple4<ReversalData, Merchant, AcquirerBatchNumber, UUID>> acquirerAuthorisationDispatcher =
-        AtMostOnceDispatcher.of(
+    AtMostOnceWithRollbackDispatcher<Tuple6<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, UUID>, Tuple4<ReversalData, Merchant, AcquirerBatchNumber, UUID>> acquirerAuthorisationDispatcher =
+        AtMostOnceWithRollbackDispatcher.of(
             acquirerAuthorisation,
             (Tuple6<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, UUID> d) -> new BatchedRequest<>(TypedHttpRequest.create(
                 POST,

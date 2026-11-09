@@ -19,7 +19,7 @@ import java.util.Map;
 /// .on(dispatcher.outbox())
 /// .identifiedBy(newEntityId())
 /// ```
-public sealed interface Dispatcher<X> permits AtLeastOnceDispatcher, AtMostOnceDispatcher {
+public sealed interface Dispatcher<X> permits AtLeastOnceDispatcher, AtMostOnceDispatcher, AtMostOnceWithRollbackDispatcher {
 
   HttpOutboxRequest<?, ?> outbox();
 

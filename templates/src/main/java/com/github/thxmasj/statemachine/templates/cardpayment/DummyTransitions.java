@@ -34,6 +34,7 @@ import com.github.thxmasj.statemachine.http.outbox.AtLeastOnce;
 import com.github.thxmasj.statemachine.http.outbox.AtLeastOnceDispatcher;
 import com.github.thxmasj.statemachine.http.outbox.AtMostOnce;
 import com.github.thxmasj.statemachine.http.outbox.AtMostOnceDispatcher;
+import com.github.thxmasj.statemachine.http.outbox.AtMostOnceWithRollbackDispatcher;
 import com.github.thxmasj.statemachine.http.outbox.HttpOutboxRequest;
 import com.github.thxmasj.statemachine.message.http.TypedHttpRequest;
 import java.time.Duration;
@@ -81,17 +82,17 @@ public class DummyTransitions {
   }
 
   /// A dispatcher which creates no request messages, for outbox requests which are not exercised.
-  public static <X> AtMostOnceDispatcher<X, Void> dispatcher(AtMostOnce<TypedHttpRequest<Request>, Request, Void> outbox) {
+  public static <X> AtMostOnceDispatcher<X> dispatcher(AtMostOnce<TypedHttpRequest<Request>, Request, Void> outbox) {
     return AtMostOnceDispatcher.of(outbox, _ -> null);
   }
 
   /// A dispatcher which creates no request messages, for outbox requests which are not exercised.
-  public static <X, Y> AtMostOnceDispatcher<X, Y> reversibleDispatcher(
+  public static <X, Y> AtMostOnceWithRollbackDispatcher<X, Y> reversibleDispatcher(
       Identifiable id,
       Identifiable rollbackOnAcceptedId,
       Identifiable rollbackOnUnknownId
   ) {
-    return AtMostOnceDispatcher.of(atMostOnce(id, rollbackOnAcceptedId, rollbackOnUnknownId), _ -> null, (_, _) -> Mono.empty());
+    return AtMostOnceWithRollbackDispatcher.of(atMostOnce(id, rollbackOnAcceptedId, rollbackOnUnknownId), _ -> null, (_, _) -> Mono.empty());
   }
 
   public static AtMostOnce<TypedHttpRequest<Request>, Request, Void> atMostOnce(Identifiable id) {
