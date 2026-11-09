@@ -1,8 +1,7 @@
 package com.github.thxmasj.statemachine.templates.cardpayment;
 
 import com.github.thxmasj.statemachine.SecondaryId;
-import com.github.thxmasj.statemachine.database.mssql.SchemaNames;
-import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
+import com.github.thxmasj.statemachine.SecondaryIdModel;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -23,9 +22,9 @@ public interface Identifiers {
     }
 
     @Override
-    public List<SchemaNames.Column> columns() {
+    public List<Column> columns() {
       return List.of(
-          new SchemaNames.Column("MerchantId", "VARCHAR(36)", e -> e)
+          new Column("MerchantId", "VARCHAR(36)", e -> e)
       );
     }
 
@@ -54,10 +53,10 @@ public interface Identifiers {
     }
 
     @Override
-    public List<SchemaNames.Column> columns() {
+    public List<Column> columns() {
       return List.of(
-          new SchemaNames.Column("MerchantId", "VARCHAR(36)", e -> ((BatchNumber) e).merchantId()),
-          new SchemaNames.Column("BatchNumber", "BIGINT", e -> ((BatchNumber) e).number())
+          new Column("MerchantId", "VARCHAR(36)", e -> ((BatchNumber) e).merchantId()),
+          new Column("BatchNumber", "BIGINT", e -> ((BatchNumber) e).number())
       );
     }
 
@@ -92,10 +91,10 @@ public interface Identifiers {
     }
 
     @Override
-    public List<SchemaNames.Column> columns() {
+    public List<Column> columns() {
       return List.of(
-          new SchemaNames.Column("MerchantId", "VARCHAR(36)", e -> ((AcquirerBatchNumber) e).merchantId()),
-          new SchemaNames.Column("BatchNumber", "BIGINT", e -> ((AcquirerBatchNumber) e).number())
+          new Column("MerchantId", "VARCHAR(36)", e -> ((AcquirerBatchNumber) e).merchantId()),
+          new Column("BatchNumber", "BIGINT", e -> ((AcquirerBatchNumber) e).number())
       );
     }
 

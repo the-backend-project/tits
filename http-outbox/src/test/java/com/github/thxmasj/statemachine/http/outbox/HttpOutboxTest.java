@@ -32,7 +32,7 @@ import com.github.thxmasj.statemachine.EventReference;
 import com.github.thxmasj.statemachine.EventType;
 import com.github.thxmasj.statemachine.test.Init;
 import com.github.thxmasj.statemachine.State;
-import com.github.thxmasj.statemachine.StateMachine;
+import com.github.thxmasj.statemachine.runtime.StateMachine;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.InitialChangeContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.TriggerChangeContext;

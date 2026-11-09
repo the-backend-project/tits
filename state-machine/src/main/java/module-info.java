@@ -1,4 +1,5 @@
 module com.github.thxmasj.statemachine {
+  requires transitive com.github.thxmasj.statemachine.model;
   requires transitive com.fasterxml.jackson.databind;
   requires transitive java.sql;
   requires transitive org.reactivestreams;
@@ -16,10 +17,10 @@ module com.github.thxmasj.statemachine {
   requires jakarta.validation;
   requires org.hibernate.validator;
 
-  exports com.github.thxmasj.statemachine;
   exports com.github.thxmasj.statemachine.database;
   exports com.github.thxmasj.statemachine.database.jdbc;
   exports com.github.thxmasj.statemachine.database.mssql;
   exports com.github.thxmasj.statemachine.http;
   exports com.github.thxmasj.statemachine.message.http;
+  exports com.github.thxmasj.statemachine.runtime;
 }

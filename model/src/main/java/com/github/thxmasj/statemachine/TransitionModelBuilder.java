@@ -1,6 +1,5 @@
 package com.github.thxmasj.statemachine;
 
-import static com.github.thxmasj.statemachine.StateMachine.chainToString;
 import static com.github.thxmasj.statemachine.Tuples.tuple;
 import static java.util.Collections.unmodifiableList;
 import static java.util.Optional.ofNullable;
@@ -8,15 +7,11 @@ import static java.util.Optional.ofNullable;
 import com.github.thxmasj.statemachine.BasicEventType.Rollback.Data;
 import com.github.thxmasj.statemachine.EventTrigger.EventCondition;
 import com.github.thxmasj.statemachine.EventTrigger.EventSpec;
-import com.github.thxmasj.statemachine.StateMachine.CircularChange;
-import com.github.thxmasj.statemachine.StateMachine.IdentityResult;
-import com.github.thxmasj.statemachine.StateMachine.ProcessResult;
-import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Accepted;
-import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Completed;
-import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Pending;
-import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Rejected;
-import com.github.thxmasj.statemachine.StateMachine.ProcessResult.UnknownId;
-import com.github.thxmasj.statemachine.StateMachine.RejectedEvent;
+import com.github.thxmasj.statemachine.ProcessResult.Accepted;
+import com.github.thxmasj.statemachine.ProcessResult.Completed;
+import com.github.thxmasj.statemachine.ProcessResult.Pending;
+import com.github.thxmasj.statemachine.ProcessResult.Rejected;
+import com.github.thxmasj.statemachine.ProcessResult.UnknownId;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.ActionChangeContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.AssembledChangeContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.ChoiceChangeContext;
@@ -33,8 +28,6 @@ import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.Unkn
 import com.github.thxmasj.statemachine.TransitionModelBuilder.WithFilter.Alternative;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;
 import com.github.thxmasj.statemachine.Tuples.Tuple4;
-import com.github.thxmasj.statemachine.database.UnknownEntity;
-import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
 import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
@@ -135,7 +128,7 @@ public class TransitionModelBuilder<I, T, O> {
         ZonedDateTime timestamp,
         String correlationId,
         I input,
-        StateMachine stateMachine,
+        TransitionEngine stateMachine,
         List<IdentityResult<?>> identityResults,
         TriggerType triggerType,
         UUID triggerId
@@ -151,7 +144,7 @@ public class TransitionModelBuilder<I, T, O> {
           ZonedDateTime timestamp,
           String correlationId,
           I input,
-          StateMachine stateMachine,
+          TransitionEngine stateMachine,
           List<IdentityResult<?>> identityResults
       ) {
         this(stage1, previous, triggerEvent, transitionModel, from, eventNumber, log, timestamp, correlationId, input, stateMachine, identityResults, null, null);
@@ -1286,6 +1279,14 @@ public class TransitionModelBuilder<I, T, O> {
 
   static void log(ModelContext<?, ?> modelContext, String text) {
     System.out.println(ZonedDateTime.now() + ": " + modelContext.description() + ": " + text);
+  }
+
+  public static String chainToString(ChangeContext<?> tail) {
+    StringBuilder b = new StringBuilder();
+    for (ChangeContext<?> c = tail; c != null; c = c.previous()) {
+      b.append(c).append("\n");
+    }
+    return b.toString();
   }
 
 }

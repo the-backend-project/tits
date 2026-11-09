@@ -1,4 +1,4 @@
-package com.github.thxmasj.statemachine;
+package com.github.thxmasj.statemachine.runtime;
 
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;

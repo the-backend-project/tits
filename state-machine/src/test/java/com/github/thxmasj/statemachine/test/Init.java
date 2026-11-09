@@ -2,10 +2,10 @@ package com.github.thxmasj.statemachine.test;
 
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.State;
-import com.github.thxmasj.statemachine.StateMachine;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.statemachine.database.Client.Config;
 import com.github.thxmasj.statemachine.database.jdbc.DataSourceBuilder;
+import com.github.thxmasj.statemachine.runtime.StateMachine;
 import com.sun.net.httpserver.HttpContext;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;

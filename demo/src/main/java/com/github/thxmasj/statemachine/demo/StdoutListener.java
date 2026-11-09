@@ -4,8 +4,8 @@ import static java.util.stream.Collectors.joining;
 
 import com.github.thxmasj.statemachine.EntityId;
 import com.github.thxmasj.statemachine.EntityModel;
-import com.github.thxmasj.statemachine.Listener;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
+import com.github.thxmasj.statemachine.runtime.Listener;
 import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.List;

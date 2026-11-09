@@ -1,4 +1,4 @@
-package com.github.thxmasj.statemachine;
+package com.github.thxmasj.statemachine.runtime;
 
 import static com.github.thxmasj.statemachine.Tuples.tuple;
 import static com.github.thxmasj.statemachine.database.mssql.Mappers.eventTypesFor;
@@ -10,15 +10,37 @@ import static java.util.stream.Collectors.joining;
 import static java.util.stream.Collectors.toList;
 import static java.util.stream.Collectors.toMap;
 
+import com.github.thxmasj.statemachine.ActionTrigger;
+import com.github.thxmasj.statemachine.BasicEventType;
+import com.github.thxmasj.statemachine.BuiltinEventTypes;
+import com.github.thxmasj.statemachine.CircularChange;
+import com.github.thxmasj.statemachine.ConditionTrigger;
+import com.github.thxmasj.statemachine.Deadline;
+import com.github.thxmasj.statemachine.DelaySpecification;
+import com.github.thxmasj.statemachine.EntityId;
+import com.github.thxmasj.statemachine.EntityModel;
+import com.github.thxmasj.statemachine.EntitySelector;
 import com.github.thxmasj.statemachine.EntitySelector.ById;
 import com.github.thxmasj.statemachine.EntitySelector.ByIdFromSession;
 import com.github.thxmasj.statemachine.EntitySelector.ByLastInIdGroup;
 import com.github.thxmasj.statemachine.EntitySelector.BySecondaryId;
-import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Accepted;
-import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Completed;
-import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Pending;
-import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Rejected;
-import com.github.thxmasj.statemachine.StateMachine.ProcessResult.UnknownId;
+import com.github.thxmasj.statemachine.Event;
+import com.github.thxmasj.statemachine.EventLog;
+import com.github.thxmasj.statemachine.EventReference;
+import com.github.thxmasj.statemachine.EventTrigger;
+import com.github.thxmasj.statemachine.EventType;
+import com.github.thxmasj.statemachine.IdentityResult;
+import com.github.thxmasj.statemachine.InputEvent;
+import com.github.thxmasj.statemachine.ProcessResult;
+import com.github.thxmasj.statemachine.ProcessResult.Accepted;
+import com.github.thxmasj.statemachine.ProcessResult.Completed;
+import com.github.thxmasj.statemachine.ProcessResult.Rejected;
+import com.github.thxmasj.statemachine.RejectedEvent;
+import com.github.thxmasj.statemachine.SecondaryId;
+import com.github.thxmasj.statemachine.SecondaryIdModel;
+import com.github.thxmasj.statemachine.State;
+import com.github.thxmasj.statemachine.TransitionEngine;
+import com.github.thxmasj.statemachine.TransitionModelBuilder;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.ChoiceChangeContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.InitialChangeContext;
@@ -26,12 +48,14 @@ import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.Outp
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.PendingChangeContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.RejectedChangeContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
+import com.github.thxmasj.statemachine.Traverser;
+import com.github.thxmasj.statemachine.TriggerType;
 import com.github.thxmasj.statemachine.Tuples.Tuple3;
+import com.github.thxmasj.statemachine.UnknownEntity;
 import com.github.thxmasj.statemachine.database.EntityGroupNotInitialised;
 import com.github.thxmasj.statemachine.database.EventAlreadyExists;
 import com.github.thxmasj.statemachine.database.MappingFailure;
 import com.github.thxmasj.statemachine.database.SecondaryIdAlreadyExists;
-import com.github.thxmasj.statemachine.database.UnknownEntity;
 import com.github.thxmasj.statemachine.database.jdbc.JDBCClient;
 import com.github.thxmasj.statemachine.database.mssql.ChangeState;
 import com.github.thxmasj.statemachine.database.mssql.ChangeState.Change;
@@ -43,7 +67,6 @@ import com.github.thxmasj.statemachine.database.mssql.EventsByLastEntity;
 import com.github.thxmasj.statemachine.database.mssql.EventsByLookupId;
 import com.github.thxmasj.statemachine.database.mssql.LastSecondaryId;
 import com.github.thxmasj.statemachine.database.mssql.NextDeadline;
-import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
 import jakarta.annotation.Nullable;
 import jakarta.validation.constraints.NotNull;
 import java.time.Clock;
@@ -56,7 +79,6 @@ import java.util.Map.Entry;
 import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -67,7 +89,7 @@ import reactor.core.publisher.Sinks;
 import reactor.core.publisher.Sinks.Many;
 import reactor.util.retry.RetrySpec;
 
-public class StateMachine implements AutoCloseable {
+public class StateMachine implements TransitionEngine, AutoCloseable {
 
   private static final int MAX_CONDITION_TRIGGERS_PER_POLL = 10;
 
@@ -263,167 +285,11 @@ public class StateMachine implements AutoCloseable {
         .switchIfEmpty(Mono.just(ResolverStatus.Empty));
   }
 
-  public sealed interface IdentityResult<T> permits IdentityResult.Accepted, IdentityResult.Rejected {
-
-    record Accepted<T>(SecondaryId<T> id) implements IdentityResult<T> {
-      public Accepted<T> accepted() {return this;}
-    }
-
-    record Rejected<T>(SecondaryId<T> id, EventLog log) implements IdentityResult<T> {
-      public Rejected<T> rejected() {return this;}
-    }
-
-    static <T> Accepted<T> accepted(SecondaryId<T> id) {
-      return new Accepted<>(id);
-    }
-
-    static <T> Rejected<T> rejected(SecondaryId<T> id, EventLog log) {
-      return new Rejected<>(id, log);
-    }
-
-    SecondaryId<T> id();
-
-    default boolean isAccepted() {
-      return this instanceof Accepted;
-    }
-
-    default Accepted<T> accepted() {
-      throw new IllegalStateException("Result is " + this);
-    }
-
-    default boolean isRejected() {
-      return this instanceof Rejected;
-    }
-
-    default Rejected<T> rejected() {
-      throw new IllegalStateException("Result is " + this);
-    }
-
-  }
-
-  public sealed interface ProcessResult<T> permits Accepted, Completed, Pending, Rejected, UnknownId {
-
-    record Completed<T>(ProcessResult<?> choiceResult, EntityId entityId, int eventNumber, EntityModel entityModel) implements ProcessResult<T> {
-      public Completed<T> completed() {return this;}
-    }
-
-    /**
-     * @param triggerType optional type of the stored trigger that caused the event
-     * @param triggerId   id of the stored trigger that caused the event, present if and only if triggerType is
-     */
-    record Accepted<T>(Event<T> event, EntityModel entityModel, TriggerType triggerType, UUID triggerId) implements ProcessResult<T> {
-      public Accepted<T> accepted() {return this;}
-    }
-
-    record Rejected<T>(EventType<?, T> eventType, RejectedEvent exception, AtomicBoolean handled) implements ProcessResult<T> {
-
-      public Accepted<T> accepted() {
-        System.out.println("accepted() called on ProcessResult.Rejected");
-        throw exception;
-      }
-
-      public Rejected<T> rejected() {return this;}
-
-      @Override
-      public boolean isRejected() {
-        handled.set(true);
-        return true;
-      }
-
-      public boolean isHandled() {
-        return handled.get();
-      }
-    }
-
-    record UnknownId<T>(EventType<?, T> eventType, UnknownEntity exception) implements ProcessResult<T> {
-
-      public UnknownId<T> unknownId() {return this;}
-    }
-
-    record Pending<T, I, O>(EventTrigger<T, I, O> trigger, T inputData, CircularChange exception) implements ProcessResult<O> {
-
-      @Override
-      public Pending<?, ?, O> pending() {
-        return this;
-      }
-    }
-
-    record Entity(
-        EntityId id,
-        List<SecondaryId<?>> secondaryIds,
-        EntityModel model
-    ) {}
-
-    static <T> Completed<T> completed(ProcessResult<?> choiceResult, EntityId entityId, int eventNumber, EntityModel entityModel) {
-      return new Completed<>(choiceResult, entityId, eventNumber, entityModel);
-    }
-
-    default boolean isCompleted() {
-      return this instanceof Completed;
-    }
-
-    default Completed<T> completed() {
-      throw new IllegalStateException("Result is " + this);
-    }
-
-    static <T> Accepted<T> accepted(Event<T> event, EntityModel entityModel) {
-      return new Accepted<>(event, entityModel, null, null);
-    }
-
-    static <T> Accepted<T> accepted(Event<T> event, EntityModel entityModel, TriggerType triggerType, UUID triggerId) {
-      return new Accepted<>(event, entityModel, triggerType, triggerId);
-    }
-
-    default boolean isAccepted() {
-      return this instanceof Accepted;
-    }
-
-    default Accepted<T> accepted() {
-      throw new IllegalStateException("Result is " + this);
-    }
-
-    static <T> Rejected<T> rejected(EventType<?, T> eventType, RejectedEvent exception) {
-      return new Rejected<>(eventType, exception, new AtomicBoolean());
-    }
-
-    default boolean isRejected() {
-      return this instanceof Rejected;
-    }
-
-    default Rejected<T> rejected() {
-      throw new IllegalStateException("Result is " + this);
-    }
-
-    static <T> UnknownId<T> unknownId(EventType<?, T> eventType, UnknownEntity exception) {
-      return new UnknownId<>(eventType, exception);
-    }
-
-    default boolean isPending() {
-      return this instanceof Pending;
-    }
-
-    default Pending<?, ?, T> pending() {
-      throw new IllegalStateException("Result is " + this);
-    }
-
-    static <T, I, O> Pending<T, I, O> pending(EventTrigger<T, I, O> trigger, T inputData, CircularChange exception) {
-      return new Pending<>(trigger, inputData, exception);
-    }
-
-    default boolean isUnknownId() {
-      return this instanceof UnknownId;
-    }
-
-    default UnknownId<T> unknownId() {
-      return (UnknownId<T>) this;
-    }
-
-  }
-
   private Mono<EventLog> eventLogByEntityId(EntityModel entityModel, EntityId entityId) {
     return eventsByEntityId.execute(entityModel, eventTypesByEntityModel.get(entityModel), entityId);
   }
 
+  @Override
   public <T> Mono<SecondaryId<T>> next(SecondaryIdModel<T> idModel, Object idGroup) {
     return lastSecondaryId.execute(idModel, idGroup)
         .map(id -> id.model().group().next(id))
@@ -613,7 +479,7 @@ public class StateMachine implements AutoCloseable {
                           input,
                           eventLog.entityModel(),
                           eventType,
-                          r.exception.getMessage()
+                          r.exception().getMessage()
                       ),
                       this,
                       List.of()
@@ -643,14 +509,6 @@ public class StateMachine implements AutoCloseable {
                     triggerEvent
                 ))
         );
-  }
-
-  public static String chainToString(ChangeContext<?> tail) {
-    StringBuilder b = new StringBuilder();
-    for (ChangeContext<?> c = tail; c != null; c = c.previous()) {
-      b.append(c).append("\n");
-    }
-    return b.toString();
   }
 
   private ProcessResult<?> finalResult(@NotNull ChangeContext<? extends ProcessResult<?>> tail) {
@@ -835,6 +693,7 @@ public class StateMachine implements AutoCloseable {
     }
   }
 
+  @Override
   public <T, I, O> Mono<ChangeContext<ProcessResult<O>>> calculateTriggeredEvent(
       EventTrigger<T, I, O> eventTrigger,
       ChangeContext<?> tail,
@@ -899,92 +758,6 @@ public class StateMachine implements AutoCloseable {
                 )
             ))
     );
-  }
-
-  public static class CircularChange extends RuntimeException {
-
-    private final EntityModel entityModel;
-    private final EntityId entityId;
-
-    public CircularChange(InputEvent<?> inputEvent, EntityModel entityModel, EntityId entityId) {
-      super(String.format(
-          "%s on %s/id=%s is circular",
-          inputEvent.eventType().name(),
-          entityModel.name(),
-          entityId.value().toString()
-      ));
-      this.entityModel = entityModel;
-      this.entityId = entityId;
-    }
-
-    public EntityModel entityModel() {
-      return entityModel;
-    }
-
-    public EntityId entityId() {
-      return entityId;
-    }
-  }
-
-  public static class RejectedEvent extends RuntimeException {
-
-    private final EventType<?, ?> eventType;
-    private final EntityModel entityModel;
-    private final EntityId entityId;
-    private final State currentState;
-
-    private static String prefixMessage(EventType<?, ?> eventType, EntityModel entityModel, EntityId entityId) {
-      return String.format(
-          "[%s] on [%s]/%s rejected",
-          eventType != null ? eventType.name() : "<no event type>",
-          entityModel != null ? entityModel.name() : "<no entity model>",
-          entityId != null ? entityId.value() : "<no entity id>"
-      );
-    }
-
-    public RejectedEvent(EventType<?, ?> eventType, EventLog eventLog, State currentState) {
-      super(String.format(
-          "%s for state [%s] (%s)",
-          prefixMessage(eventType, eventLog.entityModel(), eventLog.entityId()),
-          currentState != null ? currentState.name() : "<no current state>",
-          eventLog.events().stream().map(e -> e.type().name()).collect(joining(", "))
-      ));
-      this.eventType = eventType;
-      this.entityModel = eventLog.entityModel();
-      this.entityId = eventLog.entityId();
-      this.currentState = currentState;
-    }
-
-    public RejectedEvent(
-        EventType<?, ?> eventType,
-        EntityModel entityModel,
-        EntityId entityId,
-        State currentState,
-        int rollbackTo
-    ) {
-      super(String.format(
-          "%s for state [%s]: Can't rollback to event number %d",
-          prefixMessage(eventType, entityModel, entityId),
-          currentState != null ? currentState.name() : "<no current state>",
-          rollbackTo
-      ));
-      this.eventType = eventType;
-      this.entityModel = entityModel;
-      this.entityId = entityId;
-      this.currentState = currentState;
-    }
-
-    public EventType<?, ?> eventType() {
-      return eventType;
-    }
-
-    public EntityModel entityModel() {
-      return entityModel;
-    }
-
-    public EntityId entityId() {
-      return entityId;
-    }
   }
 
   private <I, O> Tuple3<EventLog, TransitionModel<I, O>, State> transitionModel(
@@ -1104,6 +877,7 @@ public class StateMachine implements AutoCloseable {
     return new EntityId.UUID(UUID.randomUUID());
   }
 
+  @Override
   public Traverser traverser(EntityModel entityModel) {
     return traversers.get(entityModel);
   }

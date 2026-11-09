@@ -45,7 +45,7 @@ import com.github.thxmasj.statemachine.Event;
 import com.github.thxmasj.statemachine.EventTrigger;
 import com.github.thxmasj.statemachine.Identifiable;
 import com.github.thxmasj.statemachine.State;
-import com.github.thxmasj.statemachine.StateMachine;
+import com.github.thxmasj.statemachine.runtime.StateMachine;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.statemachine.Tuples.Tuple3;
 import com.github.thxmasj.statemachine.Tuples.Tuple4;

@@ -2,8 +2,13 @@ package com.github.thxmasj.statemachine.database.mssql;
 
 import static java.util.stream.Collectors.joining;
 
+import com.github.thxmasj.statemachine.ConditionTrigger;
+import com.github.thxmasj.statemachine.Deadline;
+import com.github.thxmasj.statemachine.EntityId;
+import com.github.thxmasj.statemachine.Event;
+import com.github.thxmasj.statemachine.SecondaryIdModel;
+import com.github.thxmasj.statemachine.SecondaryIdModel.Column;
 import com.github.thxmasj.statemachine.database.Client;
-import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
 import java.nio.charset.StandardCharsets;
 import java.util.Comparator;
 import java.util.List;
@@ -145,7 +150,7 @@ public class CreateSchema {
                   .replace("{serialNumberColumnDefinition}", secondaryId.isSerial() ? "SerialNumber BIGINT NOT NULL," : "")
                   .replace("{columnDefinitions}", secondaryId.columns().stream().map(column -> column.name() + " " + column.type() + " NOT NULL").collect(joining(",")))
                   .replace("{indexName}", names.indexName(secondaryId.columns()))
-                  .replace("{columnList}", String.join(",", secondaryId.columns().stream().map(SchemaNames.Column::name).toList()))
+                  .replace("{columnList}", String.join(",", secondaryId.columns().stream().map(Column::name).toList()))
           ;
         }
         return sql;

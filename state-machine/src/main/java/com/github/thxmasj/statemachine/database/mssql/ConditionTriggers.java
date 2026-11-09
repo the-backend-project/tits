@@ -4,7 +4,9 @@ import static java.lang.String.format;
 
 import com.github.thxmasj.statemachine.ConditionTrigger;
 import com.github.thxmasj.statemachine.DataType;
+import com.github.thxmasj.statemachine.EntityId;
 import com.github.thxmasj.statemachine.EntityModel;
+import com.github.thxmasj.statemachine.Event;
 import com.github.thxmasj.statemachine.EventReference;
 import com.github.thxmasj.statemachine.EventType;
 import com.github.thxmasj.statemachine.database.Client;

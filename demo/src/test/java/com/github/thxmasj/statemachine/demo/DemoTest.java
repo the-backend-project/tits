@@ -2,7 +2,7 @@ package com.github.thxmasj.statemachine.demo;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.github.thxmasj.statemachine.StateMachine;
+import com.github.thxmasj.statemachine.runtime.StateMachine;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;

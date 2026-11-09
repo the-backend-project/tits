@@ -49,7 +49,7 @@ import com.github.thxmasj.statemachine.EventType;
 import com.github.thxmasj.statemachine.test.Init;
 import com.github.thxmasj.statemachine.diagram.PlantUMLFormatter;
 import com.github.thxmasj.statemachine.State;
-import com.github.thxmasj.statemachine.StateMachine;
+import com.github.thxmasj.statemachine.runtime.StateMachine;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;

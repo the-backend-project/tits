@@ -1,7 +1,7 @@
 package com.github.thxmasj.statemachine.database;
 
 import com.github.thxmasj.statemachine.EntityModel;
-import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
+import com.github.thxmasj.statemachine.SecondaryIdModel;
 
 public class EntityGroupNotInitialised extends RuntimeException {
 

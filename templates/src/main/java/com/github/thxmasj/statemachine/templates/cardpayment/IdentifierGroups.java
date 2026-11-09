@@ -4,9 +4,9 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.Identifiers.
 import static com.github.thxmasj.statemachine.templates.cardpayment.Identifiers.BatchNumber;
 
 import com.github.thxmasj.statemachine.SecondaryId;
-import com.github.thxmasj.statemachine.database.mssql.SchemaNames.Column;
-import com.github.thxmasj.statemachine.database.mssql.SchemaNames.ColumnOrder;
-import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
+import com.github.thxmasj.statemachine.SecondaryIdModel;
+import com.github.thxmasj.statemachine.SecondaryIdModel.Column;
+import com.github.thxmasj.statemachine.SecondaryIdModel.ColumnOrder;
 
 import java.util.List;
 
