@@ -12,6 +12,10 @@
 
   <artifactId>http-outbox</artifactId>
 
+  <properties>
+    <java.module.name>com.github.thxmasj.statemachine.http.outbox</java.module.name>
+  </properties>
+
   <dependencies>
     <dependency>
       <groupId>com.github.thxmasj</groupId>

@@ -18,7 +18,7 @@ import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.EventLog;
 import com.github.thxmasj.statemachine.EventType;
 import com.github.thxmasj.statemachine.IndexEntityModel;
-import com.github.thxmasj.statemachine.Init;
+import com.github.thxmasj.statemachine.test.Init;
 import com.github.thxmasj.statemachine.State;
 import com.github.thxmasj.statemachine.StateMachine;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;

@@ -12,6 +12,10 @@
 
   <artifactId>http-inbox</artifactId>
 
+  <properties>
+    <java.module.name>com.github.thxmasj.statemachine.http.inbox</java.module.name>
+  </properties>
+
   <dependencies>
     <dependency>
       <groupId>com.github.thxmasj</groupId>

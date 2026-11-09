@@ -13,6 +13,7 @@
   <artifactId>demo</artifactId>
 
   <properties>
+    <java.module.name>com.github.thxmasj.statemachine.demo</java.module.name>
     <!-- Not a library -->
     <maven.deploy.skip>true</maven.deploy.skip>
   </properties>

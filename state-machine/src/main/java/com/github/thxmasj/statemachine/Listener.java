@@ -5,7 +5,6 @@ import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.UUID;
-import org.checkerframework.checker.nullness.qual.NonNull;
 
 public interface Listener {
 
@@ -20,7 +19,7 @@ public interface Listener {
           UUID id,
           List<String> secondaryIds
       ) {
-        @Override public @NonNull String toString() {
+        @Override public String toString() {
           return model + "[id=" + id + "]";
         }
       }

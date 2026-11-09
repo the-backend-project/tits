@@ -12,6 +12,10 @@
 
   <artifactId>state-machine</artifactId>
 
+  <properties>
+    <java.module.name>com.github.thxmasj.statemachine</java.module.name>
+  </properties>
+
   <build>
     <plugins>
       <plugin>
@@ -102,7 +106,7 @@
     </dependency>
     <dependency>
       <groupId>net.sourceforge.plantuml</groupId>
-      <artifactId>plantuml</artifactId>
+      <artifactId>plantuml-mit</artifactId>
     </dependency>
   </dependencies>
 

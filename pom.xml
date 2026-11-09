@@ -23,11 +23,26 @@
             <plugins>
                 <plugin>
                     <artifactId>maven-compiler-plugin</artifactId>
-                    <version>3.13.0</version>
+                    <version>3.16.0</version>
+                    <executions>
+                        <execution>
+                            <!-- The tests use the JDK's HTTP server and client, which the modules themselves don't need -->
+                            <id>default-testCompile</id>
+                            <configuration>
+                                <compilerArgs>
+                                    <arg>--add-modules=jdk.httpserver,java.net.http</arg>
+                                    <arg>--add-reads=${java.module.name}=jdk.httpserver,java.net.http</arg>
+                                </compilerArgs>
+                            </configuration>
+                        </execution>
+                    </executions>
                 </plugin>
                 <plugin>
                     <artifactId>maven-surefire-plugin</artifactId>
-                    <version>3.5.2</version>
+                    <version>3.6.1</version>
+                    <configuration>
+                        <argLine>--add-modules=jdk.httpserver,java.net.http --add-reads=${java.module.name}=jdk.httpserver,java.net.http</argLine>
+                    </configuration>
                 </plugin>
                 <plugin>
                     <artifactId>maven-source-plugin</artifactId>
@@ -217,7 +232,7 @@
             </dependency>
             <dependency>
                 <groupId>net.sourceforge.plantuml</groupId>
-                <artifactId>plantuml</artifactId>
+                <artifactId>plantuml-mit</artifactId>
                 <version>1.2025.2</version>
             </dependency>
         </dependencies>
