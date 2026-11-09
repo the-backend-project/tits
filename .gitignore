@@ -5,3 +5,4 @@ docs/images
 .junie
 .mvn/checksums/*.bak
 .venv
+deploy/Pulumi.*.yaml

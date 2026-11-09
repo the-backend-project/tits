@@ -3,7 +3,9 @@
 Documentation is available at https://the-backend-project.github.io/tits/.
 
 The [demo](demo) module is a hello world web application following the principles of the twelve-factor app, compiled
-to a native executable. See [Cloud native demo](docs/cloud-native.md).
+to a native executable. See [Cloud native demo](docs/cloud-native.md). The [deploy](deploy) module deploys it, or any
+application built the same way, to Azure Functions with a serverless Azure SQL database. See
+[Deploying to Azure Functions](docs/azure-functions.md).
 
 ## Building
 

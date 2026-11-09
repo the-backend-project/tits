@@ -12,7 +12,10 @@ nav = [
       { "PSD2 and PSD3 compliance" = "psd2.md" },
     ] },
   ] },
-  { "Cloud native demo" = "cloud-native.md" },
+  { "Cloud native demo" = [
+    { "Overview" = "cloud-native.md" },
+    { "Deploying to Azure Functions" = "azure-functions.md" },
+  ] },
 ]
 
 [project.theme]
