@@ -1,9 +1,10 @@
-package com.github.thxmasj.statemachine;
+package com.github.thxmasj.statemachine.http;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import com.github.thxmasj.statemachine.DataType;
+import com.github.thxmasj.statemachine.Tuples;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;
-import com.github.thxmasj.statemachine.http.HttpDataType;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Method;
 import com.github.thxmasj.statemachine.message.http.TypedHttpRequest;
 import java.net.URI;
@@ -11,7 +12,7 @@ import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
-public class DataTypeTest {
+public class HttpDataTypeTest {
 
   record TestPayload(String message, int count) {}
 

@@ -8,7 +8,7 @@ import static java.util.stream.Collectors.toMap;
 import com.github.thxmasj.statemachine.EntityId;
 import com.github.thxmasj.statemachine.Event;
 import com.github.thxmasj.statemachine.EventType;
-import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
+import com.github.thxmasj.statemachine.TransitionModel;
 import com.github.thxmasj.statemachine.database.MappingFailure;
 import com.github.thxmasj.statemachine.database.Row;
 import java.time.Clock;

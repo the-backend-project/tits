@@ -1,5 +1,9 @@
-package com.github.thxmasj.statemachine;
+package com.github.thxmasj.statemachine.runtime;
 
+import com.github.thxmasj.statemachine.DelayedEvent;
+import com.github.thxmasj.statemachine.EntityId;
+import com.github.thxmasj.statemachine.EntityModel;
+import com.github.thxmasj.statemachine.Event;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import java.time.Duration;
 import java.time.ZonedDateTime;

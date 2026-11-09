@@ -39,7 +39,7 @@ import static com.github.thxmasj.statemachine.templates.cardpayment.SettlementEv
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.Identifiable;
 import com.github.thxmasj.statemachine.State;
-import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
+import com.github.thxmasj.statemachine.TransitionModel;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;
 import com.github.thxmasj.statemachine.Tuples.Tuple3;
 import com.github.thxmasj.statemachine.Tuples.Tuple4;

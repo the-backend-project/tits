@@ -1,6 +1,5 @@
 package com.github.thxmasj.statemachine;
 
-import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Function;

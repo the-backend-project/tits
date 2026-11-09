@@ -7,13 +7,15 @@ import static java.util.stream.IntStream.range;
 import com.github.thxmasj.statemachine.BasicEventType;
 import com.github.thxmasj.statemachine.ConditionTrigger;
 import com.github.thxmasj.statemachine.DataType;
+import com.github.thxmasj.statemachine.Deadline;
 import com.github.thxmasj.statemachine.DelayedEvent;
 import com.github.thxmasj.statemachine.EntityId;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.Event;
 import com.github.thxmasj.statemachine.IndexEntityModel;
+import com.github.thxmasj.statemachine.ProcessResult;
 import com.github.thxmasj.statemachine.SecondaryId;
-import com.github.thxmasj.statemachine.StateMachine.ProcessResult;
+import com.github.thxmasj.statemachine.SecondaryIdModel.Column;
 import com.github.thxmasj.statemachine.TriggerType;
 import com.github.thxmasj.statemachine.database.Client;
 import com.github.thxmasj.statemachine.database.Client.PrimaryKeyConstraintViolation;
@@ -375,7 +377,7 @@ public class ChangeState {
           """.replace("{idTable}", "Id_" + secondaryId.model().name())
               .replace(
                   "{columnList}",
-                  secondaryId.model().columns().stream().map(SchemaNames.Column::name).collect(joining(",")) + (
+                  secondaryId.model().columns().stream().map(Column::name).collect(joining(",")) + (
                       secondaryId.model().isSerial() ? ",SerialNumber" : "")
               )
               .replace("{changeIndex}", String.valueOf(changeIndex))

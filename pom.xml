@@ -11,6 +11,7 @@
     <packaging>pom</packaging>
 
     <modules>
+        <module>model</module>
         <module>state-machine</module>
         <module>http-inbox</module>
         <module>http-outbox</module>

@@ -1,6 +1,5 @@
 package com.github.thxmasj.statemachine;
 
-import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
 import java.util.Objects;
 
 public class SecondaryId<T> {

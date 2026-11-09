@@ -23,8 +23,8 @@ import static java.util.Optional.ofNullable;
 
 import com.github.thxmasj.statemachine.DataType;
 import com.github.thxmasj.statemachine.State;
+import com.github.thxmasj.statemachine.TransitionModel;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionContext;
-import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.statemachine.templates.cardpayment.MerchantEvent.MerchantUpdate;
 import com.github.thxmasj.statemachine.templates.cardpayment.PaymentEvent.Merchant;
 import java.util.List;

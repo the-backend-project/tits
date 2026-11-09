@@ -4,7 +4,6 @@ import static com.github.thxmasj.statemachine.Event.join;
 import static java.util.Collections.unmodifiableList;
 import static java.util.stream.Collectors.joining;
 
-import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;

@@ -1,9 +1,11 @@
-package com.github.thxmasj.statemachine;
+package com.github.thxmasj.statemachine.runtime;
 
-import static com.github.thxmasj.statemachine.EventTriggerTest.Entities.Apple;
-import static com.github.thxmasj.statemachine.EventTriggerTest.Entities.Banana;
+import static com.github.thxmasj.statemachine.runtime.EventTriggerTest.Entities.Apple;
+import static com.github.thxmasj.statemachine.runtime.EventTriggerTest.Entities.Banana;
 
-import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
+import com.github.thxmasj.statemachine.EntityModel;
+import com.github.thxmasj.statemachine.State;
+import com.github.thxmasj.statemachine.TransitionModel;
 import com.github.thxmasj.statemachine.test.Init;
 import java.util.HashMap;
 import java.util.List;

@@ -9,8 +9,7 @@ import com.github.thxmasj.statemachine.EventLog;
 import com.github.thxmasj.statemachine.EventType;
 import com.github.thxmasj.statemachine.IndexEntityModel;
 import com.github.thxmasj.statemachine.State;
-import com.github.thxmasj.statemachine.TransitionModelBuilder;
-import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
+import com.github.thxmasj.statemachine.TransitionModel;
 import com.github.thxmasj.statemachine.http.HttpDataType;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.TypedHttpRequest;
@@ -29,7 +28,7 @@ import java.util.stream.Stream;
 /// the creator of its request messages.
 public sealed interface HttpOutboxRequest<RQ> extends com.github.thxmasj.statemachine.EntityModel permits AtLeastOnce, AtMostOnce {
 
-  Map<State, List<TransitionModelBuilder.TransitionModel<?, ?>>> transitions();
+  Map<State, List<TransitionModel<?, ?>>> transitions();
 
   default List<EventType<?, ?>> eventTypes() {
     return transitions().values()

@@ -1,8 +1,4 @@
-package com.github.thxmasj.statemachine.database;
-
-import com.github.thxmasj.statemachine.EntityId;
-import com.github.thxmasj.statemachine.EntityModel;
-import com.github.thxmasj.statemachine.SecondaryId;
+package com.github.thxmasj.statemachine;
 
 public class UnknownEntity extends RuntimeException {
 

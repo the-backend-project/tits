@@ -3,11 +3,11 @@ package com.github.thxmasj.statemachine.http.inbox;
 import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.TRIGGER;
 import static java.util.stream.Collectors.toMap;
 
-import com.github.thxmasj.statemachine.StateMachine;
 import com.github.thxmasj.statemachine.message.http.HttpMessageParser;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage;
 import com.github.thxmasj.statemachine.message.http.HttpRequestMessage.Method;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
+import com.github.thxmasj.statemachine.runtime.StateMachine;
 import io.netty.buffer.Unpooled;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import java.net.URI;

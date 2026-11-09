@@ -1,6 +1,5 @@
 package com.github.thxmasj.statemachine;
 
-import static com.github.thxmasj.statemachine.StateMachine.chainToString;
 import static com.github.thxmasj.statemachine.Tuples.tuple;
 import static java.util.Collections.unmodifiableList;
 import static java.util.Optional.ofNullable;
@@ -8,15 +7,11 @@ import static java.util.Optional.ofNullable;
 import com.github.thxmasj.statemachine.BasicEventType.Rollback.Data;
 import com.github.thxmasj.statemachine.EventTrigger.EventCondition;
 import com.github.thxmasj.statemachine.EventTrigger.EventSpec;
-import com.github.thxmasj.statemachine.StateMachine.CircularChange;
-import com.github.thxmasj.statemachine.StateMachine.IdentityResult;
-import com.github.thxmasj.statemachine.StateMachine.ProcessResult;
-import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Accepted;
-import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Completed;
-import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Pending;
-import com.github.thxmasj.statemachine.StateMachine.ProcessResult.Rejected;
-import com.github.thxmasj.statemachine.StateMachine.ProcessResult.UnknownId;
-import com.github.thxmasj.statemachine.StateMachine.RejectedEvent;
+import com.github.thxmasj.statemachine.ProcessResult.Accepted;
+import com.github.thxmasj.statemachine.ProcessResult.Completed;
+import com.github.thxmasj.statemachine.ProcessResult.Pending;
+import com.github.thxmasj.statemachine.ProcessResult.Rejected;
+import com.github.thxmasj.statemachine.ProcessResult.UnknownId;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.ActionChangeContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.AssembledChangeContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.ChoiceChangeContext;
@@ -32,24 +27,16 @@ import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.Trig
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.UnknownIdChangeContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.WithFilter.Alternative;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;
-import com.github.thxmasj.statemachine.Tuples.Tuple4;
-import com.github.thxmasj.statemachine.database.UnknownEntity;
-import com.github.thxmasj.statemachine.database.mssql.SchemaNames.SecondaryIdModel;
 import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Predicate;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 import reactor.core.publisher.Mono;
 
 public class TransitionModelBuilder<I, T, O> {
@@ -135,7 +122,7 @@ public class TransitionModelBuilder<I, T, O> {
         ZonedDateTime timestamp,
         String correlationId,
         I input,
-        StateMachine stateMachine,
+        TransitionEngine stateMachine,
         List<IdentityResult<?>> identityResults,
         TriggerType triggerType,
         UUID triggerId
@@ -151,7 +138,7 @@ public class TransitionModelBuilder<I, T, O> {
           ZonedDateTime timestamp,
           String correlationId,
           I input,
-          StateMachine stateMachine,
+          TransitionEngine stateMachine,
           List<IdentityResult<?>> identityResults
       ) {
         this(stage1, previous, triggerEvent, transitionModel, from, eventNumber, log, timestamp, correlationId, input, stateMachine, identityResults, null, null);
@@ -1200,92 +1187,16 @@ public class TransitionModelBuilder<I, T, O> {
     );
   }
 
-  public static class TransitionModel<I, O> {
-
-    private final ModelContext<I, O> modelContext;
-    private final Function<Mono<InitialChangeContext<I>>, Mono<OutputChangeContext<O>>> chain;
-
-    @Override
-    public int hashCode() {
-      return Objects.hash(modelContext.eventType, modelContext.to);
-    }
-
-    @Override
-    public boolean equals(Object obj) {
-      if (obj == this) return true;
-      if (obj instanceof TransitionModel<?, ?> other) {
-        return Objects.equals(this.modelContext.to, other.modelContext.to)
-            && Objects.equals(this.modelContext.eventType, other.modelContext.eventType);
-      }
-      return false;
-    }
-
-    @Override
-    public String toString() {
-      return String.format("onEvent(%s).to(%s)", (modelContext.eventType != null ? modelContext.eventType.name() : "N/A") , modelContext.to != null ? modelContext.to.name() : "<self>");
-    }
-
-    TransitionModel(
-        ModelContext<I, O> modelContext,
-        Function<Mono<InitialChangeContext<I>>, Mono<OutputChangeContext<O>>> chain
-    ) {
-      this.modelContext = modelContext;
-      this.chain = chain;
-    }
-
-    public TransitionModel<Data, Data> reverseModel() {
-      return modelContext.reverseModel();
-    }
-
-    public TransitionModel<Tuple4<I, EntityModel, EventType<?, ?>, String>, O> rejectModel() {
-      return null;
-    }
-
-    public Mono<OutputChangeContext<O>> calculate(InitialChangeContext<I> initialChangeContext) {
-      log(modelContext, "calculate [" + eventType().name() + "] on [" + initialChangeContext.log().entityModel().name() + ":" + initialChangeContext.log().entityId().value() + "] (input: " + initialChangeContext.input() + ")");
-      return chain.apply(Mono.just(initialChangeContext));
-    }
-
-    private Mono<OutputChangeContext<O>> calculateReverse(Mono<InitialChangeContext<I>> initial) {
-      return chain.apply(initial);
-    }
-
-    public EventType<I, O> eventType() {
-      return modelContext.eventType();
-    }
-
-    public State toState() {
-      return modelContext.to();
-    }
-
-    @SafeVarargs
-    public static Map<State, List<TransitionModel<?, ?>>> mergeModels(
-        Map<State, List<TransitionModel<?, ?>>> ...lists
-    ) {
-      return Arrays.stream(lists).flatMap(l -> l.entrySet().stream())
-          .collect(Collectors.toMap(
-              Entry::getKey,
-              Entry::getValue,
-              (e1, e2) -> Stream.concat(e1.stream(), e2.stream()).toList()
-          ));
-    }
-
-
-    public List<Filter<?,?,?>> filters() {
-      return modelContext.filters();
-    }
-
-    public List<EventTrigger<?, ?, ?>> triggers() {
-      return modelContext.triggers();
-    }
-
-    public List<Action<?>> actions() {
-      return modelContext.actions();
-    }
-  }
-
   static void log(ModelContext<?, ?> modelContext, String text) {
     System.out.println(ZonedDateTime.now() + ": " + modelContext.description() + ": " + text);
+  }
+
+  public static String chainToString(ChangeContext<?> tail) {
+    StringBuilder b = new StringBuilder();
+    for (ChangeContext<?> c = tail; c != null; c = c.previous()) {
+      b.append(c).append("\n");
+    }
+    return b.toString();
   }
 
 }

@@ -1,4 +1,4 @@
-package com.github.thxmasj.statemachine;
+package com.github.thxmasj.statemachine.runtime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

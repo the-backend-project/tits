@@ -2,9 +2,9 @@ package com.github.thxmasj.statemachine.templates.cardpayment;
 
 import static com.github.thxmasj.statemachine.templates.cardpayment.Aggregate.Merchant;
 
-import com.github.thxmasj.statemachine.StateMachine;
 import com.github.thxmasj.statemachine.database.Client.Config;
 import com.github.thxmasj.statemachine.database.jdbc.DataSourceBuilder;
+import com.github.thxmasj.statemachine.runtime.StateMachine;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.Map;

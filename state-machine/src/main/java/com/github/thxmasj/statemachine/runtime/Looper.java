@@ -1,4 +1,4 @@
-package com.github.thxmasj.statemachine;
+package com.github.thxmasj.statemachine.runtime;
 
 import java.time.Duration;
 import java.util.concurrent.locks.Condition;
