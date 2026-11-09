@@ -16,7 +16,7 @@ import com.github.thxmasj.statemachine.DataType;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.EventType;
 import com.github.thxmasj.statemachine.State;
-import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
+import com.github.thxmasj.statemachine.TransitionModel;
 import com.github.thxmasj.statemachine.http.inbox.HttpInbox.CustomResponse;
 import com.github.thxmasj.statemachine.http.inbox.HttpRequestRoute;
 import com.github.thxmasj.statemachine.http.inbox.ResponseEventType;

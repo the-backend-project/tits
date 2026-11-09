@@ -7,7 +7,7 @@ import com.github.thxmasj.statemachine.BasicEventType;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.EventType;
 import com.github.thxmasj.statemachine.State;
-import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
+import com.github.thxmasj.statemachine.TransitionModel;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;

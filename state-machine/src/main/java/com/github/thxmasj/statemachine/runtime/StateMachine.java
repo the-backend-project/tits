@@ -40,6 +40,7 @@ import com.github.thxmasj.statemachine.SecondaryId;
 import com.github.thxmasj.statemachine.SecondaryIdModel;
 import com.github.thxmasj.statemachine.State;
 import com.github.thxmasj.statemachine.TransitionEngine;
+import com.github.thxmasj.statemachine.TransitionModel;
 import com.github.thxmasj.statemachine.TransitionModelBuilder;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.ChoiceChangeContext;
@@ -47,7 +48,6 @@ import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.Init
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.OutputChangeContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.PendingChangeContext;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.ChangeContext.RejectedChangeContext;
-import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.statemachine.Traverser;
 import com.github.thxmasj.statemachine.TriggerType;
 import com.github.thxmasj.statemachine.Tuples.Tuple3;

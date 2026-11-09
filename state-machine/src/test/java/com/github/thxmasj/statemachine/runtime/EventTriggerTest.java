@@ -5,7 +5,7 @@ import static com.github.thxmasj.statemachine.runtime.EventTriggerTest.Entities.
 
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.State;
-import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
+import com.github.thxmasj.statemachine.TransitionModel;
 import com.github.thxmasj.statemachine.test.Init;
 import java.util.HashMap;
 import java.util.List;

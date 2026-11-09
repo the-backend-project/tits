@@ -51,7 +51,7 @@ import com.github.thxmasj.statemachine.diagram.PlantUMLFormatter;
 import com.github.thxmasj.statemachine.State;
 import com.github.thxmasj.statemachine.runtime.StateMachine;
 import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionContext;
-import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
+import com.github.thxmasj.statemachine.TransitionModel;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;
 import com.github.thxmasj.statemachine.Validated.Valid;
 import com.github.thxmasj.statemachine.http.NettyHttpClient;

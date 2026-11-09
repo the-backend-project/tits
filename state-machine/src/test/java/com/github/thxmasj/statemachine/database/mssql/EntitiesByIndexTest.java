@@ -21,7 +21,7 @@ import com.github.thxmasj.statemachine.IndexEntityModel;
 import com.github.thxmasj.statemachine.test.Init;
 import com.github.thxmasj.statemachine.State;
 import com.github.thxmasj.statemachine.runtime.StateMachine;
-import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
+import com.github.thxmasj.statemachine.TransitionModel;
 import java.time.Clock;
 import java.util.List;
 import java.util.Map;

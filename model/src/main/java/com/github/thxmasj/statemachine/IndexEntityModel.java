@@ -3,7 +3,6 @@ package com.github.thxmasj.statemachine;
 import static com.github.thxmasj.statemachine.TransitionModelBuilder.WithEvent.onEvent;
 import static java.util.stream.Collectors.toList;
 
-import com.github.thxmasj.statemachine.TransitionModelBuilder.TransitionModel;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
