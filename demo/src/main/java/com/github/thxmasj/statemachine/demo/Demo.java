@@ -30,12 +30,19 @@ public final class Demo {
     Config config = Config.fromEnvironment(System.getenv());
     switch (args.length == 0 ? "serve" : args[0]) {
       case "serve" -> {
-        DisposableServer server = serve(config);
+        StateMachine stateMachine = stateMachine(config);
+        DisposableServer server = serve(stateMachine, config.port());
         System.out.println("Listening on port " + server.port() + " after " + Duration.ofNanos(System.nanoTime() - t0).toMillis() + " ms");
         // A container runtime stops the process with SIGTERM, which runs the shutdown hooks
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
           server.disposeNow(Duration.ofSeconds(10));
           System.out.println("Stopped listening");
+          try {
+            stateMachine.close();
+            System.out.println("Stopped state machine");
+          } catch (Exception e) {
+            System.err.println("Failed to stop state machine: " + e);
+          }
         }));
         server.onDispose().block();
       }
@@ -63,8 +70,8 @@ public final class Demo {
         .block();
   }
 
-  public static DisposableServer serve(Config config) {
-    var stateMachine = new StateMachine(
+  public static StateMachine stateMachine(Config config) {
+    return new StateMachine(
         null,
         HelloWorld.transitions(),
         new DataSourceBuilder(config.database()).buildPooled(),
@@ -74,11 +81,14 @@ public final class Demo {
         Clock.systemUTC(),
         new StdoutListener()
     );
+  }
+
+  public static DisposableServer serve(StateMachine stateMachine, int port) {
     return new HttpInboxListener(stateMachine)
         .filter((request, next) -> isHealthCheck(request.method(), request.uri().getPath())
             ? Mono.just(new HttpResponseMessage(200, "OK", Map.of("Content-Type", "text/plain"), "OK".getBytes(StandardCharsets.UTF_8)))
             : next.apply(request))
-        .listen(config.port());
+        .listen(port);
   }
 
   private static boolean isHealthCheck(Method method, String path) {
