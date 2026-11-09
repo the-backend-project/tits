@@ -6,7 +6,6 @@ extra_css = ["stylesheets/extra.css"]
 nav = [
   { "Overview" = "index.md" },
   { "Templates" = [
-    { "Batching" = "batching.md" },
     { "Card payments" = [
       { "Overview" = "cardpayments.md" },
       { "PSD2 and PSD3 compliance" = "psd2.md" },

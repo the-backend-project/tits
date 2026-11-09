@@ -4,8 +4,6 @@ import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.EntityModels.
 import static com.github.thxmasj.statemachine.http.inbox.HttpInbox.EntityModels.RequestRouting;
 import static com.github.thxmasj.statemachine.http.inbox.TransitionModels.requestDispatchingTransitions;
 import static com.github.thxmasj.statemachine.http.inbox.TransitionModels.requestRoutingTransitions;
-import static com.github.thxmasj.statemachine.templates.Batching.EntityTypes.Batch;
-import static com.github.thxmasj.statemachine.templates.Batching.EntityTypes.Item;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Aggregate.Payment;
 import static com.github.thxmasj.statemachine.templates.cardpayment.Aggregate.Settlement;
 import static com.github.thxmasj.statemachine.templates.cardpayment.DummyTransitions.atLeastOnce;
@@ -31,8 +29,6 @@ public class Main {
     System.out.println(new PlantUMLFormatter(atMostOnce, atMostOnce.transitions()).formatToImage("docs/images/"));
     System.out.println(new PlantUMLFormatter(RequestRouting, requestRoutingTransitions(List.of())).formatToImage("docs/images/"));
     System.out.println(new PlantUMLFormatter(RequestDispatching, requestDispatchingTransitions(List.of(), List.of())).formatToImage("docs/images/"));
-    System.out.println(new PlantUMLFormatter(Item, Item.transitions()).formatToImage("docs/images/"));
-    System.out.println(new PlantUMLFormatter(Batch, Batch.transitions()).formatToImage("docs/images/"));
     System.out.println(new PlantUMLFormatter(
         Payment,
         DummyTransitions.payment().transitions()
