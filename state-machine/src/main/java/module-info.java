@@ -14,7 +14,6 @@ module com.github.thxmasj.statemachine {
   requires io.netty.resolver;
   requires static jakarta.annotation;
   requires jakarta.validation;
-  requires net.sourceforge.plantuml;
   requires org.hibernate.validator;
 
   exports com.github.thxmasj.statemachine;

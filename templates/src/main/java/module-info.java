@@ -1,4 +1,5 @@
 module com.github.thxmasj.statemachine.templates {
+  requires com.github.thxmasj.statemachine.diagram;
   requires com.github.thxmasj.statemachine.http.inbox;
   requires com.github.thxmasj.statemachine.http.outbox;
 
