@@ -1,5 +1,5 @@
-module com.github.thxmasj.statemachine.http.inbox {
-  requires transitive com.github.thxmasj.statemachine;
+module com.github.thxmasj.backend.http.inbox {
+  requires transitive com.github.thxmasj.backend.core;
   requires transitive reactor.netty.core;
   requires transitive reactor.netty.http;
   requires com.nimbusds.jose.jwt;

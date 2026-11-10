@@ -1,4 +1,4 @@
-module com.github.thxmasj.statemachine {
+module com.github.thxmasj.backend.core {
   requires transitive tools.jackson.databind;
   requires transitive java.sql;
   requires transitive org.reactivestreams;

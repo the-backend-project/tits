@@ -5,14 +5,14 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>com.github.thxmasj</groupId>
-        <artifactId>state-machine-parent</artifactId>
+        <artifactId>backend-parent</artifactId>
         <version>0.3.0-SNAPSHOT</version>
     </parent>
 
     <artifactId>templates</artifactId>
 
     <properties>
-        <java.module.name>com.github.thxmasj.statemachine.templates</java.module.name>
+        <java.module.name>com.github.thxmasj.backend.templates</java.module.name>
     </properties>
 
     <build>

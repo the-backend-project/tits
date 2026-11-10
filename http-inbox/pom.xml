@@ -4,7 +4,7 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <parent>
     <groupId>com.github.thxmasj</groupId>
-    <artifactId>state-machine-parent</artifactId>
+    <artifactId>backend-parent</artifactId>
     <version>0.3.0-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
@@ -13,7 +13,7 @@
   <artifactId>http-inbox</artifactId>
 
   <properties>
-    <java.module.name>com.github.thxmasj.statemachine.http.inbox</java.module.name>
+    <java.module.name>com.github.thxmasj.backend.http.inbox</java.module.name>
   </properties>
 
   <dependencies>
