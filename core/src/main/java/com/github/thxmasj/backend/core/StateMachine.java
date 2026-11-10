@@ -16,11 +16,13 @@ import com.github.thxmasj.backend.core.EntitySelector.ByIdEvent;
 import com.github.thxmasj.backend.core.EntitySelector.ByLastIndexed;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.Accepted;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.Completed;
+import com.github.thxmasj.backend.core.StateMachine.ProcessResult.IdExists;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.Pending;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.Rejected;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.UnknownId;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext.ChoiceChangeContext;
+import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext.IdExistsChangeContext;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext.InitialChangeContext;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext.OutputChangeContext;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext.PendingChangeContext;
@@ -29,6 +31,7 @@ import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.backend.core.Tuples.Tuple3;
 import com.github.thxmasj.backend.core.database.EntityGroupNotInitialised;
 import com.github.thxmasj.backend.core.database.EventAlreadyExists;
+import com.github.thxmasj.backend.core.database.IdEventAlreadyExists;
 import com.github.thxmasj.backend.core.database.MappingFailure;
 import com.github.thxmasj.backend.core.database.UnknownEntity;
 import com.github.thxmasj.backend.core.database.jdbc.JDBCClient;
@@ -39,6 +42,7 @@ import com.github.thxmasj.backend.core.database.mssql.CreateSchema;
 import com.github.thxmasj.backend.core.database.mssql.DeleteExpiredDeadline;
 import com.github.thxmasj.backend.core.database.mssql.EventsByEntityId;
 import com.github.thxmasj.backend.core.database.mssql.EventsByIdEvent;
+import com.github.thxmasj.backend.core.database.mssql.EventsByIdEvent.IdEventLog;
 import com.github.thxmasj.backend.core.database.mssql.EventsByLastIndexEvent;
 import com.github.thxmasj.backend.core.database.mssql.NextDeadline;
 import jakarta.annotation.Nullable;
@@ -47,6 +51,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -60,6 +65,7 @@ import java.util.stream.Stream;
 import javax.sql.DataSource;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.util.context.ContextView;
 import reactor.core.publisher.Sinks;
 import reactor.core.publisher.Sinks.Many;
 import reactor.util.retry.RetrySpec;
@@ -253,7 +259,7 @@ public class StateMachine implements AutoCloseable {
         .switchIfEmpty(Mono.just(ResolverStatus.Empty));
   }
 
-  public sealed interface ProcessResult<T> permits Accepted, Completed, Pending, Rejected, UnknownId {
+  public sealed interface ProcessResult<T> permits Accepted, Completed, IdExists, Pending, Rejected, UnknownId {
 
     record Completed<T>(ProcessResult<?> choiceResult, EntityId entityId, int eventNumber, EntityModel entityModel) implements ProcessResult<T> {
       public Completed<T> completed() {return this;}
@@ -276,11 +282,6 @@ public class StateMachine implements AutoCloseable {
 
       public Rejected<T> rejected() {return this;}
 
-      /// The log of the entity having the id, if an id event is rejected as its id is taken
-      public EventLog idOwner() {
-        return exception instanceof IdTaken t ? t.owner() : null;
-      }
-
       @Override
       public boolean isRejected() {
         handled.set(true);
@@ -290,6 +291,15 @@ public class StateMachine implements AutoCloseable {
       public boolean isHandled() {
         return handled.get();
       }
+    }
+
+    /// An id event not stored, as its id exists
+    ///
+    /// @param idEvent the existing id event
+    /// @param log     the event log of the entity having the id
+    record IdExists<T>(EventType<?, T> eventType, Event<?> idEvent, EventLog log) implements ProcessResult<T> {
+
+      public IdExists<T> idExists() {return this;}
     }
 
     record UnknownId<T>(EventType<?, T> eventType, UnknownEntity exception) implements ProcessResult<T> {
@@ -342,6 +352,18 @@ public class StateMachine implements AutoCloseable {
     }
 
     default Rejected<T> rejected() {
+      throw new IllegalStateException("Result is " + this);
+    }
+
+    static <T> IdExists<T> idExists(EventType<?, T> eventType, Event<?> idEvent, EventLog log) {
+      return new IdExists<>(eventType, idEvent, log);
+    }
+
+    default boolean isIdExists() {
+      return this instanceof IdExists;
+    }
+
+    default IdExists<T> idExists() {
       throw new IllegalStateException("Result is " + this);
     }
 
@@ -448,6 +470,7 @@ public class StateMachine implements AutoCloseable {
         case ChangeContext.CombinedChangeContext<?, ?> _ -> {}
         case ChangeContext.RejectedChangeContext<?> _ -> {}
         case ChangeContext.UnknownIdChangeContext<?> _ -> {}
+        case ChangeContext.IdExistsChangeContext<?> _ -> {}
         case ChangeContext.ActionChangeContext<?, ?> _ -> {}
       }
     }
@@ -556,7 +579,35 @@ public class StateMachine implements AutoCloseable {
               );
           case ProcessResult<?> r -> Mono.error(new RuntimeException("onEvent: " + r));
         })
-        ;
+        // Calculates the changes again, with the existing id event as the result of triggering the id event
+        .onErrorResume(
+            IdEventAlreadyExists.class,
+            e -> eventsByIdEvent.execute(e.idEvent().type(), e.idEvent().getMarshalledData())
+                .switchIfEmpty(Mono.error(e))
+                .flatMap(existing -> Mono.deferContextual(ctx ->
+                    onEvent(correlationId, eventType, input, eventLog, stage1, triggerType, triggerId, triggerEvent)
+                        .contextWrite(c -> c.put(EXISTING_IDS, Stream.concat(existingIds(ctx).stream(), Stream.of(existing)).toList()))
+                ))
+        );
+  }
+
+  /// Key of the existing id events found when storing changes, in the Reactor context of calculating them again
+  private static final String EXISTING_IDS = "ExistingIds";
+
+  private static List<IdEventLog> existingIds(ContextView ctx) {
+    return ctx.getOrDefault(EXISTING_IDS, List.of());
+  }
+
+  /// The existing id event if the triggered id event has an existing id
+  private <I, O> Mono<ChangeContext<ProcessResult<O>>> idExists(EventTrigger<?, I, O> eventTrigger, ChangeContext<?> tail, I data) {
+    if (!(eventTrigger.entityModel() instanceof IdEntityModel))
+      return Mono.empty();
+    EventType<I, O> type = eventTrigger.eventSpec().eventType();
+    return Mono.deferContextual(ctx -> Mono.justOrEmpty(existingIds(ctx).stream()
+            .filter(existing -> existing.idEvent().type().id().equals(type.id())
+                && Arrays.equals(existing.idEvent().data(), type.inputDataType().marshal(data)))
+            .findFirst()))
+        .map(existing -> new IdExistsChangeContext<>(tail, ProcessResult.idExists(type, existing.idEvent(), existing.log())));
   }
 
   public static String chainToString(ChangeContext<?> tail) {
@@ -687,7 +738,8 @@ public class StateMachine implements AutoCloseable {
   }
 
   private <T> Mono<EventLog> eventLog(ByIdEvent<T> selector, EntityModel entityModel, ChangeContext<?> changeContext) {
-    Mono<EventLog> log = eventsByIdEvent.execute(selector.type().id(), selector.type().outputDataType().marshal(selector.id()))
+    Mono<EventLog> log = eventsByIdEvent.execute(selector.type(), selector.type().outputDataType().marshal(selector.id()))
+        .map(IdEventLog::log)
         .filter(l -> l.entityModel().equals(entityModel));
     return switch (selector.creationMode()) {
       case NeverCreate -> log.switchIfEmpty(Mono.defer(() -> selector.fallback() != null ?
@@ -712,12 +764,6 @@ public class StateMachine implements AutoCloseable {
       case CreateIfNotExists -> log.switchIfEmpty(Mono.fromSupplier(() -> emptyEventLog(entityModel)));
       case AlwaysCreate -> throw new IllegalStateException("Unexpected value: " + selector.creationMode());
     };
-  }
-
-  /// Rejects an id event if its id is already taken
-  private <I> Mono<Void> rejectTakenId(EventType<I, ?> type, I id) {
-    return eventsByIdEvent.execute(type.id(), type.inputDataType().marshal(id))
-        .flatMap(owner -> Mono.error(new IdTaken(type, id, owner)));
   }
 
   private EventLog logFromChangeContext(ChangeContext<?> context, EntityModel entityModel) {
@@ -772,7 +818,7 @@ public class StateMachine implements AutoCloseable {
       EventReference triggerEvent
   ) {
     I adaptedData = eventTrigger.eventSpec().inputAdapter() != null ? eventTrigger.eventSpec().inputAdapter().apply(data) : null;
-    return Mono.deferContextual(ctx -> {
+    Mono<ChangeContext<ProcessResult<O>>> calculated = Mono.deferContextual(ctx -> {
           EntityId entityId = switch (eventTrigger.entitySelectors().getFirst().apply(data)) {
             case ByIdFromSession _ -> {
               try {
@@ -811,10 +857,6 @@ public class StateMachine implements AutoCloseable {
                 // Rethrow the exception on exhaustion so it can be handled downstream
                 .onRetryExhaustedThrow((_, signal) -> signal.failure())
             )
-            .delayUntil(_ -> eventTrigger.entityModel() instanceof IdEntityModel ?
-                rejectTakenId(eventTrigger.eventSpec().eventType(), adaptedData) :
-                Mono.empty()
-            )
             .flatMap(tuple -> tuple.t2().calculate(
                 new InitialChangeContext<>(
                     null,
@@ -831,6 +873,7 @@ public class StateMachine implements AutoCloseable {
                 )
             ))
     );
+    return idExists(eventTrigger, tail, adaptedData).switchIfEmpty(calculated);
   }
 
   public static class CircularChange extends RuntimeException {
@@ -855,27 +898,6 @@ public class StateMachine implements AutoCloseable {
 
     public EntityId entityId() {
       return entityId;
-    }
-  }
-
-  /// An id event rejected as its id is already taken
-  public static class IdTaken extends RejectedEvent {
-
-    private final EventLog owner;
-
-    public IdTaken(EventType<?, ?> eventType, Object id, EventLog owner) {
-      super(
-          String.format("[%s] %s is already taken by [%s]/%s", eventType.name(), id, owner.entityModel().name(), owner.entityId().value()),
-          eventType,
-          owner.entityModel(),
-          owner.entityId()
-      );
-      this.owner = owner;
-    }
-
-    /// The log of the entity having the id
-    public EventLog owner() {
-      return owner;
     }
   }
 
@@ -925,14 +947,6 @@ public class StateMachine implements AutoCloseable {
       this.entityModel = entityModel;
       this.entityId = entityId;
       this.currentState = currentState;
-    }
-
-    protected RejectedEvent(String message, EventType<?, ?> eventType, EntityModel entityModel, EntityId entityId) {
-      super(message);
-      this.eventType = eventType;
-      this.entityModel = entityModel;
-      this.entityId = entityId;
-      this.currentState = null;
     }
 
     public EventType<?, ?> eventType() {

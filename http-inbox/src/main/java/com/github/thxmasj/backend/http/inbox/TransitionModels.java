@@ -238,7 +238,7 @@ public interface TransitionModels {
     return onEvent(route.dispatchingEventType()).to(Dispatched)
         .assemble(c -> tuple(c.input(), c.log().entityId()))
         .trigger(MessageId).with(d -> d.t1().messageId()).on(MessageIds).identifiedBy(d -> entityId(d.t2(), CreateIfNotExists))
-        .when(d -> d.t2().isRejected() && d.t2().rejected().idOwner().oneIfExists(AcceptRollbackRequest).isPresent()).then(
+        .when(d -> d.t2().isIdExists() && d.t2().idExists().log().oneIfExists(AcceptRollbackRequest).isPresent()).then(
             onEvent(RejectRequest).to(Rejected)
                 .assemble(c -> tuple(
                     c.input().t1(), // reason
@@ -249,19 +249,19 @@ public interface TransitionModels {
                 ))
                 .trigger(CompleteRejectedRequest).with(d -> unprocessableEntity(d.t1(), d.t4(), d.t5())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t3()),
-            d -> tuple("Rolled back", d.t2().rejected().idOwner().entityId(), d.t1().t1().request())
+            d -> tuple("Rolled back", d.t2().idExists().log().entityId(), d.t1().t1().request())
         )
-        .when(d -> d.t2().isRejected() && compareRequests(d.t1().t1().request(), d.t2().rejected().idOwner().one(AcceptRequest).t1(), route)).then(
+        .when(d -> d.t2().isIdExists() && compareRequests(d.t1().t1().request(), d.t2().idExists().log().one(AcceptRequest).t1(), route)).then(
             onEvent(RejectDuplicateRequest).to(Rejected)
                 .assembleInput()
                 .trigger(CompleteDuplicatedRequest).with(Tuple2::t2).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t1()),
             d -> tuple(
                 d.t1().t1().request(),
-                d.t2().rejected().idOwner().one(ResponseEventType.outputDataType).t1()
+                d.t2().idExists().log().one(ResponseEventType.outputDataType).t1()
             )
         )
-        .when(d -> d.t2().isRejected()).then(
+        .when(d -> d.t2().isIdExists()).then(
             onEvent(RejectRequest).to(Rejected)
                 .assemble(c -> tuple(
                     c.input().t1(), // reason
@@ -272,7 +272,7 @@ public interface TransitionModels {
                 ))
                 .trigger(CompleteRejectedRequest).with(d -> badRequest(d.t1(), d.t4(), d.t5())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t3()),
-            d -> tuple("Conflict", d.t2().rejected().idOwner().entityId(), d.t1().t1().request())
+            d -> tuple("Conflict", d.t2().idExists().log().entityId(), d.t1().t1().request())
         )
         .otherwise(dispatchTransition(route), d -> d.t1().t1());
   }

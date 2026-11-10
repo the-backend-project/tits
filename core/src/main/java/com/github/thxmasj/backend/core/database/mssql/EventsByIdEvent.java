@@ -15,6 +15,7 @@ import com.github.thxmasj.backend.core.database.Parameter;
 import com.github.thxmasj.backend.core.database.jdbc.JDBCRow;
 import java.sql.ResultSet;
 import java.time.Clock;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -25,6 +26,9 @@ import reactor.core.publisher.Mono;
 
 /// Events of the entity having an id, found by the id event of its id entity
 public class EventsByIdEvent {
+
+  /// The id event and the event log of the entity having the id
+  public record IdEventLog(Event<?> idEvent, EventLog log) {}
 
   private final DataSource dataSource;
   private final Map<UUID, EntityModel> entityModels;
@@ -45,14 +49,14 @@ public class EventsByIdEvent {
     this.sql =
         """
         SET NOCOUNT ON;
-        DECLARE @entityId UNIQUEIDENTIFIER, @entityModelId UNIQUEIDENTIFIER;
+        DECLARE @entityId UNIQUEIDENTIFIER, @entityModelId UNIQUEIDENTIFIER, @eventNumber SMALLINT, @timestamp DATETIME2;
 
-        SELECT TOP(1) @entityId=e.EntityId, @entityModelId=e.EntityModelId
+        SELECT TOP(1) @entityId=e.EntityId, @entityModelId=e.EntityModelId, @eventNumber=ie.EventNumber, @timestamp=ie.Timestamp
         FROM [{schema}].[IdEvent] ie WITH (INDEX(ixType_Data))
           INNER JOIN [{schema}].[Entity] e ON e.EntityId = ie.EntityId
         WHERE ie.Type=:type AND ie.Data=:data;
 
-        SELECT @entityId AS EntityId, @entityModelId AS EntityModelId;
+        SELECT @entityId AS EntityId, @entityModelId AS EntityModelId, @eventNumber AS EventNumber, @timestamp AS Timestamp;
 
         SELECT EventNumber, Type, Timestamp, Data
         FROM [{schema}].[Event] WITH (INDEX(pkEvent))
@@ -62,14 +66,14 @@ public class EventsByIdEvent {
   }
 
   /// Completes empty if no entity has the id
-  public Mono<EventLog> execute(UUID type, byte[] id) {
+  public Mono<IdEventLog> execute(EventType<?, ?> type, byte[] id) {
     return Mono.fromCallable(() -> {
       try (
           var connection = dataSource.getConnection();
           var statement = prepare(
               sql,
               Map.of(
-                  "type", new Parameter<>(UUID.class, type),
+                  "type", new Parameter<>(UUID.class, type.id()),
                   "data", new Parameter<>(byte[].class, id)
               ),
               connection
@@ -83,7 +87,15 @@ public class EventsByIdEvent {
         UUID modelId = rs.getObject("EntityModelId", UUID.class);
         EntityModel model = entityModels.get(modelId);
         if (model == null)
-          throw new IllegalStateException("Unknown entity model " + modelId + " of entity having id of type " + type);
+          throw new IllegalStateException("Unknown entity model " + modelId + " of entity having id of type " + type.name());
+        Event<?> idEvent = new Event<>(
+            entityId,
+            rs.getInt("EventNumber"),
+            type,
+            rs.getObject("Timestamp", LocalDateTime.class),
+            clock,
+            id
+        );
         rs = nextResultSet(statement, statement.getMoreResults());
         var eventMapper = Mappers.eventMapper(eventTypesByEntityModel.get(model), clock);
         List<Event<?>> events = new ArrayList<>();
@@ -94,7 +106,7 @@ public class EventsByIdEvent {
             throw new MappingFailure("EventsByIdEvent: Failed to map row to event for entity model " + model.name(), e);
           }
         }
-        return new EventLog(model, new EntityId.UUID(entityId), Collections.unmodifiableList(events));
+        return new IdEventLog(idEvent, new EventLog(model, new EntityId.UUID(entityId), Collections.unmodifiableList(events)));
       }
     });
   }

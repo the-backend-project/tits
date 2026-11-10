@@ -18,8 +18,10 @@ import com.github.thxmasj.backend.core.database.Client.PrimaryKeyConstraintViola
 import com.github.thxmasj.backend.core.database.Client.Query.Builder;
 import com.github.thxmasj.backend.core.database.Client.UniqueIndexConstraintViolation;
 import com.github.thxmasj.backend.core.database.EventAlreadyExists;
+import com.github.thxmasj.backend.core.database.IdEventAlreadyExists;
 import java.time.Clock;
 import java.time.ZonedDateTime;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Function;
@@ -277,7 +279,7 @@ public class ChangeState {
         ))
         .all()
         .onErrorMap(PrimaryKeyConstraintViolation.class, primaryKeyConstraintViolationMapper(changes))
-        .onErrorMap(UniqueIndexConstraintViolation.class, uniqueIndexConstraintViolationMapper())
+        .onErrorMap(UniqueIndexConstraintViolation.class, uniqueIndexConstraintViolationMapper(changes))
         ;
   }
 
@@ -456,11 +458,18 @@ public class ChangeState {
     };
   }
 
-  /// An id taken concurrently. Processing the event again rejects the id event, as its id is taken.
-  private Function<UniqueIndexConstraintViolation, Throwable> uniqueIndexConstraintViolationMapper() {
-    return indexViolation -> indexViolation.tableName().equals("IdEvent") ?
-        new EventAlreadyExists(indexViolation.duplicateKey()) :
-        new RuntimeException("Failed to map index violation exception: " + indexViolation, indexViolation);
+  /// The duplicate key of an id event is its type and data, e.g. "f721bf54-891b-41a0-aa63-5d3cbde52437, 0x7B22..."
+  private Function<UniqueIndexConstraintViolation, Throwable> uniqueIndexConstraintViolationMapper(List<Change> changes) {
+    return indexViolation -> changes.stream()
+        .filter(_ -> indexViolation.tableName().equals("IdEvent"))
+        .filter(change -> change.entityModel() instanceof IdEntityModel && change.newEvent() != null)
+        .map(Change::newEvent)
+        .filter(event -> indexViolation.duplicateKey().equalsIgnoreCase(
+            event.type().id() + ", 0x" + HexFormat.of().formatHex(event.getMarshalledData())
+        ))
+        .<Throwable>map(event -> new IdEventAlreadyExists(event, indexViolation.duplicateKey()))
+        .findFirst()
+        .orElseGet(() -> new RuntimeException("Failed to map index violation exception: " + indexViolation, indexViolation));
   }
 
 }

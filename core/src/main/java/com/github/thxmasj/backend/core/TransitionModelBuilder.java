@@ -12,6 +12,7 @@ import com.github.thxmasj.backend.core.StateMachine.CircularChange;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.Accepted;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.Completed;
+import com.github.thxmasj.backend.core.StateMachine.ProcessResult.IdExists;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.Pending;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.Rejected;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.UnknownId;
@@ -289,6 +290,7 @@ public class TransitionModelBuilder<I, T, O> {
           case Rejected<?> r -> "Rejected" + (r.isHandled() ? "[Handled]" : "[Unhandled]") + ":" + r.exception().entityModel().name() + "/" + r.exception().entityId().value() + r.eventType().name() + ":" + r.exception().getMessage();
           case Completed<?> c -> "Completed:" + c.choiceResult();
           case UnknownId<?> u -> "UnknownId:" + u.exception().getMessage() + "/ev=" + u.eventType().name();
+          case IdExists<?> i -> "IdExists:" + i.idEvent().typeName() + "/" + i.log().entityModel().name() + "/" + i.log().entityId().value();
           case Pending<?, ?, ?> p -> "Pending:" + p.exception().entityModel() + "/" + p.exception().entityId().value() + ":" + p.exception().getMessage();
         };
       }
@@ -311,6 +313,15 @@ public class TransitionModelBuilder<I, T, O> {
     ) implements ChangeContext<ProcessResult<O>> {
       @Override public String toString() {
         return "Rejected" + (stepOutput.isHandled() ? "[Handled]" : "[Unhandled]") + ":" + stepOutput.exception().getMessage();
+      }
+    }
+
+    record IdExistsChangeContext<O>(
+        ChangeContext<?> previous,
+        ProcessResult.IdExists<O> stepOutput
+    ) implements ChangeContext<ProcessResult<O>> {
+      @Override public String toString() {
+        return "IdExists:" + stepOutput.idEvent().typeName() + "/" + stepOutput.log().entityModel().name() + "/" + stepOutput.log().entityId().value();
       }
     }
 

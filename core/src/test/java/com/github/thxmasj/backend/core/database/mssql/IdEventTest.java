@@ -64,11 +64,9 @@ public class IdEventTest {
                   .assemble(c -> tuple(c.input(), c.log().entityId()))
                   .trigger(AccountNumber).with(Tuple2::t1).on(Ids).identifiedBy(d -> entityId(d.t2(), CreateIfNotExists))
                   .trigger(Alias).with(d -> "alias-" + d.t1().t1()).on(Ids).identifiedBy(d -> entityId(d.t1().t2(), CreateIfNotExists))
-                  .output(d -> {
-                    // Handles the rejection of both ids, as an account number and its alias are taken together
-                    boolean taken = d.t1().t2().isRejected() & d.t2().isRejected();
-                    return taken ? "Duplicate of " + d.t1().t2().rejected().idOwner().entityId().value() : d.t1().t1().t1();
-                  })
+                  .output(d -> d.t1().t2().isIdExists() ?
+                      "Duplicate of " + d.t1().t2().idExists().log().entityId().value() :
+                      d.t1().t1().t1())
           ),
           States.Opened, List.of(onEvent(Touch).toSelf().output())
       ),
@@ -109,12 +107,21 @@ public class IdEventTest {
   }
 
   @Test
-  public void takenIdIsRejectedWithTheLogOfTheEntityHavingIt() {
+  public void existingIdIsTheResultOfTriggeringIt() {
     Event<?> first = machine.onEvent(trigger(Open, Account), "789").blockFirst();
 
     Event<?> second = machine.onEvent(trigger(Open, Account), "789").blockFirst();
 
     assertEquals("Duplicate of " + first.entityId(), second.getUnmarshalledData());
+    // Neither of the existing ids is stored again
+    var eventsByEntityId = new EventsByEntityId(Init.dataSource(), List.of(Ids), schema, Clock.systemUTC());
+    assertEquals(
+        List.of(),
+        eventsByEntityId.execute(Ids, List.of(AccountNumber, Alias), new EntityId.UUID(second.entityId()))
+            .map(EventLog::events)
+            .onErrorReturn(List.of())
+            .block()
+    );
   }
 
   @Test
