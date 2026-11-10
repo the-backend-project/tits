@@ -48,6 +48,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -117,6 +118,7 @@ public class StateMachine implements AutoCloseable {
       Listener listener,
       boolean withResolving
   ) {
+    transitions = withIdEntity(transitions);
     System.out.println("Supported entity models:\n" + transitions.keySet().stream().map(EntityModel::name).collect(joining("\n")));
     this.traversers = transitions.entrySet().stream().collect(toMap(Entry::getKey, e -> new Traverser(e.getValue())));
     List<EntityModel> entityModels = transitions.keySet().stream().toList();
@@ -180,6 +182,18 @@ public class StateMachine implements AutoCloseable {
       workers.add(conditionTriggerLooper);
     }
     System.out.println("Initialized " + getClass().getName() + " on database schema " + schemaName);
+  }
+
+  /// The transitions with those of the id entities, if any id events are triggered
+  private static Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> withIdEntity(
+      Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions
+  ) {
+    var idTransitions = IdEntityModel.Id.transitions(transitions);
+    if (idTransitions.get(EntityModel.Begin).isEmpty())
+      return transitions;
+    var all = new HashMap<>(transitions);
+    all.put(IdEntityModel.Id, idTransitions);
+    return all;
   }
 
   /// Stops the workers resolving deadlines and condition triggers, waits for their ongoing work to complete, and closes
@@ -708,7 +722,7 @@ public class StateMachine implements AutoCloseable {
   }
 
   private <T> Mono<EventLog> eventLog(ByLastIndexed<T> selector, EntityModel entityModel) {
-    Mono<EventLog> log = entityByLastIndexEvent.execute(selector.type().id(), selector.type().outputDataType().marshal(selector.key()))
+    Mono<EventLog> log = entityByLastIndexEvent.execute(selector.type().id(), selector.type().outputDataType().marshal(selector.key()), selector.position())
         .flatMap(entityId -> eventLogByEntityId(entityModel, entityId));
     return switch (selector.creationMode()) {
       case NeverCreate -> log.switchIfEmpty(Mono.error(() -> new EntityGroupNotInitialised(entityModel, selector.type(), selector.key())));

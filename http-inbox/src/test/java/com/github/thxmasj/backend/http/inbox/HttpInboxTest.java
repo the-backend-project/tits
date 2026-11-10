@@ -24,7 +24,6 @@ import static com.github.thxmasj.backend.http.inbox.HttpRequestRoute.ContentRout
 import static com.github.thxmasj.backend.http.inbox.HttpRequestRoute.ContentRoute.newEntity;
 import static com.github.thxmasj.backend.http.inbox.HttpRequestRoute.ContentRoute.parseEntityId;
 import static com.github.thxmasj.backend.http.inbox.HttpRequestRoute.ContentRoute.parseMessageId;
-import static com.github.thxmasj.backend.http.inbox.HttpInbox.MessageIds;
 import static com.github.thxmasj.backend.http.inbox.TransitionModels.requestDispatchingTransitions;
 import static com.github.thxmasj.backend.http.inbox.TransitionModels.requestRoutingTransitions;
 import static com.github.thxmasj.backend.http.outbox.HttpOutboxRequest.Index;
@@ -337,7 +336,6 @@ public class HttpInboxTest {
     transitions.put(entityModel, processTransitions);
     transitions.put(RequestRouting, requestRoutingTransitions(routes));
     transitions.put(RequestDispatching, requestDispatchingTransitions(routes, List.of()));
-    transitions.put(MessageIds, MessageIds.transitions());
     for (var outbox : outboxes) {
       transitions.put(outbox, outbox.transitions());
       if (outbox instanceof AtMostOnce<?, ?> amo) {

@@ -8,7 +8,6 @@ import static com.github.thxmasj.backend.http.inbox.HttpInbox.EntityModels.Reque
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.EntityModels.RequestRouting;
 import static com.github.thxmasj.backend.http.inbox.HttpRequestRoute.ContentRoute.anyContent;
 import static com.github.thxmasj.backend.http.inbox.HttpRequestRoute.ContentRoute.newEntity;
-import static com.github.thxmasj.backend.http.inbox.HttpInbox.MessageIds;
 import static com.github.thxmasj.backend.http.inbox.TransitionModels.requestDispatchingTransitions;
 import static com.github.thxmasj.backend.http.inbox.TransitionModels.requestRoutingTransitions;
 
@@ -84,8 +83,7 @@ public interface HelloWorld {
             States.Greeted, List.of()
         ),
         RequestRouting, requestRoutingTransitions(routes),
-        RequestDispatching, requestDispatchingTransitions(routes, customResponses),
-        MessageIds, MessageIds.transitions()
+        RequestDispatching, requestDispatchingTransitions(routes, customResponses)
     );
   }
 

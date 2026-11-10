@@ -66,7 +66,16 @@ public sealed class EntitySelector permits ById, ByIdFromSession, ByIdEvent, ByL
   }
 
   public static <T> ByLastIndexed<T> lastIndexed(EventType<?, T> type, T key, CreationMode creationMode) {
-    return new ByLastIndexed<>(type, key, creationMode);
+    return new ByLastIndexed<>(type, key, creationMode, 1);
+  }
+
+  /// The entity indexed by the key before the last one, or the last one if it is the only one
+  public static <T> ByLastIndexed<T> secondToLastIndexed(EventType<?, T> type, T key) {
+    return secondToLastIndexed(type, key, NeverCreate);
+  }
+
+  public static <T> ByLastIndexed<T> secondToLastIndexed(EventType<?, T> type, T key, CreationMode creationMode) {
+    return new ByLastIndexed<>(type, key, creationMode, 2);
   }
 
   public enum CreationMode{AlwaysCreate, CreateIfNotExists, NeverCreate}
@@ -150,11 +159,14 @@ public sealed class EntitySelector permits ById, ByIdFromSession, ByIdEvent, ByL
 
     private final EventType<?, T> type;
     private final T key;
+    private final int position;
 
-    public ByLastIndexed(EventType<?, T> type, T key, CreationMode creationMode) {
+    /// @param position 1 for the last entity, 2 for the one before it, and so on
+    public ByLastIndexed(EventType<?, T> type, T key, CreationMode creationMode, int position) {
       super(creationMode, null);
       this.type = type;
       this.key = key;
+      this.position = position;
     }
 
     public EventType<?, T> type() {
@@ -163,6 +175,10 @@ public sealed class EntitySelector permits ById, ByIdFromSession, ByIdEvent, ByL
 
     public T key() {
       return key;
+    }
+
+    public int position() {
+      return position;
     }
   }
 

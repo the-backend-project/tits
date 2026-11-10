@@ -2,6 +2,7 @@ package com.github.thxmasj.backend.http.inbox;
 
 import static com.github.thxmasj.backend.core.BuiltinEventTypes.Rollback;
 import static com.github.thxmasj.backend.core.EntityModel.Begin;
+import static com.github.thxmasj.backend.core.IdEntityModel.Id;
 import static com.github.thxmasj.backend.core.EntitySelector.CreationMode.AlwaysCreate;
 import static com.github.thxmasj.backend.core.EntitySelector.CreationMode.CreateIfNotExists;
 import static com.github.thxmasj.backend.core.EntitySelector.entityId;
@@ -21,7 +22,6 @@ import static com.github.thxmasj.backend.http.inbox.HttpInbox.CompleteRollbackRe
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.EntityModels.RequestDispatching;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.EntityModels.RequestRouting;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.MessageId;
-import static com.github.thxmasj.backend.http.inbox.HttpInbox.MessageIds;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.RejectAsUnroutable;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.RejectDuplicateRequest;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.RejectRequest;
@@ -238,7 +238,7 @@ public interface TransitionModels {
   private static <T, U> TransitionModel<?, ?> dispatchChoiceTransition(ContentRoute<T, U> route) {
     return onEvent(route.dispatchingEventType()).to(Dispatched)
         .assembleInput()
-        .trigger(MessageId).with(RoutedRequest::messageId).on(MessageIds).identifiedBy(sameEntityId())
+        .trigger(MessageId).with(RoutedRequest::messageId).on(Id).identifiedBy(sameEntityId())
         .when(d -> d.t2().isRejected() && d.t2().rejected().idOwner().oneIfExists(AcceptRollbackRequest).isPresent()).then(
             onEvent(RejectRequest).to(Rejected)
                 .assemble(c -> tuple(
@@ -349,7 +349,7 @@ public interface TransitionModels {
         .when(d -> d.t2().isAccepted()).then(
             onEvent(AcceptRollbackRequest).to(RollingBack)
                 .assembleInput()
-                .trigger(RollbackMessageId).with(d -> d.t2().messageId()).on(MessageIds).identifiedBy(sameEntityId())
+                .trigger(RollbackMessageId).with(d -> d.t2().messageId()).on(Id).identifiedBy(sameEntityId())
                 .trigger(CompleteRollbackRequest).with(d -> tuple(d.t1().t1(), d.t1().t3())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t1().t2().request()),
             d -> tuple(
@@ -381,7 +381,7 @@ public interface TransitionModels {
                         .otherwise(
                             onEvent(AcceptRollbackRequest).to(RollingBack)
                                 .assembleInput()
-                                .trigger(MessageId).with(d -> d.t2().messageId()).on(MessageIds).identifiedBy(sameEntityId())
+                                .trigger(MessageId).with(d -> d.t2().messageId()).on(Id).identifiedBy(sameEntityId())
                                 .trigger(CompleteRollbackRequest)
                                 .with(d -> tuple(d.t1().t1(), d.t1().t3()))
                                 .on(RequestDispatching)

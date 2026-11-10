@@ -329,8 +329,9 @@ public class PlantUMLFormatter {
     System.out.println("Formatting transition <" + sourceState + " --> " + targetState + ": " + eventType.name() + ">");
     return String.format(
         "%s %s %s: %s\n",
-        sourceState.equals(Begin) ? "[*]" : stateId(sourceState),
-        sourceState.equals(Begin) ? "-right->" : "-->",
+        // Self transitions in Begin are loops on its state, as the initial pseudo state can't have loops
+        sourceState.equals(Begin) && !targetState.equals(Begin) ? "[*]" : stateId(sourceState),
+        sourceState.equals(Begin) && !targetState.equals(Begin) ? "-right->" : "-->",
         stateId(targetState),
         Stream.of(
             String.format("%s", eventType.name()),
@@ -343,7 +344,18 @@ public class PlantUMLFormatter {
   }
 
   private String state(State state) {
-    if (state.equals(Begin)) return "";
+    if (state.equals(Begin)) {
+      if (transitions.get(Begin).stream().noneMatch(transition -> transition.toState() == null)) return "";
+      // Declared for its self transitions, e.g. the events of id entities
+      return String.format(
+          """
+          state "%s" as %s
+          [*] -right-> %2$s
+          """,
+          state.name(),
+          stateId(state)
+      );
+    }
     return String.format(
         """
         state "%s" as %s
