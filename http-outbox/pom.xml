@@ -19,12 +19,12 @@
   <dependencies>
     <dependency>
       <groupId>com.github.thxmasj</groupId>
-      <artifactId>state-machine</artifactId>
+      <artifactId>core</artifactId>
       <version>${project.version}</version>
     </dependency>
     <dependency>
       <groupId>com.github.thxmasj</groupId>
-      <artifactId>state-machine</artifactId>
+      <artifactId>core</artifactId>
       <version>${project.version}</version>
       <type>test-jar</type>
       <scope>test</scope>
