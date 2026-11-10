@@ -12,8 +12,9 @@ import static java.util.stream.Collectors.toMap;
 
 import com.github.thxmasj.backend.core.EntitySelector.ById;
 import com.github.thxmasj.backend.core.EntitySelector.ByIdFromSession;
-import com.github.thxmasj.backend.core.EntitySelector.ByLastInIdGroup;
-import com.github.thxmasj.backend.core.EntitySelector.BySecondaryId;
+import com.github.thxmasj.backend.core.EntitySelector.ByIdEvent;
+import com.github.thxmasj.backend.core.EntitySelector.ByLastIndexed;
+import com.github.thxmasj.backend.core.EntitySelector.BySameEntityId;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.Accepted;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.Completed;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.Pending;
@@ -30,7 +31,6 @@ import com.github.thxmasj.backend.core.Tuples.Tuple3;
 import com.github.thxmasj.backend.core.database.EntityGroupNotInitialised;
 import com.github.thxmasj.backend.core.database.EventAlreadyExists;
 import com.github.thxmasj.backend.core.database.MappingFailure;
-import com.github.thxmasj.backend.core.database.SecondaryIdAlreadyExists;
 import com.github.thxmasj.backend.core.database.UnknownEntity;
 import com.github.thxmasj.backend.core.database.jdbc.JDBCClient;
 import com.github.thxmasj.backend.core.database.mssql.ChangeState;
@@ -38,10 +38,9 @@ import com.github.thxmasj.backend.core.database.mssql.ChangeState.Change;
 import com.github.thxmasj.backend.core.database.mssql.ConditionTriggers;
 import com.github.thxmasj.backend.core.database.mssql.CreateSchema;
 import com.github.thxmasj.backend.core.database.mssql.DeleteExpiredDeadline;
+import com.github.thxmasj.backend.core.database.mssql.EntityByIdEvent;
+import com.github.thxmasj.backend.core.database.mssql.EntityByLastIndexEvent;
 import com.github.thxmasj.backend.core.database.mssql.EventsByEntityId;
-import com.github.thxmasj.backend.core.database.mssql.EventsByLastEntity;
-import com.github.thxmasj.backend.core.database.mssql.EventsByLookupId;
-import com.github.thxmasj.backend.core.database.mssql.LastSecondaryId;
 import com.github.thxmasj.backend.core.database.mssql.NextDeadline;
 import jakarta.annotation.Nullable;
 import jakarta.validation.constraints.NotNull;
@@ -77,9 +76,8 @@ public class StateMachine implements AutoCloseable {
   private final DataSource dataSource;
   private final ChangeState changeState;
   private final EventsByEntityId eventsByEntityId;
-  private final EventsByLookupId eventsByLookupId;
-  private final EventsByLastEntity eventsByLastEntity;
-  private final LastSecondaryId lastSecondaryId;
+  private final EntityByIdEvent entityByIdEvent;
+  private final EntityByLastIndexEvent entityByLastIndexEvent;
   private final NextDeadline nextDeadline;
   private final DeleteExpiredDeadline deleteExpiredDeadline;
   private final ConditionTriggers conditionTriggers;
@@ -153,9 +151,8 @@ public class StateMachine implements AutoCloseable {
     var jdbcClient = new JDBCClient(dataSource);
     this.changeState = new ChangeState(jdbcClient, schemaName, clock);
     this.eventsByEntityId = new EventsByEntityId(dataSource, entityModels, schemaName, clock);
-    this.eventsByLookupId = new EventsByLookupId(dataSource, schemaName, clock);
-    this.eventsByLastEntity = new EventsByLastEntity(dataSource, schemaName, clock);
-    this.lastSecondaryId = new LastSecondaryId(dataSource, schemaName);
+    this.entityByIdEvent = new EntityByIdEvent(dataSource, entityModels, schemaName);
+    this.entityByLastIndexEvent = new EntityByLastIndexEvent(dataSource, schemaName);
     this.nextDeadline = new NextDeadline(jdbcClient, eventTypes, clock, entityModels, schemaName);
     this.deleteExpiredDeadline = new DeleteExpiredDeadline(jdbcClient, schemaName);
     this.conditionTriggers = new ConditionTriggers(jdbcClient, eventTypesByEntityModel, clock, schemaName);
@@ -257,44 +254,6 @@ public class StateMachine implements AutoCloseable {
         .switchIfEmpty(Mono.just(ResolverStatus.Empty));
   }
 
-  public sealed interface IdentityResult<T> permits IdentityResult.Accepted, IdentityResult.Rejected {
-
-    record Accepted<T>(SecondaryId<T> id) implements IdentityResult<T> {
-      public Accepted<T> accepted() {return this;}
-    }
-
-    record Rejected<T>(SecondaryId<T> id, EventLog log) implements IdentityResult<T> {
-      public Rejected<T> rejected() {return this;}
-    }
-
-    static <T> Accepted<T> accepted(SecondaryId<T> id) {
-      return new Accepted<>(id);
-    }
-
-    static <T> Rejected<T> rejected(SecondaryId<T> id, EventLog log) {
-      return new Rejected<>(id, log);
-    }
-
-    SecondaryId<T> id();
-
-    default boolean isAccepted() {
-      return this instanceof Accepted;
-    }
-
-    default Accepted<T> accepted() {
-      throw new IllegalStateException("Result is " + this);
-    }
-
-    default boolean isRejected() {
-      return this instanceof Rejected;
-    }
-
-    default Rejected<T> rejected() {
-      throw new IllegalStateException("Result is " + this);
-    }
-
-  }
-
   public sealed interface ProcessResult<T> permits Accepted, Completed, Pending, Rejected, UnknownId {
 
     record Completed<T>(ProcessResult<?> choiceResult, EntityId entityId, int eventNumber, EntityModel entityModel) implements ProcessResult<T> {
@@ -317,6 +276,11 @@ public class StateMachine implements AutoCloseable {
       }
 
       public Rejected<T> rejected() {return this;}
+
+      /// The log of the entity having the id, if an id event is rejected as its id is taken
+      public EventLog idOwner() {
+        return exception instanceof IdTaken t ? t.owner() : null;
+      }
 
       @Override
       public boolean isRejected() {
@@ -341,12 +305,6 @@ public class StateMachine implements AutoCloseable {
         return this;
       }
     }
-
-    record Entity(
-        EntityId id,
-        List<SecondaryId<?>> secondaryIds,
-        EntityModel model
-    ) {}
 
     static <T> Completed<T> completed(ProcessResult<?> choiceResult, EntityId entityId, int eventNumber, EntityModel entityModel) {
       return new Completed<>(choiceResult, entityId, eventNumber, entityModel);
@@ -418,12 +376,6 @@ public class StateMachine implements AutoCloseable {
     return eventsByEntityId.execute(entityModel, eventTypesByEntityModel.get(entityModel), entityId);
   }
 
-  public <T> Mono<SecondaryId<T>> next(SecondaryIdModel<T> idModel, Object idGroup) {
-    return lastSecondaryId.execute(idModel, idGroup)
-        .map(id -> id.model().group().next(id))
-        .switchIfEmpty(Mono.just(idModel.group().initial(idGroup)));
-  }
-
   public <O> Flux<Event<?>> onEvent(EventTrigger<Void, Void, O> eventTrigger) {
     return onEvent(UUID.randomUUID().toString(), eventTrigger);
   }
@@ -451,7 +403,7 @@ public class StateMachine implements AutoCloseable {
     Many<Event<?>> responseSink = Sinks.many().unicast().onBackpressureBuffer();
     return eventLog(eventTrigger, input, null)
         .flatMapMany(log ->
-                onEvent(correlationId, eventTrigger.eventSpec().eventType(), adaptedInput, log, null, List.of(), eventTrigger.triggerType(), eventTrigger.triggerId(), triggerEvent)
+                onEvent(correlationId, eventTrigger.eventSpec().eventType(), adaptedInput, log, null, eventTrigger.triggerType(), eventTrigger.triggerId(), triggerEvent)
                     .contextWrite(ctx -> ctx.put("RS/" + log.entityId().value(), responseSink))
                     .thenMany(responseSink.asFlux())
                     .retryWhen(RetrySpec.fixedDelay(3, Duration.ofMillis(500))
@@ -474,7 +426,7 @@ public class StateMachine implements AutoCloseable {
       EventLog eventLog,
       ChangeContext<?> requestChangeContext
   ) {
-    return onEvent(correlationId, inputEvent.eventType(), inputEvent.data(), eventLog, requestChangeContext, List.of());
+    return onEvent(correlationId, inputEvent.eventType(), inputEvent.data(), eventLog, requestChangeContext);
   }
 
   private List<Change> changes(@NotNull ChangeContext<?> tail) {
@@ -490,8 +442,6 @@ public class StateMachine implements AutoCloseable {
         case ChangeContext.AssembledChangeContext<?> _ -> {}
         case ChangeContext.ChoiceChangeContext<?> _ -> {}
         case ChangeContext.InitialChangeContext<?> _ -> {}
-        case ChangeContext.IdentityChangeContext<?> icc when icc.stepOutput().isAccepted() -> changes.add(Change.fromIdentifier(icc.stepOutput().accepted().id(), icc.entityModel(), icc.entityId()));
-        case ChangeContext.IdentityChangeContext<?> _ -> {}
         case ChangeContext.PendingTriggerChangeContext<?, ?> _ -> {}
         case ChangeContext.ScheduledChangeContext<?> _ -> {}
         case ChangeContext.TriggerChangeContext<?, ?> _ -> {}
@@ -526,12 +476,12 @@ public class StateMachine implements AutoCloseable {
 
   private <I> Mono<ProcessResult<?>> onEvent(
       String correlationId,
-      InputEvent<I> inputEvent,
+      EventType<I, ?> eventType,
+      I input,
       EventLog eventLog,
-      ChangeContext<?> stage1,
-      List<IdentityResult<?>> identityResults
+      ChangeContext<?> stage1
   ) {
-    return onEvent(correlationId, inputEvent.eventType(), inputEvent.data(), eventLog, stage1, identityResults);
+    return onEvent(correlationId, eventType, input, eventLog, stage1, null, null, null);
   }
 
   private <I> Mono<ProcessResult<?>> onEvent(
@@ -540,18 +490,6 @@ public class StateMachine implements AutoCloseable {
       I input,
       EventLog eventLog,
       ChangeContext<?> stage1,
-      List<IdentityResult<?>> identityResults
-  ) {
-    return onEvent(correlationId, eventType, input, eventLog, stage1, identityResults, null, null, null);
-  }
-
-  private <I> Mono<ProcessResult<?>> onEvent(
-      String correlationId,
-      EventType<I, ?> eventType,
-      I input,
-      EventLog eventLog,
-      ChangeContext<?> stage1,
-      List<IdentityResult<?>> identityResults,
       TriggerType triggerType,
       UUID triggerId,
       @Nullable EventReference triggerEvent
@@ -582,7 +520,6 @@ public class StateMachine implements AutoCloseable {
                 correlationId,
                 input,
                 this,
-                identityResults,
                 triggerType,
                 triggerId
             )
@@ -609,8 +546,7 @@ public class StateMachine implements AutoCloseable {
                           eventType,
                           r.exception.getMessage()
                       ),
-                      this,
-                      List.of()
+                      this
                   )
               )
               .flatMap(rejectChanges -> rejectChanges.stepOutput().isAccepted() ?
@@ -621,22 +557,7 @@ public class StateMachine implements AutoCloseable {
               );
           case ProcessResult<?> r -> Mono.error(new RuntimeException("onEvent: " + r));
         })
-        .onErrorResume(
-            SecondaryIdAlreadyExists.class,
-            e -> eventsByLookupId.execute(e.change().entityModel(), eventTypesByEntityModel.get(e.change().entityModel()), e.secondaryId())
-                .map(originalLog -> IdentityResult.rejected(e.secondaryId(), originalLog))
-                .flatMap(identityResult -> onEvent(
-                    correlationId,
-                    eventType,
-                    input,
-                    eventLog,
-                    stage1,
-                    List.of(identityResult),
-                    triggerType,
-                    triggerId,
-                    triggerEvent
-                ))
-        );
+        ;
   }
 
   public static String chainToString(ChangeContext<?> tail) {
@@ -745,46 +666,62 @@ public class StateMachine implements AutoCloseable {
       case EntitySelector.ByIdFromSession _ -> {
         EventLog log = logFromChangeContext(changeContext, entityModel);
         EntityId id = log.entityId();
-        log = logFromNestedChanges(id, changeContext);
+        log = logFromNestedChanges(id, entityModel, changeContext);
         if (log == null) yield eventLogByEntityId(entityModel, id);
         else yield Mono.just(log);
       }
       case ById s -> {
         EntityId entityId = s.id();
         yield switch (s.creationMode()) {
-          case NeverCreate -> Mono.justOrEmpty(logFromNestedChanges(entityId, changeContext))
+          case NeverCreate -> Mono.justOrEmpty(logFromNestedChanges(entityId, entityModel, changeContext))
               .switchIfEmpty(eventsByEntityId.execute(entityModel, eventTypesByEntityModel.get(entityModel), entityId));
-          case CreateIfNotExists -> Mono.justOrEmpty(logFromNestedChanges(entityId, changeContext))
+          case CreateIfNotExists -> Mono.justOrEmpty(logFromNestedChanges(entityId, entityModel, changeContext))
               .switchIfEmpty(eventsByEntityId.execute(entityModel, eventTypesByEntityModel.get(entityModel), entityId))
               .onErrorResume(UnknownEntity.class, _ -> Mono.just(emptyEventLog(entityModel, entityId)));
           case AlwaysCreate -> Mono.just(emptyEventLog(entityModel, s.id()));
         };
       }
-      case BySecondaryId<?> selector -> switch (selector.creationMode()) {
-        case NeverCreate -> eventsByLookupId.execute(entityModel, eventTypesByEntityModel.get(entityModel), secondaryId(selector))
-            .onErrorResume(
-                UnknownEntity.class,
-                e -> selector.fallback() != null ? eventLog(selector.fallback(), entityModel, changeContext)
-                    : Mono.error(e)
-            );
-        case CreateIfNotExists -> eventsByLookupId.execute(entityModel, eventTypesByEntityModel.get(entityModel), secondaryId(selector))
-            .onErrorResume(UnknownEntity.class, _ -> Mono.just(emptyEventLog(entityModel)));
-        case AlwaysCreate -> Mono.just(emptyEventLog(entityModel));
-      };
-      case ByLastInIdGroup<?> s -> switch (s.creationMode()) {
-        case AlwaysCreate -> throw new IllegalStateException("Unexpected value: " + s.creationMode());
-        case CreateIfNotExists ->
-            eventsByLastEntity.execute(entityModel, eventTypesByEntityModel.get(entityModel), s.model(), s.group(), s.lastPosition())
-                .onErrorResume(EntityGroupNotInitialised.class, _ -> Mono.just(emptyEventLog(entityModel)));
-        case NeverCreate ->
-            eventsByLastEntity.execute(entityModel, eventTypesByEntityModel.get(entityModel), s.model(), s.group(), s.lastPosition());
-      };
+      case BySameEntityId _ -> {
+        EntityId entityId = changeContext.initialChangeContext().log().entityId();
+        yield Mono.justOrEmpty(logFromNestedChanges(entityId, entityModel, changeContext))
+            .switchIfEmpty(eventLogByEntityId(entityModel, entityId))
+            .onErrorResume(UnknownEntity.class, _ -> Mono.just(emptyEventLog(entityModel, entityId)));
+      }
+      case ByIdEvent<?> s -> eventLog(s, entityModel, changeContext);
+      case ByLastIndexed<?> s -> eventLog(s, entityModel);
       case EntitySelector s -> throw new IllegalStateException("Unexpected value: " + s);
     };
   }
 
-  private <T> SecondaryId<T> secondaryId(BySecondaryId<T> selector) {
-    return new SecondaryId<>(selector.model(), selector.value());
+  private <T> Mono<EventLog> eventLog(ByIdEvent<T> selector, EntityModel entityModel, ChangeContext<?> changeContext) {
+    Mono<EventLog> log = entityByIdEvent.execute(selector.type().id(), selector.type().outputDataType().marshal(selector.id()))
+        .filter(entity -> entity.model().equals(entityModel))
+        .flatMap(entity -> eventLogByEntityId(entity.model(), entity.id()));
+    return switch (selector.creationMode()) {
+      case NeverCreate -> log.switchIfEmpty(Mono.defer(() -> selector.fallback() != null ?
+          eventLog(selector.fallback(), entityModel, changeContext) :
+          Mono.error(new UnknownEntity(entityModel, selector.type(), selector.id()))
+      ));
+      case CreateIfNotExists -> log.switchIfEmpty(Mono.fromSupplier(() -> emptyEventLog(entityModel)));
+      case AlwaysCreate -> Mono.just(emptyEventLog(entityModel));
+    };
+  }
+
+  private <T> Mono<EventLog> eventLog(ByLastIndexed<T> selector, EntityModel entityModel) {
+    Mono<EventLog> log = entityByLastIndexEvent.execute(selector.type().id(), selector.type().outputDataType().marshal(selector.key()))
+        .flatMap(entityId -> eventLogByEntityId(entityModel, entityId));
+    return switch (selector.creationMode()) {
+      case NeverCreate -> log.switchIfEmpty(Mono.error(() -> new EntityGroupNotInitialised(entityModel, selector.type(), selector.key())));
+      case CreateIfNotExists -> log.switchIfEmpty(Mono.fromSupplier(() -> emptyEventLog(entityModel)));
+      case AlwaysCreate -> throw new IllegalStateException("Unexpected value: " + selector.creationMode());
+    };
+  }
+
+  /// Rejects an id event if its id is already taken
+  private <I> Mono<Void> rejectTakenId(EventType<I, ?> type, I id) {
+    return entityByIdEvent.execute(type.id(), type.inputDataType().marshal(id))
+        .flatMap(entity -> eventLogByEntityId(entity.model(), entity.id()))
+        .flatMap(owner -> Mono.error(new IdTaken(type, id, owner)));
   }
 
   private EventLog logFromChangeContext(ChangeContext<?> context, EntityModel entityModel) {
@@ -805,11 +742,13 @@ public class StateMachine implements AutoCloseable {
     throw new NoSuchElementException(entityModel.name() + " not found in change context");
   }
 
-  private EventLog logFromNestedChanges(EntityId entityId, ChangeContext<?> changeContext) {
+  /// An id entity or index entity has the same entity id as its entity, so the entity model is matched too
+  private EventLog logFromNestedChanges(EntityId entityId, EntityModel entityModel, ChangeContext<?> changeContext) {
     for (var c = changeContext; c != null; c = c.previous()) {
       if (c instanceof OutputChangeContext<?>(TransitionModelBuilder.ChangeContext<?> previous, ProcessResult<?> stepOutput)
-          && stepOutput instanceof Accepted<?>(Event<?> event, _, _, _)
+          && stepOutput instanceof Accepted<?>(Event<?> event, EntityModel model, _, _)
           && event.entityId().equals(entityId.value())
+          && model.equals(entityModel)
           && !(previous instanceof ChoiceChangeContext)) {
         return c.initialChangeContext().log().withNewEvent(event);
       }
@@ -848,6 +787,7 @@ public class StateMachine implements AutoCloseable {
               }
             }
             case ById s -> s.id();
+            case BySameEntityId _ -> tail.initialChangeContext().log().entityId();
             default -> null;
           };
           if (!skipCircularCheck && entityId != null) {
@@ -876,6 +816,10 @@ public class StateMachine implements AutoCloseable {
                 // Rethrow the exception on exhaustion so it can be handled downstream
                 .onRetryExhaustedThrow((_, signal) -> signal.failure())
             )
+            .delayUntil(_ -> eventTrigger.entityModel() instanceof IdEntityModel ?
+                rejectTakenId(eventTrigger.eventSpec().eventType(), adaptedData) :
+                Mono.empty()
+            )
             .flatMap(tuple -> tuple.t2().calculate(
                 new InitialChangeContext<>(
                     null,
@@ -888,8 +832,7 @@ public class StateMachine implements AutoCloseable {
                     tail.initialChangeContext().timestamp(),
                     tail.initialChangeContext().correlationId(),
                     adaptedData,
-                    tail.initialChangeContext().stateMachine(),
-                    List.of()
+                    tail.initialChangeContext().stateMachine()
                 )
             ))
     );
@@ -917,6 +860,27 @@ public class StateMachine implements AutoCloseable {
 
     public EntityId entityId() {
       return entityId;
+    }
+  }
+
+  /// An id event rejected as its id is already taken
+  public static class IdTaken extends RejectedEvent {
+
+    private final EventLog owner;
+
+    public IdTaken(EventType<?, ?> eventType, Object id, EventLog owner) {
+      super(
+          String.format("[%s] %s is already taken by [%s]/%s", eventType.name(), id, owner.entityModel().name(), owner.entityId().value()),
+          eventType,
+          owner.entityModel(),
+          owner.entityId()
+      );
+      this.owner = owner;
+    }
+
+    /// The log of the entity having the id
+    public EventLog owner() {
+      return owner;
     }
   }
 
@@ -968,6 +932,14 @@ public class StateMachine implements AutoCloseable {
       this.currentState = currentState;
     }
 
+    protected RejectedEvent(String message, EventType<?, ?> eventType, EntityModel entityModel, EntityId entityId) {
+      super(message);
+      this.eventType = eventType;
+      this.entityModel = entityModel;
+      this.entityId = entityId;
+      this.currentState = null;
+    }
+
     public EventType<?, ?> eventType() {
       return eventType;
     }
@@ -996,8 +968,7 @@ public class StateMachine implements AutoCloseable {
         .map(change -> new Listener.Change(
                 new Listener.Change.Entity(
                     change.entityModel().name(),
-                    change.entityId().value(),
-                    change.newSecondaryIds().stream().map(id -> id.model().name() + ":" + id.data()).toList()
+                    change.entityId().value()
                 ),
                 change.delayedEvent() != null ? change.delayedEvent().after() : null,
                 change.newEvent() != null ? new Listener.Change.Event(
@@ -1007,8 +978,7 @@ public class StateMachine implements AutoCloseable {
                     change.delayedEvent().eventNumber(),
                     change.delayedEvent().type().name(),
                     change.delayedEvent().after()
-                ) : null),
-                change.newSecondaryIds().stream().map(id -> id.model().name() + ":" + id.data()).toList()
+                ) : null)
             )
         )
         .toList();
@@ -1076,8 +1046,7 @@ public class StateMachine implements AutoCloseable {
                 correlationId,
                 triggerResult,
                 actionTrigger.eventLog(),
-                stage1,
-                List.of()
+                stage1
             )
             .doOnError(e -> System.out.println("onEvent ERROR for " + triggerResult.eventType().name() + " on " + actionTrigger.eventLog().entityModel().name() + ":" + actionTrigger.eventLog().entityId().value() + ": " + e))
             .retryWhen(RetrySpec.fixedDelay(3, Duration.ofMillis(500))

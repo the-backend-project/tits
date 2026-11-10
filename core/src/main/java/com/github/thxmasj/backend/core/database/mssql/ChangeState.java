@@ -1,6 +1,5 @@
 package com.github.thxmasj.backend.core.database.mssql;
 
-import static com.github.thxmasj.backend.core.Tuples.tuple;
 import static java.util.stream.Collectors.joining;
 
 import com.github.thxmasj.backend.core.BasicEventType;
@@ -10,9 +9,8 @@ import com.github.thxmasj.backend.core.DelayedEvent;
 import com.github.thxmasj.backend.core.EntityId;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.Event;
+import com.github.thxmasj.backend.core.IdEntityModel;
 import com.github.thxmasj.backend.core.IndexEntityModel;
-import com.github.thxmasj.backend.core.SecondaryId;
-import com.github.thxmasj.backend.core.SecondaryIdModel.Group;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult;
 import com.github.thxmasj.backend.core.TriggerType;
 import com.github.thxmasj.backend.core.database.Client;
@@ -20,10 +18,8 @@ import com.github.thxmasj.backend.core.database.Client.PrimaryKeyConstraintViola
 import com.github.thxmasj.backend.core.database.Client.Query.Builder;
 import com.github.thxmasj.backend.core.database.Client.UniqueIndexConstraintViolation;
 import com.github.thxmasj.backend.core.database.EventAlreadyExists;
-import com.github.thxmasj.backend.core.database.SecondaryIdAlreadyExists;
 import java.time.Clock;
 import java.time.ZonedDateTime;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Function;
@@ -54,13 +50,6 @@ public class ChangeState {
           .bind("type", event.type().id())
           .bindNullable("data", byte[].class, event.getMarshalledData());
     }
-    for (SecondaryId<?> secondaryId : change.newSecondaryIds()) {
-      String prefix = "secondaryId" + secondaryId.model().name();
-      spec.bind(prefix + "Type", secondaryId.model().id());
-      spec.bind(prefix + "Data", secondaryId.marshalledData());
-      if (secondaryId.model().group() != null)
-        spec.bind(prefix + "Group", groupKey(secondaryId));
-    }
     if (change.triggerType() != null) {
       spec.bind("triggerId", change.triggerId());
     }
@@ -90,10 +79,6 @@ public class ChangeState {
     }
   }
 
-  private static <T> byte[] groupKey(SecondaryId<T> secondaryId) {
-    return Group.key(secondaryId.model().group().group(secondaryId.data()));
-  }
-
   private static <T> byte[] marshal(DelayedEvent<T> delayedEvent) {
     return delayedEvent.type().inputDataType().marshal(delayedEvent.data());
   }
@@ -109,8 +94,6 @@ public class ChangeState {
     EntityId entityId();
     
     Event<?> newEvent();
-
-    List<SecondaryId<?>> newSecondaryIds();
 
     DelayedEvent<?> delayedEvent();
 
@@ -148,11 +131,6 @@ public class ChangeState {
         @Override
         public Event<?> newEvent() {
           return null;
-        }
-
-        @Override
-        public List<SecondaryId<?>> newSecondaryIds() {
-          return List.of();
         }
 
         @Override
@@ -203,11 +181,6 @@ public class ChangeState {
         }
 
         @Override
-        public List<SecondaryId<?>> newSecondaryIds() {
-          return List.of();
-        }
-
-        @Override
         public DelayedEvent<?> delayedEvent() {
           return null;
         }
@@ -249,11 +222,6 @@ public class ChangeState {
         }
 
         @Override
-        public List<SecondaryId<?>> newSecondaryIds() {
-          return List.of();
-        }
-
-        @Override
         public DelayedEvent<?> delayedEvent() {
           return delayedEvent;
         }
@@ -267,43 +235,6 @@ public class ChangeState {
               " after " + delayedEvent.after();
         }
 
-      };
-    }
-
-    static Change fromIdentifier(SecondaryId<?> id, EntityModel entityModel, EntityId entityId) {
-      return new Change() {
-        @Override
-        public EntityModel entityModel() {
-          return entityModel;
-        }
-
-        @Override
-        public EntityId entityId() {
-          return entityId;
-        }
-
-        @Override
-        public Event<?> newEvent() {
-          return null;
-        }
-
-        @Override
-        public List<SecondaryId<?>> newSecondaryIds() {
-          return List.of(id);
-        }
-
-        @Override
-        public DelayedEvent<?> delayedEvent() {
-          return null;
-        }
-
-        @Override
-        public String toString() {
-          return entityModel().name() + ":" +
-              entityId().value() + ":id:" +
-              id.model().name() + ":" +
-              id.data();
-        }
       };
     }
 
@@ -324,7 +255,6 @@ public class ChangeState {
             "p" + i + "_",
             changes.get(i).entityModel(),
             changes.get(i).newEvent(),
-            changes.get(i).newSecondaryIds(),
             changes.get(i).delayedEvent(),
             changes.get(i).conditionTrigger(),
             changes.get(i).triggerType()
@@ -347,7 +277,7 @@ public class ChangeState {
         ))
         .all()
         .onErrorMap(PrimaryKeyConstraintViolation.class, primaryKeyConstraintViolationMapper(changes))
-        .onErrorMap(UniqueIndexConstraintViolation.class, uniqueIndexConstraintViolationMapper(changes))
+        .onErrorMap(UniqueIndexConstraintViolation.class, uniqueIndexConstraintViolationMapper())
         ;
   }
 
@@ -356,7 +286,6 @@ public class ChangeState {
       String parameterPrefix,
       EntityModel entityModel,
       Event<?> event,
-      List<SecondaryId<?>> secondaryIds,
       DelayedEvent<?> delayedEvent,
       ConditionTrigger<?> conditionTrigger,
       TriggerType triggerType
@@ -366,37 +295,10 @@ public class ChangeState {
         DECLARE @entityId{changeIndex} UNIQUEIDENTIFIER
         SELECT @entityId{changeIndex}=:entityId
         """.replace("{changeIndex}", String.valueOf(changeIndex));
-    //
-    // Secondary id, as an event of the id entity sharing the entity id, and an index event on the id entity for its
-    // group
-    //
-    for (SecondaryId<?> secondaryId : secondaryIds) {
+    if (event != null && (entityModel instanceof IndexEntityModel || entityModel instanceof IdEntityModel)) {
       sql +=
           """
-          INSERT INTO [{schema}].[IdEvent] (EntityId, EventNumber, Type, Timestamp, Data)
-          SELECT @entityId{changeIndex}, ISNULL(MAX(EventNumber), 0) + 1, :{prefix}Type, :timestamp, :{prefix}Data
-          FROM [{schema}].[IdEvent] WITH (UPDLOCK, HOLDLOCK)
-          WHERE EntityId=@entityId{changeIndex};
-          """.replace("{schema}", schema)
-              .replace("{changeIndex}", String.valueOf(changeIndex))
-              .replace("{prefix}", "secondaryId" + secondaryId.model().name());
-      if (secondaryId.model().group() != null) {
-        sql +=
-            """
-            INSERT INTO [{schema}].[IndexEvent] (EntityId, EventNumber, Type, Timestamp, Data)
-            SELECT @entityId{changeIndex}, ISNULL(MAX(EventNumber), 0) + 1, :{prefix}Type, :timestamp, :{prefix}Group
-            FROM [{schema}].[IndexEvent] WITH (UPDLOCK, HOLDLOCK)
-            WHERE EntityId=@entityId{changeIndex};
-            """.replace("{schema}", schema)
-                .replace("{changeIndex}", String.valueOf(changeIndex))
-                .replace("{prefix}", "secondaryId" + secondaryId.model().name());
-      }
-    }
-
-    if (event != null && entityModel instanceof IndexEntityModel) {
-      sql +=
-          """
-          INSERT INTO [{schema}].[IndexEvent] (
+          INSERT INTO [{schema}].[{table}] (
             EntityId,
             EventNumber,
             Type,
@@ -407,6 +309,7 @@ public class ChangeState {
             :eventNumber,:type,:timestamp,:data
           )
           """.replace("{schema}", schema)
+              .replace("{table}", entityModel instanceof IdEntityModel ? "IdEvent" : "IndexEvent")
               .replace("{changeIndex}", String.valueOf(changeIndex));
     } else if (event != null) {
       if (event.eventNumber() == 1) {
@@ -553,22 +456,11 @@ public class ChangeState {
     };
   }
 
-  /// The duplicate key of an id event is its type and data, e.g. "f721bf54-891b-41a0-aa63-5d3cbde52437, 0x7B22..."
-  private Function<UniqueIndexConstraintViolation, Throwable> uniqueIndexConstraintViolationMapper(List<Change> changes) {
-    return indexViolation -> changes.stream()
-        .flatMap(change -> change.newSecondaryIds().stream().map(secondaryId -> tuple(change, secondaryId)))
-        .filter(_ -> indexViolation.tableName().equals("IdEvent"))
-        .filter(tuple -> indexViolation.duplicateKey().equalsIgnoreCase(
-            tuple.t2().model().id() + ", 0x" + HexFormat.of().formatHex(tuple.t2().marshalledData())
-        ))
-        .map(tuple -> new SecondaryIdAlreadyExists(
-            tuple.t1(),
-            tuple.t2(),
-            indexViolation.duplicateKey(),
-            indexViolation.tableName()
-        ))
-        .findFirst()
-        .orElseThrow(() -> new RuntimeException("Failed to map index violation exception: " + indexViolation, indexViolation));
+  /// An id taken concurrently. Processing the event again rejects the id event, as its id is taken.
+  private Function<UniqueIndexConstraintViolation, Throwable> uniqueIndexConstraintViolationMapper() {
+    return indexViolation -> indexViolation.tableName().equals("IdEvent") ?
+        new EventAlreadyExists(indexViolation.duplicateKey()) :
+        new RuntimeException("Failed to map index violation exception: " + indexViolation, indexViolation);
   }
 
 }

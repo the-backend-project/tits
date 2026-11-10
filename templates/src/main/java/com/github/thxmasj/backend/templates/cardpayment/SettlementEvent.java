@@ -11,11 +11,11 @@ public interface SettlementEvent {
 
   EventType<Long, Long> MerchantCredit =
       BasicEventType.of("MerchantCredit", UUID.fromString("0a238324-c3d9-4297-a695-5cbdbede3fd4"), DataType.json(Long.class));
-  /// Opens a settlement, recording the batch numbers assigned to it
-  EventType<AcquirerBatchNumber, Opened> Open =
-      BasicEventType.of("Open", UUID.fromString("c7d16033-fdc0-499a-b92c-18e07caf93f2"), DataType.json(AcquirerBatchNumber.class), DataType.json(Opened.class));
-  /// Opens the first settlement of a merchant, recording the batch number assigned to it. The acquirer's batch number
-  /// is not known until the first response.
+  /// Opens a settlement with the batch numbers following the ones of the previous settlement
+  EventType<Opened, Opened> Open =
+      BasicEventType.of("Open", UUID.fromString("c7d16033-fdc0-499a-b92c-18e07caf93f2"), DataType.json(Opened.class));
+  /// Opens the first settlement of a merchant, recording its batch number. The acquirer's batch number is not known
+  /// until the first response.
   EventType<MerchantId, BatchNumber> OpenInitial =
       BasicEventType.of("OpenInitial", UUID.fromString("5b0c7f0e-0f6b-4d0e-9a0f-3f2c1c6e8d21"), DataType.json(MerchantId.class), DataType.json(BatchNumber.class));
   /// Assigns the acquirer's batch number to a settlement which is awaiting it, recording it. Has no effect in other

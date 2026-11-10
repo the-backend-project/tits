@@ -1,16 +1,18 @@
 package com.github.thxmasj.backend.core;
 
 import static com.github.thxmasj.backend.core.EntitySelector.CreationMode.AlwaysCreate;
+import static com.github.thxmasj.backend.core.EntitySelector.CreationMode.CreateIfNotExists;
 import static com.github.thxmasj.backend.core.EntitySelector.CreationMode.NeverCreate;
 
 import com.github.thxmasj.backend.core.EntitySelector.ById;
 import com.github.thxmasj.backend.core.EntitySelector.ByIdFromSession;
-import com.github.thxmasj.backend.core.EntitySelector.ByLastInIdGroup;
-import com.github.thxmasj.backend.core.EntitySelector.BySecondaryId;
+import com.github.thxmasj.backend.core.EntitySelector.ByIdEvent;
+import com.github.thxmasj.backend.core.EntitySelector.ByLastIndexed;
+import com.github.thxmasj.backend.core.EntitySelector.BySameEntityId;
 import java.util.UUID;
 import java.util.function.Function;
 
-public sealed class EntitySelector permits ById, ByIdFromSession, ByLastInIdGroup, BySecondaryId {
+public sealed class EntitySelector permits ById, ByIdFromSession, ByIdEvent, ByLastIndexed, BySameEntityId {
 
   public static ById entityId(EntityId entityId) {
     return new ById(entityId, NeverCreate);
@@ -40,32 +42,31 @@ public sealed class EntitySelector permits ById, ByIdFromSession, ByLastInIdGrou
     return _ -> new ByIdFromSession();
   }
 
-  public static <T> BySecondaryId<T> secondaryId(SecondaryIdModel<T> model, T value) {
-    return secondaryId(model, value, NeverCreate);
+  /// The entity with the same entity id as the entity triggering the event, e.g. its id entity or index entity
+  public static <T> Function<T, BySameEntityId> sameEntityId() {
+    return _ -> new BySameEntityId();
   }
 
-  public static <T> BySecondaryId<T> secondaryId(SecondaryIdModel<T> model, T value, CreationMode creationMode) {
-    return new BySecondaryId<>(model, value, creationMode);
+  /// The entity having the id, i.e. having an id event of the type with the id as data
+  public static <T> ByIdEvent<T> idEvent(EventType<?, T> type, T id) {
+    return idEvent(type, id, NeverCreate);
   }
 
-  public static <T> BySecondaryId<T> secondaryId(SecondaryIdModel<T> model, T value, EntitySelector fallback) {
-    return new BySecondaryId<>(model, value, fallback);
+  public static <T> ByIdEvent<T> idEvent(EventType<?, T> type, T id, CreationMode creationMode) {
+    return new ByIdEvent<>(type, id, creationMode, null);
   }
 
-  public static <T> ByLastInIdGroup<T> lastInIdGroup(SecondaryIdModel<T> model, Object value) {
-    return lastInIdGroup(model, value, NeverCreate);
+  public static <T> ByIdEvent<T> idEvent(EventType<?, T> type, T id, EntitySelector fallback) {
+    return new ByIdEvent<>(type, id, NeverCreate, fallback);
   }
 
-  public static <T> ByLastInIdGroup<T> lastInIdGroup(SecondaryIdModel<T> model, Object value, CreationMode creationMode) {
-    return new ByLastInIdGroup<>(model, value, creationMode, 1);
+  /// The entity last indexed by the key, i.e. having the last index event of the type with the key as data
+  public static <T> ByLastIndexed<T> lastIndexed(EventType<?, T> type, T key) {
+    return lastIndexed(type, key, NeverCreate);
   }
 
-  public static <I, T> ByLastInIdGroup<T> secondToLastInIdGroup(SecondaryIdModel<T> model, Object value) {
-    return new ByLastInIdGroup<>(model, value, NeverCreate, 2);
-  }
-
-  public static <I, T> ByLastInIdGroup<T> secondToLastInIdGroup(SecondaryIdModel<T> model, Object value,  CreationMode creationMode) {
-    return new ByLastInIdGroup<>(model, value, creationMode, 2);
+  public static <T> ByLastIndexed<T> lastIndexed(EventType<?, T> type, T key, CreationMode creationMode) {
+    return new ByLastIndexed<>(type, key, creationMode);
   }
 
   public enum CreationMode{AlwaysCreate, CreateIfNotExists, NeverCreate}
@@ -114,75 +115,54 @@ public sealed class EntitySelector permits ById, ByIdFromSession, ByLastInIdGrou
 
   }
 
-  public static final class BySecondaryId<T> extends EntitySelector {
+  public static final class BySameEntityId extends EntitySelector {
+    public BySameEntityId() {
+      super(CreateIfNotExists, null);
+    }
+  }
 
-    private final SecondaryIdModel<T> model;
-    private final T value;
+  public static final class ByIdEvent<T> extends EntitySelector {
 
-    public BySecondaryId(
-        SecondaryIdModel<T> model,
-        T value,
-        CreationMode creationMode
-    ) {
-      super(creationMode, null);
-      this.model = model;
-      this.value = value;
+    private final EventType<?, T> type;
+    private final T id;
+
+    public ByIdEvent(EventType<?, T> type, T id, CreationMode creationMode, EntitySelector fallback) {
+      super(creationMode, fallback);
+      this.type = type;
+      this.id = id;
     }
 
-    public BySecondaryId(
-        SecondaryIdModel<T> model,
-        T value,
-        EntitySelector fallback
-    ) {
-      super(NeverCreate, fallback);
-      this.model = model;
-      this.value = value;
+    public EventType<?, T> type() {
+      return type;
     }
 
-    public SecondaryIdModel<T> model() {
-      return model;
-    }
-
-    public T value() {
-      return value;
+    public T id() {
+      return id;
     }
 
     @Override
     public String toString() {
-      return getClass().getSimpleName() + "(" + model().name() + ", " + creationMode().name() + ")";
+      return getClass().getSimpleName() + "(" + type.name() + ", " + creationMode().name() + ")";
     }
-
-
   }
 
-  public static final class ByLastInIdGroup<T> extends EntitySelector {
+  public static final class ByLastIndexed<T> extends EntitySelector {
 
-    private final SecondaryIdModel<T> model;
-    private final Object group;
-    private final int lastPostition;
+    private final EventType<?, T> type;
+    private final T key;
 
-    public ByLastInIdGroup(
-        SecondaryIdModel<T> model,
-        Object group,
-        CreationMode creationMode,
-        int lastPostition
-    ) {
+    public ByLastIndexed(EventType<?, T> type, T key, CreationMode creationMode) {
       super(creationMode, null);
-      this.model = model;
-      this.group = group;
-      this.lastPostition = lastPostition;
+      this.type = type;
+      this.key = key;
     }
 
-    public SecondaryIdModel<T> model() {
-      return model;
+    public EventType<?, T> type() {
+      return type;
     }
 
-    public Object group() {
-      return group;
-    }
-
-    public int lastPosition() {
-      return lastPostition;
+    public T key() {
+      return key;
     }
   }
 

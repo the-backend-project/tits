@@ -5,9 +5,11 @@ import static com.github.thxmasj.backend.http.inbox.HttpInbox.CompleteRequest;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.EntityModels.RequestDispatching;
 import static com.github.thxmasj.backend.core.EntitySelector.entityIdFromSession;
 import static com.github.thxmasj.backend.core.EntitySelector.newEntityId;
+import static com.github.thxmasj.backend.core.EntitySelector.sameEntityId;
 import static com.github.thxmasj.backend.core.TransitionModelBuilder.WithEvent.onEvent;
 import static com.github.thxmasj.backend.core.Tuples.tuple;
 import static com.github.thxmasj.backend.templates.cardpayment.Aggregate.Settlement;
+import static com.github.thxmasj.backend.templates.cardpayment.Identifiers.Ids;
 import static com.github.thxmasj.backend.templates.cardpayment.Identifiers.MerchantId;
 import static com.github.thxmasj.backend.templates.cardpayment.MerchantEvent.Create;
 import static com.github.thxmasj.backend.templates.cardpayment.MerchantEvent.Delete;
@@ -37,7 +39,7 @@ public class MerchantTransitions {
         Begin, List.of(
             onEvent(Create).to(Active)
                 .assemble(c -> tuple(c.input(), c.eventReference()))
-                .newIdentifier(MerchantId, d -> d.t1().id())
+                .trigger(MerchantId).with(d -> d.t1().id()).on(Ids).identifiedBy(sameEntityId())
                 .trigger(OpenInitial).with(d -> new com.github.thxmasj.backend.templates.cardpayment.MerchantId(d.t1().t1().id())).on(Settlement).identifiedBy(newEntityId())
                 .trigger(CompleteRequest).with(d -> tuple("", d.t1().t1().t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t1().t1().t1())

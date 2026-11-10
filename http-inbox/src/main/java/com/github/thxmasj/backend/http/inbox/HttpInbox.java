@@ -15,12 +15,12 @@ import com.github.thxmasj.backend.core.EventReference;
 import com.github.thxmasj.backend.core.EventTrigger;
 import com.github.thxmasj.backend.core.EventTrigger.EventSpec;
 import com.github.thxmasj.backend.core.EventType;
+import com.github.thxmasj.backend.core.IdEntityModel;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionContext;
 import com.github.thxmasj.backend.core.Tuples.Tuple2;
 import com.github.thxmasj.backend.core.Tuples.Tuple3;
 import com.github.thxmasj.backend.core.Validated;
-import com.github.thxmasj.backend.core.SecondaryIdModel;
 import com.github.thxmasj.backend.core.http.HttpDataType;
 import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
 import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
@@ -120,15 +120,22 @@ public interface HttpInbox {
       DataType.string(),
       HttpDataType.forResponse()
   );
-  SecondaryIdModel<MessageId> MessageId = SecondaryIdModel.of(
+  EventType<MessageId, MessageId> MessageId = BasicEventType.of(
       "MessageId",
       UUID.fromString("f721bf54-891b-41a0-aa63-5d3cbde52437"),
       DataType.json(MessageId.class)
   );
-  SecondaryIdModel<MessageId> RollbackMessageId = SecondaryIdModel.of(
+  EventType<MessageId, MessageId> RollbackMessageId = BasicEventType.of(
       "RollbackMessageId",
       UUID.fromString("58cafda3-1818-4015-8f97-3d9f3bd2856f"),
       DataType.json(MessageId.class)
+  );
+  /// Ids of the requests, by the entity id of their RequestDispatching
+  IdEntityModel MessageIds = IdEntityModel.of(
+      "MessageIds",
+      UUID.fromString("3c8e1f5a-7b2d-4e9c-a6f0-8d4b2e7c1a95"),
+      MessageId,
+      RollbackMessageId
   );
 
   static <T> Function<HttpRequestMessage, Validated<T>> jsonParser(Class<T> contentType) {

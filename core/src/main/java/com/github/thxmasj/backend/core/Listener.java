@@ -11,13 +11,11 @@ public interface Listener {
     record Change(
         Entity entity,
         ZonedDateTime timeout,
-        Event event,
-        List<String> secondaryIds
+        Event event
     ) {
       public record Entity(
           String model,
-          UUID id,
-          List<String> secondaryIds
+          UUID id
       ) {
         @Override public String toString() {
           return model + "[id=" + id + "]";

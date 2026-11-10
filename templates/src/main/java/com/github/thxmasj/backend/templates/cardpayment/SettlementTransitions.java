@@ -3,7 +3,8 @@ package com.github.thxmasj.backend.templates.cardpayment;
 import static com.github.thxmasj.backend.core.EntityModel.Begin;
 import static com.github.thxmasj.backend.core.EntitySelector.entityIdFromSession;
 import static com.github.thxmasj.backend.core.EntitySelector.newEntityId;
-import static com.github.thxmasj.backend.core.EntitySelector.secondaryId;
+import static com.github.thxmasj.backend.core.EntitySelector.idEvent;
+import static com.github.thxmasj.backend.core.EntitySelector.sameEntityId;
 import static com.github.thxmasj.backend.core.State.Intermediate;
 import static com.github.thxmasj.backend.core.TransitionModelBuilder.WithEvent.onEvent;
 import static com.github.thxmasj.backend.core.Tuples.tuple;
@@ -13,7 +14,10 @@ import static com.github.thxmasj.backend.http.outbox.HttpOutboxRequest.BatchRefe
 import static com.github.thxmasj.backend.templates.cardpayment.Aggregate.Settlement;
 import static com.github.thxmasj.backend.templates.cardpayment.Identifiers.AcquirerBatchNumber;
 import static com.github.thxmasj.backend.templates.cardpayment.Identifiers.BatchNumber;
+import static com.github.thxmasj.backend.templates.cardpayment.Identifiers.Ids;
+import static com.github.thxmasj.backend.templates.cardpayment.Identifiers.Index;
 import static com.github.thxmasj.backend.templates.cardpayment.Identifiers.MerchantId;
+import static com.github.thxmasj.backend.templates.cardpayment.Identifiers.SettlementOfMerchant;
 import static com.github.thxmasj.backend.templates.cardpayment.MerchantEvent.Get;
 import static com.github.thxmasj.backend.templates.cardpayment.PaymentState.Error;
 import static com.github.thxmasj.backend.templates.cardpayment.PaymentState.AwaitingAcquirerBatchNumber;
@@ -123,20 +127,22 @@ public class SettlementTransitions {
 //                .output(d -> d),
             onEvent(SettlementEvent.Open).to(Open)
                 .assembleInput()
-                .newIdentifier(AcquirerBatchNumber, d -> d)
-                .newIdentifierInGroup(BatchNumber, d -> d.t1().merchantId())
-                .output(d -> new Opened(d.t2().accepted().id().data(), d.t1().t1())),
+                .trigger(BatchNumber).with(Opened::batchNumber).on(Ids).identifiedBy(sameEntityId())
+                .trigger(AcquirerBatchNumber).with(d -> d.t1().acquirerBatchNumber()).on(Ids).identifiedBy(sameEntityId())
+                .trigger(SettlementOfMerchant).with(d -> d.t1().t1().batchNumber().merchantId()).on(Index).identifiedBy(sameEntityId())
+                .output(d -> d.t1().t1().t1()),
             // The first settlement of a merchant. The acquirer's batch number is assigned when it is first seen in a response.
             onEvent(OpenInitial).to(AwaitingAcquirerBatchNumber)
-                .assembleInput()
-                .newIdentifierInGroup(BatchNumber, d -> d.value())
-                .output(d -> d.t2().accepted().id().data())
+                .assemble(c -> new BatchNumber(c.input().value(), 1))
+                .trigger(BatchNumber).with(d -> d).on(Ids).identifiedBy(sameEntityId())
+                .trigger(SettlementOfMerchant).with(d -> d.t1().merchantId()).on(Index).identifiedBy(sameEntityId())
+                .output(d -> d.t1().t1())
         ),
         // Open, but the acquirer's batch number is not known until the first response referring to the settlement
         AwaitingAcquirerBatchNumber, join(List.of(
             onEvent(AssignAcquirerBatchNumber).to(Open)
                 .assembleInput()
-                .newIdentifier(AcquirerBatchNumber, d -> d)
+                .trigger(AcquirerBatchNumber).with(d -> d).on(Ids).identifiedBy(sameEntityId())
                 .output(Tuple2::t1),
             onEvent(GetBatchNumber).toSelf().assemble(c -> batchNumber(c.log())).output(d -> d),
             // Number 0 means unknown
@@ -239,14 +245,14 @@ public class SettlementTransitions {
                 c.log().entityId().value(),
                 DispatchContext.of(c)
             ))
-            .trigger(Get).on(Aggregate.Merchant).identifiedBy(d -> secondaryId(MerchantId, d.t1().merchantId()))
+            .trigger(Get).on(Aggregate.Merchant).identifiedBy(d -> idEvent(MerchantId, d.t1().merchantId()))
             .trigger(reconciliation.requestDispatched())
             // A rolled back request is settled too, as its reversal is a request referencing the batch on its own
             .when(BatchReferenced, d -> d.t1().t5()).is(HttpOutboxRequest.requestAccepted(), HttpOutboxRequest.rollbackDispatched())
             .withReactive(d -> reconciliation.input(d.t1().t6(), tuple(d.t1().t2(), d.t1().t3(), d.t2().accepted().event().getUnmarshalledData())))
             .on(reconciliation.outbox())
             .identifiedBy(newEntityId())
-            .trigger(SettlementEvent.Open).with(d -> d.t1().t3().next()).on(Settlement).identifiedBy(newEntityId())
+            .trigger(SettlementEvent.Open).with(d -> new Opened(d.t1().t2().next(), d.t1().t3().next())).on(Settlement).identifiedBy(newEntityId())
             .trigger(CompleteRequest).with(d -> tuple("", d.t1().t1().t4())).on(RequestDispatching).identifiedBy(entityIdFromSession())
             .output(d -> d.t1().t1().t1().t1())
     );

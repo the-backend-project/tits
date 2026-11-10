@@ -8,6 +8,8 @@ import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.Event;
 import com.github.thxmasj.backend.core.EventLog;
 import com.github.thxmasj.backend.core.EventType;
+import com.github.thxmasj.backend.core.IdEntityModel;
+import com.github.thxmasj.backend.core.IndexEntityModel;
 import com.github.thxmasj.backend.core.database.MappingFailure;
 import com.github.thxmasj.backend.core.database.Parameter;
 import com.github.thxmasj.backend.core.database.UnknownEntity;
@@ -41,13 +43,19 @@ public class EventsByEntityId {
     this.clock = clock;
     this.sqls = new HashMap<>();
     for (var entityModel : entityModels) {
+      String table = switch (entityModel) {
+        case IdEntityModel _ -> "IdEvent";
+        case IndexEntityModel _ -> "IndexEvent";
+        default -> "Event";
+      };
       String sql =
           """
           SELECT EventNumber, Type, Timestamp, Data
-          FROM [{schema}].[Event] WITH (INDEX(pkEvent))
+          FROM [{schema}].[{table}] WITH (INDEX(pk{table}))
           WHERE EntityId=:entityId
           ORDER BY EventNumber;
-          """.replace("{schema}", schemaName);
+          """.replace("{schema}", schemaName)
+              .replace("{table}", table);
       this.sqls.put(entityModel, sql);
     }
   }
