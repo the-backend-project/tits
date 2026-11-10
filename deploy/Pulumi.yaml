@@ -1,0 +1,61 @@
+# Deploys an application built with the state machine to Azure Functions with a serverless Azure SQL database. See
+# docs/azure-functions.md. Build the program before running Pulumi, from the repository root:
+#
+#   mvn package -pl deploy -am -DskipTests
+
+name: tits-azure-functions
+description: An application built with the state machine on Azure Functions with a serverless Azure SQL database
+runtime:
+  name: java
+  options:
+    binary: target/deploy.jar
+config:
+  image:
+    type: string
+    description: Local container image of the application, built for linux/amd64
+  name:
+    type: string
+    description: Name of the application, used to name its resources. Defaults to the stack name.
+  migrateArgs:
+    type: array
+    items:
+      type: string
+    description: Arguments to the image's entry point which run the migrate admin process. Defaults to [migrate].
+  databaseRole:
+    type: string
+    default: App
+    description: Role given access to the schema by the migrate admin process, and to the application's user
+  databaseSchema:
+    type: string
+    description: Schema holding the state machine's tables. Defaults to the application's default.
+  databaseCollation:
+    type: string
+    default: Norwegian_100_CS_AS_SC_UTF8
+    description: Collation of the database
+  databaseMinCapacity:
+    type: string
+    default: "0.5"
+    description: Minimum number of vCores of the serverless database while it is not paused
+  databaseMaxCapacity:
+    type: integer
+    default: 1
+    description: Maximum number of vCores of the serverless database
+  databaseAutoPauseDelay:
+    type: integer
+    default: 60
+    description: Minutes without connections before the database pauses, at least 15, or -1 to never pause
+  databaseUseFreeLimit:
+    type: boolean
+    default: false
+    description: Whether to use the subscription's free Azure SQL Database offer
+  instanceMemory:
+    type: integer
+    default: 512
+    description: Memory in MB of each instance of the function app, 512, 2048 or 4096
+  maximumInstanceCount:
+    type: integer
+    default: 10
+    description: Maximum number of instances the function app scales out to
+  deployerIp:
+    type: string
+    description: Public IP address of the deploying machine, let through the database firewall. Looked up by default.

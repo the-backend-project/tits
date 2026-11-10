@@ -23,6 +23,8 @@ The image can also be built alone, from the repository root:
 docker build -f demo/Dockerfile -t tits-demo .
 ```
 
+To run the demo in Azure, see [Deploying to Azure Functions](azure-functions.md).
+
 The application without native compilation is an ordinary Maven module. `DemoTest` runs it against the test database
 the build uses (see `bin/start-mssql.sh`).
 

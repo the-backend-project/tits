@@ -17,6 +17,7 @@
         <module>diagram</module>
         <module>templates</module>
         <module>demo</module>
+        <module>deploy</module>
     </modules>
 
     <build>
@@ -225,6 +226,26 @@
                         <artifactId>http2-server</artifactId>
                     </exclusion>
                 </exclusions>
+            </dependency>
+            <dependency>
+                <groupId>com.pulumi</groupId>
+                <artifactId>pulumi</artifactId>
+                <version>1.39.0</version>
+            </dependency>
+            <dependency>
+                <groupId>com.pulumi</groupId>
+                <artifactId>azure-native</artifactId>
+                <version>3.30.0</version>
+            </dependency>
+            <dependency>
+                <groupId>com.pulumi</groupId>
+                <artifactId>command</artifactId>
+                <version>1.3.0</version>
+            </dependency>
+            <dependency>
+                <groupId>com.pulumi</groupId>
+                <artifactId>random</artifactId>
+                <version>4.21.6</version>
             </dependency>
             <dependency>
                 <groupId>net.sourceforge.plantuml</groupId>
