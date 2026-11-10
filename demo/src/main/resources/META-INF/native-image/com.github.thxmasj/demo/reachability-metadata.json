@@ -4,25 +4,16 @@
       "type": "byte[]"
     },
     {
-      "type": "com.fasterxml.jackson.databind.deser.Deserializers[]"
+      "type": "tools.jackson.databind.deser.Deserializers[]"
     },
     {
-      "type": "com.fasterxml.jackson.databind.deser.KeyDeserializers[]"
+      "type": "tools.jackson.databind.deser.KeyDeserializers[]"
     },
     {
-      "type": "com.fasterxml.jackson.databind.deser.ValueInstantiators[]"
+      "type": "tools.jackson.databind.deser.ValueInstantiators[]"
     },
     {
-      "type": "com.fasterxml.jackson.databind.ext.Java7SupportImpl",
-      "methods": [
-        {
-          "name": "<init>",
-          "parameterTypes": []
-        }
-      ]
-    },
-    {
-      "type": "com.fasterxml.jackson.databind.ser.Serializers[]"
+      "type": "tools.jackson.databind.ser.Serializers[]"
     },
     {
       "type": "com.github.thxmasj.statemachine.EventReference",
@@ -156,119 +147,7 @@
     },
     {
       "type": "com.zaxxer.hikari.HikariConfig",
-      "fields": [
-        {
-          "name": "catalog"
-        },
-        {
-          "name": "connectionInitSql"
-        },
-        {
-          "name": "connectionTestQuery"
-        },
-        {
-          "name": "connectionTimeout"
-        },
-        {
-          "name": "credentials"
-        },
-        {
-          "name": "dataSource"
-        },
-        {
-          "name": "dataSourceClassName"
-        },
-        {
-          "name": "dataSourceJndiName"
-        },
-        {
-          "name": "dataSourceProperties"
-        },
-        {
-          "name": "driverClassName"
-        },
-        {
-          "name": "exceptionOverride"
-        },
-        {
-          "name": "exceptionOverrideClassName"
-        },
-        {
-          "name": "healthCheckProperties"
-        },
-        {
-          "name": "healthCheckRegistry"
-        },
-        {
-          "name": "idleTimeout"
-        },
-        {
-          "name": "initializationFailTimeout"
-        },
-        {
-          "name": "isAllowPoolSuspension"
-        },
-        {
-          "name": "isAutoCommit"
-        },
-        {
-          "name": "isIsolateInternalQueries"
-        },
-        {
-          "name": "isReadOnly"
-        },
-        {
-          "name": "isRegisterMbeans"
-        },
-        {
-          "name": "jdbcUrl"
-        },
-        {
-          "name": "keepaliveTime"
-        },
-        {
-          "name": "leakDetectionThreshold"
-        },
-        {
-          "name": "maxLifetime"
-        },
-        {
-          "name": "maxPoolSize"
-        },
-        {
-          "name": "metricRegistry"
-        },
-        {
-          "name": "metricsTrackerFactory"
-        },
-        {
-          "name": "minIdle"
-        },
-        {
-          "name": "poolName"
-        },
-        {
-          "name": "scheduledExecutor"
-        },
-        {
-          "name": "schema"
-        },
-        {
-          "name": "sealed"
-        },
-        {
-          "name": "threadFactory"
-        },
-        {
-          "name": "transactionIsolationName"
-        },
-        {
-          "name": "unitTest"
-        },
-        {
-          "name": "validationTimeout"
-        }
-      ]
+      "allDeclaredFields": true
     },
     {
       "type": "com.zaxxer.hikari.pool.PoolBase"

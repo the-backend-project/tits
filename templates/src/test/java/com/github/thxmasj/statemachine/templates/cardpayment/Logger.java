@@ -1,8 +1,6 @@
 package com.github.thxmasj.statemachine.templates.cardpayment;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.thxmasj.statemachine.EntityId;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.Listener;
@@ -11,6 +9,7 @@ import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.UUID;
+import tools.jackson.databind.json.JsonMapper;
 
 public class Logger implements Listener {
 
@@ -34,15 +33,11 @@ public class Logger implements Listener {
   }
 
   private String toString(List<Change> changes) {
-    try {
-      return new ObjectMapper()
-          .findAndRegisterModules()
-          //.enable(SerializationFeature.INDENT_OUTPUT)
-          .setSerializationInclusion(JsonInclude.Include.NON_EMPTY)
-          .writeValueAsString(changes);
-    } catch (JsonProcessingException e) {
-      throw new RuntimeException(e);
-    }
+    return JsonMapper.builder()
+        //.enable(SerializationFeature.INDENT_OUTPUT)
+        .changeDefaultPropertyInclusion(incl -> incl.withValueInclusion(JsonInclude.Include.NON_EMPTY).withContentInclusion(JsonInclude.Include.NON_EMPTY))
+        .build()
+        .writeValueAsString(changes);
   }
 
   @Override

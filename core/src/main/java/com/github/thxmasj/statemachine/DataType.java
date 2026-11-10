@@ -1,20 +1,18 @@
 package com.github.thxmasj.statemachine;
 
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
-import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.github.thxmasj.statemachine.Tuples.Tuple2;
 import com.github.thxmasj.statemachine.Tuples.Tuple3;
 import com.github.thxmasj.statemachine.Tuples.Tuple4;
-import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import tools.jackson.core.StreamReadFeature;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.cfg.DateTimeFeature;
+import tools.jackson.databind.json.JsonMapper;
 
 public interface DataType<T> {
 
@@ -24,11 +22,12 @@ public interface DataType<T> {
 
   byte[] marshal(T value);
 
-  ObjectMapper objectMapper = new ObjectMapper()
-      .registerModule(new JavaTimeModule())
-      .configure(DeserializationFeature.ADJUST_DATES_TO_CONTEXT_TIME_ZONE, false)
-      .configure(JsonParser.Feature.INCLUDE_SOURCE_IN_LOCATION, true)
-      .setSerializationInclusion(Include.NON_NULL);
+  // Jackson 2 defaults keep the format of data already stored in the event log, e.g. dates as timestamps
+  ObjectMapper objectMapper = JsonMapper.builderWithJackson2Defaults()
+      .disable(DateTimeFeature.ADJUST_DATES_TO_CONTEXT_TIME_ZONE)
+      .enable(StreamReadFeature.INCLUDE_SOURCE_IN_LOCATION)
+      .changeDefaultPropertyInclusion(incl -> incl.withValueInclusion(Include.NON_NULL).withContentInclusion(Include.NON_NULL))
+      .build();
 
   static DataType<Void> none() {
     return new NoneDataType();
@@ -79,20 +78,12 @@ public interface DataType<T> {
 
     @Override
     public T unmarshal(byte[] value) {
-      try {
-        return objectMapper.readerFor(clazz).readValue(value);
-      } catch (IOException e) {
-        throw new RuntimeException(e);
-      }
+      return objectMapper.readerFor(clazz).readValue(value);
     }
 
     @Override
     public byte[] marshal(T value) {
-      try {
-        return objectMapper.writeValueAsBytes(value);
-      } catch (JsonProcessingException e) {
-        throw new RuntimeException(e);
-      }
+      return objectMapper.writeValueAsBytes(value);
     }
 
     @Override

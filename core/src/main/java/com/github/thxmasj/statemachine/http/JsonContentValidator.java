@@ -3,29 +3,30 @@ package com.github.thxmasj.statemachine.http;
 import static java.util.stream.Collectors.joining;
 
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.github.thxmasj.statemachine.Validated;
 import com.github.thxmasj.statemachine.Validated.Invalid;
 import com.github.thxmasj.statemachine.Validated.Valid;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
-import java.io.IOException;
 import java.util.Set;
 import java.util.function.Function;
 import org.hibernate.validator.messageinterpolation.ParameterMessageInterpolator;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.cfg.DateTimeFeature;
+import tools.jackson.databind.json.JsonMapper;
 
 public class JsonContentValidator<T> implements Function<byte[], Validated<T>> {
 
   private final Class<T> contentType;
   private final boolean validate;
 
-  private static final ObjectMapper objectMapper = new ObjectMapper()
-      .registerModule(new JavaTimeModule())
-      .configure(DeserializationFeature.ADJUST_DATES_TO_CONTEXT_TIME_ZONE, false)
-      .setSerializationInclusion(Include.NON_NULL);
+  // Jackson 2 defaults keep validation as strict as before, e.g. failing on unknown properties
+  private static final ObjectMapper objectMapper = JsonMapper.builderWithJackson2Defaults()
+      .disable(DateTimeFeature.ADJUST_DATES_TO_CONTEXT_TIME_ZONE)
+      .changeDefaultPropertyInclusion(incl -> incl.withValueInclusion(Include.NON_NULL).withContentInclusion(Include.NON_NULL))
+      .build();
 
   private static final Validator jsonValidator = Validation.byDefaultProvider()
       .configure()
@@ -51,7 +52,7 @@ public class JsonContentValidator<T> implements Function<byte[], Validated<T>> {
             new Invalid<>(violations.stream()
                 .map(v -> v == null ? "n/a" : v.getPropertyPath() + ": " + v.getMessage())
                 .collect(joining(", ")));
-      } catch (IOException e) {
+      } catch (JacksonException e) {
         return new Invalid<>("Failed to parse content with " + contentType.getName() + ": " + e.getMessage());
       }
     }
