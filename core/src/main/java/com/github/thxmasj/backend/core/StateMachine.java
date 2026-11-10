@@ -38,9 +38,9 @@ import com.github.thxmasj.backend.core.database.mssql.ChangeState.Change;
 import com.github.thxmasj.backend.core.database.mssql.ConditionTriggers;
 import com.github.thxmasj.backend.core.database.mssql.CreateSchema;
 import com.github.thxmasj.backend.core.database.mssql.DeleteExpiredDeadline;
-import com.github.thxmasj.backend.core.database.mssql.EntityByIdEvent;
-import com.github.thxmasj.backend.core.database.mssql.EntityByLastIndexEvent;
 import com.github.thxmasj.backend.core.database.mssql.EventsByEntityId;
+import com.github.thxmasj.backend.core.database.mssql.EventsByIdEvent;
+import com.github.thxmasj.backend.core.database.mssql.EventsByLastIndexEvent;
 import com.github.thxmasj.backend.core.database.mssql.NextDeadline;
 import jakarta.annotation.Nullable;
 import jakarta.validation.constraints.NotNull;
@@ -77,8 +77,8 @@ public class StateMachine implements AutoCloseable {
   private final DataSource dataSource;
   private final ChangeState changeState;
   private final EventsByEntityId eventsByEntityId;
-  private final EntityByIdEvent entityByIdEvent;
-  private final EntityByLastIndexEvent entityByLastIndexEvent;
+  private final EventsByIdEvent eventsByIdEvent;
+  private final EventsByLastIndexEvent eventsByLastIndexEvent;
   private final NextDeadline nextDeadline;
   private final DeleteExpiredDeadline deleteExpiredDeadline;
   private final ConditionTriggers conditionTriggers;
@@ -153,8 +153,8 @@ public class StateMachine implements AutoCloseable {
     var jdbcClient = new JDBCClient(dataSource);
     this.changeState = new ChangeState(jdbcClient, schemaName, clock);
     this.eventsByEntityId = new EventsByEntityId(dataSource, entityModels, schemaName, clock);
-    this.entityByIdEvent = new EntityByIdEvent(dataSource, entityModels, schemaName);
-    this.entityByLastIndexEvent = new EntityByLastIndexEvent(dataSource, schemaName);
+    this.eventsByIdEvent = new EventsByIdEvent(dataSource, eventTypesByEntityModel, schemaName, clock);
+    this.eventsByLastIndexEvent = new EventsByLastIndexEvent(dataSource, schemaName, clock);
     this.nextDeadline = new NextDeadline(jdbcClient, eventTypes, clock, entityModels, schemaName);
     this.deleteExpiredDeadline = new DeleteExpiredDeadline(jdbcClient, schemaName);
     this.conditionTriggers = new ConditionTriggers(jdbcClient, eventTypesByEntityModel, clock, schemaName);
@@ -708,9 +708,8 @@ public class StateMachine implements AutoCloseable {
   }
 
   private <T> Mono<EventLog> eventLog(ByIdEvent<T> selector, EntityModel entityModel, ChangeContext<?> changeContext) {
-    Mono<EventLog> log = entityByIdEvent.execute(selector.type().id(), selector.type().outputDataType().marshal(selector.id()))
-        .filter(entity -> entity.model().equals(entityModel))
-        .flatMap(entity -> eventLogByEntityId(entity.model(), entity.id()));
+    Mono<EventLog> log = eventsByIdEvent.execute(selector.type().id(), selector.type().outputDataType().marshal(selector.id()))
+        .filter(l -> l.entityModel().equals(entityModel));
     return switch (selector.creationMode()) {
       case NeverCreate -> log.switchIfEmpty(Mono.defer(() -> selector.fallback() != null ?
           eventLog(selector.fallback(), entityModel, changeContext) :
@@ -722,8 +721,13 @@ public class StateMachine implements AutoCloseable {
   }
 
   private <T> Mono<EventLog> eventLog(ByLastIndexed<T> selector, EntityModel entityModel) {
-    Mono<EventLog> log = entityByLastIndexEvent.execute(selector.type().id(), selector.type().outputDataType().marshal(selector.key()), selector.position())
-        .flatMap(entityId -> eventLogByEntityId(entityModel, entityId));
+    Mono<EventLog> log = eventsByLastIndexEvent.execute(
+        entityModel,
+        eventTypesByEntityModel.get(entityModel),
+        selector.type().id(),
+        selector.type().outputDataType().marshal(selector.key()),
+        selector.position()
+    );
     return switch (selector.creationMode()) {
       case NeverCreate -> log.switchIfEmpty(Mono.error(() -> new EntityGroupNotInitialised(entityModel, selector.type(), selector.key())));
       case CreateIfNotExists -> log.switchIfEmpty(Mono.fromSupplier(() -> emptyEventLog(entityModel)));
@@ -733,8 +737,7 @@ public class StateMachine implements AutoCloseable {
 
   /// Rejects an id event if its id is already taken
   private <I> Mono<Void> rejectTakenId(EventType<I, ?> type, I id) {
-    return entityByIdEvent.execute(type.id(), type.inputDataType().marshal(id))
-        .flatMap(entity -> eventLogByEntityId(entity.model(), entity.id()))
+    return eventsByIdEvent.execute(type.id(), type.inputDataType().marshal(id))
         .flatMap(owner -> Mono.error(new IdTaken(type, id, owner)));
   }
 
