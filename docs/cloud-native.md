@@ -36,7 +36,7 @@ JVM with the GraalVM tracing agent. Record it again after changing the demo or t
 
 ```shell
 mvn clean package -pl demo -am -DskipTests -Dmaven.compiler.release=25
-agent=-agentlib:native-image-agent=config-merge-dir=demo/src/main/resources/META-INF/native-image/com.github.thxmasj/demo
+agent=-agentlib:native-image-agent=config-merge-dir=demo/src/main/resources/META-INF/native-image/com.github.thxmasj.backend/demo
 java $agent -jar demo/target/demo.jar migrate
 java $agent -jar demo/target/demo.jar
 ```

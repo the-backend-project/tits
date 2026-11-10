@@ -3,7 +3,7 @@
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <parent>
-    <groupId>com.github.thxmasj</groupId>
+    <groupId>com.github.thxmasj.backend</groupId>
     <artifactId>backend-parent</artifactId>
     <version>0.3.0-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
@@ -18,7 +18,7 @@
 
   <dependencies>
     <dependency>
-      <groupId>com.github.thxmasj</groupId>
+      <groupId>com.github.thxmasj.backend</groupId>
       <artifactId>core</artifactId>
       <version>${project.version}</version>
     </dependency>
@@ -31,20 +31,20 @@
       <artifactId>nimbus-jose-jwt</artifactId>
     </dependency>
     <dependency>
-      <groupId>com.github.thxmasj</groupId>
+      <groupId>com.github.thxmasj.backend</groupId>
       <artifactId>core</artifactId>
       <version>${project.version}</version>
       <type>test-jar</type>
       <scope>test</scope>
     </dependency>
     <dependency>
-      <groupId>com.github.thxmasj</groupId>
+      <groupId>com.github.thxmasj.backend</groupId>
       <artifactId>http-outbox</artifactId>
       <version>${project.version}</version>
       <scope>test</scope>
     </dependency>
     <dependency>
-      <groupId>com.github.thxmasj</groupId>
+      <groupId>com.github.thxmasj.backend</groupId>
       <artifactId>diagram</artifactId>
       <version>${project.version}</version>
       <scope>test</scope>
