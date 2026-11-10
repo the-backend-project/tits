@@ -34,7 +34,6 @@ import com.github.thxmasj.backend.core.TransitionModelBuilder.WithFilter.Alterna
 import com.github.thxmasj.backend.core.Tuples.Tuple2;
 import com.github.thxmasj.backend.core.Tuples.Tuple4;
 import com.github.thxmasj.backend.core.database.UnknownEntity;
-import com.github.thxmasj.backend.core.database.mssql.SchemaNames.SecondaryIdModel;
 import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;

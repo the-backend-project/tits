@@ -7,8 +7,6 @@ import com.github.thxmasj.backend.core.EntitySelector.ById;
 import com.github.thxmasj.backend.core.EntitySelector.ByIdFromSession;
 import com.github.thxmasj.backend.core.EntitySelector.ByLastInIdGroup;
 import com.github.thxmasj.backend.core.EntitySelector.BySecondaryId;
-import com.github.thxmasj.backend.core.database.mssql.SchemaNames;
-import com.github.thxmasj.backend.core.database.mssql.SchemaNames.SecondaryIdModel;
 import java.util.UUID;
 import java.util.function.Function;
 
@@ -118,11 +116,11 @@ public sealed class EntitySelector permits ById, ByIdFromSession, ByLastInIdGrou
 
   public static final class BySecondaryId<T> extends EntitySelector {
 
-    private final SchemaNames.SecondaryIdModel<T> model;
+    private final SecondaryIdModel<T> model;
     private final T value;
 
     public BySecondaryId(
-        SchemaNames.SecondaryIdModel<T> model,
+        SecondaryIdModel<T> model,
         T value,
         CreationMode creationMode
     ) {
@@ -132,7 +130,7 @@ public sealed class EntitySelector permits ById, ByIdFromSession, ByLastInIdGrou
     }
 
     public BySecondaryId(
-        SchemaNames.SecondaryIdModel<T> model,
+        SecondaryIdModel<T> model,
         T value,
         EntitySelector fallback
     ) {
@@ -141,7 +139,7 @@ public sealed class EntitySelector permits ById, ByIdFromSession, ByLastInIdGrou
       this.value = value;
     }
 
-    public SchemaNames.SecondaryIdModel<T> model() {
+    public SecondaryIdModel<T> model() {
       return model;
     }
 
@@ -159,12 +157,12 @@ public sealed class EntitySelector permits ById, ByIdFromSession, ByLastInIdGrou
 
   public static final class ByLastInIdGroup<T> extends EntitySelector {
 
-    private final SchemaNames.SecondaryIdModel<T> model;
+    private final SecondaryIdModel<T> model;
     private final Object group;
     private final int lastPostition;
 
     public ByLastInIdGroup(
-        SchemaNames.SecondaryIdModel<T> model,
+        SecondaryIdModel<T> model,
         Object group,
         CreationMode creationMode,
         int lastPostition

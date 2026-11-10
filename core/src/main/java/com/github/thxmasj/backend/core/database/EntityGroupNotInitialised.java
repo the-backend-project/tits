@@ -1,7 +1,7 @@
 package com.github.thxmasj.backend.core.database;
 
 import com.github.thxmasj.backend.core.EntityModel;
-import com.github.thxmasj.backend.core.database.mssql.SchemaNames.SecondaryIdModel;
+import com.github.thxmasj.backend.core.SecondaryIdModel;
 
 public class EntityGroupNotInitialised extends RuntimeException {
 

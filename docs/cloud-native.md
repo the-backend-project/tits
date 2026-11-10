@@ -118,10 +118,7 @@ without changing the libraries.
 ### Admin processes
 
 - **Schema creation is coupled with the state machine.** The `StateMachine` constructor creates the schema when given a
-  schema data source. To create the schema as a separate admin process, the demo calls `CreateSchema` directly, and has
-  to compute its list of secondary id models the same way `StateMachine` does. If the two ever differ, the checksum of
-  the schema does not match and the application fails to start. A public migration entry point taking the transition
-  models would avoid this.
+  schema data source. To create the schema as a separate admin process, the demo calls `CreateSchema` directly.
 - **No schema evolution.** A schema that differs from what the code expects is rejected with a checksum mismatch.
   There is no way to migrate an existing schema to a new version.
 

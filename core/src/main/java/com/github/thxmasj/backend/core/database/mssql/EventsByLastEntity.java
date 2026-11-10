@@ -1,132 +1,86 @@
 package com.github.thxmasj.backend.core.database.mssql;
 
-import static java.util.stream.Collectors.joining;
+import static com.github.thxmasj.backend.core.database.jdbc.PreparedStatementSupport.prepare;
 
 import com.github.thxmasj.backend.core.EntityId;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.Event;
 import com.github.thxmasj.backend.core.EventLog;
 import com.github.thxmasj.backend.core.EventType;
-import com.github.thxmasj.backend.core.SecondaryId;
+import com.github.thxmasj.backend.core.SecondaryIdModel;
+import com.github.thxmasj.backend.core.SecondaryIdModel.Group;
 import com.github.thxmasj.backend.core.database.Client.MssqlException;
 import com.github.thxmasj.backend.core.database.EntityGroupNotInitialised;
-import com.github.thxmasj.backend.core.database.mssql.SchemaNames.Column;
-import com.github.thxmasj.backend.core.database.mssql.SchemaNames.SecondaryIdModel;
+import com.github.thxmasj.backend.core.database.Parameter;
 import com.microsoft.sqlserver.jdbc.SQLServerException;
 import java.sql.ResultSet;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
-import java.util.function.Function;
 import javax.sql.DataSource;
 import reactor.core.publisher.Mono;
 
-@SuppressWarnings("StringConcatenationInLoop")
+/// Events of the entity having the last id of a group, or the one before, and so on. The members of a group are the id
+/// entities having an index event keyed by the group, ordered by creation.
 public class EventsByLastEntity {
 
   private final DataSource dataSource;
   private final Clock clock;
-  private final Map<SecondaryIdModel<?>, String> sql;
+  private final String sql;
 
   public EventsByLastEntity(
       DataSource dataSource,
-      List<EntityModel> entityModels,
       String schemaName,
       Clock clock
   ) {
     this.dataSource = dataSource;
     this.clock = clock;
-    this.sql = new HashMap<>();
-    for (var entityModel : entityModels) {
-      var names = new SchemaNames(schemaName, entityModel);
-      for (var idModel : entityModel.secondaryIds()) {
-        if (idModel.group() == null) {
-          continue;
-        }
-        var sql =
-            """
-            DECLARE @entityId UNIQUEIDENTIFIER;
+    this.sql =
+        """
+        DECLARE @entityId UNIQUEIDENTIFIER;
+        DECLARE @Group TABLE (EntityId UNIQUEIDENTIFIER, Timestamp DATETIME2, EventNumber SMALLINT);
 
-            SELECT TOP(?) EntityId, #IdTableColumns#
-            INTO #TempIdTable
-            FROM #IdTable# WITH (INDEX(#IdTableIndex#))
-            WHERE #GroupFilter#
-            ORDER BY #GroupOrdering#
+        INSERT INTO @Group (EntityId, Timestamp, EventNumber)
+        SELECT TOP(:lastPosition) EntityId, Timestamp, EventNumber
+        FROM [{schema}].[IndexEvent] WITH (INDEX(ixData))
+        WHERE Data=:group AND Type=:type
+        ORDER BY Timestamp DESC, EventNumber DESC;
 
-            IF (SELECT COUNT(*) FROM #TempIdTable) < 1
-              THROW 50000, 'Entity group not initialised', 1
+        IF (SELECT COUNT(*) FROM @Group) < 1
+          THROW 50000, 'Entity group not initialised', 1
 
-            SELECT TOP(1) @entityId=EntityId FROM #TempIdTable ORDER BY #ReverseGroupOrdering#
+        SELECT TOP(1) @entityId=EntityId FROM @Group ORDER BY Timestamp ASC, EventNumber ASC
 
-            SELECT @entityId
+        SELECT @entityId
 
-            SELECT EventNumber, Type, Timestamp, Data
-            FROM [{schema}].Event WITH (INDEX(pkEvent))
-            WHERE EntityId=@entityId
-            ORDER BY EventNumber;
-            """.replace("{schema}", schemaName)
-                .replaceAll(
-                    "#IdTableColumns#",
-                    idModel.columns().stream().map(Column::name).collect(joining(","))
-                )
-                .replaceAll("#IdTable#", names.qualifiedNames().idTable(idModel))
-                .replaceAll("#IdTableIndex#", names.indexName(idModel.columns()))
-                .replaceAll(
-                    "#GroupFilter#",
-                    idModel
-                        .group()
-                        .groupColumns()
-                        .stream()
-                        .map(c -> c.name() + "=?")
-                        .collect(joining(" AND "))
-                )
-                .replaceAll("#GroupOrdering#", idModel
-                    .group()
-                    .groupOrdering()
-                    .stream()
-                    .map(c -> c.column().name() + " " + (c.descending() ? "DESC" : "ASC"))
-                    .collect(joining(", ")))
-                .replaceAll("#ReverseGroupOrdering#", idModel
-                    .group()
-                    .groupOrdering()
-                    .stream()
-                    .map(c -> c.column().name() + " " + (c.descending() ? "ASC" : "DESC"))
-                    .collect(joining(", ")));
-        for (var idModel2 : entityModel.secondaryIds()) {
-          sql = sql +
-              """
-              SELECT #IdColumns#
-              FROM #IdTable# WITH (INDEX(#IdTablePK#))
-              WHERE EntityId=@entityId
-              """
-                  .replaceAll("#IdColumns#", idModel2.columns().stream().map(Column::name).collect(joining(",")))
-                  .replaceAll("#IdTable#", names.qualifiedNames().idTable(idModel2))
-                  .replaceAll("#IdTablePK#", names.idTablePrimaryKeyName(idModel2));
-
-        }
-        this.sql.put(idModel, sql);
-      }
-    }
+        SELECT EventNumber, Type, Timestamp, Data
+        FROM [{schema}].[Event] WITH (INDEX(pkEvent))
+        WHERE EntityId=@entityId
+        ORDER BY EventNumber;
+        """.replace("{schema}", schemaName);
   }
 
   public Mono<EventLog> execute(EntityModel entityModel, List<EventType<?, ?>> eventTypes, SecondaryIdModel<?> idModel, Object entityGroup, int lastPosition) {
     Objects.requireNonNull(entityModel);
     Objects.requireNonNull(entityGroup);
-    String sqlToPrepare = sql.get(idModel);
     return Mono.fromCallable(() -> {
-          //noinspection SqlSourceToSinkFlow
-          try (var connection = dataSource.getConnection(); var statement = connection.prepareStatement(sqlToPrepare)) {
-        statement.setInt(1, lastPosition);
-        int i = 0;
-        for (; i < idModel.group().groupColumns().size(); i++) {
-          statement.setString(i + 2, idModel.group().groupColumns().get(i).value().apply(entityGroup).toString());
-        }
+          try (
+              var connection = dataSource.getConnection();
+              var statement = prepare(
+                  sql,
+                  Map.of(
+                      "lastPosition", new Parameter<>(Integer.class, lastPosition),
+                      "group", new Parameter<>(byte[].class, Group.key(entityGroup)),
+                      "type", new Parameter<>(UUID.class, idModel.id())
+                  ),
+                  connection
+              )
+          ) {
         statement.execute();
         ResultSet rs = statement.getResultSet();
         if (rs == null) {
@@ -135,7 +89,7 @@ public class EventsByLastEntity {
           rs = statement.getResultSet();
         }
         if (!rs.next()) {
-          if (!statement.getMoreResults()) throw new RuntimeException("No result with entity id. SQL is:\n" + sqlToPrepare);
+          if (!statement.getMoreResults()) throw new RuntimeException("No result with entity id. SQL is:\n" + sql);
           rs = statement.getResultSet();
           if (!rs.next()) throw new RuntimeException("No result with entity id after trying more results as well");
         }
@@ -153,15 +107,8 @@ public class EventsByLastEntity {
               rs.getBytes(4) // Data
           ));
         }
-        List<SecondaryId<?>> secondaryIds = new ArrayList<>();
-        for (var idModel2 : entityModel.secondaryIds()) {
-          if (!statement.getMoreResults()) throw new IllegalStateException("Expected result for secondary id " + idModel2.name());
-          rs = statement.getResultSet();
-          if (rs.next()) // Ids might be added with later events
-            secondaryIds.add(idModel2.map(rs));
-        }
         rs.close();
-        return new EventLog(entityModel, entityId, secondaryIds, Collections.unmodifiableList(events));
+        return new EventLog(entityModel, entityId, Collections.unmodifiableList(events));
       }
     })
     .single()

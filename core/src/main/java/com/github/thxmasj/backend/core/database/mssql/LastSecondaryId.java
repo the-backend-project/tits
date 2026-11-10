@@ -1,83 +1,54 @@
 package com.github.thxmasj.backend.core.database.mssql;
 
-import static java.util.stream.Collectors.joining;
+import static com.github.thxmasj.backend.core.database.jdbc.PreparedStatementSupport.prepare;
 
-import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.SecondaryId;
-
+import com.github.thxmasj.backend.core.SecondaryIdModel;
+import com.github.thxmasj.backend.core.SecondaryIdModel.Group;
+import com.github.thxmasj.backend.core.database.Parameter;
 import java.sql.ResultSet;
-import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import javax.sql.DataSource;
-import com.github.thxmasj.backend.core.database.mssql.SchemaNames.Column;
-import com.github.thxmasj.backend.core.database.mssql.SchemaNames.SecondaryIdModel;
 import reactor.core.publisher.Mono;
 
+/// The last id of a group, from the id event of the last member of the group
 public class LastSecondaryId {
 
   private final DataSource dataSource;
-  private final Map<SecondaryIdModel<?>, String> sql = new HashMap<>();
+  private final String sql;
 
-  public LastSecondaryId(
-      DataSource dataSource,
-      List<EntityModel> entityModels,
-      String schemaName
-  ) {
+  public LastSecondaryId(DataSource dataSource, String schemaName) {
     this.dataSource = dataSource;
-    for (var entityModel : entityModels) {
-      var names = new SchemaNames(schemaName, entityModel);
-      for (var idModel : entityModel.secondaryIds()) {
-        if (idModel.group() == null) {
-          continue;
-        }
-        this.sql.put(
-            idModel,
-            """
-            SELECT TOP(1) #IdColumns#
-            FROM #IdTable# WITH (INDEX(#IdTableIndex#))
-            WHERE #GroupFilter#
-            ORDER BY #GroupOrdering#
-            """
-                .replaceAll("#IdColumns#", idModel.columns().stream().map(Column::name).collect(joining(",")))
-                .replaceAll("#IdTable#", names.qualifiedNames().idTable(idModel))
-                .replaceAll("#IdTableIndex#", names.indexName(idModel.columns()))
-                .replaceAll(
-                    "#GroupFilter#",
-                    idModel
-                        .group()
-                        .groupColumns()
-                        .stream()
-                        .map(c -> c.name() + "=?")
-                        .collect(joining(" AND "))
-                )
-                .replaceAll("#GroupOrdering#", idModel
-                    .group()
-                    .groupOrdering()
-                    .stream()
-                    .map(c -> c.column().name() + " " + (c.descending() ? "DESC" : "ASC"))
-                    .collect(joining(", ")))
-        );
-      }
-    }
+    this.sql =
+        """
+        SELECT TOP(1) id.Data
+        FROM [{schema}].[IndexEvent] ie WITH (INDEX(ixData))
+          INNER JOIN [{schema}].[IdEvent] id WITH (INDEX(pkIdEvent)) ON id.EntityId=ie.EntityId AND id.Type=ie.Type
+        WHERE ie.Data=:group AND ie.Type=:type
+        ORDER BY ie.Timestamp DESC, ie.EventNumber DESC, id.EventNumber DESC
+        """.replace("{schema}", schemaName);
   }
 
   public <T> Mono<SecondaryId<T>> execute(SecondaryIdModel<T> idModel, Object entityGroup) {
-    String sqlToPrepare = sql.get(idModel);
-    if (sqlToPrepare == null) throw new IllegalArgumentException(String.format("Model %s for secondary id unknown", idModel.name()));
     return Mono.fromCallable(() -> {
-      //noinspection SqlSourceToSinkFlow
-      try (var connection = dataSource.getConnection(); var statement = connection.prepareStatement(sqlToPrepare)) {
-        int i = 0;
-        for (; i < idModel.group().groupColumns().size(); i++) {
-          statement.setString(i + 1, idModel.group().groupColumns().get(i).value().apply(entityGroup).toString());
-        }
+      try (
+          var connection = dataSource.getConnection();
+          var statement = prepare(
+              sql,
+              Map.of(
+                  "group", new Parameter<>(byte[].class, Group.key(entityGroup)),
+                  "type", new Parameter<>(UUID.class, idModel.id())
+              ),
+              connection
+          )
+      ) {
         statement.execute();
         ResultSet rs = statement.getResultSet();
         if (!rs.next()) {
           return null; // The resulting Mono completes empty
         }
-        return idModel.map(rs);
+        return new SecondaryId<>(idModel, idModel.dataType().unmarshal(rs.getBytes(1)));
       }
     });
   }

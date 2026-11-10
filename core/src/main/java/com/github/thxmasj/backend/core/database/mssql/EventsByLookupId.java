@@ -1,7 +1,7 @@
 package com.github.thxmasj.backend.core.database.mssql;
 
+import static com.github.thxmasj.backend.core.database.jdbc.PreparedStatementSupport.prepare;
 import static java.util.Optional.ofNullable;
-import static java.util.stream.Collectors.joining;
 
 import com.github.thxmasj.backend.core.EntityId;
 import com.github.thxmasj.backend.core.EntityModel;
@@ -10,93 +10,67 @@ import com.github.thxmasj.backend.core.EventLog;
 import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.SecondaryId;
 import com.github.thxmasj.backend.core.database.MappingFailure;
+import com.github.thxmasj.backend.core.database.Parameter;
 import com.github.thxmasj.backend.core.database.UnknownEntity;
 import com.github.thxmasj.backend.core.database.jdbc.JDBCRow;
-import com.github.thxmasj.backend.core.database.mssql.SchemaNames.Column;
-import com.github.thxmasj.backend.core.database.mssql.SchemaNames.SecondaryIdModel;
 import com.microsoft.sqlserver.jdbc.SQLServerException;
 import java.sql.ResultSet;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import javax.sql.DataSource;
 import reactor.core.publisher.Mono;
 
-@SuppressWarnings("StringConcatenationInLoop")
+/// Events of the entity having a secondary id, found by the id event of the id entity sharing its entity id
 public class EventsByLookupId {
 
   private final DataSource dataSource;
-  private final Map<SecondaryIdModel<?>, String> sql;
+  private final String sql;
   private final Clock clock;
 
   public EventsByLookupId(
       DataSource dataSource,
-      List<EntityModel> entityModels,
       String schemaName,
       Clock clock
   ) {
     this.dataSource = dataSource;
     this.clock = clock;
-    this.sql = new HashMap<>();
-    for (var entityModel : entityModels) {
-      var names = new SchemaNames(schemaName, entityModel);
-      for (var idModel : entityModel.secondaryIds()) {
-        var sql = String.format(
-            """
-            DECLARE @entityId UNIQUEIDENTIFIER;
-            
-            SELECT TOP(1) @entityId=EntityId
-            FROM %s WITH (INDEX(%s))
-            WHERE %s
-            %s;
-            
-            IF @@ROWCOUNT < 1
-              THROW 50000, 'Unknown entity', 1
+    this.sql =
+        """
+        DECLARE @entityId UNIQUEIDENTIFIER;
 
-            SELECT @entityId;
-            
-            SELECT EventNumber, Type, Timestamp, Data
-            FROM [{schema}].Event WITH (INDEX(pkEvent))
-            WHERE EntityId=@entityId
-            ORDER BY EventNumber;
-            """.replace("{schema}", schemaName),
-            names.qualifiedNames().idTable(idModel),
-            names.indexName(idModel.columns()),
-            idModel.columns().stream().map(c -> c.name() + "=?").collect(joining(" AND ")),
-            idModel.isSerial() ? "ORDER BY SerialNumber DESC" : ""
-        );
-        // TODO: Can skip the lookup id, as we already have it
-        for (var idModel2 : entityModel.secondaryIds()) {
-          sql = sql +
-              """
-              SELECT #IdColumns#
-              FROM #IdTable# WITH (INDEX(#IdTablePK#))
-              WHERE EntityId=@entityId
-              """
-                  .replaceAll("#IdColumns#", idModel2.columns().stream().map(Column::name).collect(joining(",")))
-                  .replaceAll("#IdTable#", names.qualifiedNames().idTable(idModel2))
-                  .replaceAll("#IdTablePK#", names.idTablePrimaryKeyName(idModel2));
+        SELECT TOP(1) @entityId=EntityId
+        FROM [{schema}].[IdEvent] WITH (INDEX(ixType_Data))
+        WHERE Type=:type AND Data=:data;
 
-        }
-        this.sql.put(idModel, sql);
-      }
-    }
+        IF @@ROWCOUNT < 1
+          THROW 50000, 'Unknown entity', 1
+
+        SELECT @entityId;
+
+        SELECT EventNumber, Type, Timestamp, Data
+        FROM [{schema}].[Event] WITH (INDEX(pkEvent))
+        WHERE EntityId=@entityId
+        ORDER BY EventNumber;
+        """.replace("{schema}", schemaName);
   }
 
   public Mono<EventLog> execute(EntityModel entityModel, List<EventType<?, ?>> eventTypes, SecondaryId<?> secondaryId) {
-    String sqlToPrepare = sql.get(secondaryId.model());
-    if (sqlToPrepare == null) throw new IllegalArgumentException(String.format("Model %s for secondary id unknown", secondaryId.model().name()));
     return Mono.fromCallable(() -> {
-          //noinspection SqlSourceToSinkFlow
-          try (var connection = dataSource.getConnection(); var statement = connection.prepareStatement(sqlToPrepare)) {
-            int index = 1;
-            for (Column column : secondaryId.model().columns()) {
-              statement.setObject(index++, column.value().apply(secondaryId.data()));
-            }
+          try (
+              var connection = dataSource.getConnection();
+              var statement = prepare(
+                  sql,
+                  Map.of(
+                      "type", new Parameter<>(UUID.class, secondaryId.model().id()),
+                      "data", new Parameter<>(byte[].class, secondaryId.marshalledData())
+                  ),
+                  connection
+              )
+          ) {
             statement.execute();
             ResultSet rs = statement.getResultSet();
             if (!rs.next()) {
@@ -115,15 +89,8 @@ public class EventsByLookupId {
                 throw new MappingFailure("EventsBySecondaryId: Failed to map row to event for entity model " + entityModel.name(), e);
               }
             }
-            List<SecondaryId<?>> secondaryIds = new ArrayList<>();
-            for (var idModel2 : entityModel.secondaryIds()) {
-              if (!statement.getMoreResults()) throw new IllegalStateException("Expected result for secondary id " + idModel2.name());
-              rs = statement.getResultSet();
-              if (rs.next()) // Ids might be added with later events
-                secondaryIds.add(idModel2.map(rs));
-            }
             rs.close();
-            return new EventLog(entityModel, entityId, secondaryIds, Collections.unmodifiableList(events));
+            return new EventLog(entityModel, entityId, Collections.unmodifiableList(events));
           }
         })
         .onErrorMap(

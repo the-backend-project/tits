@@ -1,8 +1,6 @@
 package com.github.thxmasj.backend.templates.cardpayment;
 
 import com.github.thxmasj.backend.core.EntityModel;
-import com.github.thxmasj.backend.core.database.mssql.SchemaNames.SecondaryIdModel;
-import java.util.List;
 import java.util.UUID;
 
 public enum Aggregate implements EntityModel {
@@ -29,11 +27,6 @@ public enum Aggregate implements EntityModel {
       return id;
     }
 
-    @Override
-    public List<SecondaryIdModel<?>> secondaryIds() {
-      return List.of(Identifiers.BatchNumber, Identifiers.AcquirerBatchNumber);
-    }
-
 //    @Override
 //    public List<OutboxQueue> queues() {
 //      return List.of(Queues.values());
@@ -45,11 +38,6 @@ public enum Aggregate implements EntityModel {
     @Override
     public UUID id() {
       return UUID.fromString("3ece621b-2c6a-4e5a-895e-6f7b566ec26f");
-    }
-
-    @Override
-    public List<SecondaryIdModel<?>> secondaryIds() {
-      return List.of(Identifiers.MerchantId);
     }
 
   }

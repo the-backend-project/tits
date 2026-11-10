@@ -1,14 +1,8 @@
 package com.github.thxmasj.backend.core;
 
-import com.github.thxmasj.backend.core.database.mssql.SchemaNames.SecondaryIdModel;
-import java.util.List;
 import java.util.UUID;
 
 public interface EntityModel extends Identifiable {
-
-  default List<SecondaryIdModel<?>> secondaryIds() {
-    return List.of();
-  }
 
   State Begin = () -> "Begin";
 

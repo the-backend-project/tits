@@ -1,6 +1,5 @@
 package com.github.thxmasj.backend.core;
 
-import com.github.thxmasj.backend.core.database.mssql.SchemaNames.SecondaryIdModel;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Function;

@@ -2,19 +2,16 @@ package com.github.thxmasj.backend.core.database.mssql;
 
 import static com.github.thxmasj.backend.core.database.jdbc.PreparedStatementSupport.prepare;
 import static java.util.Objects.requireNonNull;
-import static java.util.stream.Collectors.joining;
 
 import com.github.thxmasj.backend.core.EntityId;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.Event;
 import com.github.thxmasj.backend.core.EventLog;
 import com.github.thxmasj.backend.core.EventType;
-import com.github.thxmasj.backend.core.SecondaryId;
 import com.github.thxmasj.backend.core.database.MappingFailure;
 import com.github.thxmasj.backend.core.database.Parameter;
 import com.github.thxmasj.backend.core.database.UnknownEntity;
 import com.github.thxmasj.backend.core.database.jdbc.JDBCRow;
-import com.github.thxmasj.backend.core.database.mssql.SchemaNames.Column;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -28,7 +25,6 @@ import java.util.UUID;
 import javax.sql.DataSource;
 import reactor.core.publisher.Mono;
 
-@SuppressWarnings("StringConcatenationInLoop")
 public class EventsByEntityId {
 
   private final DataSource dataSource;
@@ -45,7 +41,6 @@ public class EventsByEntityId {
     this.clock = clock;
     this.sqls = new HashMap<>();
     for (var entityModel : entityModels) {
-      var names = new SchemaNames(schemaName, entityModel);
       String sql =
           """
           SELECT EventNumber, Type, Timestamp, Data
@@ -53,17 +48,6 @@ public class EventsByEntityId {
           WHERE EntityId=:entityId
           ORDER BY EventNumber;
           """.replace("{schema}", schemaName);
-      for (var idModel : entityModel.secondaryIds()) {
-        sql = sql +
-            """
-            SELECT {IdColumns}
-            FROM {IdTable} WITH (INDEX({IdTablePK}))
-            WHERE EntityId=:entityId
-            """
-                .replace("{IdColumns}", idModel.columns().stream().map(Column::name).collect(joining(",")))
-                .replace("{IdTable}", names.qualifiedNames().idTable(idModel))
-                .replace("{IdTablePK}", names.idTablePrimaryKeyName(idModel));
-      }
       this.sqls.put(entityModel, sql);
     }
   }
@@ -85,18 +69,11 @@ public class EventsByEntityId {
             throw new MappingFailure("EventsByEntityId: Failed to map row to event for entity model " + entityModel.name(), e);
           }
         }
-        List<SecondaryId<?>> secondaryIds = new ArrayList<>();
-        for (var idModel : entityModel.secondaryIds()) {
-          statement.getMoreResults();
-          rs = statement.getResultSet();
-          if (rs.next()) // Ids might be added with later events
-            secondaryIds.add(idModel.map(rs));
-        }
         rs.close();
-        if (events.isEmpty() && secondaryIds.isEmpty())
+        if (events.isEmpty())
           throw new UnknownEntity(entityModel, entityId);
         //System.out.println("Found event log for " + entityModel.name() + "/" + entityId.value() + ": " + events.stream().map(e -> e.typeName()).collect(joining(", ")));
-        return new EventLog(entityModel, entityId, secondaryIds, Collections.unmodifiableList(events));
+        return new EventLog(entityModel, entityId, Collections.unmodifiableList(events));
       }
     });
   }

@@ -43,7 +43,6 @@ import com.github.thxmasj.backend.core.database.mssql.EventsByLastEntity;
 import com.github.thxmasj.backend.core.database.mssql.EventsByLookupId;
 import com.github.thxmasj.backend.core.database.mssql.LastSecondaryId;
 import com.github.thxmasj.backend.core.database.mssql.NextDeadline;
-import com.github.thxmasj.backend.core.database.mssql.SchemaNames.SecondaryIdModel;
 import jakarta.annotation.Nullable;
 import jakarta.validation.constraints.NotNull;
 import java.time.Clock;
@@ -145,7 +144,7 @@ public class StateMachine implements AutoCloseable {
             .toList();
     this.delayer = delayer != null ? delayer : _ -> Mono.empty();
     if (schemaDataSource != null) {
-      new CreateSchema(entityModels.stream().flatMap(em -> em.secondaryIds().stream()).distinct().toList(), schemaName, role).execute(new JDBCClient(schemaDataSource))
+      new CreateSchema(schemaName, role).execute(new JDBCClient(schemaDataSource))
           .timeout(Duration.ofSeconds(20), Mono.error(new RuntimeException("Schema creation timed out. Is the database running?")))
           .block();
     }
@@ -154,14 +153,9 @@ public class StateMachine implements AutoCloseable {
     var jdbcClient = new JDBCClient(dataSource);
     this.changeState = new ChangeState(jdbcClient, schemaName, clock);
     this.eventsByEntityId = new EventsByEntityId(dataSource, entityModels, schemaName, clock);
-    this.eventsByLookupId = new EventsByLookupId(dataSource, entityModels, schemaName, clock);
-    this.eventsByLastEntity = new EventsByLastEntity(
-        dataSource,
-        entityModels,
-        schemaName,
-        clock
-    );
-    this.lastSecondaryId = new LastSecondaryId(dataSource, entityModels, schemaName);
+    this.eventsByLookupId = new EventsByLookupId(dataSource, schemaName, clock);
+    this.eventsByLastEntity = new EventsByLastEntity(dataSource, schemaName, clock);
+    this.lastSecondaryId = new LastSecondaryId(dataSource, schemaName);
     this.nextDeadline = new NextDeadline(jdbcClient, eventTypes, clock, entityModels, schemaName);
     this.deleteExpiredDeadline = new DeleteExpiredDeadline(jdbcClient, schemaName);
     this.conditionTriggers = new ConditionTriggers(jdbcClient, eventTypesByEntityModel, clock, schemaName);
@@ -204,11 +198,11 @@ public class StateMachine implements AutoCloseable {
   }
 
   private EventLog emptyEventLog(EntityModel entityModel) {
-    return new EventLog(entityModel, newEntityId(), List.of(), List.of());
+    return new EventLog(entityModel, newEntityId(), List.of());
   }
 
   private EventLog emptyEventLog(EntityModel entityModel, EntityId entityId) {
-    return new EventLog(entityModel, entityId, List.of(), List.of());
+    return new EventLog(entityModel, entityId, List.of());
   }
 
   public enum ResolverStatus {Ok, Empty, Error}

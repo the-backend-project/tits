@@ -2,7 +2,6 @@ package com.github.thxmasj.backend.core.database.mssql;
 
 import static com.github.thxmasj.backend.core.Tuples.tuple;
 import static java.util.stream.Collectors.joining;
-import static java.util.stream.IntStream.range;
 
 import com.github.thxmasj.backend.core.BasicEventType;
 import com.github.thxmasj.backend.core.ConditionTrigger;
@@ -13,6 +12,7 @@ import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.Event;
 import com.github.thxmasj.backend.core.IndexEntityModel;
 import com.github.thxmasj.backend.core.SecondaryId;
+import com.github.thxmasj.backend.core.SecondaryIdModel.Group;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult;
 import com.github.thxmasj.backend.core.TriggerType;
 import com.github.thxmasj.backend.core.database.Client;
@@ -23,6 +23,7 @@ import com.github.thxmasj.backend.core.database.EventAlreadyExists;
 import com.github.thxmasj.backend.core.database.SecondaryIdAlreadyExists;
 import java.time.Clock;
 import java.time.ZonedDateTime;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Function;
@@ -54,14 +55,11 @@ public class ChangeState {
           .bindNullable("data", byte[].class, event.getMarshalledData());
     }
     for (SecondaryId<?> secondaryId : change.newSecondaryIds()) {
-      for (int i = 0; i < secondaryId.model().columns().size(); i++) {
-        spec.bind(
-            "secondaryId" + secondaryId.model().name() + i,
-            secondaryId.model().columns().get(i).value().apply(secondaryId.data())
-        );
-      }
-      if (secondaryId.model().isSerial())
-        spec.bind("secondaryId" + secondaryId.model().name() + "SerialNumber", secondaryId.serialNumber());
+      String prefix = "secondaryId" + secondaryId.model().name();
+      spec.bind(prefix + "Type", secondaryId.model().id());
+      spec.bind(prefix + "Data", secondaryId.marshalledData());
+      if (secondaryId.model().group() != null)
+        spec.bind(prefix + "Group", groupKey(secondaryId));
     }
     if (change.triggerType() != null) {
       spec.bind("triggerId", change.triggerId());
@@ -90,6 +88,10 @@ public class ChangeState {
           .bind("deadline", deadline.withZoneSameInstant(clock.getZone()).toLocalDateTime())
           .bind("correlationId", correlationId);
     }
+  }
+
+  private static <T> byte[] groupKey(SecondaryId<T> secondaryId) {
+    return Group.key(secondaryId.model().group().group(secondaryId.data()));
   }
 
   private static <T> byte[] marshal(DelayedEvent<T> delayedEvent) {
@@ -365,27 +367,30 @@ public class ChangeState {
         SELECT @entityId{changeIndex}=:entityId
         """.replace("{changeIndex}", String.valueOf(changeIndex));
     //
-    // Secondary id
+    // Secondary id, as an event of the id entity sharing the entity id, and an index event on the id entity for its
+    // group
     //
     for (SecondaryId<?> secondaryId : secondaryIds) {
       sql +=
           """
-          INSERT INTO [{schema}].[{idTable}] (EntityId, {columnList})
-          VALUES (@entityId{changeIndex}, {valueList})
-          """.replace("{idTable}", "Id_" + secondaryId.model().name())
-              .replace(
-                  "{columnList}",
-                  secondaryId.model().columns().stream().map(SchemaNames.Column::name).collect(joining(",")) + (
-                      secondaryId.model().isSerial() ? ",SerialNumber" : "")
-              )
+          INSERT INTO [{schema}].[IdEvent] (EntityId, EventNumber, Type, Timestamp, Data)
+          SELECT @entityId{changeIndex}, ISNULL(MAX(EventNumber), 0) + 1, :{prefix}Type, :timestamp, :{prefix}Data
+          FROM [{schema}].[IdEvent] WITH (UPDLOCK, HOLDLOCK)
+          WHERE EntityId=@entityId{changeIndex};
+          """.replace("{schema}", schema)
               .replace("{changeIndex}", String.valueOf(changeIndex))
-              .replace(
-                  "{valueList}",
-                  range(0, secondaryId.model().columns().size()).mapToObj(i -> ":secondaryId" + secondaryId.model()
-                      .name() + i).collect(joining(",")) + (secondaryId.model().isSerial() ? ",:secondaryId"
-                      + secondaryId.model().name() + "SerialNumber" : "")
-              )
-              .replace("{schema}", schema);
+              .replace("{prefix}", "secondaryId" + secondaryId.model().name());
+      if (secondaryId.model().group() != null) {
+        sql +=
+            """
+            INSERT INTO [{schema}].[IndexEvent] (EntityId, EventNumber, Type, Timestamp, Data)
+            SELECT @entityId{changeIndex}, ISNULL(MAX(EventNumber), 0) + 1, :{prefix}Type, :timestamp, :{prefix}Group
+            FROM [{schema}].[IndexEvent] WITH (UPDLOCK, HOLDLOCK)
+            WHERE EntityId=@entityId{changeIndex};
+            """.replace("{schema}", schema)
+                .replace("{changeIndex}", String.valueOf(changeIndex))
+                .replace("{prefix}", "secondaryId" + secondaryId.model().name());
+      }
     }
 
     if (event != null && entityModel instanceof IndexEntityModel) {
@@ -530,7 +535,7 @@ public class ChangeState {
         } catch (Exception e) {
           return new EventAlreadyExists(pkViolation.duplicateKey());
         }
-      } else if (pkViolation.tableName().equals("Event") || pkViolation.tableName().equals("IndexEvent")) {
+      } else if (List.of("Event", "IndexEvent", "IdEvent").contains(pkViolation.tableName())) {
         try {
           EntityId entityId = new EntityId.UUID(UUID.fromString(pkViolation.duplicateKey().split(",")[0]));
           int eventNumber = Integer.parseInt(pkViolation.duplicateKey().split(",")[1].trim());
@@ -543,48 +548,24 @@ public class ChangeState {
           return new EventAlreadyExists(pkViolation.duplicateKey());
         }
       } else {
-        // Assume id table
-        return changes.stream()
-            .filter(change -> !change.newSecondaryIds().isEmpty())
-            .filter(change -> pkViolation.tableName().equals(new SchemaNames(schema, change.entityModel()).idTableName(change.newSecondaryIds().getFirst().model())))
-            .map(change -> new RuntimeException(String.format(
-                "There's already a secondary id of type %s for entity %s/%s",
-                change.newSecondaryIds().getFirst().model().name(),
-                change.entityModel().name(),
-                change.entityId()
-            )))
-            .findFirst()
-            .orElseThrow();
+        return pkViolation;
       }
     };
   }
 
+  /// The duplicate key of an id event is its type and data, e.g. "f721bf54-891b-41a0-aa63-5d3cbde52437, 0x7B22..."
   private Function<UniqueIndexConstraintViolation, Throwable> uniqueIndexConstraintViolationMapper(List<Change> changes) {
     return indexViolation -> changes.stream()
         .flatMap(change -> change.newSecondaryIds().stream().map(secondaryId -> tuple(change, secondaryId)))
-        .filter(tuple -> indexViolation.tableName()
-            .equals(new SchemaNames(schema, tuple.t1().entityModel()).idTableName(tuple.t2().model())))
-        // TODO: Wrong SecondaryId can be picked here if several of the same type (hence table) are created in the same
-        //       transaction. We only check for first table match.
-        //       => The duplicateKey needs to be parsed and compared, too. Perhaps use the indexName as well.
-        //          Ex: indexName="ixBaxNumber_SessionNumber"
-        //              duplicateKey="111400, 2"
-        //              tableName="Session_SessionId"
-        //          Ergo: We can find SecondaryIdModel by tableName. The specific SecondaryId can be found by duplicateKey
-        //          See model.columns:
-        //
-        //    public List<Column> columns() {
-        //      return List.of(
-        //          new Column("BaxNumber", "VARCHAR(11)", e -> ((SessionId)e).baxNumber()),
-        //          new Column("SessionNumber", "SMALLINT", e -> ((SessionId)e).sessionNumber())
-        //      );
-        //    }
-
+        .filter(_ -> indexViolation.tableName().equals("IdEvent"))
+        .filter(tuple -> indexViolation.duplicateKey().equalsIgnoreCase(
+            tuple.t2().model().id() + ", 0x" + HexFormat.of().formatHex(tuple.t2().marshalledData())
+        ))
         .map(tuple -> new SecondaryIdAlreadyExists(
             tuple.t1(),
             tuple.t2(),
             indexViolation.duplicateKey(),
-            new SchemaNames(schema, tuple.t1().entityModel()).idTableName(tuple.t2().model())
+            indexViolation.tableName()
         ))
         .findFirst()
         .orElseThrow(() -> new RuntimeException("Failed to map index violation exception: " + indexViolation, indexViolation));

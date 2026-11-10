@@ -4,28 +4,10 @@ import static com.github.thxmasj.backend.templates.cardpayment.Identifiers.Acqui
 import static com.github.thxmasj.backend.templates.cardpayment.Identifiers.BatchNumber;
 
 import com.github.thxmasj.backend.core.SecondaryId;
-import com.github.thxmasj.backend.core.database.mssql.SchemaNames.Column;
-import com.github.thxmasj.backend.core.database.mssql.SchemaNames.ColumnOrder;
-import com.github.thxmasj.backend.core.database.mssql.SchemaNames.SecondaryIdModel;
-
-import java.util.List;
+import com.github.thxmasj.backend.core.SecondaryIdModel;
 
 public interface IdentifierGroups {
   SecondaryIdModel.Group<BatchNumber> Batch = new SecondaryIdModel.Group<>() {
-    @Override
-    public List<Column> groupColumns() {
-      return List.of(
-          new Column("MerchantId", "VARCHAR(36)", e -> e)
-      );
-    }
-
-    @Override
-    public List<ColumnOrder> groupOrdering() {
-      return List.of(
-          new ColumnOrder(new Column("BatchNumber", null, e -> ((BatchNumber)e).number()), true)
-      );
-    }
-
     @Override
     public boolean isInitial(BatchNumber value) {
       return value.number() == 1;
@@ -48,20 +30,6 @@ public interface IdentifierGroups {
   };
 
   SecondaryIdModel.Group<AcquirerBatchNumber> AcquirerBatch =  new SecondaryIdModel.Group<>() {
-    @Override
-    public List<Column> groupColumns() {
-      return List.of(
-          new Column("MerchantId", "VARCHAR(36)", e -> e)
-      );
-    }
-
-    @Override
-    public List<ColumnOrder> groupOrdering() {
-      return List.of(
-          new ColumnOrder(new Column("BatchNumber", null, e -> ((AcquirerBatchNumber)e).number()), true)
-      );
-    }
-
     @Override
     public boolean isInitial(AcquirerBatchNumber value) {
       return false;

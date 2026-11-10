@@ -4,7 +4,6 @@ import static com.github.thxmasj.backend.core.Event.join;
 import static java.util.Collections.unmodifiableList;
 import static java.util.stream.Collectors.joining;
 
-import com.github.thxmasj.backend.core.database.mssql.SchemaNames.SecondaryIdModel;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -15,7 +14,6 @@ import java.util.stream.Stream;
 public record EventLog(
     EntityModel entityModel,
     EntityId entityId,
-    List<SecondaryId<?>> secondaryIds,
     List<Event<?>> events
 ) {
 
@@ -149,32 +147,16 @@ public record EventLog(
     return unmodifiableList(effectiveEventsReversed.reversed());
   }
 
-  public <T> T id(SecondaryIdModel<T> model) {
-    return secondaryIds().stream()
-        .filter(id -> id.model() == model)
-        .map(id -> (T)id.data())
-        .findFirst()
-        .orElseThrow();
-  }
-
-  public <T> Optional<T> idIfExists(SecondaryIdModel<T> model) {
-    return secondaryIds().stream()
-        .filter(id -> id.model() == model)
-        .map(id -> (T)id.data())
-        .findFirst();
-  }
-
   public EventLog withNewEvent(Event<?> newEvent) {
     return new EventLog(
         entityModel(),
         entityId(),
-        secondaryIds(),
         join(events(), newEvent)
     );
   }
 
   public static EventLog empty(EntityId id, EntityModel model) {
-    return new EventLog(model, id, List.of(), List.of());
+    return new EventLog(model, id, List.of());
   }
 
 }

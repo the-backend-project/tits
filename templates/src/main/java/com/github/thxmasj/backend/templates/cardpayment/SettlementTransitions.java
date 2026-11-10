@@ -37,6 +37,7 @@ import static com.github.thxmasj.backend.templates.cardpayment.SettlementEvent.R
 import static com.github.thxmasj.backend.templates.cardpayment.SettlementEvent.Timeout;
 
 import com.github.thxmasj.backend.core.EntityModel;
+import com.github.thxmasj.backend.core.EventLog;
 import com.github.thxmasj.backend.core.Identifiable;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionModel;
@@ -49,9 +50,12 @@ import com.github.thxmasj.backend.http.outbox.HttpOutboxRequest;
 import com.github.thxmasj.backend.templates.cardpayment.AcquirerResponse.ReconciliationValues;
 import com.github.thxmasj.backend.templates.cardpayment.PaymentEvent.Merchant;
 import com.github.thxmasj.backend.templates.cardpayment.SettlementEvent.CutOff;
+import com.github.thxmasj.backend.templates.cardpayment.SettlementEvent.Opened;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
 
@@ -121,36 +125,36 @@ public class SettlementTransitions {
                 .assembleInput()
                 .newIdentifier(AcquirerBatchNumber, d -> d)
                 .newIdentifierInGroup(BatchNumber, d -> d.t1().merchantId())
-                .output(),
+                .output(d -> new Opened(d.t2().accepted().id().data(), d.t1().t1())),
             // The first settlement of a merchant. The acquirer's batch number is assigned when it is first seen in a response.
             onEvent(OpenInitial).to(AwaitingAcquirerBatchNumber)
                 .assembleInput()
                 .newIdentifierInGroup(BatchNumber, d -> d.value())
-                .output()
+                .output(d -> d.t2().accepted().id().data())
         ),
         // Open, but the acquirer's batch number is not known until the first response referring to the settlement
         AwaitingAcquirerBatchNumber, join(List.of(
             onEvent(AssignAcquirerBatchNumber).to(Open)
                 .assembleInput()
                 .newIdentifier(AcquirerBatchNumber, d -> d)
-                .output(),
-            onEvent(GetBatchNumber).toSelf().assemble(c -> c.log().id(BatchNumber)).output(d -> d),
+                .output(Tuple2::t1),
+            onEvent(GetBatchNumber).toSelf().assemble(c -> batchNumber(c.log())).output(d -> d),
             // Number 0 means unknown
             onEvent(GetAcquirerBatchNumber).toSelf()
                 .assemble(c -> new AcquirerBatchNumber(c.input().value(), 0))
                 .output(d -> d),
-            onEvent(GetCurrentBatchNumber).toSelf().assemble(c -> c.log().id(BatchNumber)).output(d -> d)
+            onEvent(GetCurrentBatchNumber).toSelf().assemble(c -> batchNumber(c.log())).output(d -> d)
         ), openTransitions(reconciliationToAcquirer)),
         Open, join(List.of(
             onEvent(AssignAcquirerBatchNumber).toSelf().assembleInput().output(),
-            onEvent(GetBatchNumber).toSelf().assemble(c -> c.log().id(BatchNumber)).output(d -> d),
-            onEvent(GetAcquirerBatchNumber).toSelf().assemble(d -> d.log().id(AcquirerBatchNumber)).output(d -> d),
-            onEvent(GetCurrentBatchNumber).toSelf().assemble(c -> c.log().id(BatchNumber)).output(d -> d)
+            onEvent(GetBatchNumber).toSelf().assemble(c -> batchNumber(c.log())).output(d -> d),
+            onEvent(GetAcquirerBatchNumber).toSelf().assemble(d -> acquirerBatchNumber(d.log()).orElseThrow()).output(d -> d),
+            onEvent(GetCurrentBatchNumber).toSelf().assemble(c -> batchNumber(c.log())).output(d -> d)
         ), openTransitions(reconciliationToAcquirer)),
         ProcessingSettlement, List.of(
             onEvent(AssignAcquirerBatchNumber).toSelf().assembleInput().output(),
-            onEvent(GetBatchNumber).toSelf().assemble(c -> c.log().id(BatchNumber)).output(d -> d),
-            onEvent(GetCurrentBatchNumber).toSelf().assemble(c -> c.log().id(BatchNumber)).output(d -> d),
+            onEvent(GetBatchNumber).toSelf().assemble(c -> batchNumber(c.log())).output(d -> d),
+            onEvent(GetCurrentBatchNumber).toSelf().assemble(c -> batchNumber(c.log())).output(d -> d),
             // For previous batch to stay open for ongoing capture exchanges when cut-off is performed
             onEvent(MerchantCredit).toSelf().assemble((input, _) -> input).output(Function.identity()),
             onEvent(MerchantDebit).toSelf().assemble((input, _) -> input).output(Function.identity()),
@@ -193,10 +197,22 @@ public class SettlementTransitions {
         Reconciled, List.of(),
         Error, List.of(
             onEvent(AssignAcquirerBatchNumber).toSelf().assembleInput().output(),
-            onEvent(GetBatchNumber).toSelf().assemble(c -> c.log().id(BatchNumber)).output(d -> d),
-            onEvent(GetCurrentBatchNumber).toSelf().assemble(c -> c.log().id(BatchNumber)).output(d -> d)
+            onEvent(GetBatchNumber).toSelf().assemble(c -> batchNumber(c.log())).output(d -> d),
+            onEvent(GetCurrentBatchNumber).toSelf().assemble(c -> batchNumber(c.log())).output(d -> d)
         )
     );
+  }
+
+  /// The batch number assigned when the settlement was opened
+  private static BatchNumber batchNumber(EventLog log) {
+    return log.oneIfExists(OpenInitial).orElseGet(() -> log.one(SettlementEvent.Open).batchNumber());
+  }
+
+  /// The acquirer's batch number, assigned when the settlement was opened or when first seen in a response
+  private static Optional<AcquirerBatchNumber> acquirerBatchNumber(EventLog log) {
+    return log.oneIfExists(SettlementEvent.Open).map(Opened::acquirerBatchNumber)
+        // Assigning it when it is already known records nothing
+        .or(() -> log.all(AssignAcquirerBatchNumber).stream().filter(Objects::nonNull).findFirst());
   }
 
   private static List<TransitionModel<?, ?>> join(List<TransitionModel<?, ?>> first, List<TransitionModel<?, ?>> second) {
@@ -217,8 +233,8 @@ public class SettlementTransitions {
         onEvent(CutOffRequest).to(ProcessingSettlement)
             .assemble(c -> tuple(
                 c.input(),
-                c.log().id(BatchNumber),
-                c.log().idIfExists(AcquirerBatchNumber).orElseGet(() -> new AcquirerBatchNumber(c.input().merchantId(), 0)),
+                batchNumber(c.log()),
+                acquirerBatchNumber(c.log()).orElseGet(() -> new AcquirerBatchNumber(c.input().merchantId(), 0)),
                 c.eventReference(),
                 c.log().entityId().value(),
                 DispatchContext.of(c)

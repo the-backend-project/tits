@@ -1,53 +1,44 @@
 package com.github.thxmasj.backend.core.database.mssql;
 
-import static java.util.stream.Collectors.joining;
-
 import com.github.thxmasj.backend.core.database.Client;
-import com.github.thxmasj.backend.core.database.mssql.SchemaNames.SecondaryIdModel;
 import java.nio.charset.StandardCharsets;
-import java.util.Comparator;
-import java.util.List;
 import java.util.zip.CRC32;
 import reactor.core.publisher.Mono;
 
-@SuppressWarnings({"StringConcatenationInLoop"})
 public class CreateSchema {
 
-  private final List<SecondaryIdModel<?>> idModels;
   private final String schema;
   private final String role;
 
-  public CreateSchema(List<SecondaryIdModel<?>> idModels, String schemaName, String role) {
-    this.idModels = idModels.stream().sorted(Comparator.comparing(SecondaryIdModel::id)).toList();
+  public CreateSchema(String schemaName, String role) {
     this.schema = schemaName;
     this.role = role;
   }
 
   public String sql() {
-    return createSql(schema);
+    return createSql();
   }
 
   public long checksum() {
-    return checksum(coreSql());
-  }
-
-  private long checksum(String coreSql) {
     var crc32 = new CRC32();
-    crc32.update(coreSql.getBytes(StandardCharsets.UTF_8));
+    crc32.update(coreSql().getBytes(StandardCharsets.UTF_8));
     return crc32.getValue();
   }
 
-  private String coreSql() {
-    return sqlForIds(idModels);
-  }
-
-  private String createSql(String schema) {
-    String coreSql = coreSql();
-    String initSql =
+  private String createSql() {
+    return
         """
         CREATE TABLE [{schema}].[Metadata] (Checksum BIGINT NOT NULL)
         INSERT INTO [{schema}].[Metadata] (Checksum) VALUES ({checksum})
+        """.replace("{schema}", schema)
+            .replace("{checksum}", String.valueOf(checksum()))
+        + coreSql();
+  }
 
+  /// The tables, as verified by the checksum
+  private String coreSql() {
+    return
+        """
         CREATE TABLE [{schema}].[Entity]
         (
             EntityId      UNIQUEIDENTIFIER NOT NULL,
@@ -83,6 +74,19 @@ public class CreateSchema {
         --CREATE UNIQUE INDEX ixEntityId_EventNumber ON [{schema}].[IndexEvent] (EntityId, EventNumber);
         CREATE INDEX ixData ON [{schema}].[IndexEvent] (Data);
 
+        CREATE TABLE [{schema}].[IdEvent]
+        (
+            EntityId    UNIQUEIDENTIFIER   NOT NULL,
+            EventNumber SMALLINT           NOT NULL,
+            Type        UNIQUEIDENTIFIER   NOT NULL,
+            -- Leaves room for Type in the 1700 bytes of the unique index key
+            Data        VARBINARY(1684)    NOT NULL,
+            Timestamp   DATETIME2          NOT NULL,
+            CONSTRAINT [pkIdEvent] PRIMARY KEY (EntityId, EventNumber)
+        );
+        GRANT INSERT, SELECT ON [{schema}].[IdEvent] TO [{role}];
+        CREATE UNIQUE INDEX ixType_Data ON [{schema}].[IdEvent] (Type, Data);
+
         CREATE TABLE [{schema}].[Timeout]
         (
             EntityId      UNIQUEIDENTIFIER NOT NULL,
@@ -117,38 +121,7 @@ public class CreateSchema {
         );
         GRANT INSERT, DELETE, SELECT ON [{schema}].[ConditionTrigger] TO [{role}];
         """.replace("{schema}", schema)
-            .replace("{checksum}", String.valueOf(checksum(coreSql)))
             .replace("{role}", role);
-    return initSql + coreSql;
-  }
-
-  private String sqlForIds(List<SecondaryIdModel<?>> ids) {
-    var names = new SchemaNames(schema, null);
-    String sql = "";
-        for (SecondaryIdModel<?> secondaryId : ids) {
-          String tableName = "Id_" + secondaryId.name();
-          String qualifiedTableName = String.format("[%s].[%s]", schema, tableName);
-          sql +=
-              """
-              CREATE TABLE {qualifiedTableName}
-              (
-                EntityId UNIQUEIDENTIFIER NOT NULL,
-                {serialNumberColumnDefinition}
-                {columnDefinitions}
-                CONSTRAINT [pk{tableName}] PRIMARY KEY (EntityId)
-              );
-              GRANT INSERT, SELECT ON {qualifiedTableName} TO [{role}];
-              CREATE UNIQUE INDEX {indexName} ON {qualifiedTableName} ({columnList});
-              """.replace("{qualifiedTableName}", qualifiedTableName)
-                  .replace("{role}", role)
-                  .replace("{tableName}", tableName)
-                  .replace("{serialNumberColumnDefinition}", secondaryId.isSerial() ? "SerialNumber BIGINT NOT NULL," : "")
-                  .replace("{columnDefinitions}", secondaryId.columns().stream().map(column -> column.name() + " " + column.type() + " NOT NULL").collect(joining(",")))
-                  .replace("{indexName}", names.indexName(secondaryId.columns()))
-                  .replace("{columnList}", String.join(",", secondaryId.columns().stream().map(SchemaNames.Column::name).toList()))
-          ;
-        }
-        return sql;
   }
 
   public Mono<Integer> execute(Client databaseClient) {
@@ -166,7 +139,7 @@ public class CreateSchema {
         .switchIfEmpty(
             databaseClient.sql("CREATE SCHEMA [" + schema + "]").name("CreateSchema0").update()
                 .onErrorResume(t -> t.getCause() != null && t.getCause().getMessage().equals("There is already an object named '" + schema + "' in the database."), _ -> Mono.just(0))
-                .then(databaseClient.sql(createSql(schema)).name("CreateSchema1").update())
+                .then(databaseClient.sql(createSql()).name("CreateSchema1").update())
         )
         .doOnNext(updateCount -> {
           if (updateCount == 0)
