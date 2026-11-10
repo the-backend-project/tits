@@ -42,7 +42,6 @@ import com.github.thxmasj.backend.core.database.mssql.CreateSchema;
 import com.github.thxmasj.backend.core.database.mssql.DeleteExpiredDeadline;
 import com.github.thxmasj.backend.core.database.mssql.EventsByEntityId;
 import com.github.thxmasj.backend.core.database.mssql.EventsByIdEvent;
-import com.github.thxmasj.backend.core.database.mssql.EventsByIdEvent.IdEventLog;
 import com.github.thxmasj.backend.core.database.mssql.EventsByLastIndexEvent;
 import com.github.thxmasj.backend.core.database.mssql.NextDeadline;
 import jakarta.annotation.Nullable;
@@ -65,7 +64,6 @@ import java.util.stream.Stream;
 import javax.sql.DataSource;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.util.context.ContextView;
 import reactor.core.publisher.Sinks;
 import reactor.core.publisher.Sinks.Many;
 import reactor.util.retry.RetrySpec;
@@ -424,7 +422,7 @@ public class StateMachine implements AutoCloseable {
     Many<Event<?>> responseSink = Sinks.many().unicast().onBackpressureBuffer();
     return eventLog(eventTrigger, input, null)
         .flatMapMany(log ->
-                onEvent(correlationId, eventTrigger.eventSpec().eventType(), adaptedInput, log, null, eventTrigger.triggerType(), eventTrigger.triggerId(), triggerEvent)
+                onEvent(correlationId, eventTrigger.eventSpec().eventType(), adaptedInput, log, null, eventTrigger.triggerType(), eventTrigger.triggerId(), triggerEvent, List.of())
                     .contextWrite(ctx -> ctx.put("RS/" + log.entityId().value(), responseSink))
                     .thenMany(responseSink.asFlux())
                     .retryWhen(RetrySpec.fixedDelay(3, Duration.ofMillis(500))
@@ -503,7 +501,7 @@ public class StateMachine implements AutoCloseable {
       EventLog eventLog,
       ChangeContext<?> stage1
   ) {
-    return onEvent(correlationId, eventType, input, eventLog, stage1, null, null, null);
+    return onEvent(correlationId, eventType, input, eventLog, stage1, null, null, null, List.of());
   }
 
   private <I> Mono<ProcessResult<?>> onEvent(
@@ -514,7 +512,8 @@ public class StateMachine implements AutoCloseable {
       ChangeContext<?> stage1,
       TriggerType triggerType,
       UUID triggerId,
-      @Nullable EventReference triggerEvent
+      @Nullable EventReference triggerEvent,
+      List<IdExists<?>> existingIds
   ) {
     System.out.println(eventLog.entityModel().name() + ": onEvent " + eventType.name() + " with log " + eventLog.events().stream().map(Event::typeName).collect(joining(",")));
     var now = ZonedDateTime.now(clock);
@@ -543,7 +542,8 @@ public class StateMachine implements AutoCloseable {
                 input,
                 this,
                 triggerType,
-                triggerId
+                triggerId,
+                existingIds
             )
         )
         .flatMap(this::calculatePendingChanges)
@@ -584,30 +584,34 @@ public class StateMachine implements AutoCloseable {
             IdEventAlreadyExists.class,
             e -> eventsByIdEvent.execute(e.idEvent().type(), e.idEvent().getMarshalledData())
                 .switchIfEmpty(Mono.error(e))
-                .flatMap(existing -> Mono.deferContextual(ctx ->
-                    onEvent(correlationId, eventType, input, eventLog, stage1, triggerType, triggerId, triggerEvent)
-                        .contextWrite(c -> c.put(EXISTING_IDS, Stream.concat(existingIds(ctx).stream(), Stream.of(existing)).toList()))
+                .flatMap(existing -> onEvent(
+                    correlationId,
+                    eventType,
+                    input,
+                    eventLog,
+                    stage1,
+                    triggerType,
+                    triggerId,
+                    triggerEvent,
+                    Stream.concat(
+                        existingIds.stream(),
+                        Stream.of(ProcessResult.idExists(e.idEvent().type(), existing.idEvent(), existing.log()))
+                    ).toList()
                 ))
         );
   }
 
-  /// Key of the existing id events found when storing changes, in the Reactor context of calculating them again
-  private static final String EXISTING_IDS = "ExistingIds";
-
-  private static List<IdEventLog> existingIds(ContextView ctx) {
-    return ctx.getOrDefault(EXISTING_IDS, List.of());
-  }
-
-  /// The existing id event if the triggered id event has an existing id
-  private <I, O> Mono<ChangeContext<ProcessResult<O>>> idExists(EventTrigger<?, I, O> eventTrigger, ChangeContext<?> tail, I data) {
+  /// The existing id, if the triggered event is an id event with an id found to exist when storing the changes
+  private <I, O> ChangeContext<ProcessResult<O>> idExists(EventTrigger<?, I, O> eventTrigger, ChangeContext<?> tail, I data) {
     if (!(eventTrigger.entityModel() instanceof IdEntityModel))
-      return Mono.empty();
+      return null;
     EventType<I, O> type = eventTrigger.eventSpec().eventType();
-    return Mono.deferContextual(ctx -> Mono.justOrEmpty(existingIds(ctx).stream()
-            .filter(existing -> existing.idEvent().type().id().equals(type.id())
-                && Arrays.equals(existing.idEvent().data(), type.inputDataType().marshal(data)))
-            .findFirst()))
-        .map(existing -> new IdExistsChangeContext<>(tail, ProcessResult.idExists(type, existing.idEvent(), existing.log())));
+    return tail.firstInitialChangeContext().existingIds().stream()
+        .filter(existing -> existing.idEvent().type().id().equals(type.id())
+            && Arrays.equals(existing.idEvent().data(), type.inputDataType().marshal(data)))
+        .findFirst()
+        .map(existing -> new IdExistsChangeContext<>(tail, ProcessResult.idExists(type, existing.idEvent(), existing.log())))
+        .orElse(null);
   }
 
   public static String chainToString(ChangeContext<?> tail) {
@@ -739,7 +743,7 @@ public class StateMachine implements AutoCloseable {
 
   private <T> Mono<EventLog> eventLog(ByIdEvent<T> selector, EntityModel entityModel, ChangeContext<?> changeContext) {
     Mono<EventLog> log = eventsByIdEvent.execute(selector.type(), selector.type().outputDataType().marshal(selector.id()))
-        .map(IdEventLog::log)
+        .map(EventsByIdEvent.IdEventLog::log)
         .filter(l -> l.entityModel().equals(entityModel));
     return switch (selector.creationMode()) {
       case NeverCreate -> log.switchIfEmpty(Mono.defer(() -> selector.fallback() != null ?
@@ -818,7 +822,10 @@ public class StateMachine implements AutoCloseable {
       EventReference triggerEvent
   ) {
     I adaptedData = eventTrigger.eventSpec().inputAdapter() != null ? eventTrigger.eventSpec().inputAdapter().apply(data) : null;
-    Mono<ChangeContext<ProcessResult<O>>> calculated = Mono.deferContextual(ctx -> {
+    ChangeContext<ProcessResult<O>> idExists = idExists(eventTrigger, tail, adaptedData);
+    if (idExists != null)
+      return Mono.just(idExists);
+    return Mono.deferContextual(ctx -> {
           EntityId entityId = switch (eventTrigger.entitySelectors().getFirst().apply(data)) {
             case ByIdFromSession _ -> {
               try {
@@ -873,7 +880,6 @@ public class StateMachine implements AutoCloseable {
                 )
             ))
     );
-    return idExists(eventTrigger, tail, adaptedData).switchIfEmpty(calculated);
   }
 
   public static class CircularChange extends RuntimeException {

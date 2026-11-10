@@ -123,7 +123,8 @@ public class TransitionModelBuilder<I, T, O> {
         I input,
         StateMachine stateMachine,
         TriggerType triggerType,
-        UUID triggerId
+        UUID triggerId,
+        List<IdExists<?>> existingIds
     ) implements ChangeContext<I>, TransitionContext<I> {
       public InitialChangeContext(
           ChangeContext<?> stage1,
@@ -138,7 +139,7 @@ public class TransitionModelBuilder<I, T, O> {
           I input,
           StateMachine stateMachine
       ) {
-        this(stage1, previous, triggerEvent, transitionModel, from, eventNumber, log, timestamp, correlationId, input, stateMachine, null, null);
+        this(stage1, previous, triggerEvent, transitionModel, from, eventNumber, log, timestamp, correlationId, input, stateMachine, null, null, List.of());
       }
       @Override public I stepOutput() {return input;}
       @Override public String toString() {
@@ -847,7 +848,8 @@ public class TransitionModelBuilder<I, T, O> {
                             filter.alternative().dataAdapter().apply(c.stepOutput()),
                             c.initialChangeContext().stateMachine(),
                             c.initialChangeContext().triggerType(),
-                            c.initialChangeContext().triggerId()
+                            c.initialChangeContext().triggerId(),
+                            List.of()
                         )
                     ).map(alternativeOutput -> new ChoiceChangeContext<>(alternativeOutput, c));
               })
