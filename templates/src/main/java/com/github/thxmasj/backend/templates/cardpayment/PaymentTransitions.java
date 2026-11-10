@@ -36,6 +36,7 @@ import static com.github.thxmasj.backend.templates.cardpayment.PaymentEvent.Decl
 import static com.github.thxmasj.backend.templates.cardpayment.PaymentEvent.DeclinedRefund;
 import static com.github.thxmasj.backend.templates.cardpayment.PaymentEvent.DeclinedUnauthorisedCapture;
 import static com.github.thxmasj.backend.templates.cardpayment.PaymentEvent.IllegalMerchant;
+import static com.github.thxmasj.backend.templates.cardpayment.PaymentEvent.InactiveMerchant;
 import static com.github.thxmasj.backend.templates.cardpayment.PaymentEvent.InsufficientMerchantDetails;
 import static com.github.thxmasj.backend.templates.cardpayment.PaymentEvent.InvalidAmount;
 import static com.github.thxmasj.backend.templates.cardpayment.PaymentEvent.InvalidAuthenticationToken;
@@ -297,6 +298,15 @@ public class PaymentTransitions {
                             .assemble(c -> tuple(c.input(), c.eventReference()))
                             .trigger(CompleteInvalidRequest)
                             .with(d -> tuple("Unknown merchant " + d.t1().value(), d.t2()))
+                            .on(RequestDispatching).identifiedBy(entityIdFromSession())
+                            .output(d -> d.t1().t1()),
+                        d -> new MerchantId(d.t1().t1().merchantId())
+                    )
+                    .when(d -> d.t2().isRejected()).then(
+                        onEvent(InactiveMerchant).to(Rejected)
+                            .assemble(c -> tuple(c.input(), c.eventReference()))
+                            .trigger(CompleteInvalidRequest)
+                            .with(d -> tuple("Inactive merchant " + d.t1().value(), d.t2()))
                             .on(RequestDispatching).identifiedBy(entityIdFromSession())
                             .output(d -> d.t1().t1()),
                         d -> new MerchantId(d.t1().t1().merchantId())

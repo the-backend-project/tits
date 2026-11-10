@@ -125,6 +125,7 @@ public interface PaymentEvent {
       DataType.tuple(DataType.json(Authorisation.class), DataType.json(Merchant.class))
   );
   EventType<MerchantId, MerchantId> UnknownMerchant = BasicEventType.of("Unknown merchant", UUID.fromString("85638b45-2bc6-4363-901f-7c35d8a642b6"), DataType.json(MerchantId.class));
+  EventType<MerchantId, MerchantId> InactiveMerchant = BasicEventType.of("Inactive merchant", UUID.fromString("ece8696c-3e7d-412d-bc6c-b8ff1d925b0c"), DataType.json(MerchantId.class));
   EventType<MerchantId, MerchantId> IllegalMerchant = BasicEventType.of("Illegal merchant", UUID.fromString("04ae10a7-fa0f-4f2e-bdbc-22371ef29c39"), DataType.json(MerchantId.class));
   EventType<Void, Void> InsufficientMerchantDetails = BasicEventType.of("Insufficient merchant details", UUID.fromString("a7f228ba-f5d2-43ab-bfc1-531954d223e7"), DataType.none());
   EventType<ValidatedAmount.Invalid, ValidatedAmount.Invalid> InvalidAmount = BasicEventType.of("Invalid amount", UUID.fromString("c19e6784-4059-4216-b67b-087ca5f2e764"), DataType.json(ValidatedAmount.Invalid.class));

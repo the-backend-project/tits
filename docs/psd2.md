@@ -80,13 +80,10 @@ data. The PSR puts more emphasis on this than PSD2 did.
 
 * Every payment is tied to a registered merchant (`Aggregate.Merchant`) that has a display name, location and
   merchant category code. Payments for unknown merchants are rejected (`UnknownMerchant`).
+* Payments for suspended or deleted merchants are rejected (`InactiveMerchant`).
 * An aggregator can only submit payments for its own merchants (`IllegalMerchant`).
 * For a super merchant, the sub-merchant's display name, category code and city are required on every payment
   (`InsufficientMerchantDetails`), and these details, not the aggregator's, are sent to the acquirer.
-
-**Gap:** Payments for suspended or deleted merchants are not rejected cleanly. The merchant's `Get` event is only
-accepted in `Active`, and `PaymentTransitions` reads the result as if it had been accepted. The request then fails
-with an exception instead of a `Rejected` outcome.
 
 ## Evidence and traceability
 
