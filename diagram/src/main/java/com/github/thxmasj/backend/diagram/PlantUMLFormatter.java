@@ -295,16 +295,18 @@ public class PlantUMLFormatter {
     System.out.println("Formatting transitions from " + sourceState.name());
     StringBuilder s = new StringBuilder();
     for (TransitionModel<?, ?> transition : transitionsFromState) {
-      s.append(formatTransitionTree(sourceState, visited, transition));
+      s.append(formatTransitionTree(sourceState, sourceState, visited, transition));
     }
     return s.toString();
   }
 
   private record Choice(String name) implements State {}
 
-  private String formatTransitionTree(State sourceState, Set<State> visited, TransitionModel<?, ?> transition) {
+  // ownerState is the state the transition originates from, while sourceState is either that state or a choice
+  // between it and the target. Self transitions go back to ownerState, never to a choice.
+  private String formatTransitionTree(State ownerState, State sourceState, Set<State> visited, TransitionModel<?, ?> transition) {
     StringBuilder s = new StringBuilder();
-    State targetState = transition.toState() != null ? transition.toState() : sourceState;
+    State targetState = transition.toState() != null ? transition.toState() : ownerState;
     if (!transition.filters().isEmpty()) {
       System.out.println("Formatting transition with choice from " + sourceState);
       String choiceName = "Choice" + choiceCounter2.incrementAndGet();
@@ -312,12 +314,12 @@ public class PlantUMLFormatter {
 //        s.append(String.format("%s -down-> %s: %s\n", state.name(), choiceName, transition.eventType().name()));
       s.append(formatTransition(sourceState, choiceState, transition.eventType(), transition));
       for (var filter : transition.filters()) {
-        s.append(formatTransitionTree(choiceState, visited, filter.alternative().model()));
+        s.append(formatTransitionTree(ownerState, choiceState, visited, filter.alternative().model()));
         //s.append(formatTransitionsFrom(choiceName, this.transitions.get(targetState), visited));
       }
     } else {
       s.append(formatTransition(sourceState, targetState, transition.eventType(), transition));
-      if (!sourceState.equals(targetState))
+      if (!ownerState.equals(targetState))
         s.append(formatTransitionsFrom(targetState, this.transitions.get(targetState), visited));
     }
     return s.toString();

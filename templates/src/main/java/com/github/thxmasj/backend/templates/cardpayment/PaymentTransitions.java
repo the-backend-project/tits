@@ -59,6 +59,7 @@ import static com.github.thxmasj.backend.templates.cardpayment.PaymentState.Prea
 import static com.github.thxmasj.backend.templates.cardpayment.PaymentState.ProcessingAuthentication;
 import static com.github.thxmasj.backend.templates.cardpayment.PaymentState.ProcessingAuthorisation;
 import static com.github.thxmasj.backend.templates.cardpayment.PaymentState.ProcessingCapture;
+import static com.github.thxmasj.backend.templates.cardpayment.PaymentState.ProcessingRefund;
 import static com.github.thxmasj.backend.templates.cardpayment.PaymentState.Rejected;
 import static com.github.thxmasj.backend.templates.cardpayment.SettlementEvent.AssignAcquirerBatchNumber;
 import static com.github.thxmasj.backend.templates.cardpayment.SettlementEvent.GetAcquirerBatchNumber;
@@ -103,7 +104,6 @@ import com.github.thxmasj.backend.templates.cardpayment.PaymentEvent.PaymentToke
 import com.github.thxmasj.backend.templates.cardpayment.PaymentEvent.Refund;
 import com.github.thxmasj.backend.templates.cardpayment.PaymentEvent.ReversalData;
 import com.github.thxmasj.backend.templates.cardpayment.RefundRequestDataCreator.RefundRequestData;
-import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -676,7 +676,6 @@ public class PaymentTransitions {
         ),
         refundTransitions(
             Authorised,
-            1,
             refund,
             failedRefund,
             approvedRefund,
@@ -788,34 +787,19 @@ public class PaymentTransitions {
 
   private <I1, I2, I3, I4> Map<State, List<TransitionModel<?, ?>>> refundTransitions(
       State anchor,
-      int i,
       DispatcherWithRollback<Tuple7<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, Refund, UUID>, I1, Tuple4<ReversalData, Merchant, AcquirerBatchNumber, UUID>> refundAuthorisationToAcquirer,
       Dispatcher<Tuple2<Authorisation, Merchant>, I2> failedRefund,
       Dispatcher<Tuple5<Authorisation, Merchant, AcquirerResponse, BatchNumber, Refund>, I3> approvedRefund,
       Dispatcher<Tuple3<Authorisation, Merchant, AcquirerResponse>, I4> declinedRefund
   ) {
-    State processingState = new State() {
-      @Override
-      public String name() {
-        return "ProcessingRefund" + i;
-      }
-      @Override
-      public Timeout<?> timeout() {
-        return rollbackAfter(Duration.ofMillis(6600));
-      }
-      @Override
-      public boolean equals(Object o) {
-        return o instanceof State os && os.name().equals(name());
-      }
-    };
     return Map.of(
         anchor,
         List.of(
-            onEvent(RefundRequest).to(processingState)
+            onEvent(RefundRequest).to(ProcessingRefund)
                 .assemble(refundAssembler())
                 .when(d -> d.alreadyRefundedAmount() + d.refundData().amount() <= d.alreadyCapturedAmount())
                 .then(
-                    onEvent(ValidRefundRequest).to(processingState)
+                    onEvent(ValidRefundRequest).to(ProcessingRefund)
                         .assemble(refundAssembler())
                         .trigger(GetAcquirerBatchNumber)
                         .with(d -> new MerchantId(d.merchant().id()))
@@ -879,7 +863,7 @@ public class PaymentTransitions {
                     RefundRequestData::refundData
                 )
         ),
-        processingState,
+        ProcessingRefund,
         List.of(
             onEvent(InvalidResponse).to(anchor)
                 .assemble(c -> tuple(c.log().one(ValidPaymentRequest), c.input(), DispatchContext.of(c)))
