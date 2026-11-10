@@ -1,0 +1,17 @@
+package com.github.thxmasj.backend.templates.cardpayment;
+
+public record BatchNumber(
+    String merchantId,
+    long number
+) {
+
+  public BatchNumber next() {
+    return new BatchNumber(merchantId, number + 1);
+  }
+
+  @Override
+  public String toString() {
+    return String.format("%s:%d", merchantId, number);
+  }
+
+}

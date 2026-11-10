@@ -1,8 +1,8 @@
-module com.github.thxmasj.statemachine.templates {
-  requires com.github.thxmasj.statemachine.diagram;
-  requires com.github.thxmasj.statemachine.http.inbox;
-  requires com.github.thxmasj.statemachine.http.outbox;
+module com.github.thxmasj.backend.templates {
+  requires com.github.thxmasj.backend.diagram;
+  requires com.github.thxmasj.backend.http.inbox;
+  requires com.github.thxmasj.backend.http.outbox;
 
-  exports com.github.thxmasj.statemachine.templates.cardpayment;
-  exports com.github.thxmasj.statemachine.templates.cardpayment.validators;
+  exports com.github.thxmasj.backend.templates.cardpayment;
+  exports com.github.thxmasj.backend.templates.cardpayment.validators;
 }

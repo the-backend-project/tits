@@ -3,8 +3,8 @@
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <parent>
-    <groupId>com.github.thxmasj</groupId>
-    <artifactId>state-machine-parent</artifactId>
+    <groupId>com.github.thxmasj.backend</groupId>
+    <artifactId>backend-parent</artifactId>
     <version>0.3.0-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
@@ -13,18 +13,18 @@
   <artifactId>http-outbox</artifactId>
 
   <properties>
-    <java.module.name>com.github.thxmasj.statemachine.http.outbox</java.module.name>
+    <java.module.name>com.github.thxmasj.backend.http.outbox</java.module.name>
   </properties>
 
   <dependencies>
     <dependency>
-      <groupId>com.github.thxmasj</groupId>
-      <artifactId>state-machine</artifactId>
+      <groupId>com.github.thxmasj.backend</groupId>
+      <artifactId>core</artifactId>
       <version>${project.version}</version>
     </dependency>
     <dependency>
-      <groupId>com.github.thxmasj</groupId>
-      <artifactId>state-machine</artifactId>
+      <groupId>com.github.thxmasj.backend</groupId>
+      <artifactId>core</artifactId>
       <version>${project.version}</version>
       <type>test-jar</type>
       <scope>test</scope>

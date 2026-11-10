@@ -1,3 +1,3 @@
-module com.github.thxmasj.statemachine.demo {
-  requires com.github.thxmasj.statemachine.http.inbox;
+module com.github.thxmasj.backend.demo {
+  requires com.github.thxmasj.backend.http.inbox;
 }
