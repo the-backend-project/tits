@@ -2,10 +2,13 @@ package com.github.thxmasj.backend.core.database.mssql;
 
 import static com.github.thxmasj.backend.core.EntityModel.Begin;
 import static com.github.thxmasj.backend.core.EntitySelector.lastIndexed;
-import static com.github.thxmasj.backend.core.EntitySelector.sameEntityId;
+import static com.github.thxmasj.backend.core.EntitySelector.CreationMode.CreateIfNotExists;
+import static com.github.thxmasj.backend.core.EntitySelector.entityId;
+import static com.github.thxmasj.backend.core.EntitySelector.newEntityId;
 import static com.github.thxmasj.backend.core.EntitySelector.secondToLastIndexed;
 import static com.github.thxmasj.backend.core.EventTrigger.trigger;
 import static com.github.thxmasj.backend.core.TransitionModelBuilder.WithEvent.onEvent;
+import static com.github.thxmasj.backend.core.Tuples.tuple;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.github.thxmasj.backend.core.BasicEventType;
@@ -24,6 +27,7 @@ import com.github.thxmasj.backend.core.IndexEntityModel;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.StateMachine;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionModel;
+import com.github.thxmasj.backend.core.Tuples.Tuple2;
 import com.github.thxmasj.backend.core.test.Init;
 import java.time.Clock;
 import java.util.ArrayList;
@@ -57,13 +61,13 @@ public class IdEventTest {
       Account, Map.<State, List<TransitionModel<?, ?>>>of(
           Begin, List.of(
               onEvent(Open).to(States.Opened)
-                  .assembleInput()
-                  .trigger(AccountNumber).with(d -> d).on(Ids).identifiedBy(sameEntityId())
-                  .trigger(Alias).with(d -> "alias-" + d.t1()).on(Ids).identifiedBy(sameEntityId())
+                  .assemble(c -> tuple(c.input(), c.log().entityId()))
+                  .trigger(AccountNumber).with(Tuple2::t1).on(Ids).identifiedBy(d -> entityId(d.t2(), CreateIfNotExists))
+                  .trigger(Alias).with(d -> "alias-" + d.t1().t1()).on(Ids).identifiedBy(d -> entityId(d.t1().t2(), CreateIfNotExists))
                   .output(d -> {
                     // Handles the rejection of both ids, as an account number and its alias are taken together
                     boolean taken = d.t1().t2().isRejected() & d.t2().isRejected();
-                    return taken ? "Duplicate of " + d.t1().t2().rejected().idOwner().entityId().value() : d.t1().t1();
+                    return taken ? "Duplicate of " + d.t1().t2().rejected().idOwner().entityId().value() : d.t1().t1().t1();
                   })
           ),
           States.Opened, List.of(onEvent(Touch).toSelf().output())
@@ -71,9 +75,9 @@ public class IdEventTest {
       Statement, Map.<State, List<TransitionModel<?, ?>>>of(
           Begin, List.of(
               onEvent(Issue).to(States.Issued)
-                  .assembleInput()
-                  .trigger(StatementOfAccount).with(d -> d).on(Index).identifiedBy(sameEntityId())
-                  .output(d -> d.t1())
+                  .assemble(c -> tuple(c.input(), c.log().entityId()))
+                  .trigger(StatementOfAccount).with(Tuple2::t1).on(Index).identifiedBy(d -> newEntityId(d.t2().value()))
+                  .output(d -> d.t1().t1())
           ),
           States.Issued, List.of(onEvent(Read).toSelf().assemble(c -> c.log().entityId().value().toString()).output(d -> d))
       ),

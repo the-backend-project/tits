@@ -4,7 +4,8 @@ import static com.github.thxmasj.backend.core.EntityModel.Begin;
 import static com.github.thxmasj.backend.core.EntitySelector.entityIdFromSession;
 import static com.github.thxmasj.backend.core.EntitySelector.newEntityId;
 import static com.github.thxmasj.backend.core.EntitySelector.idEvent;
-import static com.github.thxmasj.backend.core.EntitySelector.sameEntityId;
+import static com.github.thxmasj.backend.core.EntitySelector.CreationMode.CreateIfNotExists;
+import static com.github.thxmasj.backend.core.EntitySelector.entityId;
 import static com.github.thxmasj.backend.core.State.Intermediate;
 import static com.github.thxmasj.backend.core.TransitionModelBuilder.WithEvent.onEvent;
 import static com.github.thxmasj.backend.core.Tuples.tuple;
@@ -126,24 +127,24 @@ public class SettlementTransitions {
 //                .assemble(d -> new AcquirerBatchNumber(d.input().value(), 0))
 //                .output(d -> d),
             onEvent(SettlementEvent.Open).to(Open)
-                .assembleInput()
-                .trigger(BatchNumber).with(Opened::batchNumber).on(Ids).identifiedBy(sameEntityId())
-                .trigger(AcquirerBatchNumber).with(d -> d.t1().acquirerBatchNumber()).on(Ids).identifiedBy(sameEntityId())
-                .trigger(SettlementOfMerchant).with(d -> d.t1().t1().batchNumber().merchantId()).on(Index).identifiedBy(sameEntityId())
-                .output(d -> d.t1().t1().t1()),
+                .assemble(c -> tuple(c.input(), c.log().entityId()))
+                .trigger(BatchNumber).with(d -> d.t1().batchNumber()).on(Ids).identifiedBy(d -> entityId(d.t2(), CreateIfNotExists))
+                .trigger(AcquirerBatchNumber).with(d -> d.t1().t1().acquirerBatchNumber()).on(Ids).identifiedBy(d -> entityId(d.t1().t2(), CreateIfNotExists))
+                .trigger(SettlementOfMerchant).with(d -> d.t1().t1().t1().batchNumber().merchantId()).on(Index).identifiedBy(d -> newEntityId(d.t1().t1().t2().value()))
+                .output(d -> d.t1().t1().t1().t1()),
             // The first settlement of a merchant. The acquirer's batch number is assigned when it is first seen in a response.
             onEvent(OpenInitial).to(AwaitingAcquirerBatchNumber)
-                .assemble(c -> new BatchNumber(c.input().value(), 1))
-                .trigger(BatchNumber).with(d -> d).on(Ids).identifiedBy(sameEntityId())
-                .trigger(SettlementOfMerchant).with(d -> d.t1().merchantId()).on(Index).identifiedBy(sameEntityId())
-                .output(d -> d.t1().t1())
+                .assemble(c -> tuple(new BatchNumber(c.input().value(), 1), c.log().entityId()))
+                .trigger(BatchNumber).with(Tuple2::t1).on(Ids).identifiedBy(d -> entityId(d.t2(), CreateIfNotExists))
+                .trigger(SettlementOfMerchant).with(d -> d.t1().t1().merchantId()).on(Index).identifiedBy(d -> newEntityId(d.t1().t2().value()))
+                .output(d -> d.t1().t1().t1())
         ),
         // Open, but the acquirer's batch number is not known until the first response referring to the settlement
         AwaitingAcquirerBatchNumber, join(List.of(
             onEvent(AssignAcquirerBatchNumber).to(Open)
-                .assembleInput()
-                .trigger(AcquirerBatchNumber).with(d -> d).on(Ids).identifiedBy(sameEntityId())
-                .output(Tuple2::t1),
+                .assemble(c -> tuple(c.input(), c.log().entityId()))
+                .trigger(AcquirerBatchNumber).with(Tuple2::t1).on(Ids).identifiedBy(d -> entityId(d.t2(), CreateIfNotExists))
+                .output(d -> d.t1().t1()),
             onEvent(GetBatchNumber).toSelf().assemble(c -> batchNumber(c.log())).output(d -> d),
             // Number 0 means unknown
             onEvent(GetAcquirerBatchNumber).toSelf()

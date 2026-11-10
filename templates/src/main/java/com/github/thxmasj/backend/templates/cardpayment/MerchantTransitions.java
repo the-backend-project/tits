@@ -5,7 +5,8 @@ import static com.github.thxmasj.backend.http.inbox.HttpInbox.CompleteRequest;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.EntityModels.RequestDispatching;
 import static com.github.thxmasj.backend.core.EntitySelector.entityIdFromSession;
 import static com.github.thxmasj.backend.core.EntitySelector.newEntityId;
-import static com.github.thxmasj.backend.core.EntitySelector.sameEntityId;
+import static com.github.thxmasj.backend.core.EntitySelector.CreationMode.CreateIfNotExists;
+import static com.github.thxmasj.backend.core.EntitySelector.entityId;
 import static com.github.thxmasj.backend.core.TransitionModelBuilder.WithEvent.onEvent;
 import static com.github.thxmasj.backend.core.Tuples.tuple;
 import static com.github.thxmasj.backend.templates.cardpayment.Aggregate.Settlement;
@@ -39,7 +40,7 @@ public class MerchantTransitions {
         Begin, List.of(
             onEvent(Create).to(Active)
                 .assemble(c -> tuple(c.input(), c.eventReference()))
-                .trigger(MerchantId).with(d -> d.t1().id()).on(Ids).identifiedBy(sameEntityId())
+                .trigger(MerchantId).with(d -> d.t1().id()).on(Ids).identifiedBy(d -> entityId(d.t2().entityId(), CreateIfNotExists))
                 .trigger(OpenInitial).with(d -> new com.github.thxmasj.backend.templates.cardpayment.MerchantId(d.t1().t1().id())).on(Settlement).identifiedBy(newEntityId())
                 .trigger(CompleteRequest).with(d -> tuple("", d.t1().t1().t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t1().t1().t1())

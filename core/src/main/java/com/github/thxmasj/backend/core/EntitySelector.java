@@ -1,18 +1,16 @@
 package com.github.thxmasj.backend.core;
 
 import static com.github.thxmasj.backend.core.EntitySelector.CreationMode.AlwaysCreate;
-import static com.github.thxmasj.backend.core.EntitySelector.CreationMode.CreateIfNotExists;
 import static com.github.thxmasj.backend.core.EntitySelector.CreationMode.NeverCreate;
 
 import com.github.thxmasj.backend.core.EntitySelector.ById;
 import com.github.thxmasj.backend.core.EntitySelector.ByIdFromSession;
 import com.github.thxmasj.backend.core.EntitySelector.ByIdEvent;
 import com.github.thxmasj.backend.core.EntitySelector.ByLastIndexed;
-import com.github.thxmasj.backend.core.EntitySelector.BySameEntityId;
 import java.util.UUID;
 import java.util.function.Function;
 
-public sealed class EntitySelector permits ById, ByIdFromSession, ByIdEvent, ByLastIndexed, BySameEntityId {
+public sealed class EntitySelector permits ById, ByIdFromSession, ByIdEvent, ByLastIndexed {
 
   public static ById entityId(EntityId entityId) {
     return new ById(entityId, NeverCreate);
@@ -40,11 +38,6 @@ public sealed class EntitySelector permits ById, ByIdFromSession, ByIdEvent, ByL
 
   public static <T> Function<T, ByIdFromSession> entityIdFromSession() {
     return _ -> new ByIdFromSession();
-  }
-
-  /// The entity with the same entity id as the entity triggering the event, e.g. its id entity or index entity
-  public static <T> Function<T, BySameEntityId> sameEntityId() {
-    return _ -> new BySameEntityId();
   }
 
   /// The entity having the id, i.e. having an id event of the type with the id as data
@@ -122,12 +115,6 @@ public sealed class EntitySelector permits ById, ByIdFromSession, ByIdEvent, ByL
       super(NeverCreate, null);
     }
 
-  }
-
-  public static final class BySameEntityId extends EntitySelector {
-    public BySameEntityId() {
-      super(CreateIfNotExists, null);
-    }
   }
 
   public static final class ByIdEvent<T> extends EntitySelector {

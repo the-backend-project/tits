@@ -14,7 +14,6 @@ import com.github.thxmasj.backend.core.EntitySelector.ById;
 import com.github.thxmasj.backend.core.EntitySelector.ByIdFromSession;
 import com.github.thxmasj.backend.core.EntitySelector.ByIdEvent;
 import com.github.thxmasj.backend.core.EntitySelector.ByLastIndexed;
-import com.github.thxmasj.backend.core.EntitySelector.BySameEntityId;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.Accepted;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.Completed;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.Pending;
@@ -681,12 +680,6 @@ public class StateMachine implements AutoCloseable {
           case AlwaysCreate -> Mono.just(emptyEventLog(entityModel, s.id()));
         };
       }
-      case BySameEntityId _ -> {
-        EntityId entityId = changeContext.initialChangeContext().log().entityId();
-        yield Mono.justOrEmpty(logFromNestedChanges(entityId, entityModel, changeContext))
-            .switchIfEmpty(eventLogByEntityId(entityModel, entityId))
-            .onErrorResume(UnknownEntity.class, _ -> Mono.just(emptyEventLog(entityModel, entityId)));
-      }
       case ByIdEvent<?> s -> eventLog(s, entityModel, changeContext);
       case ByLastIndexed<?> s -> eventLog(s, entityModel);
       case EntitySelector s -> throw new IllegalStateException("Unexpected value: " + s);
@@ -790,7 +783,6 @@ public class StateMachine implements AutoCloseable {
               }
             }
             case ById s -> s.id();
-            case BySameEntityId _ -> tail.initialChangeContext().log().entityId();
             default -> null;
           };
           if (!skipCircularCheck && entityId != null) {
