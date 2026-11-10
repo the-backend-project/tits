@@ -16,7 +16,7 @@
       "type": "tools.jackson.databind.ser.Serializers[]"
     },
     {
-      "type": "com.github.thxmasj.statemachine.EventReference",
+      "type": "com.github.thxmasj.backend.core.EventReference",
       "methods": [
         {
           "name": "entityId",

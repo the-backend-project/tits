@@ -40,7 +40,7 @@
         <configuration>
           <archive>
             <manifest>
-              <mainClass>com.github.thxmasj.statemachine.deploy.Main</mainClass>
+              <mainClass>com.github.thxmasj.backend.deploy.Main</mainClass>
               <addClasspath>true</addClasspath>
               <classpathPrefix>lib/</classpathPrefix>
             </manifest>

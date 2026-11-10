@@ -1,0 +1,24 @@
+package com.github.thxmasj.backend.templates.cardpayment;
+
+import com.github.thxmasj.backend.core.EventReference;
+import com.github.thxmasj.backend.http.outbox.DispatchContext;
+import com.github.thxmasj.backend.templates.cardpayment.PaymentEvent.AuthenticationResult;
+import com.github.thxmasj.backend.templates.cardpayment.PaymentEvent.Authorisation;
+import com.github.thxmasj.backend.templates.cardpayment.PaymentEvent.PaymentToken;
+import com.github.thxmasj.backend.templates.cardpayment.PaymentEvent.Refund;
+
+public class RefundRequestDataCreator {
+
+  public record RefundRequestData(
+      Authorisation authorisationData,
+      PaymentEvent.Merchant merchant,
+      AuthenticationResult authenticationResult,
+      PaymentToken paymentToken,
+      Refund refundData,
+      long alreadyCapturedAmount,
+      long alreadyRefundedAmount,
+      String simulation,
+      EventReference eventReference,
+      DispatchContext dispatchContext
+  ) {}
+}

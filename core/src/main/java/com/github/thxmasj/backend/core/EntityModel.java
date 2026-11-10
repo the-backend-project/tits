@@ -1,0 +1,22 @@
+package com.github.thxmasj.backend.core;
+
+import com.github.thxmasj.backend.core.database.mssql.SchemaNames.SecondaryIdModel;
+import java.util.List;
+import java.util.UUID;
+
+public interface EntityModel extends Identifiable {
+
+  default List<SecondaryIdModel<?>> secondaryIds() {
+    return List.of();
+  }
+
+  State Begin = () -> "Begin";
+
+  static EntityModel of(String name, UUID id) {
+    return new EntityModel() {
+      @Override public String name() {return name;}
+      @Override public UUID id() {return id;}
+      @Override public String toString() {return name;}
+    };
+  }
+}

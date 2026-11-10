@@ -27,7 +27,7 @@
         <configuration>
           <archive>
             <manifest>
-              <mainClass>com.github.thxmasj.statemachine.demo.Demo</mainClass>
+              <mainClass>com.github.thxmasj.backend.demo.Demo</mainClass>
               <addClasspath>true</addClasspath>
               <classpathPrefix>lib/</classpathPrefix>
             </manifest>

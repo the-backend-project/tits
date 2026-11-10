@@ -7,5 +7,5 @@ module com.github.thxmasj.backend.http.inbox {
   requires io.netty.codec.http;
   requires static jakarta.annotation;
 
-  exports com.github.thxmasj.statemachine.http.inbox;
+  exports com.github.thxmasj.backend.http.inbox;
 }
