@@ -1,24 +1,21 @@
 package com.github.thxmasj.statemachine.message.http;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.ObjectWriter;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import java.time.ZonedDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
+import tools.jackson.databind.ObjectWriter;
+import tools.jackson.databind.cfg.DateTimeFeature;
+import tools.jackson.databind.json.JsonMapper;
 
 public class HttpResponseCreator {
 
-  private static final ObjectWriter jsonWriter = new ObjectMapper()
-      .registerModule(new JavaTimeModule())
-      .configure(DeserializationFeature.ADJUST_DATES_TO_CONTEXT_TIME_ZONE, false)
-      .setSerializationInclusion(JsonInclude.Include.NON_NULL)
-      .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
+  private static final ObjectWriter jsonWriter = JsonMapper.builderWithJackson2Defaults()
+      .disable(DateTimeFeature.ADJUST_DATES_TO_CONTEXT_TIME_ZONE)
+      .changeDefaultPropertyInclusion(incl -> incl.withValueInclusion(JsonInclude.Include.NON_NULL).withContentInclusion(JsonInclude.Include.NON_NULL))
+      .disable(DateTimeFeature.WRITE_DATES_AS_TIMESTAMPS)
+      .build()
       .writer();
   private final int statusCode;
   private final String reasonPhrase;
@@ -43,11 +40,7 @@ public class HttpResponseCreator {
   }
 
   private byte[] json(Map<String, Object> object) {
-    try {
-      return jsonWriter.writeValueAsBytes(object);
-    } catch (JsonProcessingException e) {
-      throw new RuntimeException(e);
-    }
+    return jsonWriter.writeValueAsBytes(object);
   }
 
   protected Map<String, String> headers(String correlationId, String data) {

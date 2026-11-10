@@ -36,8 +36,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.thxmasj.statemachine.BasicEventType;
 import com.github.thxmasj.statemachine.BasicEventType.Rollback.Data;
 import com.github.thxmasj.statemachine.DataType;
@@ -79,6 +77,7 @@ import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
 import reactor.netty.DisposableServer;
+import tools.jackson.databind.ObjectMapper;
 
 public class HttpInboxTest {
 
@@ -731,11 +730,7 @@ public class HttpInboxTest {
   }
 
   private <T> byte[] asJson(T value) {
-    try {
-      return new ObjectMapper().writeValueAsBytes(value);
-    } catch (JsonProcessingException e) {
-      throw new RuntimeException(e);
-    }
+    return new ObjectMapper().writeValueAsBytes(value);
   }
 
   private Event<?> onRequest(Method method, URI uri, byte[] body) {

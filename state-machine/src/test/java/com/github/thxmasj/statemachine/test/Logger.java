@@ -1,15 +1,13 @@
 package com.github.thxmasj.statemachine.test;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.github.thxmasj.statemachine.EntityId;
 import com.github.thxmasj.statemachine.EntityModel;
 import com.github.thxmasj.statemachine.Listener;
 import com.github.thxmasj.statemachine.message.http.HttpResponseMessage;
 import java.time.*;
 import java.util.*;
+import tools.jackson.databind.json.JsonMapper;
 
 public class Logger implements Listener {
 
@@ -33,15 +31,11 @@ public class Logger implements Listener {
   }
 
   private String toString(List<Change> changes) {
-    try {
-      return new ObjectMapper()
-//          .enable(SerializationFeature.INDENT_OUTPUT)
-          .registerModule(new JavaTimeModule())
-          .setSerializationInclusion(JsonInclude.Include.NON_EMPTY)
-          .writeValueAsString(changes);
-    } catch (JsonProcessingException e) {
-      throw new RuntimeException(e);
-    }
+    return JsonMapper.builder()
+//        .enable(SerializationFeature.INDENT_OUTPUT)
+        .changeDefaultPropertyInclusion(incl -> incl.withValueInclusion(JsonInclude.Include.NON_EMPTY).withContentInclusion(JsonInclude.Include.NON_EMPTY))
+        .build()
+        .writeValueAsString(changes);
   }
 
   @Override
