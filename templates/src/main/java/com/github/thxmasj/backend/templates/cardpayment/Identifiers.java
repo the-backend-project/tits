@@ -3,6 +3,7 @@ package com.github.thxmasj.backend.templates.cardpayment;
 import com.github.thxmasj.backend.core.BasicEventType;
 import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.EventType;
+import com.github.thxmasj.backend.core.IdEntityModel;
 import com.github.thxmasj.backend.core.IndexEntityModel;
 import java.util.UUID;
 
@@ -24,6 +25,15 @@ public interface Identifiers {
       "AcquirerBatchNumber",
       UUID.fromString("8708bc15-006c-4476-8811-5d5e2511bcd3"),
       DataType.json(AcquirerBatchNumber.class)
+  );
+
+  /// Ids of merchants and settlements
+  IdEntityModel Ids = IdEntityModel.of(
+      "CardPaymentIds",
+      UUID.fromString("5f0d2b8e-4c6a-4e1f-9b3d-7a2c8e4f6b10"),
+      MerchantId,
+      BatchNumber,
+      AcquirerBatchNumber
   );
 
   /// Settlements of a merchant, by merchant id. The last one is the current settlement of the merchant.

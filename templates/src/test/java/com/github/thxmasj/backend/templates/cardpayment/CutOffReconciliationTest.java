@@ -8,6 +8,7 @@ import static com.github.thxmasj.backend.http.inbox.HttpInbox.EntityModels.Reque
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.TRIGGER;
 import static com.github.thxmasj.backend.http.inbox.HttpRequestRoute.ContentRoute.anyContent;
 import static com.github.thxmasj.backend.http.inbox.HttpRequestRoute.ContentRoute.newEntity;
+import static com.github.thxmasj.backend.http.inbox.HttpInbox.MessageIds;
 import static com.github.thxmasj.backend.http.inbox.TransitionModels.requestDispatchingTransitions;
 import static com.github.thxmasj.backend.http.inbox.TransitionModels.requestRoutingTransitions;
 import static com.github.thxmasj.backend.http.outbox.HttpOutboxRequest.Index;
@@ -349,6 +350,8 @@ public class CutOffReconciliationTest {
     transitions.put(Aggregate.Settlement, settlement.transitions());
     transitions.put(RequestRouting, requestRoutingTransitions(routes));
     transitions.put(RequestDispatching, requestDispatchingTransitions(routes, List.of()));
+    transitions.put(MessageIds, MessageIds.transitions());
+    transitions.put(Identifiers.Ids, Identifiers.Ids.transitions());
     transitions.put(Identifiers.Index, Identifiers.Index.transitions());
     transitions.put(Index, Index.transitions());
     transitions.putAll(payment.outboxTransitions());

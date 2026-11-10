@@ -11,6 +11,7 @@ import static java.util.stream.Collectors.toMap;
 import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.EventType;
+import com.github.thxmasj.backend.core.IdEntityModel;
 import com.github.thxmasj.backend.core.IndexEntityModel;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionModel;
@@ -45,6 +46,8 @@ public class PlantUMLFormatter {
   public PlantUMLFormatter(EntityModel model, Map<State, List<TransitionModel<?, ?>>> transitions) {
     this.model = model;
     if (model instanceof IndexEntityModel m) {
+      this.transitions = m.transitions().entrySet().stream().collect(toMap(entry -> entry.getKey(), Map.Entry::getValue));
+    } else if (model instanceof IdEntityModel m) {
       this.transitions = m.transitions().entrySet().stream().collect(toMap(entry -> entry.getKey(), Map.Entry::getValue));
     } else {
       this.transitions = transitions.entrySet().stream().collect(toMap(entry -> entry.getKey(), Map.Entry::getValue));

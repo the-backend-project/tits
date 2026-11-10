@@ -1,7 +1,6 @@
 package com.github.thxmasj.backend.core.database.mssql;
 
 import static com.github.thxmasj.backend.core.EntityModel.Begin;
-import static com.github.thxmasj.backend.core.IdEntityModel.Id;
 import static com.github.thxmasj.backend.core.EntitySelector.lastIndexed;
 import static com.github.thxmasj.backend.core.EntitySelector.sameEntityId;
 import static com.github.thxmasj.backend.core.EntitySelector.secondToLastIndexed;
@@ -20,6 +19,7 @@ import com.github.thxmasj.backend.core.EventLog;
 import com.github.thxmasj.backend.core.EventTrigger;
 import com.github.thxmasj.backend.core.EventTrigger.EventSpec;
 import com.github.thxmasj.backend.core.EventType;
+import com.github.thxmasj.backend.core.IdEntityModel;
 import com.github.thxmasj.backend.core.IndexEntityModel;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.StateMachine;
@@ -39,6 +39,8 @@ public class IdEventTest {
   static EventType<String, String> AccountNumber = BasicEventType.of("AccountNumber", UUID.fromString("0c3f6a0e-2b51-4d55-9f43-a7a1d7f86d2b"), DataType.string());
   static EventType<String, String> Alias = BasicEventType.of("Alias", UUID.fromString("6e2a9c4d-8b1f-4d3a-a5e7-2c9b0f4d6a18"), DataType.string());
 
+  static IdEntityModel Ids = IdEntityModel.of("Ids", UUID.fromString("9a7c5e3b-1d2f-4a6b-8c0e-4f6a8b0c2d4e"), AccountNumber, Alias);
+
   static EventType<String, String> StatementOfAccount = BasicEventType.of("StatementOfAccount", UUID.fromString("b9f6e6a4-7a0d-4c1f-a5a9-1f7b0c8e3d42"), DataType.string());
   static IndexEntityModel Index = IndexEntityModel.of("Index", UUID.fromString("2d4f6a8c-0e1b-4c3d-9e5f-7a9b1c3d5e7f"), StatementOfAccount);
 
@@ -56,8 +58,8 @@ public class IdEventTest {
           Begin, List.of(
               onEvent(Open).to(States.Opened)
                   .assembleInput()
-                  .trigger(AccountNumber).with(d -> d).on(Id).identifiedBy(sameEntityId())
-                  .trigger(Alias).with(d -> "alias-" + d.t1()).on(Id).identifiedBy(sameEntityId())
+                  .trigger(AccountNumber).with(d -> d).on(Ids).identifiedBy(sameEntityId())
+                  .trigger(Alias).with(d -> "alias-" + d.t1()).on(Ids).identifiedBy(sameEntityId())
                   .output(d -> {
                     // Handles the rejection of both ids, as an account number and its alias are taken together
                     boolean taken = d.t1().t2().isRejected() & d.t2().isRejected();
@@ -75,6 +77,7 @@ public class IdEventTest {
           ),
           States.Issued, List.of(onEvent(Read).toSelf().assemble(c -> c.log().entityId().value().toString()).output(d -> d))
       ),
+      Ids, Ids.transitions(),
       Index, Index.transitions()
   ));
 
@@ -82,9 +85,9 @@ public class IdEventTest {
   public void idsAreEventsOfASeparateIdEntity() {
     Event<?> opened = machine.onEvent(trigger(Open, Account), "123").blockFirst();
 
-    var eventsByEntityId = new EventsByEntityId(Init.dataSource(), List.of(Account, Id), schema, Clock.systemUTC());
+    var eventsByEntityId = new EventsByEntityId(Init.dataSource(), List.of(Account, Ids), schema, Clock.systemUTC());
     EventLog accountLog = eventsByEntityId.execute(Account, List.of(Open, Touch), new EntityId.UUID(opened.entityId())).block();
-    EventLog idLog = eventsByEntityId.execute(Id, List.of(AccountNumber, Alias), new EntityId.UUID(opened.entityId())).block();
+    EventLog idLog = eventsByEntityId.execute(Ids, List.of(AccountNumber, Alias), new EntityId.UUID(opened.entityId())).block();
 
     assertEquals(List.of("1:Open"), accountLog.events().stream().map(e -> e.eventNumber() + ":" + e.typeName()).toList());
     assertEquals(List.of("1:AccountNumber", "2:Alias"), idLog.events().stream().map(e -> e.eventNumber() + ":" + e.typeName()).toList());
