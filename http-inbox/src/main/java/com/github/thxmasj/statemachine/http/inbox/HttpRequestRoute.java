@@ -1,6 +1,5 @@
 package com.github.thxmasj.statemachine.http.inbox;
 
-import com.fasterxml.jackson.core.type.*;
 import com.github.thxmasj.statemachine.*;
 import com.github.thxmasj.statemachine.http.inbox.HttpInbox.RoutedRequest;
 import com.github.thxmasj.statemachine.message.http.*;
