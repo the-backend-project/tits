@@ -11,6 +11,7 @@ import static java.util.stream.Collectors.toMap;
 import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.EventType;
+import com.github.thxmasj.backend.core.IdEntityModel;
 import com.github.thxmasj.backend.core.IndexEntityModel;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionModel;
@@ -45,6 +46,8 @@ public class PlantUMLFormatter {
   public PlantUMLFormatter(EntityModel model, Map<State, List<TransitionModel<?, ?>>> transitions) {
     this.model = model;
     if (model instanceof IndexEntityModel m) {
+      this.transitions = m.transitions().entrySet().stream().collect(toMap(entry -> entry.getKey(), Map.Entry::getValue));
+    } else if (model instanceof IdEntityModel m) {
       this.transitions = m.transitions().entrySet().stream().collect(toMap(entry -> entry.getKey(), Map.Entry::getValue));
     } else {
       this.transitions = transitions.entrySet().stream().collect(toMap(entry -> entry.getKey(), Map.Entry::getValue));
@@ -329,8 +332,9 @@ public class PlantUMLFormatter {
     System.out.println("Formatting transition <" + sourceState + " --> " + targetState + ": " + eventType.name() + ">");
     return String.format(
         "%s %s %s: %s\n",
-        sourceState.equals(Begin) ? "[*]" : stateId(sourceState),
-        sourceState.equals(Begin) ? "-right->" : "-->",
+        // Self transitions in Begin are loops on its state, as the initial pseudo state can't have loops
+        sourceState.equals(Begin) && !targetState.equals(Begin) ? "[*]" : stateId(sourceState),
+        sourceState.equals(Begin) && !targetState.equals(Begin) ? "-right->" : "-->",
         stateId(targetState),
         Stream.of(
             String.format("%s", eventType.name()),
@@ -343,7 +347,18 @@ public class PlantUMLFormatter {
   }
 
   private String state(State state) {
-    if (state.equals(Begin)) return "";
+    if (state.equals(Begin)) {
+      if (transitions.get(Begin).stream().noneMatch(transition -> transition.toState() == null)) return "";
+      // Declared for its self transitions, e.g. the events of id entities
+      return String.format(
+          """
+          state "%s" as %s
+          [*] -right-> %2$s
+          """,
+          state.name(),
+          stateId(state)
+      );
+    }
     return String.format(
         """
         state "%s" as %s

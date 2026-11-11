@@ -6,7 +6,7 @@ import static com.github.thxmasj.backend.core.EntitySelector.CreationMode.Always
 import static com.github.thxmasj.backend.core.EntitySelector.CreationMode.CreateIfNotExists;
 import static com.github.thxmasj.backend.core.EntitySelector.entityId;
 import static com.github.thxmasj.backend.core.EntitySelector.entityIdFromSession;
-import static com.github.thxmasj.backend.core.EntitySelector.secondaryId;
+import static com.github.thxmasj.backend.core.EntitySelector.idEvent;
 import static com.github.thxmasj.backend.core.TransitionModelBuilder.WithEvent.onEvent;
 import static com.github.thxmasj.backend.core.Tuples.tuple;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.AcceptRequest;
@@ -20,6 +20,7 @@ import static com.github.thxmasj.backend.http.inbox.HttpInbox.CompleteRollbackRe
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.EntityModels.RequestDispatching;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.EntityModels.RequestRouting;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.MessageId;
+import static com.github.thxmasj.backend.http.inbox.HttpInbox.MessageIds;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.RejectAsUnroutable;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.RejectDuplicateRequest;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.RejectRequest;
@@ -44,7 +45,7 @@ import com.github.thxmasj.backend.core.EntityId;
 import com.github.thxmasj.backend.core.EntitySelector;
 import com.github.thxmasj.backend.core.EntitySelector.ById;
 import com.github.thxmasj.backend.core.EntitySelector.ByIdFromSession;
-import com.github.thxmasj.backend.core.EntitySelector.BySecondaryId;
+import com.github.thxmasj.backend.core.EntitySelector.ByIdEvent;
 import com.github.thxmasj.backend.core.EventReference;
 import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.GuardedTransition;
@@ -192,7 +193,7 @@ public interface TransitionModels {
                     .trigger(contentRoute.dispatchingEventType()).with(d -> d).on(RequestDispatching)
                     .identifiedBy(d ->
                         contentRoute.isRollback() ?
-                            secondaryId(MessageId, d.messageId(), CreateIfNotExists) :
+                            idEvent(MessageId, d.messageId(), CreateIfNotExists) :
                             new ById(new EntityId.UUID(UUID.randomUUID()), AlwaysCreate)
                     )
                     .output(),
@@ -208,9 +209,9 @@ public interface TransitionModels {
                         clientId,
                         contentRoute.processEventType().id() + "/" + switch (processSelector) {
                           case ById s -> s.id().value().toString();
-                          case BySecondaryId<?> s -> s.value().toString();
+                          case ByIdEvent<?> s -> s.id().toString();
                           case ByIdFromSession _ -> UUID.randomUUID().toString(); // TODO: Use id from session for route.processType().
-                          // TODO: ByLastInIdGroup, ByNextInIdGroup not handled
+                          // TODO: ByLastIndexed not handled
                           default -> throw new IllegalStateException("Process selector type not handled: " + processSelector.getClass().getName());
                         }
                     );
@@ -235,9 +236,9 @@ public interface TransitionModels {
 
   private static <T, U> TransitionModel<?, ?> dispatchChoiceTransition(ContentRoute<T, U> route) {
     return onEvent(route.dispatchingEventType()).to(Dispatched)
-        .assembleInput()
-        .newIdentifier(MessageId, RoutedRequest::messageId)
-        .when(d -> d.t2().isRejected() && d.t2().rejected().log().oneIfExists(AcceptRollbackRequest).isPresent()).then(
+        .assemble(c -> tuple(c.input(), c.log().entityId()))
+        .trigger(MessageId).with(d -> d.t1().messageId()).on(MessageIds).identifiedBy(d -> entityId(d.t2(), CreateIfNotExists))
+        .when(d -> d.t2().isIdExists() && d.t2().idExists().log().oneIfExists(AcceptRollbackRequest).isPresent()).then(
             onEvent(RejectRequest).to(Rejected)
                 .assemble(c -> tuple(
                     c.input().t1(), // reason
@@ -248,19 +249,19 @@ public interface TransitionModels {
                 ))
                 .trigger(CompleteRejectedRequest).with(d -> unprocessableEntity(d.t1(), d.t4(), d.t5())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t3()),
-            d -> tuple("Rolled back", d.t2().rejected().log().entityId(), d.t1().request())
+            d -> tuple("Rolled back", d.t2().idExists().log().entityId(), d.t1().t1().request())
         )
-        .when(d -> d.t2().isRejected() && compareRequests(d.t1().request(), d.t2().rejected().log().one(AcceptRequest).t1(), route)).then(
+        .when(d -> d.t2().isIdExists() && compareRequests(d.t1().t1().request(), d.t2().idExists().log().one(AcceptRequest).t1(), route)).then(
             onEvent(RejectDuplicateRequest).to(Rejected)
                 .assembleInput()
                 .trigger(CompleteDuplicatedRequest).with(Tuple2::t2).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t1()),
             d -> tuple(
-                d.t1().request(),
-                d.t2().rejected().log().one(ResponseEventType.outputDataType).t1()
+                d.t1().t1().request(),
+                d.t2().idExists().log().one(ResponseEventType.outputDataType).t1()
             )
         )
-        .when(d -> d.t2().isRejected()).then(
+        .when(d -> d.t2().isIdExists()).then(
             onEvent(RejectRequest).to(Rejected)
                 .assemble(c -> tuple(
                     c.input().t1(), // reason
@@ -271,9 +272,9 @@ public interface TransitionModels {
                 ))
                 .trigger(CompleteRejectedRequest).with(d -> badRequest(d.t1(), d.t4(), d.t5())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t3()),
-            d -> tuple("Conflict", d.t2().rejected().log().entityId(), d.t1().request())
+            d -> tuple("Conflict", d.t2().idExists().log().entityId(), d.t1().t1().request())
         )
-        .otherwise(dispatchTransition(route), Tuple2::t1);
+        .otherwise(dispatchTransition(route), d -> d.t1().t1());
   }
 
   private static <T, U> TransitionModel<RoutedRequest<T>, Void> dispatchTransition(ContentRoute<T, U> route) {
@@ -346,10 +347,10 @@ public interface TransitionModels {
         )
         .when(d -> d.t2().isAccepted()).then(
             onEvent(AcceptRollbackRequest).to(RollingBack)
-                .assembleInput()
-                .newIdentifier(RollbackMessageId, d -> d.t2().messageId())
-                .trigger(CompleteRollbackRequest).with(d -> tuple(d.t1().t1(), d.t1().t3())).on(RequestDispatching).identifiedBy(entityIdFromSession())
-                .output(d -> d.t1().t1().t2().request()),
+                .assemble(c -> tuple(c.input(), c.log().entityId()))
+                .trigger(RollbackMessageId).with(d -> d.t1().t2().messageId()).on(MessageIds).identifiedBy(d -> entityId(d.t2(), CreateIfNotExists))
+                .trigger(CompleteRollbackRequest).with(d -> tuple(d.t1().t1().t1(), d.t1().t1().t3())).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                .output(d -> d.t1().t1().t1().t2().request()),
             d -> tuple(
                 "Rolled back",
                 d.t1().t1(),
@@ -378,13 +379,13 @@ public interface TransitionModels {
                         .assemble(c -> tuple(c.input(), c.log().entityId()))
                         .otherwise(
                             onEvent(AcceptRollbackRequest).to(RollingBack)
-                                .assembleInput()
-                                .newIdentifier(MessageId, d -> d.t2().messageId())
+                                .assemble(c -> tuple(c.input(), c.log().entityId()))
+                                .trigger(MessageId).with(d -> d.t1().t2().messageId()).on(MessageIds).identifiedBy(d -> entityId(d.t2(), CreateIfNotExists))
                                 .trigger(CompleteRollbackRequest)
-                                .with(d -> tuple(d.t1().t1(), d.t1().t3()))
+                                .with(d -> tuple(d.t1().t1().t1(), d.t1().t1().t3()))
                                 .on(RequestDispatching)
                                 .identifiedBy(entityIdFromSession())
-                                .output(d -> d.t1().t1().t2().request()),
+                                .output(d -> d.t1().t1().t1().t2().request()),
                             d -> tuple("Nothing to roll back", d.t1(), null) // TODO: EventReference is null
                         )
                 ).collect(toList())

@@ -9,10 +9,10 @@ import com.github.thxmasj.backend.core.BasicEventType.Rollback.Data;
 import com.github.thxmasj.backend.core.EventTrigger.EventCondition;
 import com.github.thxmasj.backend.core.EventTrigger.EventSpec;
 import com.github.thxmasj.backend.core.StateMachine.CircularChange;
-import com.github.thxmasj.backend.core.StateMachine.IdentityResult;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.Accepted;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.Completed;
+import com.github.thxmasj.backend.core.StateMachine.ProcessResult.IdExists;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.Pending;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.Rejected;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.UnknownId;
@@ -23,7 +23,6 @@ import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext.Choi
 import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext.CombinedChangeContext;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext.ConditionTriggerChangeContext;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext.DelayedTriggerChangeContext;
-import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext.IdentityChangeContext;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext.InitialChangeContext;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext.OutputChangeContext;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext.PendingChangeContext;
@@ -34,7 +33,6 @@ import com.github.thxmasj.backend.core.TransitionModelBuilder.WithFilter.Alterna
 import com.github.thxmasj.backend.core.Tuples.Tuple2;
 import com.github.thxmasj.backend.core.Tuples.Tuple4;
 import com.github.thxmasj.backend.core.database.UnknownEntity;
-import com.github.thxmasj.backend.core.database.mssql.SchemaNames.SecondaryIdModel;
 import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
@@ -43,7 +41,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.function.BiFunction;
 import java.util.function.Function;
@@ -113,17 +110,6 @@ public class TransitionModelBuilder<I, T, O> {
       throw new IllegalStateException("No initial context. We have: " + chainToString(this));
     }
 
-    default List<SecondaryId<?>> secondaryIds() {
-      ArrayList<SecondaryId<?>> secondaryIds = new ArrayList<>();
-      ChangeContext<?> changeContext = this;
-      while (changeContext != null) {
-        if (changeContext instanceof ChangeContext.IdentityChangeContext<?> c)
-          secondaryIds.add(c.stepOutput.accepted().id());
-        changeContext = changeContext.previous();
-      }
-      return secondaryIds;
-    }
-
     record InitialChangeContext<I>(
         ChangeContext<?> stage1,
         ChangeContext<?> previous,
@@ -136,7 +122,7 @@ public class TransitionModelBuilder<I, T, O> {
         String correlationId,
         I input,
         StateMachine stateMachine,
-        List<IdentityResult<?>> identityResults,
+        List<IdExists<?>> existingIds,
         TriggerType triggerType,
         UUID triggerId
     ) implements ChangeContext<I>, TransitionContext<I> {
@@ -152,16 +138,13 @@ public class TransitionModelBuilder<I, T, O> {
           String correlationId,
           I input,
           StateMachine stateMachine,
-          List<IdentityResult<?>> identityResults
+          List<IdExists<?>> existingIds
       ) {
-        this(stage1, previous, triggerEvent, transitionModel, from, eventNumber, log, timestamp, correlationId, input, stateMachine, identityResults, null, null);
+        this(stage1, previous, triggerEvent, transitionModel, from, eventNumber, log, timestamp, correlationId, input, stateMachine, existingIds, null, null);
       }
       @Override public I stepOutput() {return input;}
       @Override public String toString() {
         return "Initial " + log.entityModel().name() + "/" + log.entityId().value() + "/" + eventNumber + "/" + from.name() + "(stage1=" + (stage1 != null) + "): " + transitionModel + " with " + ofNullable(input).map(i -> i.getClass().getSimpleName()).orElse("-");
-      }
-      public <T> IdentityResult<T> identityResult(SecondaryId<T> id) {
-        return (IdentityResult<T>)identityResults.stream().filter(r -> r.id().equals(id)).findFirst().orElse(null);
       }
     }
 
@@ -285,17 +268,6 @@ public class TransitionModelBuilder<I, T, O> {
 
     }
 
-    record IdentityChangeContext<T>(
-        EntityModel entityModel,
-        EntityId entityId,
-        ChangeContext<?> previous,
-        IdentityResult<T> stepOutput
-    ) implements ChangeContext<IdentityResult<T>> {
-      @Override public String toString() {
-        return "Identifier: " + (stepOutput.isAccepted() ? (stepOutput.accepted().id().model().name() + ":" + stepOutput.accepted().id().data()) : stepOutput.getClass().getSimpleName());
-      }
-    }
-
     record ActionChangeContext<T, U>(
         ChangeContext<T> previous,
         ActionTrigger<U> actionTrigger
@@ -319,7 +291,8 @@ public class TransitionModelBuilder<I, T, O> {
           case Accepted<?> a -> "Accepted:" + a.entityModel().name() + "/" + a.event().entityId() + "/" + a.event().typeName() + "/" + a.event().eventNumber();
           case Rejected<?> r -> "Rejected" + (r.isHandled() ? "[Handled]" : "[Unhandled]") + ":" + r.exception().entityModel().name() + "/" + r.exception().entityId().value() + r.eventType().name() + ":" + r.exception().getMessage();
           case Completed<?> c -> "Completed:" + c.choiceResult();
-          case UnknownId<?> u -> "UnknownId:type=" + u.exception().secondaryId().model() + "/ev=" + u.eventType().name();
+          case UnknownId<?> u -> "UnknownId:" + u.exception().getMessage() + "/ev=" + u.eventType().name();
+          case IdExists<?> i -> "IdExists:" + i.idEvent().typeName() + "/" + i.log().entityModel().name() + "/" + i.log().entityId().value();
           case Pending<?, ?, ?> p -> "Pending:" + p.exception().entityModel() + "/" + p.exception().entityId().value() + ":" + p.exception().getMessage();
         };
       }
@@ -342,6 +315,15 @@ public class TransitionModelBuilder<I, T, O> {
     ) implements ChangeContext<ProcessResult<O>> {
       @Override public String toString() {
         return "Rejected" + (stepOutput.isHandled() ? "[Handled]" : "[Unhandled]") + ":" + stepOutput.exception().getMessage();
+      }
+    }
+
+    record IdExistsChangeContext<O>(
+        ChangeContext<?> previous,
+        ProcessResult.IdExists<O> stepOutput
+    ) implements ChangeContext<ProcessResult<O>> {
+      @Override public String toString() {
+        return "IdExists:" + stepOutput.idEvent().typeName() + "/" + stepOutput.log().entityModel().name() + "/" + stepOutput.log().entityId().value();
       }
     }
 
@@ -652,13 +634,6 @@ public class TransitionModelBuilder<I, T, O> {
         return new WithFilter<>(complete(), filter);
       }
 
-      public <T1> TransitionModelBuilder<I, Tuple2<Tuple2<T, ProcessResult<O1>>, IdentityResult<T1>>, O> newIdentifier(
-          SecondaryIdModel<T1> model,
-          Function<Tuple2<T, ProcessResult<O1>>, T1> data
-      ) {
-        return complete().newIdentifier(model, data);
-      }
-
       public TransitionModelBuilder<I, Tuple2<T, ProcessResult<O1>>, O> reversible(TransitionModelBuilder<Data, ?, Data> reverseModel) {
         return complete().reversible(reverseModel);
       }
@@ -916,48 +891,6 @@ public class TransitionModelBuilder<I, T, O> {
                   rollbackEventType
               ).map(assembled -> new AssembledChangeContext<>(i, assembled));
             }
-        )
-    );
-  }
-
-  public <T1> TransitionModelBuilder<I, Tuple2<T, IdentityResult<T1>>, O> newIdentifierInGroup(SecondaryIdModel<T1> model, Function<T, Object> data) {
-    return new TransitionModelBuilder<>(
-        modelContext,
-        builderFunction.andThen(changeContext -> changeContext.flatMap(c ->
-            c.initialChangeContext().stateMachine.next(model, data.apply(c.stepOutput()))
-                .map(id -> new IdentityChangeContext<>(
-                    c.initialChangeContext().log().entityModel(),
-                    c.initialChangeContext().log().entityId(),
-                    c,
-                    IdentityResult.accepted(id)
-                ))
-                .map(icc -> new CombinedChangeContext<>(icc, c))
-        ))
-    );
-  }
-
-  public <T1> TransitionModelBuilder<I, Tuple2<T, IdentityResult<T1>>, O> newIdentifier(SecondaryIdModel<T1> model, Function<T, T1> data) {
-    return new TransitionModelBuilder<>(
-        modelContext,
-        builderFunction.andThen(changeContext -> changeContext.map(c ->
-                new CombinedChangeContext<>(
-                    new IdentityChangeContext<>(
-                        c.initialChangeContext().log().entityModel(),
-                        c.initialChangeContext().log().entityId(),
-                        c,
-                        Optional.of(new SecondaryId<>(model, data.apply(c.stepOutput())))
-                            .map(id -> {
-                              IdentityResult<T1> r = c.firstInitialChangeContext().identityResult(id);
-                              if (r != null) {
-                                System.out.println("Found predefined IdentityResult");
-                                return r;
-                              }
-                              return IdentityResult.accepted(id);
-                            }).get()
-                    ),
-                    c
-                )
-            )
         )
     );
   }

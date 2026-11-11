@@ -15,20 +15,16 @@ import com.github.thxmasj.backend.core.EventReference;
 import com.github.thxmasj.backend.core.EventTrigger;
 import com.github.thxmasj.backend.core.EventTrigger.EventSpec;
 import com.github.thxmasj.backend.core.EventType;
-import com.github.thxmasj.backend.core.SecondaryId;
+import com.github.thxmasj.backend.core.IdEntityModel;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionContext;
 import com.github.thxmasj.backend.core.Tuples.Tuple2;
 import com.github.thxmasj.backend.core.Tuples.Tuple3;
 import com.github.thxmasj.backend.core.Validated;
-import com.github.thxmasj.backend.core.database.mssql.SchemaNames.Column;
-import com.github.thxmasj.backend.core.database.mssql.SchemaNames.SecondaryIdModel;
 import com.github.thxmasj.backend.core.http.HttpDataType;
 import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
 import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
 import com.nimbusds.jwt.SignedJWT;
-import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.text.ParseException;
 import java.util.List;
 import java.util.UUID;
@@ -124,58 +120,23 @@ public interface HttpInbox {
       DataType.string(),
       HttpDataType.forResponse()
   );
-  SecondaryIdModel<MessageId> MessageId = new SecondaryIdModel<>() {
-    @Override
-    public UUID id() {
-      return UUID.fromString("f721bf54-891b-41a0-aa63-5d3cbde52437");
-    }
-
-    @Override
-    public String name() {return "MessageId";}
-
-    @Override
-    public List<Column> columns() {
-      return List.of(
-          new Column("ClientId", "VARCHAR(100)", id -> ((MessageId) id).clientId()),
-          new Column("Value", "VARCHAR(100)", id -> ((MessageId) id).value())
-      );
-    }
-
-    @Override
-    public SecondaryId<MessageId> map(ResultSet resultSet) {
-      try {
-        return new SecondaryId<>(this, new MessageId(resultSet.getString("ClientId"), resultSet.getString("Value")));
-      } catch (SQLException e) {
-        throw new RuntimeException(e);
-      }
-    }
-  };
-  SecondaryIdModel<MessageId> RollbackMessageId = new SecondaryIdModel<>() {
-    @Override
-    public UUID id() {
-      return UUID.fromString("58cafda3-1818-4015-8f97-3d9f3bd2856f");
-    }
-
-    @Override
-    public String name() {return "RollbackMessageId";}
-
-    @Override
-    public List<Column> columns() {
-      return List.of(
-          new Column("ClientId", "VARCHAR(100)", id -> ((MessageId) id).clientId()),
-          new Column("Value", "VARCHAR(100)", id -> ((MessageId) id).value())
-      );
-    }
-
-    @Override
-    public SecondaryId<MessageId> map(ResultSet resultSet) {
-      try {
-        return new SecondaryId<>(this, new MessageId(resultSet.getString("ClientId"), resultSet.getString("Value")));
-      } catch (SQLException e) {
-        throw new RuntimeException(e);
-      }
-    }
-  };
+  EventType<MessageId, MessageId> MessageId = BasicEventType.of(
+      "MessageId",
+      UUID.fromString("f721bf54-891b-41a0-aa63-5d3cbde52437"),
+      DataType.json(MessageId.class)
+  );
+  EventType<MessageId, MessageId> RollbackMessageId = BasicEventType.of(
+      "RollbackMessageId",
+      UUID.fromString("58cafda3-1818-4015-8f97-3d9f3bd2856f"),
+      DataType.json(MessageId.class)
+  );
+  /// Ids of the requests, by the entity id of their RequestDispatching
+  IdEntityModel MessageIds = IdEntityModel.of(
+      "MessageIds",
+      UUID.fromString("3c8e1f5a-7b2d-4e9c-a6f0-8d4b2e7c1a95"),
+      MessageId,
+      RollbackMessageId
+  );
 
   static <T> Function<HttpRequestMessage, Validated<T>> jsonParser(Class<T> contentType) {
     return new JsonRequestValidator<>(contentType, true);
@@ -208,14 +169,6 @@ public interface HttpInbox {
 
             @Override
             public UUID id() {return id;}
-
-            @Override
-            public List<SecondaryIdModel<?>> secondaryIds() {
-                return List.of(
-                        MessageId,
-                        RollbackMessageId
-                );
-            }
         },
         RequestRouting {
             private final static UUID id = UUID.fromString("20755705-fc81-4228-a1a7-5e13d6e3c153");

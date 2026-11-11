@@ -61,11 +61,7 @@ public final class Demo {
   public static void migrate(Config config) {
     if (config.role() == null)
       throw new IllegalArgumentException("Environment variable DATABASE_ROLE is required for migration");
-    new CreateSchema(
-        HelloWorld.transitions().keySet().stream().flatMap(m -> m.secondaryIds().stream()).distinct().toList(),
-        config.schema(),
-        config.role()
-    ).execute(new JDBCClient(new DataSourceBuilder(config.database()).build()))
+    new CreateSchema(config.schema(), config.role()).execute(new JDBCClient(new DataSourceBuilder(config.database()).build()))
         .timeout(Duration.ofSeconds(30))
         .block();
   }

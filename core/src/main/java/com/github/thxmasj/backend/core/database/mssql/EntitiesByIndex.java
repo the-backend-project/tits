@@ -93,7 +93,7 @@ public class EntitiesByIndex {
             for (Entry<UUID, List<Event<?>>> entry : eventsByEntityId.entrySet()) {
               UUID modelId = entityModelIdByEntityId.get(entry.getKey());
               EntityModel entityModel = entityModels.get(modelId);
-              eventLogs.add(new EventLog(entityModel, new EntityId.UUID(entry.getKey()), List.of(), unmodifiableList(entry.getValue())));
+              eventLogs.add(new EventLog(entityModel, new EntityId.UUID(entry.getKey()), unmodifiableList(entry.getValue())));
             }
             return eventLogs;
           }

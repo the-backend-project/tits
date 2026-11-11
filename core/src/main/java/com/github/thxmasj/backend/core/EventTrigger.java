@@ -1,6 +1,5 @@
 package com.github.thxmasj.backend.core;
 
-import com.github.thxmasj.backend.core.database.mssql.SchemaNames.SecondaryIdModel;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Function;
@@ -8,7 +7,7 @@ import java.util.stream.Stream;
 
 import static com.github.thxmasj.backend.core.EntitySelector.entityId;
 import static com.github.thxmasj.backend.core.EntitySelector.newEntityId;
-import static com.github.thxmasj.backend.core.EntitySelector.secondaryId;
+import static com.github.thxmasj.backend.core.EntitySelector.idEvent;
 import static java.util.stream.Collectors.toList;
 
 public class EventTrigger<T, I, O> {
@@ -87,8 +86,8 @@ public class EventTrigger<T, I, O> {
     return new EventTrigger<>(new EventSpec<>(eventType, d -> d), List.of(_ -> entityId(entityId)), entityModel, false);
   }
 
-  public static <I, O, ID> EventTrigger<I, I, O> trigger(EventType<I, O> eventType, EntityModel entityModel, SecondaryIdModel<ID> idModel, ID idValue) {
-    return new EventTrigger<>(new EventSpec<>(eventType, d -> d), List.of(_ -> secondaryId(idModel, idValue)), entityModel, false);
+  public static <I, O, ID> EventTrigger<I, I, O> trigger(EventType<I, O> eventType, EntityModel entityModel, EventType<?, ID> idType, ID id) {
+    return new EventTrigger<>(new EventSpec<>(eventType, d -> d), List.of(_ -> idEvent(idType, id)), entityModel, false);
   }
 
   public EventSpec<T, I, O> eventSpec() {

@@ -4,7 +4,9 @@ import com.github.thxmasj.backend.core.database.Parameter;
 import java.sql.Connection;
 import java.sql.JDBCType;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -40,6 +42,18 @@ public class PreparedStatementSupport {
       }
     }
     return statement;
+  }
+
+  /// The next result set of a batch, skipping update counts
+  ///
+  /// @param isResultSet the result of `execute()` or `getMoreResults()`
+  public static ResultSet nextResultSet(Statement statement, boolean isResultSet) throws SQLException {
+    while (!isResultSet) {
+      if (statement.getUpdateCount() == -1)
+        throw new IllegalStateException("No more result sets");
+      isResultSet = statement.getMoreResults();
+    }
+    return statement.getResultSet();
   }
 
   public static JDBCType jdbcType(Class<?> clazz) {

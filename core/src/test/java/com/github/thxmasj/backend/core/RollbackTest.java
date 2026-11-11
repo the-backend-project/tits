@@ -20,13 +20,9 @@ import static com.github.thxmasj.backend.core.TransitionModelBuilder.assemble;
 import com.github.thxmasj.backend.core.BasicEventType.Rollback.Data;
 import com.github.thxmasj.backend.core.StateMachine.RejectedEvent;
 import com.github.thxmasj.backend.core.test.Init;
-import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import com.github.thxmasj.backend.core.database.mssql.SchemaNames.Column;
-import com.github.thxmasj.backend.core.database.mssql.SchemaNames.SecondaryIdModel;
 import org.junit.jupiter.api.Test;
 import reactor.test.StepVerifier;
 
@@ -38,43 +34,14 @@ public class RollbackTest {
   enum Entities implements EntityModel {
     Pacman {
       @Override public UUID id() {return UUID.fromString("15f23da6-19be-460d-8af4-ffdbd600fc51");}
-      @Override
-      public List<SecondaryIdModel<?>> secondaryIds() {
-        return List.of(SpeedId);
-      }
     },
     Speed {
       @Override public UUID id() {return UUID.fromString("6adad2d0-dd57-4d6b-932c-add277eb0cae");}
     }
   }
 
-  static SecondaryIdModel<UUID> SpeedId = new SecondaryIdModel<>() {
-    @Override
-    public UUID id() {
-      return UUID.fromString("16a902b5-49ae-46a8-8e0d-3711e6b41b44");
-    }
-
-    @Override
-    public String name() {
-      return "SpeedId";
-    }
-
-    @Override
-    public List<Column> columns() {
-      return List.of(new Column("SpeedId", "UNIQUEIDENTIFIER", id -> id));
-    }
-
-    @Override
-    public SecondaryId<UUID> map(ResultSet resultSet) {
-      try {
-        return new SecondaryId<>(this, resultSet.getObject("SpeedId", UUID.class));
-      } catch (SQLException e) {
-        throw new RuntimeException(e);
-      }
-    }
-  };
-
-  static EventType<Void, Void> Forward = BasicEventType.of("Forward", UUID.fromString("0908e790-6955-4d89-b11b-c552ea8c54ac"));
+  /// Starting to move records the id of the created speed entity
+  static EventType<Void, UUID> Forward = BasicEventType.of("Forward", UUID.fromString("0908e790-6955-4d89-b11b-c552ea8c54ac"), DataType.none(), DataType.uuid());
   static EventType<Void, Void> Backward = BasicEventType.of("Backward", UUID.fromString("a6e631f6-9cf1-40cf-81eb-1480a05a5aae"));
   static EventType<Void, Void> Left = BasicEventType.of("Left", UUID.fromString("2c79f9f9-8650-4856-ab0a-d5f3e2a2677e"));
   static EventType<Void, Void> Right = BasicEventType.of("Right", UUID.fromString("f17ab0f1-f370-4e55-a847-c22bc9996af2"));
@@ -84,45 +51,47 @@ public class RollbackTest {
   static EventType<Void, Void> Increase = BasicEventType.of("Increase", UUID.fromString("cd17fdf0-1f71-4ea8-9fd8-618a19f5e765"));
   static EventType<Void, Void> Decrease = BasicEventType.of("Decrease", UUID.fromString("6cd66f2c-9297-4783-a820-b4ac10b7299d"));
 
+  private static UUID speedId(EventLog log) {
+    return log.one(Forward);
+  }
+
   private final static StateMachine eventListener = Init.stateMachine(
       Map.of(
           Pacman, Map.of(
               Begin, List.of(
                   onEvent(Forward).to(Moving)
                       .trigger(Increase).on(Speed).identifiedBy(newEntityId())
-                      .newIdentifier(SpeedId, d -> d.t2().accepted().event().entityId())
                       .reversible(
-                          assemble((log, _) -> log.id(SpeedId))
+                          assemble((log, _) -> speedId(log))
                               .trigger(Decrease).on(Speed).identifiedBy(EntitySelector::entityId)
                       )
-                      .output()
+                      .output(d -> d.t2().accepted().event().entityId())
               ),
               Stopped, List.of(
                   onEvent(Forward).to(Moving)
                       .trigger(Increase).on(Speed).identifiedBy(newEntityId())
-                      .newIdentifier(SpeedId, d -> d.t2().accepted().event().entityId())
                       .reversible(
-                          assemble((log, _) -> log.id(SpeedId))
+                          assemble((log, _) -> speedId(log))
                               .trigger(Decrease).on(Speed).identifiedBy(EntitySelector::entityId)
                       )
-                      .output()
+                      .output(d -> d.t2().accepted().event().entityId())
               ),
               Moving, List.of(
                   onEvent(Left).toSelf().output(),
                   onEvent(Right).toSelf().output(),
                   onEvent(Backward).toSelf()
-                      .assemble(c -> c.log().id(SpeedId))
+                      .assemble(c -> speedId(c.log()))
                       .trigger(Decrease).on(Speed).identifiedBy(EntitySelector::entityId)
                       .reversible(
-                          assemble((log, _) -> log.id(SpeedId))
+                          assemble((log, _) -> speedId(log))
                               .trigger(Increase).on(Speed).identifiedBy(EntitySelector::entityId)
                       )
                       .output(),
                   onEvent(Forward).toSelf()
-                      .assemble(c -> c.log().id(SpeedId))
+                      .assemble(c -> speedId(c.log()))
                       .trigger(Increase).on(Speed).identifiedBy(EntitySelector::entityId)
                       .reversible(
-                          assemble((log, _) -> log.id(SpeedId))
+                          assemble((log, _) -> speedId(log))
                               .trigger(Decrease).on(Speed).identifiedBy(EntitySelector::entityId)
                       )
                       .output(),
