@@ -181,7 +181,7 @@ public class TestApi {
   ///
   /// @param triggerEntityId the entity whose event created the trigger
   /// @param triggerEventNumber the number of the event that created the trigger
-  public record PendingConditionTrigger(
+  public record PendingConditionalTrigger(
       UUID id,
       EntityId entityId,
       EntityModel entityModel,
@@ -194,18 +194,18 @@ public class TestApi {
   ) {}
 
   /// The events the entity is waiting for on conditions, in the order they were created
-  public Flux<PendingConditionTrigger> conditionTriggers(EntityId entityId) {
+  public Flux<PendingConditionalTrigger> conditionalTriggers(EntityId entityId) {
     return client.sql(
             """
             SELECT Id, EntityModelId, Type, LastTypes, ReferenceType, IndexKey, TriggerEntityId, TriggerEventNumber
-            FROM [{schema}].[ConditionTrigger]
+            FROM [{schema}].[ConditionalTrigger]
             WHERE EntityId=:entityId
             ORDER BY Timestamp, Id
             """.replace("{schema}", schema)
         )
-        .name("TestApi.ConditionTriggers")
+        .name("TestApi.ConditionalTriggers")
         .bind("entityId", entityId.value())
-        .map(row -> new PendingConditionTrigger(
+        .map(row -> new PendingConditionalTrigger(
             row.get("Id", UUID.class),
             entityId,
             entityModel(row.get("EntityModelId", UUID.class)),

@@ -36,7 +36,7 @@ import com.github.thxmasj.backend.core.database.UnknownEntity;
 import com.github.thxmasj.backend.core.database.jdbc.JDBCClient;
 import com.github.thxmasj.backend.core.database.mssql.ChangeState;
 import com.github.thxmasj.backend.core.database.mssql.ChangeState.Change;
-import com.github.thxmasj.backend.core.database.mssql.ConditionTriggers;
+import com.github.thxmasj.backend.core.database.mssql.ConditionalTriggers;
 import com.github.thxmasj.backend.core.database.mssql.CreateSchema;
 import com.github.thxmasj.backend.core.database.mssql.DeleteDelayedTrigger;
 import com.github.thxmasj.backend.core.database.mssql.EventsByEntityId;
@@ -70,7 +70,7 @@ import reactor.util.retry.RetrySpec;
 
 public class StateMachine implements AutoCloseable {
 
-  private static final int MAX_CONDITION_TRIGGERS_PER_POLL = 10;
+  private static final int MAX_CONDITIONAL_TRIGGERS_PER_POLL = 10;
 
   private final Function<List<String>, Mono<Void>> delayer;
   private final Clock clock;
@@ -83,7 +83,7 @@ public class StateMachine implements AutoCloseable {
   private final EventsByLastIndexEvent eventsByLastIndexEvent;
   private final NextDelayedTrigger nextDelayedTrigger;
   private final DeleteDelayedTrigger deleteDelayedTrigger;
-  private final ConditionTriggers conditionTriggers;
+  private final ConditionalTriggers conditionalTriggers;
   private final Map<EntityModel, Traverser> traversers;
   private final Map<EntityModel, List<EventType<?, ?>>> eventTypesByEntityModel;
 
@@ -140,7 +140,7 @@ public class StateMachine implements AutoCloseable {
     this.eventsByLastIndexEvent = new EventsByLastIndexEvent(dataSource, schemaName, clock);
     this.nextDelayedTrigger = new NextDelayedTrigger(jdbcClient, eventTypes, clock, entityModels, schemaName);
     this.deleteDelayedTrigger = new DeleteDelayedTrigger(jdbcClient, schemaName);
-    this.conditionTriggers = new ConditionTriggers(jdbcClient, eventTypesByEntityModel, clock, schemaName);
+    this.conditionalTriggers = new ConditionalTriggers(jdbcClient, eventTypesByEntityModel, clock, schemaName);
     this.listener = listener;
     if (withResolving) {
       Looper<ResolverStatus> resolverLooper = new Looper<>(
@@ -155,19 +155,19 @@ public class StateMachine implements AutoCloseable {
       );
       resolverLooper.loop();
       workers.add(resolverLooper);
-      Looper<ResolverStatus> conditionTriggerLooper = new Looper<>(
-          "ConditionTriggerWorker",
+      Looper<ResolverStatus> conditionalTriggerLooper = new Looper<>(
+          "ConditionalTriggerWorker",
           false,
-          () -> fireConditionTriggers().flux(),
+          () -> fireConditionalTriggers().flux(),
           _ -> ofSeconds(1)
       );
-      conditionTriggerLooper.loop();
-      workers.add(conditionTriggerLooper);
+      conditionalTriggerLooper.loop();
+      workers.add(conditionalTriggerLooper);
     }
     System.out.println("Initialized " + getClass().getName() + " on database schema " + schemaName);
   }
 
-  /// Stops the workers resolving delayed triggers and condition triggers, waits for their ongoing work to complete, and closes
+  /// Stops the workers resolving delayed triggers and conditional triggers, waits for their ongoing work to complete, and closes
   /// the data source if it is closeable, e.g. a connection pool. Requests should be stopped before this is called.
   @Override
   public void close() throws Exception {
@@ -440,7 +440,7 @@ public class StateMachine implements AutoCloseable {
             changes.add(Change.fromAcceptedEvent(occ.stepOutput().accepted()));
         case ChangeContext.OutputChangeContext<?> _ -> {}
         case ChangeContext.DelayedTriggerChangeContext<?, ?> dtcc -> changes.add(Change.fromDelayedEvent(dtcc.delayedEvent()));
-        case ChangeContext.ConditionTriggerChangeContext<?, ?> ctcc -> changes.add(Change.fromConditionTrigger(ctcc.conditionTrigger()));
+        case ChangeContext.ConditionalTriggerChangeContext<?, ?> ctcc -> changes.add(Change.fromConditionalTrigger(ctcc.conditionalTrigger()));
         case ChangeContext.AssembledChangeContext<?> _ -> {}
         case ChangeContext.ChoiceChangeContext<?> _ -> {}
         case ChangeContext.InitialChangeContext<?> _ -> {}
@@ -654,42 +654,42 @@ public class StateMachine implements AutoCloseable {
         .onErrorResume(UnknownEntity.class, _ -> Mono.empty());
   }
 
-  private <T> Flux<Event<?>> fireConditionTrigger(ConditionTrigger<T> conditionTrigger) {
-    return fireConditionTrigger(conditionTrigger, conditionTrigger.type());
+  private <T> Flux<Event<?>> fireConditionalTrigger(ConditionalTrigger<T> conditionalTrigger) {
+    return fireConditionalTrigger(conditionalTrigger, conditionalTrigger.type());
   }
 
-  private <T, O> Flux<Event<?>> fireConditionTrigger(
-      ConditionTrigger<T> conditionTrigger,
+  private <T, O> Flux<Event<?>> fireConditionalTrigger(
+      ConditionalTrigger<T> conditionalTrigger,
       EventType<T, O> eventType
   ) {
     var eventTrigger = new EventTrigger<Void, T, O>(
-        new EventTrigger.EventSpec<>(eventType, _ -> conditionTrigger.data()),
+        new EventTrigger.EventSpec<>(eventType, _ -> conditionalTrigger.data()),
         // The target entity may not exist yet, in which case it is created by the fired event
-        List.of(_ -> EntitySelector.entityId(conditionTrigger.entityId(), EntitySelector.CreationMode.CreateIfNotExists)),
-        conditionTrigger.entityModel(),
+        List.of(_ -> EntitySelector.entityId(conditionalTrigger.entityId(), EntitySelector.CreationMode.CreateIfNotExists)),
+        conditionalTrigger.entityModel(),
         false,
         null,
-        TriggerType.CONDITION,
-        conditionTrigger.id()
+        TriggerType.CONDITIONAL,
+        conditionalTrigger.id()
     );
-    // The condition trigger is deleted together with the change of the fired event
-    return onEvent(conditionTrigger.correlationId(), eventTrigger, null, conditionTrigger.triggerEvent())
-        .contextWrite(Correlation.contextOf(conditionTrigger.correlationId()));
+    // The conditional trigger is deleted together with the change of the fired event
+    return onEvent(conditionalTrigger.correlationId(), eventTrigger, null, conditionalTrigger.triggerEvent())
+        .contextWrite(Correlation.contextOf(conditionalTrigger.correlationId()));
   }
 
   /**
-   * Fire waiting condition triggers whose condition is now met. The waiting row is deleted together with the change
+   * Fire waiting conditional triggers whose condition is now met. The waiting row is deleted together with the change
    * of the fired event. Returns Ok if an event was fired, otherwise Empty (or Error).
    */
-  public Mono<ResolverStatus> fireConditionTriggers() {
-    System.out.println("fireConditionTriggers()");
-    return conditionTriggers.execute(MAX_CONDITION_TRIGGERS_PER_POLL)
-        .doOnNext(t -> System.out.println("fireConditionTriggers() found trigger: " + t))
-        .concatMap(event -> fireConditionTrigger(event)
+  public Mono<ResolverStatus> fireConditionalTriggers() {
+    System.out.println("fireConditionalTriggers()");
+    return conditionalTriggers.execute(MAX_CONDITIONAL_TRIGGERS_PER_POLL)
+        .doOnNext(t -> System.out.println("fireConditionalTriggers() found trigger: " + t))
+        .concatMap(event -> fireConditionalTrigger(event)
             .hasElements()
             .onErrorResume(e -> {
               e.printStackTrace();
-              System.out.println("Failed to fire condition trigger " + event.type().name() + " on " + event.entityId() + ": " + e);
+              System.out.println("Failed to fire conditional trigger " + event.type().name() + " on " + event.entityId() + ": " + e);
               return Mono.empty();
             })
         )

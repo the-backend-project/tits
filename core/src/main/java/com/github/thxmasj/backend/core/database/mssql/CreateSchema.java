@@ -105,7 +105,7 @@ public class CreateSchema {
         CREATE UNIQUE INDEX ixEntityId ON [{schema}].[DelayedTrigger] (EntityId);
         CREATE INDEX ixDeadline ON [{schema}].[DelayedTrigger] (Deadline);
 
-        CREATE TABLE [{schema}].[ConditionTrigger]
+        CREATE TABLE [{schema}].[ConditionalTrigger]
         (
             Id            UNIQUEIDENTIFIER NOT NULL,
             EntityId      UNIQUEIDENTIFIER NOT NULL,
@@ -119,9 +119,9 @@ public class CreateSchema {
             ReferenceType UNIQUEIDENTIFIER NOT NULL,
             IndexKey      VARBINARY(1700)  NOT NULL,
             CorrelationId VARCHAR(36)      NOT NULL,
-            CONSTRAINT [pkConditionTrigger] PRIMARY KEY (Id)
+            CONSTRAINT [pkConditionalTrigger] PRIMARY KEY (Id)
         );
-        GRANT INSERT, DELETE, SELECT ON [{schema}].[ConditionTrigger] TO [{role}];
+        GRANT INSERT, DELETE, SELECT ON [{schema}].[ConditionalTrigger] TO [{role}];
         """.replace("{schema}", schema)
             .replace("{role}", role);
   }

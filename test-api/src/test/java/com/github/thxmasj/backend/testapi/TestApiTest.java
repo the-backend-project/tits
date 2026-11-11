@@ -29,7 +29,7 @@ import com.github.thxmasj.backend.core.StateMachine;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.backend.core.Tuples.Tuple2;
 import com.github.thxmasj.backend.core.test.Init;
-import com.github.thxmasj.backend.testapi.TestApi.PendingConditionTrigger;
+import com.github.thxmasj.backend.testapi.TestApi.PendingConditionalTrigger;
 import com.github.thxmasj.backend.testapi.TestApi.ScheduledEvent;
 import java.nio.ByteBuffer;
 import java.sql.SQLException;
@@ -315,12 +315,12 @@ public class TestApiTest {
   }
 
   @Test
-  public void conditionTriggersOfEntity() throws InterruptedException {
+  public void conditionalTriggersOfEntity() throws InterruptedException {
     EntityId account = open("1010");
     EntityId statement = issue(account, 1);
     machine.onEvent(trigger(CloseWhenSettled, Account, account.value())).blockFirst();
 
-    List<PendingConditionTrigger> triggers = api.conditionTriggers(account).collectList().block();
+    List<PendingConditionalTrigger> triggers = api.conditionalTriggers(account).collectList().block();
 
     assertEquals(1, triggers.size());
     assertEquals(Close, triggers.getFirst().type());
@@ -332,7 +332,7 @@ public class TestApiTest {
     machine.onEvent(trigger(Settle, Statement, statement.value())).blockFirst();
 
     assertEquals(List.of("1:Open", "2:CloseWhenSettled", "3:Close"), eventNames(awaitEvents(account, 3)));
-    assertEquals(List.of(), api.conditionTriggers(account).collectList().block());
+    assertEquals(List.of(), api.conditionalTriggers(account).collectList().block());
   }
 
   @Test

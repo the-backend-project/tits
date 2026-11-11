@@ -29,7 +29,7 @@ import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
-public class ConditionTriggerTest {
+public class ConditionalTriggerTest {
 
   enum OrderStates implements State {Created, Shipped, Cancelled}
 

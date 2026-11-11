@@ -10,9 +10,9 @@ erDiagram
     Entity ||--o{ IdEvent : "identified by"
     Entity ||--o{ IndexEvent : "indexed by"
     Entity ||--o| DelayedTrigger : "waits for"
-    Entity ||--o{ ConditionTrigger : "waits for"
-    Event ||--o{ ConditionTrigger : "triggered"
-    IndexEvent }o--o{ ConditionTrigger : "matched by"
+    Entity ||--o{ ConditionalTrigger : "waits for"
+    Event ||--o{ ConditionalTrigger : "triggered"
+    IndexEvent }o--o{ ConditionalTrigger : "matched by"
 
     Metadata {
         BIGINT Checksum
@@ -52,7 +52,7 @@ erDiagram
         VARCHAR CorrelationId
         INT Attempt
     }
-    ConditionTrigger {
+    ConditionalTrigger {
         UNIQUEIDENTIFIER Id PK
         UNIQUEIDENTIFIER EntityId FK
         UNIQUEIDENTIFIER EntityModelId
@@ -69,7 +69,7 @@ erDiagram
 ```
 
 The relationships are logical only; the schema declares no foreign key constraints. All changes caused by a single
-input event (new events, delayed triggers and condition triggers, possibly on several entities) are written in one transaction.
+input event (new events, delayed triggers and conditional triggers, possibly on several entities) are written in one transaction.
 
 ## Tables
 
@@ -110,8 +110,8 @@ The event logs of index entities (`IndexEntityModel`). Like an id entity, an ind
 entity it indexes, but its events need not be unique: `Data` is an index key, such as the id of the customer an order
 belongs to, which may index many entities. The index is used to:
 
-* find all entities indexed by a key and event type (`EntitiesByIndex`), which is what condition triggers are
-  evaluated against (see [ConditionTrigger](#conditiontrigger)).
+* find all entities indexed by a key and event type (`EntitiesByIndex`), which is what conditional triggers are
+  evaluated against (see [ConditionalTrigger](#conditionaltrigger)).
 * find the last entity of a group (`EventsByLastIndexEvent`), such as the current settlement of a merchant. The data
   type of such an index event type is a `GroupedDataType`, which marshals values to the group followed by bytes that
   order the values within it, so that the last entity is the one whose index event has the greatest `Data` starting
@@ -129,7 +129,7 @@ A worker polls for rows with a passed `Deadline` (`NextDelayedTrigger`). Before 
 forward using exponential backoff and increments `Attempt`, so that the event is retried if processing fails. Rows whose
 event number no longer follows the entity's last event are deleted instead of fired (`DeleteDelayedTrigger`).
 
-### ConditionTrigger
+### ConditionalTrigger
 
 Events waiting for a condition on other entities. A row is inserted when a transition triggers an event on the entity
 `EntityId` on condition that the entities indexed by `IndexKey` with index event type `ReferenceType` (see
@@ -137,4 +137,4 @@ Events waiting for a condition on other entities. A row is inserted when a trans
 type ids. `TriggerEntityId` and `TriggerEventNumber` identify the event whose transition created the trigger.
 
 The trigger is fired right away if the condition is already met, and otherwise by a worker polling for triggers whose
-condition is met (`ConditionTriggers`). The row is deleted in the same transaction as the event it fires is inserted.
+condition is met (`ConditionalTriggers`). The row is deleted in the same transaction as the event it fires is inserted.

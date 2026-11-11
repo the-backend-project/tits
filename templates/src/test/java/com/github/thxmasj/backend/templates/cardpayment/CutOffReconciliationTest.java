@@ -119,7 +119,7 @@ public class CutOffReconciliationTest {
   private static HttpServer acquirer;
   // The paths of the requests received by the acquirer and the merchant (they share the same test server)
   private static final ConcurrentLinkedQueue<String> receivedPaths = new ConcurrentLinkedQueue<>();
-  // The input of the reconciliation request. It is dispatched by a condition trigger, so the input has been stored in
+  // The input of the reconciliation request. It is dispatched by a conditional trigger, so the input has been stored in
   // and read back from the database.
   private static final AtomicReference<Tuple3<BatchNumber, AcquirerBatchNumber, Merchant>> reconciliationInput =
       new AtomicReference<>();
@@ -162,7 +162,7 @@ public class CutOffReconciliationTest {
     await("reconciliation request to be sent to the acquirer", () -> receivedPaths.contains(Reconciliation.name()));
     assertTrue(receivedPaths.contains(Reconciliation.name()));
 
-    // The input data of the condition triggered reconciliation request survived the database round trip
+    // The input data of the conditional triggered reconciliation request survived the database round trip
     assertEquals(
         tuple(new BatchNumber(merchantId, 1), new AcquirerBatchNumber(merchantId, 2), merchant(merchantId)),
         reconciliationInput.get()
