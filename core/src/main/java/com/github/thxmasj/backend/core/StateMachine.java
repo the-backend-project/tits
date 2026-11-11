@@ -421,6 +421,7 @@ public class StateMachine implements AutoCloseable {
     I adaptedInput = eventTrigger.eventSpec().inputAdapter().apply(input);
     Many<Event<?>> responseSink = Sinks.many().unicast().onBackpressureBuffer();
     return eventLog(eventTrigger, input, null)
+        .onErrorMap(UnknownEntity.class, e -> new RejectedEvent(eventTrigger.eventSpec().eventType(), e))
         .flatMapMany(log ->
                 onEvent(correlationId, eventTrigger.eventSpec().eventType(), adaptedInput, log, null, List.of(), eventTrigger.triggerType(), eventTrigger.triggerId(), triggerEvent)
                     .contextWrite(ctx -> ctx.put("RS/" + log.entityId().value(), responseSink))
@@ -664,9 +665,7 @@ public class StateMachine implements AutoCloseable {
   }
 
 
-  /**
-   * The current state of the selected entity. Completes empty if the entity does not exist.
-   */
+  /// The current state of the selected entity. Completes empty if the entity does not exist.
   public Mono<State> onStatus(EntitySelector entitySelector, EntityModel entityModel) {
     return eventLog(entitySelector, entityModel, null)
         .map(log -> traversers.get(entityModel).currentState(log))
@@ -928,6 +927,16 @@ public class StateMachine implements AutoCloseable {
 
   public static class RejectedEvent extends RuntimeException {
 
+    public enum Reason {
+      /// No transition for the event from the current state of the entity
+      InvalidState,
+      /// The event can't be rolled back to the requested event number
+      InvalidRollback,
+      /// The entity selected by the trigger does not exist
+      UnknownEntity
+    }
+
+    private final Reason reason;
     private final EventType<?, ?> eventType;
     private final EntityModel entityModel;
     private final EntityId entityId;
@@ -949,6 +958,7 @@ public class StateMachine implements AutoCloseable {
           currentState != null ? currentState.name() : "<no current state>",
           eventLog.events().stream().map(e -> e.type().name()).collect(joining(", "))
       ));
+      this.reason = Reason.InvalidState;
       this.eventType = eventType;
       this.entityModel = eventLog.entityModel();
       this.entityId = eventLog.entityId();
@@ -968,10 +978,28 @@ public class StateMachine implements AutoCloseable {
           currentState != null ? currentState.name() : "<no current state>",
           rollbackTo
       ));
+      this.reason = Reason.InvalidRollback;
       this.eventType = eventType;
       this.entityModel = entityModel;
       this.entityId = entityId;
       this.currentState = currentState;
+    }
+
+    RejectedEvent(EventType<?, ?> eventType, UnknownEntity unknownEntity) {
+      super(String.format(
+          "%s: %s",
+          prefixMessage(eventType, unknownEntity.entityModel(), unknownEntity.id()),
+          unknownEntity.getMessage()
+      ));
+      this.reason = Reason.UnknownEntity;
+      this.eventType = eventType;
+      this.entityModel = unknownEntity.entityModel();
+      this.entityId = unknownEntity.id();
+      this.currentState = null;
+    }
+
+    public Reason reason() {
+      return reason;
     }
 
     public EventType<?, ?> eventType() {

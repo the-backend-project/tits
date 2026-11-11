@@ -145,6 +145,17 @@ public class RollbackTest {
   }
 
   @Test
+  public void eventOnUnknownEntityIsRejected() {
+    UUID unknownId = UUID.randomUUID();
+    StepVerifier.create(eventListener.onEvent(trigger(Forward, Pacman, unknownId)))
+        .expectErrorMatches(t -> t instanceof RejectedEvent r
+            && r.reason() == RejectedEvent.Reason.UnknownEntity
+            && r.entityModel() == Pacman
+            && r.entityId().value().equals(unknownId))
+        .verify();
+  }
+
+  @Test
   public void rollbackOfTwoEvents() {
     StepVerifier
         .create(eventListener.onEvent(trigger(Forward, Pacman))
