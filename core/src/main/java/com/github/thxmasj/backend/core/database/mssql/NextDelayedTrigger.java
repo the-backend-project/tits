@@ -1,6 +1,6 @@
 package com.github.thxmasj.backend.core.database.mssql;
 
-import com.github.thxmasj.backend.core.Deadline;
+import com.github.thxmasj.backend.core.DelayedTrigger;
 import com.github.thxmasj.backend.core.DelaySpecification;
 import com.github.thxmasj.backend.core.EntityId;
 import com.github.thxmasj.backend.core.EntityModel;
@@ -16,7 +16,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import reactor.core.publisher.Mono;
 
-public class NextDeadline {
+public class NextDelayedTrigger {
 
   private final Client databaseClient;
   private final Clock clock;
@@ -24,7 +24,7 @@ public class NextDeadline {
   private final Map<UUID, EntityModel> entityModels;
   private final Function<UUID, EventType<?, ?>> eventTypeMapper;
 
-  public NextDeadline(
+  public NextDelayedTrigger(
       Client databaseClient,
       List<EventType<?, ?>> eventTypes,
       Clock clock,
@@ -67,14 +67,14 @@ public class NextDeadline {
                 :now
               ),
         CorrelationId
-      FROM [{schema}].[Timeout] WITH (INDEX([ixDeadline]))
+      FROM [{schema}].[DelayedTrigger] WITH (INDEX([ixDeadline]))
       WHERE Deadline < :now
       ORDER BY Deadline ASC
     
-      UPDATE [{schema}].[Timeout] SET
+      UPDATE [{schema}].[DelayedTrigger] SET
         Deadline=(SELECT NextAttemptAt FROM @processing),
         Attempt=Attempt+1
-      FROM [{schema}].[Timeout] WITH (INDEX([ixEntityId]))
+      FROM [{schema}].[DelayedTrigger] WITH (INDEX([ixEntityId]))
       WHERE
         EntityId=(SELECT EntityId FROM @processing) AND
         EventNumber=(SELECT EventNumber FROM @processing) AND
@@ -89,9 +89,9 @@ public class NextDeadline {
       """.replace("{schema}", schemaName);
   }
 
-  public Mono<? extends Deadline<?>> execute(DelaySpecification backoff) {
+  public Mono<? extends DelayedTrigger<?>> execute(DelaySpecification backoff) {
     return databaseClient.sql(sql)
-        .name("NextDeadline")
+        .name("NextDelayedTrigger")
         .bind("now", ZonedDateTime.now(clock).toLocalDateTime())
         .bind("maximumBackoff", backoff.maximum().toSeconds())
         .bind("minimumBackoff", backoff.minimum().toSeconds())
@@ -112,7 +112,7 @@ public class NextDeadline {
         .one();
   }
 
-  private <T> Deadline<T> create(
+  private <T> DelayedTrigger<T> create(
           EntityId entityId,
           EntityModel model,
           int eventNumber,
@@ -121,7 +121,7 @@ public class NextDeadline {
           ZonedDateTime nextAttemptAt,
           String correlationId
   ) {
-    return new Deadline<>(
+    return new DelayedTrigger<>(
         entityId,
         model,
         eventNumber,

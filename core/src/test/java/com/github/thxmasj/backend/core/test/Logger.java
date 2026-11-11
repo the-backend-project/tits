@@ -39,9 +39,9 @@ public class Logger implements Listener {
   }
 
   @Override
-  public void processNextDeadlineFailed(Throwable t) {
+  public void processNextDelayedTriggerFailed(Throwable t) {
     t.printStackTrace();
-    log("Process next deadline failed: " + t.toString());
+    log("Process next delayed trigger failed: " + t.toString());
   }
 
   @Override

@@ -54,7 +54,7 @@ public interface Listener {
         List<Change> changes
     );
 
-  void processNextDeadlineFailed(Throwable t);
+  void processNextDelayedTriggerFailed(Throwable t);
 
   void forwardingAttempt(
       UUID requestId,

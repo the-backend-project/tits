@@ -9,7 +9,7 @@ erDiagram
     Entity ||--|{ Event : "has"
     Entity ||--o{ IdEvent : "identified by"
     Entity ||--o{ IndexEvent : "indexed by"
-    Entity ||--o| Timeout : "waits for"
+    Entity ||--o| DelayedTrigger : "waits for"
     Entity ||--o{ ConditionTrigger : "waits for"
     Event ||--o{ ConditionTrigger : "triggered"
     IndexEvent }o--o{ ConditionTrigger : "matched by"
@@ -42,7 +42,7 @@ erDiagram
         VARBINARY Data "the index key"
         DATETIME2 Timestamp
     }
-    Timeout {
+    DelayedTrigger {
         UNIQUEIDENTIFIER EntityId FK "unique"
         UNIQUEIDENTIFIER EntityModelId
         SMALLINT EventNumber
@@ -69,7 +69,7 @@ erDiagram
 ```
 
 The relationships are logical only; the schema declares no foreign key constraints. All changes caused by a single
-input event (new events, timeouts and condition triggers, possibly on several entities) are written in one transaction.
+input event (new events, delayed triggers and condition triggers, possibly on several entities) are written in one transaction.
 
 ## Tables
 
@@ -119,15 +119,15 @@ belongs to, which may index many entities. The index is used to:
 
 `Data` is limited to 1684 bytes so that it can be indexed together with `Type`.
 
-### Timeout
+### DelayedTrigger
 
 Delayed events, at most one per entity. A row is inserted when a transition schedules an event to happen after a delay.
-`EventNumber` is the number the delayed event will get, so the timeout only fires if the entity has had no other event
-since it was scheduled.
+`EventNumber` is the number the delayed event will get, so the delayed trigger only fires if the entity has had no other
+event since it was scheduled.
 
-A worker polls for rows with a passed `Deadline` (`NextDeadline`). Before processing a row, it moves the deadline
+A worker polls for rows with a passed `Deadline` (`NextDelayedTrigger`). Before processing a row, it moves the deadline
 forward using exponential backoff and increments `Attempt`, so that the event is retried if processing fails. Rows whose
-event number no longer follows the entity's last event are deleted instead of fired (`DeleteExpiredDeadline`).
+event number no longer follows the entity's last event are deleted instead of fired (`DeleteDelayedTrigger`).
 
 ### ConditionTrigger
 
