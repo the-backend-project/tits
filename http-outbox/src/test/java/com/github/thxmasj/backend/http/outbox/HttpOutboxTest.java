@@ -63,7 +63,7 @@ import reactor.test.StepVerifier;
 public class HttpOutboxTest {
 
   enum States implements State {
-    WaitingForResponse {@Override public Timeout<?> timeout() {return rollbackAfter(Duration.ofSeconds(2));}},
+    WaitingForResponse,
     Done
   }
   static HttpServer server;

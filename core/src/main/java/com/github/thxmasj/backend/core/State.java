@@ -1,11 +1,5 @@
 package com.github.thxmasj.backend.core;
 
-import static com.github.thxmasj.backend.core.BuiltinEventTypes.Rollback;
-
-import com.github.thxmasj.backend.core.BasicEventType.Rollback.Data;
-import java.time.Duration;
-import java.util.function.Function;
-
 public interface State {
 
   State Intermediate = State.of("Intermediate");
@@ -14,26 +8,6 @@ public interface State {
     return () -> name;
   }
 
-  Timeout<Void> NEVER_TIMEOUT = new Timeout<>(Duration.ZERO, null, null);
-
   String name();
-
-  record Timeout<I>(Duration duration, EventType<I, ?> eventType, Function<Integer, I> eventData) {
-    public InputEvent<I> event(int lastEventNumber) {
-      return new InputEvent<>(eventType, eventData.apply(lastEventNumber));
-    }
-  }
-
-  default Timeout<?> timeout() {
-    return NEVER_TIMEOUT;
-  }
-
-  default Timeout<?> rollbackAfter(Duration duration) {
-    return new Timeout<>(duration, Rollback, lastEventNumber -> new Data(-1, name() + " timed out"));
-  }
-
-  default Timeout<?> rollbackAfter(Duration duration, int numberOfEventsToRollback) {
-    return new Timeout<>(duration, Rollback, lastEventNumber -> new Data(-numberOfEventsToRollback, name() + " timed out"));
-  }
 
 }

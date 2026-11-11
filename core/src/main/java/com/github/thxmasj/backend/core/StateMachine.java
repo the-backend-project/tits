@@ -212,7 +212,7 @@ public class StateMachine implements AutoCloseable {
   }
 
   /**
-   * Resolve a state that has reached its deadline, as indicated by its timeout value.
+   * Process the next delayed event that has reached its deadline.
    */
   public Mono<ResolverStatus> resolveState() {
     var backoff = new DelaySpecification(ofSeconds(10), ofMinutes(10), ofHours(5), 1.5);
@@ -235,7 +235,7 @@ public class StateMachine implements AutoCloseable {
           if (currentState == null)
             return Mono.error(new RuntimeException(
                 "Invalid event log: " + eventLog.events().stream().map(Event::typeName).collect(joining(","))));
-          InputEvent<?> event = inputEvent(deadline);  //currentState.timeout().event(deadline.eventNumber());
+          InputEvent<?> event = inputEvent(deadline);
           System.out.println("resolveState with: " + event);
           return onEvent(
               deadline.correlationId(),
@@ -1000,7 +1000,6 @@ public class StateMachine implements AutoCloseable {
                     change.entityModel().name(),
                     change.entityId().value()
                 ),
-                change.delayedEvent() != null ? change.delayedEvent().after() : null,
                 change.newEvent() != null ? new Listener.Change.Event(
                     change.newEvent().eventNumber(),
                     change.newEvent().type().name()

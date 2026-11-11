@@ -82,17 +82,10 @@ import tools.jackson.databind.ObjectMapper;
 
 public class HttpInboxTest {
 
-  private static final long PROCESSING_TIMEOUT = 2000;
-
   enum States implements State {
     On,
     Off,
-    Processing {
-      @Override
-      public Timeout<?> timeout() {
-        return rollbackAfter(Duration.ofMillis(PROCESSING_TIMEOUT));
-      }
-    },
+    Processing,
     Unreachable
   }
 
