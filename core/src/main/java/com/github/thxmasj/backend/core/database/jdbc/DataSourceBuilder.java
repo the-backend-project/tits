@@ -2,9 +2,10 @@ package com.github.thxmasj.backend.core.database.jdbc;
 
 import com.github.thxmasj.backend.core.database.Client.Config;
 import com.microsoft.sqlserver.jdbc.SQLServerDataSource;
-import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import com.zaxxer.hikari.pool.HikariPool;
+import java.sql.Connection;
+import java.sql.SQLException;
 import javax.sql.DataSource;
 
 public class DataSourceBuilder {
@@ -23,14 +24,21 @@ public class DataSourceBuilder {
     return hikariDataSource(config, build());
   }
 
+  // Configured directly rather than through a separate HikariConfig, which HikariDataSource would copy reflectively
   private HikariDataSource hikariDataSource(Config config, DataSource ssds) {
-    HikariConfig hikariConfig = new HikariConfig();
-    hikariConfig.setMaximumPoolSize(config.maximumPoolSize());
-    hikariConfig.setDataSource(ssds);
-    try {
-      return new HikariDataSource(hikariConfig);
-    } catch (HikariPool.PoolInitializationException e) {
-      throw new RuntimeException("Failed to create Hikari data source for config " + config + ": " + e.getMessage() + "\n" + System.getenv());
+    HikariDataSource hikariDataSource = new HikariDataSource();
+    hikariDataSource.setMaximumPoolSize(config.maximumPoolSize());
+    hikariDataSource.setDataSource(ssds);
+    // The pool starts on the first connection. Start it now to fail fast, as the HikariDataSource(HikariConfig) constructor does.
+    try (Connection _ = hikariDataSource.getConnection()) {
+      return hikariDataSource;
+    } catch (SQLException | HikariPool.PoolInitializationException e) {
+      hikariDataSource.close();
+      throw new RuntimeException(
+          "Failed to create Hikari data source for database " + config.name() + " on " + config.host() + ":"
+              + config.port() + " as " + config.user() + ": " + e.getMessage(),
+          e
+      );
     }
   }
 

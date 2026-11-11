@@ -28,21 +28,18 @@ To run the demo in Azure, see [Deploying to Azure Functions](azure-functions.md)
 The application without native compilation is an ordinary Maven module. `DemoTest` runs it against the test database
 the build uses (see `bin/start-mssql.sh`).
 
-### Recording reachability metadata
+### Reachability metadata
 
-Native compilation depends on metadata about reflection and resources, recorded by running the application on the
-JVM with the GraalVM tracing agent. Record it again after changing the demo or the libraries. With GraalVM 25 as
-`java`, and the `DATABASE_*` variables set as described below:
+Native compilation depends on metadata about reflection and resources that static analysis cannot find. The demo
+needs none of its own. The libraries ship metadata for what they use in
+`META-INF/native-image/com.github.thxmasj.backend/<artifact>/`, and Netty and Reactor ship their own. The core
+library's covers HikariCP, the SQL Server driver, and Jackson's handling of records. The HTTP inbox's makes Netty
+initialize one class at run time (see [Gaps](#gaps)).
 
-```shell
-mvn clean package -pl demo -am -DskipTests -Dmaven.compiler.release=25
-agent=-agentlib:native-image-agent=config-merge-dir=demo/src/main/resources/META-INF/native-image/com.github.thxmasj.backend/demo
-java $agent -jar demo/target/demo.jar migrate
-java $agent -jar demo/target/demo.jar
-```
-
-Then exercise the application, for example with `curl localhost:8080/` and `curl localhost:8080/unknown`, and stop it
-with `SIGTERM` (Ctrl-C).
+To check the metadata after changing the libraries, add `--exact-reachability-metadata
+-H:MissingRegistrationReportingMode=Warn` to the `native-image` command in the `Dockerfile`, run the demo, and look for
+`MissingReflectionRegistrationError` and `MissingResourceRegistrationError` in its output. Probes for optional
+service providers, such as SLF4J providers, and for native transports of other architectures are expected.
 
 ## The twelve factors
 
@@ -81,23 +78,21 @@ with `SIGTERM` (Ctrl-C).
 
 ## Gaps
 
-Building the demo revealed the following gaps in the libraries and their dependencies. The demo works around them
-without changing the libraries.
+Building the demo revealed the following gaps in the libraries and their dependencies, some of which the libraries
+work around.
 
 ### Native compilation
 
 - **No GraalVM supports Java 27 yet.** The newest GraalVM is based on Java 25, while the libraries target Java 27.
   The image build therefore compiles the libraries with `-Dmaven.compiler.release=25`. This works as long as the
   libraries do not use language features or APIs newer than Java 25.
-- **The libraries ship no reachability metadata.** The state machine serializes its own types, such as event
-  references and entity ids, with Jackson, which uses reflection. The demo includes metadata recorded with the GraalVM
-  tracing agent in `demo/src/main/resources/META-INF/native-image`, which must be recorded again when the libraries
-  change. The libraries could instead ship `META-INF/native-image/<group>/<artifact>/reachability-metadata.json`
-  themselves, so applications get it automatically.
+- **Jackson needs reflection.** The state machine marshals event data with Jackson, which accesses the data classes
+  reflectively. Applications must provide reachability metadata for their own data classes. Event references and message
+  ids, which the HTTP inbox stores with its events, use data types that need no reflection.
 - **Netty puts a direct buffer in the image heap.** Netty 4.1 initializes its classes at build time, but
   `CleartextHttp2ServerUpgradeHandler`, used by the reactor-netty HTTP server, holds a direct buffer, which fails the
-  build with GraalVM 25. The demo initializes that class at run time instead. The HTTP inbox could ship this setting, or
-  it could go away with a later Netty version.
+  build with GraalVM 25. The HTTP inbox therefore initializes that class at run time. The setting could go away with a
+  later Netty version.
 - **Runtime dependencies the server does not use.** The state machine depends on Hibernate Validator, and reactor-netty
   brings QUIC and macOS DNS support. They end up on the runtime classpath of every application, lengthening native
   compilation. They could be optional, the way diagram generation with PlantUML is kept in the separate `diagram`

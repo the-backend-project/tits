@@ -1,0 +1,31 @@
+{
+  "reflection": [
+    {
+      "type": "java.lang.Record"
+    },
+    {
+      "type": "com.zaxxer.hikari.util.ConcurrentBag$IConcurrentBagEntry[]"
+    },
+    {
+      "type": "java.sql.Statement[]"
+    },
+    {
+      "type": {
+        "proxy": [
+          "java.sql.Connection"
+        ]
+      }
+    }
+  ],
+  "resources": [
+    {
+      "glob": "com/microsoft/sqlserver/jdbc/SQLServerResource_en.properties"
+    },
+    {
+      "glob": "com/microsoft/sqlserver/jdbc/SQLServerResource_en_US.properties"
+    },
+    {
+      "bundle": "com.microsoft.sqlserver.jdbc.SQLServerResource"
+    }
+  ]
+}
