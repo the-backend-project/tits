@@ -23,6 +23,8 @@ The image can also be built alone, from the repository root:
 docker build -f demo/Dockerfile -t tits-demo .
 ```
 
+To run the demo in Azure, see [Deploying to Azure Functions](azure-functions.md).
+
 The application without native compilation is an ordinary Maven module. `DemoTest` runs it against the test database
 the build uses (see `bin/start-mssql.sh`).
 
@@ -30,9 +32,9 @@ the build uses (see `bin/start-mssql.sh`).
 
 Native compilation depends on metadata about reflection and resources that static analysis cannot find. The demo
 needs none of its own. The libraries ship metadata for what they use in
-`META-INF/native-image/com.github.thxmasj/<artifact>/`, and Netty and Reactor ship their own. The state machine's
-covers HikariCP, the SQL Server driver, and Jackson. The HTTP inbox's makes Netty initialize one class at run time
-(see [Gaps](#gaps)).
+`META-INF/native-image/com.github.thxmasj.backend/<artifact>/`, and Netty and Reactor ship their own. The core
+library's covers HikariCP and the SQL Server driver. The HTTP inbox's covers the message ids it stores as JSON, and
+makes Netty initialize one class at run time (see [Gaps](#gaps)).
 
 To check the metadata after changing the libraries, add `--exact-reachability-metadata
 -H:MissingRegistrationReportingMode=Warn` to the `native-image` command in the `Dockerfile`, run the demo, and look for
@@ -111,10 +113,7 @@ work around.
 ### Admin processes
 
 - **Schema creation is coupled with the state machine.** The `StateMachine` constructor creates the schema when given a
-  schema data source. To create the schema as a separate admin process, the demo calls `CreateSchema` directly, and has
-  to compute its list of secondary id models the same way `StateMachine` does. If the two ever differ, the checksum of
-  the schema does not match and the application fails to start. A public migration entry point taking the transition
-  models would avoid this.
+  schema data source. To create the schema as a separate admin process, the demo calls `CreateSchema` directly.
 - **No schema evolution.** A schema that differs from what the code expects is rejected with a checksum mismatch.
   There is no way to migrate an existing schema to a new version.
 

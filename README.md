@@ -3,7 +3,9 @@
 Documentation is available at https://the-backend-project.github.io/tits/.
 
 The [demo](demo) module is a hello world web application following the principles of the twelve-factor app, compiled
-to a native executable. See [Cloud native demo](docs/cloud-native.md).
+to a native executable. See [Cloud native demo](docs/cloud-native.md). The [deploy](deploy) module deploys it, or any
+application built the same way, to Azure Functions with a serverless Azure SQL database. See
+[Deploying to Azure Functions](docs/azure-functions.md).
 
 ## Building
 
@@ -25,3 +27,17 @@ mvn verify -Daether.artifactResolver.postProcessor.trustedChecksums.record=true
 
 The set of resolved artifacts can differ between Maven versions, so record with the Maven version used in CI as well
 as your local one if they differ.
+
+## Documentation
+
+The documentation site is built with [Zensical](https://zensical.org) from the Markdown in [docs](docs), with state
+diagrams generated from the [templates](templates) module. To preview it locally with live reload on
+http://localhost:8000:
+
+```shell
+bin/serve-docs.sh
+```
+
+This requires Graphviz (`dot`) and Python 3.10 or later in addition to the build requirements above. Zensical is
+installed into a `.venv` on first run. Set `PYTHON` to choose another interpreter, set `SKIP_DIAGRAMS=1` to reuse the
+diagrams already generated in `docs/images`, or pass `--build` to do a strict build into `site` like CI does.

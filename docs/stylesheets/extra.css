@@ -2,8 +2,85 @@
   --md-primary-fg-color: #4b5320;
   --md-primary-fg-color--light: #6b7540;
   --md-primary-fg-color--dark: #353b16;
+  --md-primary-bg-color: #000000;
+  --md-primary-bg-color--light: rgba(0, 0, 0, 0.7);
+}
+
+[data-md-color-scheme="default"] {
+  --md-typeset-a-color: var(--md-primary-fg-color--dark);
+  --md-code-fg-color: #000000;
+  --md-code-bg-color: #9bb08a;
 }
 
 [data-md-color-scheme="slate"] {
   --md-typeset-a-color: #a3b06a;
+}
+
+body {
+  /* "Frozen, dry leaves on green lawn" by Anna Valberg, https://unsplash.com/photos/s990e8olqU4 (Unsplash License) */
+  background: url("https://images.unsplash.com/photo-1638196963780-7554c3d7efd0?rect=0,0,3700,3024&w=1600&q=40&blur=10&auto=format&fit=crop")
+    center / cover fixed;
+  /* Shown when scrolling past the top or bottom of the page */
+  background-color: #4b5320;
+}
+
+.md-container {
+  background: transparent;
+}
+
+.md-main__inner {
+  background-color: color-mix(
+    in srgb,
+    color-mix(in srgb, var(--md-primary-fg-color) 45%, var(--md-default-bg-color)) 90%,
+    transparent
+  );
+  border-radius: 0.8rem;
+}
+
+@media screen and (min-width: 76.25em) {
+  .md-nav--primary .md-nav__title,
+  .md-nav--lifted > .md-nav__list > .md-nav__item--active > .md-nav__link {
+    background: transparent;
+    box-shadow: none;
+  }
+}
+
+.md-typeset table:not([class]) {
+  --md-typeset-table-color: rgba(75, 83, 32, 0.35);
+  background-color: transparent;
+  border-color: #4b5320;
+}
+
+.md-typeset table:not([class]) th {
+  color: #000000;
+  background-color: #9bb08a;
+}
+
+.md-typeset .admonition.note,
+.md-typeset details.note {
+  background-color: transparent;
+  border-color: #4b5320;
+  box-shadow: none;
+}
+
+.md-typeset .note > .admonition-title,
+.md-typeset .note > summary {
+  color: #000000;
+  background-color: #9bb08a;
+}
+
+.md-typeset .note > .admonition-title::before,
+.md-typeset .note > summary::before {
+  background-color: #4b5320;
+}
+
+.md-top {
+  color: #000000;
+  background-color: #9bb08a;
+}
+
+.md-top:focus,
+.md-top:hover {
+  color: #000000;
+  background-color: #4b5320;
 }

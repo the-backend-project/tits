@@ -1,0 +1,45 @@
+package com.github.thxmasj.backend.templates.cardpayment;
+
+import com.github.thxmasj.backend.core.EntityModel;
+import java.util.UUID;
+
+public enum Aggregate implements EntityModel {
+
+  Payment {
+    private final UUID id = UUID.fromString("c56dc62e-24e8-43a7-868f-b87720327ff5");
+
+    @Override
+    public UUID id() {
+      return id;
+    }
+
+//    @Override
+//    public EntityModel parentEntity() {
+//      return Settlement;
+//    }
+
+  },
+  Settlement {
+    private final UUID id = UUID.fromString("fc1d7b4c-92c7-40b3-9f7e-68a84d8d56f1");
+
+    @Override
+    public UUID id() {
+      return id;
+    }
+
+//    @Override
+//    public List<OutboxQueue> queues() {
+//      return List.of(Queues.values());
+//    }
+
+  },
+  Merchant {
+
+    @Override
+    public UUID id() {
+      return UUID.fromString("3ece621b-2c6a-4e5a-895e-6f7b566ec26f");
+    }
+
+  }
+
+}
