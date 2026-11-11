@@ -18,7 +18,7 @@ public interface Identifiers {
   EventType<BatchNumber, BatchNumber> BatchNumber = BasicEventType.of(
       "BatchNumber",
       UUID.fromString("e0ca999b-0853-43eb-b1a6-f0f2ef6130b5"),
-      DataType.json(BatchNumber.class)
+      new BatchNumberDataType()
   );
 
   EventType<AcquirerBatchNumber, AcquirerBatchNumber> AcquirerBatchNumber = BasicEventType.of(
