@@ -22,7 +22,6 @@ import com.github.thxmasj.backend.core.test.Init;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.StateMachine;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionModel;
-import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -87,12 +86,7 @@ public class ConditionalTriggerTest {
   private EventsByEntityId eventsByEntityId;
 
   private StateMachine stateMachine(String schema) {
-    eventsByEntityId = new EventsByEntityId(
-        Init.dataSource(),
-        List.of(Order, Batch, Index),
-        schema,
-        Clock.systemUTC()
-    );
+    eventsByEntityId = Init.eventsByEntityId(List.of(Order, Batch, Index), schema);
     return Init.stateMachine(schema, Map.of(
         Order, Map.<State, List<TransitionModel<?, ?>>>of(
             Begin, List.of(

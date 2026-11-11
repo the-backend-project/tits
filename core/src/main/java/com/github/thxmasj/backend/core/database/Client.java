@@ -30,8 +30,26 @@ public interface Client {
       String password,
       boolean trustServerCertificate,
       int maximumPoolSize,
-      Duration queryTimeout
+      Duration queryTimeout,
+      Dialect dialect
   ) {
+
+    public Config(
+        String host,
+        int port,
+        String name,
+        String user,
+        String password,
+        boolean trustServerCertificate,
+        int maximumPoolSize,
+        Duration queryTimeout
+    ) {
+      this(host, port, name, user, password, trustServerCertificate, maximumPoolSize, queryTimeout, Dialect.SQL_SERVER);
+    }
+
+    public Dialect dialect() {
+      return Objects.requireNonNullElse(dialect, Dialect.SQL_SERVER);
+    }
 
     public int maximumPoolSize() {
       return maximumPoolSize != 0 ? maximumPoolSize : 10;

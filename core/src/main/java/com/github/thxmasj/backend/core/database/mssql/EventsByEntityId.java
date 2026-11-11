@@ -24,6 +24,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Function;
 import javax.sql.DataSource;
 import reactor.core.publisher.Mono;
 
@@ -39,6 +40,27 @@ public class EventsByEntityId {
       String schemaName,
       Clock clock
   ) {
+    this(
+        dataSource,
+        entityModels,
+        table -> """
+            SELECT EventNumber, Type, Timestamp, Data
+            FROM [{schema}].[{table}] WITH (INDEX(pk{table}))
+            WHERE EntityId=:entityId
+            ORDER BY EventNumber;
+            """.replace("{schema}", schemaName)
+            .replace("{table}", table),
+        clock
+    );
+  }
+
+  /// @param sql the SQL selecting the events of an entity from a table, in the dialect of the database
+  protected EventsByEntityId(
+      DataSource dataSource,
+      List<EntityModel> entityModels,
+      Function<String, String> sql,
+      Clock clock
+  ) {
     this.dataSource = dataSource;
     this.clock = clock;
     this.sqls = new HashMap<>();
@@ -48,15 +70,7 @@ public class EventsByEntityId {
         case IndexEntityModel _ -> "IndexEvent";
         default -> "Event";
       };
-      String sql =
-          """
-          SELECT EventNumber, Type, Timestamp, Data
-          FROM [{schema}].[{table}] WITH (INDEX(pk{table}))
-          WHERE EntityId=:entityId
-          ORDER BY EventNumber;
-          """.replace("{schema}", schemaName)
-              .replace("{table}", table);
-      this.sqls.put(entityModel, sql);
+      this.sqls.put(entityModel, sql.apply(table));
     }
   }
 

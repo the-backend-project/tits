@@ -120,7 +120,7 @@ public class IdEventTest {
   public void idsAreEventsOfASeparateIdEntity() {
     Event<?> opened = machine.onEvent(trigger(Open, Account), "123").blockFirst();
 
-    var eventsByEntityId = new EventsByEntityId(Init.dataSource(), List.of(Account, Ids), schema, Clock.systemUTC());
+    var eventsByEntityId = Init.eventsByEntityId(List.of(Account, Ids), schema);
     EventLog accountLog = eventsByEntityId.execute(Account, List.of(Open, Touch), new EntityId.UUID(opened.entityId())).block();
     EventLog idLog = eventsByEntityId.execute(Ids, List.of(AccountNumber, Alias), new EntityId.UUID(opened.entityId())).block();
 
@@ -159,7 +159,7 @@ public class IdEventTest {
 
     assertEquals("Duplicate of " + first.entityId(), second.getUnmarshalledData());
     // Neither of the existing ids is stored again
-    var eventsByEntityId = new EventsByEntityId(Init.dataSource(), List.of(Ids), schema, Clock.systemUTC());
+    var eventsByEntityId = Init.eventsByEntityId(List.of(Ids), schema);
     assertEquals(
         List.of(),
         eventsByEntityId.execute(Ids, List.of(AccountNumber, Alias), new EntityId.UUID(second.entityId()))

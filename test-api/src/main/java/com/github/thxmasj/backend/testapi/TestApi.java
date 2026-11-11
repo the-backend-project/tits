@@ -15,6 +15,7 @@ import com.github.thxmasj.backend.core.IndexEntityModel;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.backend.core.database.Client;
+import com.github.thxmasj.backend.core.database.Storage;
 import com.github.thxmasj.backend.core.database.UnknownEntity;
 import com.github.thxmasj.backend.core.database.jdbc.JDBCClient;
 import com.github.thxmasj.backend.core.database.mssql.ChangeState;
@@ -72,20 +73,22 @@ public class TestApi {
     this.eventTypesByEntityModel = Mappers.eventTypesByEntityModel(transitions);
     List<EventType<?, ?>> eventTypes = Mappers.eventTypes(transitions);
     this.eventTypeMapper = Mappers.eventTypeMapper(eventTypes);
-    List<EntityModel> models = List.copyOf(transitions.keySet());
-    this.eventsByEntityId = new EventsByEntityId(dataSource, models, schemaName, clock);
-    this.eventsByIdEvent = new EventsByIdEvent(dataSource, eventTypesByEntityModel, schemaName, clock);
-    this.eventsByLastIndexEvent = new EventsByLastIndexEvent(dataSource, schemaName, clock);
-    this.entitiesByIndex = new EntitiesByIndex(dataSource, eventTypesByEntityModel, schemaName, clock);
-    this.changeState = new ChangeState(client, schemaName, clock);
-    this.pending = "EventNumber=(SELECT COALESCE(MAX(EventNumber), 0) + 1 FROM [{schema}].[Event] WHERE EntityId=:entityId)";
+    Storage storage = Storage.of(dataSource, transitions, schemaName, clock);
+    this.eventsByEntityId = storage.eventsByEntityId();
+    this.eventsByIdEvent = storage.eventsByIdEvent();
+    this.eventsByLastIndexEvent = storage.eventsByLastIndexEvent();
+    this.entitiesByIndex = storage.entitiesByIndex();
+    this.changeState = storage.changeState();
+    // The queries of the test API quote identifiers and use OFFSET/FETCH, so that they work in both SQL Server and
+    // PostgreSQL
+    this.pending = "EventNumber=(SELECT COALESCE(MAX(EventNumber), 0) + 1 FROM \"{schema}\".\"Event\" WHERE EntityId=:entityId)";
   }
 
   /// The event log of an entity, whose entity model is the one it was created with. Completes empty if there is no such
   /// entity. Id and index entities are not found this way, as they have no entity model of their own stored; use
   /// [#eventLog(EntityModel, EntityId)] for those.
   public Mono<EventLog> eventLog(EntityId entityId) {
-    return client.sql("SELECT EntityModelId FROM [{schema}].[Entity] WHERE EntityId=:entityId".replace("{schema}", schema))
+    return client.sql("SELECT EntityModelId FROM \"{schema}\".\"Entity\" WHERE EntityId=:entityId".replace("{schema}", schema))
         .name("TestApi.EntityModel")
         .bind("entityId", entityId.value())
         .map(row -> row.get("EntityModelId", UUID.class))
@@ -109,9 +112,10 @@ public class TestApi {
   public <T> Mono<T> id(EntityId entityId, EventType<?, T> idType) {
     return client.sql(
             """
-            SELECT TOP(1) Data FROM [{schema}].[IdEvent]
+            SELECT Data FROM "{schema}"."IdEvent"
             WHERE EntityId=:entityId AND Type=:type
             ORDER BY EventNumber DESC
+            OFFSET 0 ROWS FETCH NEXT 1 ROWS ONLY
             """.replace("{schema}", schema)
         )
         .name("TestApi.Id")
@@ -159,7 +163,7 @@ public class TestApi {
     return client.sql(
             """
             SELECT EntityModelId, EventNumber, Type, Deadline, Attempt
-            FROM [{schema}].[DelayedTrigger]
+            FROM "{schema}"."DelayedTrigger"
             WHERE EntityId=:entityId AND {pending}
             """.replace("{pending}", pending).replace("{schema}", schema)
         )
@@ -198,7 +202,7 @@ public class TestApi {
     return client.sql(
             """
             SELECT Id, EntityModelId, Type, LastTypes, ReferenceType, IndexKey, TriggerEntityId, TriggerEventNumber
-            FROM [{schema}].[ConditionalTrigger]
+            FROM "{schema}"."ConditionalTrigger"
             WHERE EntityId=:entityId
             ORDER BY Timestamp, Id
             """.replace("{schema}", schema)
@@ -233,7 +237,7 @@ public class TestApi {
       default -> "Event";
     };
     return client.sql(
-            "SELECT COALESCE(MAX(EventNumber), 0) + 1 AS EventNumber FROM [{schema}].[{table}] WHERE EntityId=:entityId"
+            "SELECT COALESCE(MAX(EventNumber), 0) + 1 AS EventNumber FROM \"{schema}\".\"{table}\" WHERE EntityId=:entityId"
                 .replace("{schema}", schema)
                 .replace("{table}", table)
         )
@@ -250,7 +254,7 @@ public class TestApi {
   /// Completes with whether the entity was waiting for an event.
   public Mono<Boolean> expireDelayedTrigger(EntityId entityId) {
     return client.sql(
-            "UPDATE [{schema}].[DelayedTrigger] SET Deadline=:now WHERE EntityId=:entityId AND {pending}"
+            "UPDATE \"{schema}\".\"DelayedTrigger\" SET Deadline=:now WHERE EntityId=:entityId AND {pending}"
                 .replace("{pending}", pending)
                 .replace("{schema}", schema)
         )
@@ -264,7 +268,7 @@ public class TestApi {
   /// Cancels the events all entities are waiting for, e.g. to start a test with no pending work from earlier tests.
   /// Completes with the number of events cancelled.
   public Mono<Integer> deleteDelayedTriggers() {
-    return client.sql("DELETE FROM [{schema}].[DelayedTrigger]".replace("{schema}", schema))
+    return client.sql("DELETE FROM \"{schema}\".\"DelayedTrigger\"".replace("{schema}", schema))
         .name("TestApi.DeleteDelayedTriggers")
         .update();
   }

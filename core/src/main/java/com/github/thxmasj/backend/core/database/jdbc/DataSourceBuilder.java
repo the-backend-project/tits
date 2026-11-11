@@ -7,6 +7,8 @@ import com.zaxxer.hikari.pool.HikariPool;
 import java.sql.Connection;
 import java.sql.SQLException;
 import javax.sql.DataSource;
+import org.postgresql.ds.PGSimpleDataSource;
+import org.postgresql.jdbc.SslMode;
 
 public class DataSourceBuilder {
 
@@ -17,7 +19,10 @@ public class DataSourceBuilder {
   }
 
   public DataSource build() {
-    return loginDataSource(config);
+    return switch (config.dialect()) {
+      case SQL_SERVER -> loginDataSource(config);
+      case POSTGRES -> postgresDataSource(config);
+    };
   }
 
   public DataSource buildPooled() {
@@ -59,6 +64,20 @@ public class DataSourceBuilder {
     ds.setTrustServerCertificate(config.trustServerCertificate());
     ds.setUser(config.user());
     ds.setPassword(config.password());
+    return ds;
+  }
+
+  private DataSource postgresDataSource(Config config) {
+    PGSimpleDataSource ds = new PGSimpleDataSource();
+    ds.setServerNames(new String[] {config.host()});
+    ds.setPortNumbers(new int[] {config.port()});
+    ds.setDatabaseName(config.name());
+    ds.setUser(config.user());
+    ds.setPassword(config.password());
+    ds.setLoginTimeout(30);
+    // Trusting the server certificate means encryption without verification, if the server supports it
+    ds.setSslMode((config.trustServerCertificate() ? SslMode.PREFER : SslMode.VERIFY_FULL).value);
+    ds.setOptions("-c statement_timeout=" + config.queryTimeout().toMillis());
     return ds;
   }
 

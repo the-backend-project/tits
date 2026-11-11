@@ -14,7 +14,8 @@ public class DeleteDelayedTrigger {
       String schema
   ) {
     this.databaseClient = databaseClient;
-    this.sql = "DELETE FROM [{schema}].[DelayedTrigger] WHERE EntityId = :entityId AND EventNumber = :eventNumber"
+    // Quoted identifiers work in both SQL Server and PostgreSQL
+    this.sql = "DELETE FROM \"{schema}\".\"DelayedTrigger\" WHERE EntityId = :entityId AND EventNumber = :eventNumber"
         .replace("{schema}", schema);
   }
 

@@ -1,11 +1,15 @@
 package com.github.thxmasj.backend.core.test;
 
 import com.github.thxmasj.backend.core.EntityModel;
+import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.StateMachine;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.backend.core.database.Client.Config;
+import com.github.thxmasj.backend.core.database.Dialect;
 import com.github.thxmasj.backend.core.database.jdbc.DataSourceBuilder;
+import com.github.thxmasj.backend.core.database.mssql.EntitiesByIndex;
+import com.github.thxmasj.backend.core.database.mssql.EventsByEntityId;
 import com.sun.net.httpserver.HttpContext;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -22,11 +26,37 @@ import reactor.core.publisher.Mono;
 
 public class Init {
 
+  // The tests run on SQL Server by default, and on PostgreSQL with -Ddatabase=postgres
+  private static final Dialect dialect =
+      "postgres".equals(System.getProperty("database")) ? Dialect.POSTGRES : Dialect.SQL_SERVER;
   private static final DataSource dataSource = new DataSourceBuilder(databaseConfig("testlogin", "Please_hide_me!")).build();
-  private static final DataSource migrationDataSource = new DataSourceBuilder(databaseConfig("sa", "A_Str0ng_Required_Password")).build();
+  private static final DataSource migrationDataSource = new DataSourceBuilder(databaseConfig(
+      dialect == Dialect.POSTGRES ? "postgres" : "sa",
+      "A_Str0ng_Required_Password"
+  )).build();
 
   public static DataSource dataSource() {
     return dataSource;
+  }
+
+  public static DataSource migrationDataSource() {
+    return migrationDataSource;
+  }
+
+  /// Events by entity id in the dialect of the test database
+  public static EventsByEntityId eventsByEntityId(List<EntityModel> entityModels, String schemaName) {
+    return switch (dialect) {
+      case SQL_SERVER -> new EventsByEntityId(dataSource, entityModels, schemaName, Clock.systemUTC());
+      case POSTGRES -> new com.github.thxmasj.backend.core.database.postgres.EventsByEntityId(dataSource, entityModels, schemaName, Clock.systemUTC());
+    };
+  }
+
+  /// Entities by index in the dialect of the test database
+  public static EntitiesByIndex entitiesByIndex(Map<EntityModel, List<EventType<?, ?>>> eventTypesByEntityModel, String schemaName) {
+    return switch (dialect) {
+      case SQL_SERVER -> new EntitiesByIndex(dataSource, eventTypesByEntityModel, schemaName, Clock.systemUTC());
+      case POSTGRES -> new com.github.thxmasj.backend.core.database.postgres.EntitiesByIndex(dataSource, eventTypesByEntityModel, schemaName, Clock.systemUTC());
+    };
   }
 
   public static StateMachine stateMachine(
@@ -136,13 +166,14 @@ public class Init {
   private static Config databaseConfig(String username, String password) {
     return new Config(
         "localhost",
-        11433,
+        dialect == Dialect.POSTGRES ? 15432 : 11433,
         "work",
         username,
         password,
         true,
         10,
-        Duration.ofSeconds(10)
+        Duration.ofSeconds(10),
+        dialect
     );
   }
 

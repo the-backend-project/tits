@@ -31,11 +31,8 @@ public class NextDelayedTrigger {
       List<EntityModel> entityModels,
       String schemaName
   ) {
-    this.databaseClient = databaseClient;
-    this.eventTypeMapper = Mappers.eventTypeMapper(eventTypes);
-    this.clock = clock;
-    this.entityModels = entityModels.stream().collect(Collectors.toMap(EntityModel::id, Function.identity()));
-    this.sql =
+    this(
+        databaseClient,
       """
       DECLARE @processing TABLE (
         EntityId UNIQUEIDENTIFIER,
@@ -86,7 +83,27 @@ public class NextDelayedTrigger {
       ELSE
         SELECT TOP 0 EntityId, EntityModelId, EventNumber, Type, Data, NextAttemptAt, CorrelationId
         FROM @processing
-      """.replace("{schema}", schemaName);
+      """.replace("{schema}", schemaName),
+        eventTypes,
+        clock,
+        entityModels
+    );
+  }
+
+  /// @param sql the SQL selecting the delayed trigger with the earliest passed deadline, if any, and postponing its
+  ///            deadline to its next attempt, in the dialect of the database
+  protected NextDelayedTrigger(
+      Client databaseClient,
+      String sql,
+      List<EventType<?, ?>> eventTypes,
+      Clock clock,
+      List<EntityModel> entityModels
+  ) {
+    this.databaseClient = databaseClient;
+    this.eventTypeMapper = Mappers.eventTypeMapper(eventTypes);
+    this.clock = clock;
+    this.entityModels = entityModels.stream().collect(Collectors.toMap(EntityModel::id, Function.identity()));
+    this.sql = sql;
   }
 
   public Mono<? extends DelayedTrigger<?>> execute(DelaySpecification backoff) {

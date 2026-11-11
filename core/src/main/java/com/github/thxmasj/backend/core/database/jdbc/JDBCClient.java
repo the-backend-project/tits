@@ -19,6 +19,8 @@ import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import javax.sql.DataSource;
+import org.postgresql.util.PSQLException;
+import org.postgresql.util.ServerErrorMessage;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
@@ -110,6 +112,17 @@ public class JDBCClient implements Client {
         else
           yield new DataIntegrityViolation(queryName, null, "N/A", errorMessage(f.getMessage(), queryName, sql, parameters), f);
       }
+      case PSQLException e when UNIQUE_VIOLATION.equals(e.getSQLState()) && e.getServerErrorMessage() != null -> {
+        ServerErrorMessage serverError = e.getServerErrorMessage();
+        Matcher duplicateKeyMatcher = postgresDuplicateKeyPattern.matcher(String.valueOf(serverError.getDetail()));
+        if (serverError.getTable() == null || serverError.getConstraint() == null || !duplicateKeyMatcher.matches())
+          yield new DataIntegrityViolation(queryName, null, "N/A", errorMessage(e.getMessage(), queryName, sql, parameters), e);
+        // Primary keys are named with a "pk" prefix, see CreateSchema
+        else if (serverError.getConstraint().startsWith("pk"))
+          yield new PrimaryKeyConstraintViolation(queryName, null, duplicateKeyMatcher.group(1), serverError.getTable(), serverError.getConstraint(), e);
+        else
+          yield new UniqueIndexConstraintViolation(queryName, null, duplicateKeyMatcher.group(1), serverError.getTable(), serverError.getConstraint(), e);
+      }
       case Throwable e -> new RuntimeException(errorMessage(e.getMessage(), queryName, sql, parameters), error);
     };
   }
@@ -122,6 +135,8 @@ public class JDBCClient implements Client {
       "Cannot insert duplicate key row in object '(.*)\\.(.*)' with unique index '(.*)'. The duplicate key value is \\((.*)\\).");
   private static final Pattern primaryKeyViolationPattern = Pattern.compile(
       "Violation of PRIMARY KEY constraint '(.*)'. Cannot insert duplicate key in object '(.*)\\.(.*)'. The duplicate key value is \\((.*)\\).");
+  private static final String UNIQUE_VIOLATION = "23505";
+  private static final Pattern postgresDuplicateKeyPattern = Pattern.compile("Key \\(.*\\)=\\((.*)\\) already exists\\.");
 
 }
 

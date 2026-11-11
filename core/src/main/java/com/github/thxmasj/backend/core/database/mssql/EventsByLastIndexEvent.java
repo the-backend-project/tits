@@ -31,9 +31,9 @@ public class EventsByLastIndexEvent {
   private final String sql;
 
   public EventsByLastIndexEvent(DataSource dataSource, String schemaName, Clock clock) {
-    this.dataSource = dataSource;
-    this.clock = clock;
-    this.sql =
+    this(
+        dataSource,
+        clock,
         """
         SET NOCOUNT ON;
         DECLARE @entityId UNIQUEIDENTIFIER;
@@ -53,7 +53,16 @@ public class EventsByLastIndexEvent {
         FROM [{schema}].[Event] WITH (INDEX(pkEvent))
         WHERE EntityId=@entityId
         ORDER BY EventNumber;
-        """.replace("{schema}", schemaName);
+        """.replace("{schema}", schemaName)
+    );
+  }
+
+  /// @param sql the SQL selecting a row with the entity id, which is null if the group has no index events, and then
+  ///            the events of the entity, in the dialect of the database
+  protected EventsByLastIndexEvent(DataSource dataSource, Clock clock, String sql) {
+    this.dataSource = dataSource;
+    this.clock = clock;
+    this.sql = sql;
   }
 
   /// Completes empty if the group has no index events. If it has fewer index events than the position, the entity of

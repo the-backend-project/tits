@@ -6,6 +6,7 @@ module com.github.thxmasj.backend.core {
   requires transitive reactor.netty.core;
   requires transitive reactor.netty.http;
   requires com.microsoft.sqlserver.jdbc;
+  requires org.postgresql.jdbc;
   requires com.zaxxer.hikari;
   requires io.netty.buffer;
   requires io.netty.codec.http;
@@ -19,6 +20,7 @@ module com.github.thxmasj.backend.core {
   exports com.github.thxmasj.backend.core.database;
   exports com.github.thxmasj.backend.core.database.jdbc;
   exports com.github.thxmasj.backend.core.database.mssql;
+  exports com.github.thxmasj.backend.core.database.postgres;
   exports com.github.thxmasj.backend.core.http;
   exports com.github.thxmasj.backend.core.message.http;
 }

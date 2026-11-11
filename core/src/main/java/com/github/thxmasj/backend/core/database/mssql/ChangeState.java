@@ -245,7 +245,26 @@ public class ChangeState {
   public record OutboxElement(int changeIndex, int messageIndex, UUID requestId, byte[] elementId) {}
 
   public Flux<OutboxElement> execute(ZonedDateTime timestamp, String correlationId, List<Change> changes) {
-    String sql =
+    Builder spec = databaseClient.sql(sql(changes)).name("ChangeState");
+    for (int i = 0; i < changes.size(); i++) {bind(spec.parameterPrefix("p" + i + "_"), timestamp, correlationId, changes.get(i));}
+    return spec.map(row -> new OutboxElement(
+            row.get("ChangeIndex", Integer.class),
+            row.get("MessageIndex", Integer.class),
+            row.get("RequestId", UUID.class),
+            row.get("ElementId", byte[].class)
+        ))
+        .all()
+        .onErrorMap(PrimaryKeyConstraintViolation.class, primaryKeyConstraintViolationMapper(changes))
+        .onErrorMap(UniqueIndexConstraintViolation.class, uniqueIndexConstraintViolationMapper(changes))
+        ;
+  }
+
+  /**
+   * The SQL storing the changes in a single transaction. Parameters are prefixed with the index of their change, as
+   * in "p0_".
+   */
+  protected String sql(List<Change> changes) {
+    return
         """
         SET XACT_ABORT ON;
         BEGIN TRANSACTION;
@@ -269,18 +288,6 @@ public class ChangeState {
             SELECT ChangeIndex, MessageIndex, RequestId, ElementId FROM @QueueElementToProcess ORDER BY ChangeIndex ASC, MessageIndex ASC
             COMMIT TRANSACTION;
             """;
-    Builder spec = databaseClient.sql(sql).name("ChangeState");
-    for (int i = 0; i < changes.size(); i++) {bind(spec.parameterPrefix("p" + i + "_"), timestamp, correlationId, changes.get(i));}
-    return spec.map(row -> new OutboxElement(
-            row.get("ChangeIndex", Integer.class),
-            row.get("MessageIndex", Integer.class),
-            row.get("RequestId", UUID.class),
-            row.get("ElementId", byte[].class)
-        ))
-        .all()
-        .onErrorMap(PrimaryKeyConstraintViolation.class, primaryKeyConstraintViolationMapper(changes))
-        .onErrorMap(UniqueIndexConstraintViolation.class, uniqueIndexConstraintViolationMapper(changes))
-        ;
   }
 
   private String insertSql(
@@ -460,15 +467,18 @@ public class ChangeState {
     };
   }
 
-  /// The duplicate key of an id event is its type and data, e.g. "f721bf54-891b-41a0-aa63-5d3cbde52437, 0x7B22..."
+  /// The duplicate key of an id event, as reported by the database, i.e. its type and data, e.g.
+  /// "f721bf54-891b-41a0-aa63-5d3cbde52437, 0x7B22..."
+  protected String duplicateKey(Event<?> idEvent) {
+    return idEvent.type().id() + ", 0x" + HexFormat.of().formatHex(idEvent.getMarshalledData());
+  }
+
   private Function<UniqueIndexConstraintViolation, Throwable> uniqueIndexConstraintViolationMapper(List<Change> changes) {
     return indexViolation -> changes.stream()
         .filter(_ -> indexViolation.tableName().equals("IdEvent"))
         .filter(change -> change.entityModel() instanceof IdEntityModel && change.newEvent() != null)
         .map(Change::newEvent)
-        .filter(event -> indexViolation.duplicateKey().equalsIgnoreCase(
-            event.type().id() + ", 0x" + HexFormat.of().formatHex(event.getMarshalledData())
-        ))
+        .filter(event -> indexViolation.duplicateKey().equalsIgnoreCase(duplicateKey(event)))
         .<Throwable>map(event -> new IdEventAlreadyExists(event, indexViolation.duplicateKey()))
         .findFirst()
         .orElseGet(() -> new RuntimeException("Failed to map index violation exception: " + indexViolation, indexViolation));

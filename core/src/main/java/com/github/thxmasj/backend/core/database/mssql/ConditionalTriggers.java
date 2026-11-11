@@ -36,17 +36,10 @@ public class ConditionalTriggers {
       Clock clock,
       String schemaName
   ) {
-    this.databaseClient = databaseClient;
-    this.eventTypesByEntityModelId = eventTypesByEntityModel.entrySet().stream().collect(Collectors.toMap(
-        e -> e.getKey().id(),
-        e -> e.getValue().stream().collect(Collectors.toMap(EventType::id, Function.identity()))
-    ));
-    this.clock = clock;
-    this.entityModels = eventTypesByEntityModel.keySet().stream()
-        .collect(Collectors.toMap(EntityModel::id, Function.identity()));
     // A condition is met when there are index events with the reference type for the index key, and the last event of
     // every entity referenced by those index events has one of the expected types.
-    this.sql =
+    this(
+        databaseClient,
         """
         SELECT TOP (:limit) ce.Id, ce.EntityId, ce.EntityModelId, ce.TriggerEntityId, ce.TriggerEventNumber, ce.Type, ce.Data, ce.Timestamp, ce.LastTypes, ce.ReferenceType, ce.IndexKey, ce.CorrelationId
         FROM [{schema}].[ConditionalTrigger] ce
@@ -65,7 +58,29 @@ public class ConditionalTriggers {
               )
           )
         ORDER BY ce.Timestamp ASC
-        """.replace("{schema}", schemaName);
+        """.replace("{schema}", schemaName),
+        eventTypesByEntityModel,
+        clock
+    );
+  }
+
+  /// @param sql the SQL selecting the oldest conditional triggers whose condition is met, at most `:limit` of them,
+  ///            in the dialect of the database
+  protected ConditionalTriggers(
+      Client databaseClient,
+      String sql,
+      Map<EntityModel, List<EventType<?, ?>>> eventTypesByEntityModel,
+      Clock clock
+  ) {
+    this.databaseClient = databaseClient;
+    this.eventTypesByEntityModelId = eventTypesByEntityModel.entrySet().stream().collect(Collectors.toMap(
+        e -> e.getKey().id(),
+        e -> e.getValue().stream().collect(Collectors.toMap(EventType::id, Function.identity()))
+    ));
+    this.clock = clock;
+    this.entityModels = eventTypesByEntityModel.keySet().stream()
+        .collect(Collectors.toMap(EntityModel::id, Function.identity()));
+    this.sql = sql;
   }
 
   /**

@@ -332,6 +332,7 @@
 61988e54486a5dc38f06c70fdae5b108556c63bd433697b9f4305fcdb30fa40e  org/apache/maven/shared/maven-shared-incremental/1.1/maven-shared-incremental-1.1.jar
 619e0a465e7506c019c5d1627d4629b495c7a171004a778fd9baf3297e8df11e  org/apache/maven/surefire/surefire-extensions-api/3.6.1/surefire-extensions-api-3.6.1.jar
 61b4d7c515a0894ffad925fd7052620c1425a86433fd35113b5fab0de890a57f  com/squareup/okio/okio-jvm/3.6.0/okio-jvm-3.6.0.pom
+627d92aa92fd4d6bb8c2b56bcbb38543417f49d38b5a62fbdb4aeff551e7b760  org/checkerframework/checker-qual/3.55.1/checker-qual-3.55.1.pom
 62eae3b1bb053060b4375c393664a9559afdfafd6de133924f81794aa20caf68  org/codehaus/plexus/plexus-compiler/2.17.0/plexus-compiler-2.17.0.pom
 63a76fe66b652360bd4c2c107e6f0258daa7d4bb492008ba8c26fcd230ff9146  org/yaml/snakeyaml/2.3/snakeyaml-2.3.jar
 63a8610b70d0bc82fca01fe231845d5c4010e65963c9c7afef996030dfc5be24  io/netty/netty-buffer/4.2.19.Final/netty-buffer-4.2.19.Final.pom
@@ -377,6 +378,7 @@
 718074bfcba3592e3283a1cbcff2eb0163dddd742e2ed22d54a78eafedadc062  org/mockito/mockito-core/5.24.0/mockito-core-5.24.0.pom
 7220ede61026596fbc720ee4b93246fa2d14f328058532b59ef053de397c7d83  com/google/guava/guava-parent/33.4.0-android/guava-parent-33.4.0-android.pom
 72b31dc11351a5bf4f5841221be5b1afc2b802ff96f23f2b77838f6d46cd3ad5  org/codehaus/plexus/plexus/2.0.5/plexus-2.0.5.pom
+73914527305a40cce504b0d3d90b23caf565136912d607ae8ae7c5895512332c  org/postgresql/postgresql/42.7.14/postgresql-42.7.14.jar
 743f42d967d02826ee79f0601108e2deeb11dd3e6add24fc5f2758b1b68634ec  org/codehaus/plexus/plexus-containers/2.2.0/plexus-containers-2.2.0.pom
 745a86a75ecb5e03f464f05ea2dc76e0f04d07273c5509fa74f393bff9b222b7  io/opentelemetry/semconv/opentelemetry-semconv/1.25.0-alpha/opentelemetry-semconv-1.25.0-alpha.jar
 74a12548f0d6aad13c728666288c1e81201c24bd05bb4e4ec8c1558517b379a7  org/apache/maven/resolver/maven-resolver-util/1.9.27/maven-resolver-util-1.9.27.jar
@@ -447,6 +449,7 @@
 8519be52c3d5adb7f1f7aa7a67e739cf8fc00f57dc80891330101f77708f4c8c  io/opentelemetry/opentelemetry-exporter-sender-okhttp/1.40.0/opentelemetry-exporter-sender-okhttp-1.40.0.jar
 8540247fad9e06baefa8fb45eb313802d019f485f14300e0f9d6b556ed88e753  com/google/protobuf/protobuf-java/3.25.5/protobuf-java-3.25.5.jar
 856b7348bd08efe5791cf617cc3bed21f5f4a02569507c61e946666d13c33ba4  tools/jackson/core/jackson-databind/3.3.0/jackson-databind-3.3.0.jar
+857658c8bdcbff794949a8d9922f88d63ee3751c203c7cd7d21ea97f9e745288  org/checkerframework/checker-qual/3.55.1/checker-qual-3.55.1.jar
 863f09b46cfe7d83872c9499086b9681cd9878c30a319d9f1f3a681bbfb0b12f  io/netty/netty-buffer/4.2.19.Final/netty-buffer-4.2.19.Final.jar
 865726dba03a6c58d277cd04f4bad20d5a1fc66af80eec5cf939315c2da27eba  com/fasterxml/jackson/core/jackson-core/2.23.0/jackson-core-2.23.0.pom
 865b5300034fc08c790215d7d97f141914c932191bef9338a7dcef589f7536e9  org/eclipse/sisu/org.eclipse.sisu.plexus/1.0.0/org.eclipse.sisu.plexus-1.0.0.jar
@@ -626,6 +629,7 @@ b6caa3eb7d35bd756ed6eb0a2a81868b8d3c0f6f42244feae41760ac66306d87  org/reflection
 b6f316f5b321a97ac5aeb7e5c5d23c69bfc2a59cfb5b40bac133b071dbaa7048  io/opentelemetry/instrumentation/opentelemetry-instrumentation-api-incubator/2.6.0-alpha/opentelemetry-instrumentation-api-incubator-2.6.0-alpha.pom
 b748c05658b1fed1ceb73f527a05983593572e351d90b411f780ed1fa05b4afa  org/codehaus/plexus/plexus-compiler-api/2.17.0/plexus-compiler-api-2.17.0.jar
 b7d23e93a34537ce332708269a0d1404788a5b5e1949e82f5535fce51b3ea95b  io/perfmark/perfmark-api/0.26.0/perfmark-api-0.26.0.jar
+b7e66ccf3088cba04d68ec374da4e981686fafe426e4ca69d6d276427175dc63  org/postgresql/postgresql/42.7.14/postgresql-42.7.14.pom
 b826ddd92f9d7cc64371a02fa0830c154d67c98370ea54a2d196e72eb590ad28  commons-codec/commons-codec/1.16.1/commons-codec-1.16.1.pom
 b837044e8edbd977bafe4e643c13958a45cf0caefd1338b7e6660e716a769624  io/netty/netty-codec-socks/4.2.19.Final/netty-codec-socks-4.2.19.Final.jar
 b90579bc652eac7331436e0a25533fce14130b9c6e015f2dd3a3d4bb07e942b7  org/eclipse/sisu/org.eclipse.sisu.plexus/0.9.0.M4/org.eclipse.sisu.plexus-0.9.0.M4.jar

@@ -10,9 +10,18 @@ application built the same way, to Azure Functions with a serverless Azure SQL d
 The [test-api](test-api) module is an API for tests to look into and manipulate the database of a state machine.
 See [Testing](docs/testing.md).
 
+## Databases
+
+The state machine stores its event logs in SQL Server (including Azure SQL) or PostgreSQL. The database is detected
+from the `DataSource` given to the `StateMachine`. To build a data source for PostgreSQL with `DataSourceBuilder`, set
+the dialect of the `Client.Config` to `Dialect.POSTGRES`. The [demo](demo) runs on SQL Server only.
+
 ## Building
 
 Requires Java 27 and Maven 3.9 or later.
+
+The tests need a database. They run on SQL Server by default, which can be started with `bin/start-mssql.sh`. To run
+them on PostgreSQL, start it with `bin/start-postgres.sh` and run the build with `-Ddatabase=postgres -pl '!demo'`.
 
 ### Dependency checksums
 

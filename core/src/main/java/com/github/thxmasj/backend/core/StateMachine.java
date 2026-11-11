@@ -32,18 +32,11 @@ import com.github.thxmasj.backend.core.database.EntityGroupNotInitialised;
 import com.github.thxmasj.backend.core.database.EventAlreadyExists;
 import com.github.thxmasj.backend.core.database.IdEventAlreadyExists;
 import com.github.thxmasj.backend.core.database.MappingFailure;
+import com.github.thxmasj.backend.core.database.Storage;
 import com.github.thxmasj.backend.core.database.UnknownEntity;
-import com.github.thxmasj.backend.core.database.jdbc.JDBCClient;
 import com.github.thxmasj.backend.core.database.mssql.ChangeState;
 import com.github.thxmasj.backend.core.database.mssql.ChangeState.Change;
-import com.github.thxmasj.backend.core.database.mssql.ConditionalTriggers;
-import com.github.thxmasj.backend.core.database.mssql.CreateSchema;
-import com.github.thxmasj.backend.core.database.mssql.DeleteDelayedTrigger;
-import com.github.thxmasj.backend.core.database.mssql.EventsByEntityId;
-import com.github.thxmasj.backend.core.database.mssql.EventsByIdEvent;
-import com.github.thxmasj.backend.core.database.mssql.EventsByLastIndexEvent;
 import com.github.thxmasj.backend.core.database.mssql.Mappers;
-import com.github.thxmasj.backend.core.database.mssql.NextDelayedTrigger;
 import jakarta.annotation.Nullable;
 import jakarta.validation.constraints.NotNull;
 import java.time.Clock;
@@ -77,13 +70,7 @@ public class StateMachine implements AutoCloseable {
   private final Listener listener;
   private final List<Looper<?>> workers = new ArrayList<>();
   private final DataSource dataSource;
-  private final ChangeState changeState;
-  private final EventsByEntityId eventsByEntityId;
-  private final EventsByIdEvent eventsByIdEvent;
-  private final EventsByLastIndexEvent eventsByLastIndexEvent;
-  private final NextDelayedTrigger nextDelayedTrigger;
-  private final DeleteDelayedTrigger deleteDelayedTrigger;
-  private final ConditionalTriggers conditionalTriggers;
+  private final Storage storage;
   private final Map<EntityModel, Traverser> traversers;
   private final Map<EntityModel, List<EventType<?, ?>>> eventTypesByEntityModel;
 
@@ -122,25 +109,16 @@ public class StateMachine implements AutoCloseable {
   ) {
     System.out.println("Supported entity models:\n" + transitions.keySet().stream().map(EntityModel::name).collect(joining("\n")));
     this.traversers = transitions.entrySet().stream().collect(toMap(Entry::getKey, e -> new Traverser(e.getValue())));
-    List<EntityModel> entityModels = transitions.keySet().stream().toList();
     this.eventTypesByEntityModel = Mappers.eventTypesByEntityModel(transitions);
-    List<EventType<?, ?>> eventTypes = Mappers.eventTypes(transitions);
     this.delayer = delayer != null ? delayer : _ -> Mono.empty();
     if (schemaDataSource != null) {
-      new CreateSchema(schemaName, role).execute(new JDBCClient(schemaDataSource))
+      Storage.createSchema(schemaDataSource, schemaName, role)
           .timeout(Duration.ofSeconds(20), Mono.error(new RuntimeException("Schema creation timed out. Is the database running?")))
           .block();
     }
     this.clock = clock;
     this.dataSource = dataSource;
-    var jdbcClient = new JDBCClient(dataSource);
-    this.changeState = new ChangeState(jdbcClient, schemaName, clock);
-    this.eventsByEntityId = new EventsByEntityId(dataSource, entityModels, schemaName, clock);
-    this.eventsByIdEvent = new EventsByIdEvent(dataSource, eventTypesByEntityModel, schemaName, clock);
-    this.eventsByLastIndexEvent = new EventsByLastIndexEvent(dataSource, schemaName, clock);
-    this.nextDelayedTrigger = new NextDelayedTrigger(jdbcClient, eventTypes, clock, entityModels, schemaName);
-    this.deleteDelayedTrigger = new DeleteDelayedTrigger(jdbcClient, schemaName);
-    this.conditionalTriggers = new ConditionalTriggers(jdbcClient, eventTypesByEntityModel, clock, schemaName);
+    this.storage = Storage.of(dataSource, transitions, schemaName, clock);
     this.listener = listener;
     if (withResolving) {
       Looper<ResolverStatus> resolverLooper = new Looper<>(
@@ -198,9 +176,9 @@ public class StateMachine implements AutoCloseable {
    */
   public Mono<ResolverStatus> resolveState() {
     var backoff = new DelaySpecification(ofSeconds(10), ofMinutes(10), ofHours(5), 1.5);
-    return nextDelayedTrigger.execute(backoff)
+    return storage.nextDelayedTrigger().execute(backoff)
         .doOnNext(d -> System.out.println(ZonedDateTime.now() + ": Next delayed trigger: " + d))
-        .zipWhen(delayedTrigger -> eventsByEntityId.execute(delayedTrigger.entityModel(), eventTypesByEntityModel.get(delayedTrigger.entityModel()), delayedTrigger.entityId())
+        .zipWhen(delayedTrigger -> storage.eventsByEntityId().execute(delayedTrigger.entityModel(), eventTypesByEntityModel.get(delayedTrigger.entityModel()), delayedTrigger.entityId())
             .switchIfEmpty(Mono.error(new RuntimeException("Unknown entity " + delayedTrigger.entityId().value() + " for delayed event")))
         )
         .flatMap(delayedTriggerAndEventLog -> {
@@ -209,7 +187,7 @@ public class StateMachine implements AutoCloseable {
           if (eventLog.events().getLast().eventNumber() + 1 != delayedTrigger.eventNumber()) {
             System.out.println("Deleting scheduled event: Event number (" + delayedTrigger.eventNumber() + ") != event log's last number (" + eventLog.events().getLast().eventNumber() + ") + 1");
             // Race! The state has already been resolved by another resolver or incoming request. Which is OK!
-            return deleteDelayedTrigger.execute(delayedTrigger.entityId().value(), delayedTrigger.eventNumber()).map(_ -> ResolverStatus.Ok);
+            return storage.deleteDelayedTrigger().execute(delayedTrigger.entityId().value(), delayedTrigger.eventNumber()).map(_ -> ResolverStatus.Ok);
           }
           System.out.println("Delayed trigger eventNumber: " + delayedTrigger.eventNumber() + ", log's last event number: "
               + eventLog.lastEventNumber());
@@ -374,7 +352,7 @@ public class StateMachine implements AutoCloseable {
   }
 
   private Mono<EventLog> eventLogByEntityId(EntityModel entityModel, EntityId entityId) {
-    return eventsByEntityId.execute(entityModel, eventTypesByEntityModel.get(entityModel), entityId);
+    return storage.eventsByEntityId().execute(entityModel, eventTypesByEntityModel.get(entityModel), entityId);
   }
 
   public <O> Flux<Event<?>> onEvent(EventTrigger<Void, Void, O> eventTrigger) {
@@ -577,7 +555,7 @@ public class StateMachine implements AutoCloseable {
         // Calculates the changes again, with the id existing as the result of triggering the id event
         .onErrorResume(
             IdEventAlreadyExists.class,
-            e -> eventsByIdEvent.execute(e.idEvent().type(), e.idEvent().getMarshalledData())
+            e -> storage.eventsByIdEvent().execute(e.idEvent().type(), e.idEvent().getMarshalledData())
                 .switchIfEmpty(Mono.error(e))
                 .flatMap(log -> onEvent(
                     correlationId,
@@ -683,7 +661,7 @@ public class StateMachine implements AutoCloseable {
    */
   public Mono<ResolverStatus> fireConditionalTriggers() {
     System.out.println("fireConditionalTriggers()");
-    return conditionalTriggers.execute(MAX_CONDITIONAL_TRIGGERS_PER_POLL)
+    return storage.conditionalTriggers().execute(MAX_CONDITIONAL_TRIGGERS_PER_POLL)
         .doOnNext(t -> System.out.println("fireConditionalTriggers() found trigger: " + t))
         .concatMap(event -> fireConditionalTrigger(event)
             .hasElements()
@@ -725,9 +703,9 @@ public class StateMachine implements AutoCloseable {
         EntityId entityId = s.id();
         yield switch (s.creationMode()) {
           case NeverCreate -> Mono.justOrEmpty(logFromNestedChanges(entityId, entityModel, changeContext))
-              .switchIfEmpty(eventsByEntityId.execute(entityModel, eventTypesByEntityModel.get(entityModel), entityId));
+              .switchIfEmpty(storage.eventsByEntityId().execute(entityModel, eventTypesByEntityModel.get(entityModel), entityId));
           case CreateIfNotExists -> Mono.justOrEmpty(logFromNestedChanges(entityId, entityModel, changeContext))
-              .switchIfEmpty(eventsByEntityId.execute(entityModel, eventTypesByEntityModel.get(entityModel), entityId))
+              .switchIfEmpty(storage.eventsByEntityId().execute(entityModel, eventTypesByEntityModel.get(entityModel), entityId))
               .onErrorResume(UnknownEntity.class, _ -> Mono.just(emptyEventLog(entityModel, entityId)));
           case AlwaysCreate -> Mono.just(emptyEventLog(entityModel, s.id()));
         };
@@ -739,7 +717,7 @@ public class StateMachine implements AutoCloseable {
   }
 
   private <T> Mono<EventLog> eventLog(ByIdEvent<T> selector, EntityModel entityModel, ChangeContext<?> changeContext) {
-    Mono<EventLog> log = eventsByIdEvent.execute(selector.type(), selector.type().outputDataType().marshal(selector.id()))
+    Mono<EventLog> log = storage.eventsByIdEvent().execute(selector.type(), selector.type().outputDataType().marshal(selector.id()))
         .filter(l -> l.entityModel().equals(entityModel));
     return switch (selector.creationMode()) {
       case NeverCreate -> log.switchIfEmpty(Mono.defer(() -> selector.fallback() != null ?
@@ -755,7 +733,7 @@ public class StateMachine implements AutoCloseable {
   private <G> Mono<EventLog> eventLog(ByLastIndexed<G> selector, EntityModel entityModel) {
     if (!(selector.type().outputDataType() instanceof GroupedDataType<?, ?> dataType))
       throw new IllegalArgumentException("Data type of index event type " + selector.type().name() + " is not grouped");
-    Mono<EventLog> log = eventsByLastIndexEvent.execute(
+    Mono<EventLog> log = storage.eventsByLastIndexEvent().execute(
         entityModel,
         eventTypesByEntityModel.get(entityModel),
         selector.type().id(),
@@ -1040,7 +1018,7 @@ public class StateMachine implements AutoCloseable {
             .map(change -> correlationId + "-" + change.newEvent().typeName())
             .toList())
         )
-        .flatMap(_ -> changeState.execute(
+        .flatMap(_ -> storage.changeState().execute(
                     timestamp,
                     correlationId,
                     changes.stream()

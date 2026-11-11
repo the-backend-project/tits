@@ -38,11 +38,10 @@ public class EventsByIdEvent {
       String schemaName,
       Clock clock
   ) {
-    this.dataSource = dataSource;
-    this.entityModels = eventTypesByEntityModel.keySet().stream().collect(toMap(EntityModel::id, identity()));
-    this.eventTypesByEntityModel = eventTypesByEntityModel;
-    this.clock = clock;
-    this.sql =
+    this(
+        dataSource,
+        eventTypesByEntityModel,
+        clock,
         """
         SET NOCOUNT ON;
         DECLARE @entityId UNIQUEIDENTIFIER, @entityModelId UNIQUEIDENTIFIER;
@@ -58,7 +57,23 @@ public class EventsByIdEvent {
         FROM [{schema}].[Event] WITH (INDEX(pkEvent))
         WHERE EntityId=@entityId
         ORDER BY EventNumber;
-        """.replace("{schema}", schemaName);
+        """.replace("{schema}", schemaName)
+    );
+  }
+
+  /// @param sql the SQL selecting a row with the entity id and entity model id, which are null if no entity has the id,
+  ///            and then the events of the entity, in the dialect of the database
+  protected EventsByIdEvent(
+      DataSource dataSource,
+      Map<EntityModel, List<EventType<?, ?>>> eventTypesByEntityModel,
+      Clock clock,
+      String sql
+  ) {
+    this.dataSource = dataSource;
+    this.entityModels = eventTypesByEntityModel.keySet().stream().collect(toMap(EntityModel::id, identity()));
+    this.eventTypesByEntityModel = eventTypesByEntityModel;
+    this.clock = clock;
+    this.sql = sql;
   }
 
   /// Completes empty if no entity has the id

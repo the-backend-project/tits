@@ -22,7 +22,6 @@ import com.github.thxmasj.backend.core.test.Init;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.StateMachine;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionModel;
-import java.time.Clock;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -70,13 +69,7 @@ public class EntitiesByIndexTest {
                 .distinct().toList()
         ));
     StateMachine machine = Init.stateMachine(schema, transitions);
-    EntitiesByIndex entitiesByIndex = new EntitiesByIndex(
-        Init.dataSource(),
-        List.of(Order, Index),
-        schema,
-        List.of(CreateOrder, customerReferenced, ShipOrder),
-        Clock.systemUTC()
-    );
+    EntitiesByIndex entitiesByIndex = Init.entitiesByIndex(eventsByEntityModel, schema);
 
     UUID customerId = UUID.randomUUID();
 

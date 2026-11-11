@@ -60,11 +60,10 @@ public class EntitiesByIndex {
       String schemaName,
       Clock clock
   ) {
-    this.dataSource = dataSource;
-    this.eventMappers = eventTypesByEntityModel.entrySet().stream()
-        .collect(Collectors.toMap(e -> e.getKey().id(), e -> Mappers.eventMapper(e.getValue(), clock)));
-    this.entityModels = eventTypesByEntityModel.keySet().stream().collect(Collectors.toMap(EntityModel::id, Function.identity()));
-    this.sql = String.format(
+    this(
+        dataSource,
+        eventTypesByEntityModel,
+        clock,
         """
         SELECT
           e.EntityId,
@@ -81,6 +80,20 @@ public class EntitiesByIndex {
         """
             .replace("{schema}", schemaName)
     );
+  }
+
+  /// @param sql the SQL selecting the events of the indexed entities, in the dialect of the database
+  protected EntitiesByIndex(
+      DataSource dataSource,
+      Map<? extends EntityModel, List<EventType<?, ?>>> eventTypesByEntityModel,
+      Clock clock,
+      String sql
+  ) {
+    this.dataSource = dataSource;
+    this.eventMappers = eventTypesByEntityModel.entrySet().stream()
+        .collect(Collectors.toMap(e -> e.getKey().id(), e -> Mappers.eventMapper(e.getValue(), clock)));
+    this.entityModels = eventTypesByEntityModel.keySet().stream().collect(Collectors.toMap(EntityModel::id, Function.identity()));
+    this.sql = sql;
   }
 
   public Flux<EventLog> execute(UUID key, EventType<?, ?> referenceType) {
