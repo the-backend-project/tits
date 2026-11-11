@@ -67,7 +67,7 @@ public interface HttpInbox {
       "Accept request",
       UUID.fromString("9615c3fb-4f15-47f5-b5d3-6149a6164d70"),
       DataType.unknown(),
-      DataType.tuple(HttpDataType.forRequest(), DataType.json(EventReference.class))
+      DataType.tuple(HttpDataType.forRequest(), DataType.eventReference())
   );
   EventType<Tuple3<String, RoutedRequest<?>, EventReference>, HttpRequestMessage> AcceptRollbackRequest = BasicEventType.of(
       "Accept rollback request",
@@ -78,12 +78,12 @@ public interface HttpInbox {
   ResponseEventType<Tuple2<String, EventReference>> CompleteRequest = new ResponseEventType<>(
       "Complete request",
       UUID.fromString("fa608cc7-9a2b-42ec-ab83-5207ab3978a0"),
-      DataType.tuple(DataType.string(), DataType.json(EventReference.class))
+      DataType.tuple(DataType.string(), DataType.eventReference())
   );
   ResponseEventType<Tuple2<String, EventReference>> CompleteRollbackRequest = new ResponseEventType<>(
       "Complete rollback request",
       UUID.fromString("57fd7951-b922-42ff-99ed-6752f1d23024"),
-      DataType.tuple(DataType.string(), DataType.json(EventReference.class))
+      DataType.tuple(DataType.string(), DataType.eventReference())
   );
   EventType<HttpResponseMessage, HttpResponseMessage> CompleteDuplicatedRequest = BasicEventType.of(
       "Complete duplicated request",
@@ -93,12 +93,12 @@ public interface HttpInbox {
   ResponseEventType<Tuple2<String, EventReference>> CompleteInvalidRequest = new ResponseEventType<>(
       "Complete invalid request",
       UUID.fromString("6bc64696-3b9e-4897-b9d0-de3abf567685"),
-      DataType.tuple(DataType.string(), DataType.json(EventReference.class))
+      DataType.tuple(DataType.string(), DataType.eventReference())
   );
   ResponseEventType<Tuple2<String, EventReference>> CompleteFailedRequest = new ResponseEventType<>(
       "Complete failed request",
       UUID.fromString("4ea0817f-c153-4fbb-a09a-ffcd5e8d6960"),
-      DataType.tuple(DataType.string(), DataType.json(EventReference.class))
+      DataType.tuple(DataType.string(), DataType.eventReference())
   );
   EventType<HttpResponseMessage, HttpResponseMessage> CompleteRejectedRequest = BasicEventType.of(
       "Complete rejected request",

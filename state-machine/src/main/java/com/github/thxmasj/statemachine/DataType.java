@@ -3,6 +3,7 @@ package com.github.thxmasj.statemachine;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -44,6 +45,10 @@ public interface DataType<T> {
 
   static DataType<String> string() {
     return new StringDataType();
+  }
+
+  static DataType<EventReference> eventReference() {
+    return new EventReferenceDataType();
   }
 
   static DataType<byte[]> binary() {
@@ -184,6 +189,65 @@ public interface DataType<T> {
     @Override
     public boolean equals(Object obj) {
       return obj instanceof UUIDDataType;
+    }
+  }
+
+  /// Marshals an event reference as its entity id followed by its event number, in 20 bytes. Unlike
+  /// [JsonDataType], it needs no reflection.
+  class EventReferenceDataType implements DataType<EventReference> {
+
+    private static final int LENGTH = 16 + 4;
+
+    @Override
+    public String name() {
+      return "event reference";
+    }
+
+    @Override
+    public EventReference unmarshal(byte[] value) {
+      if (value.length == 0) {
+        return null;
+      }
+      if (value.length != LENGTH) {
+        return unmarshalJson(value);
+      }
+      ByteBuffer buffer = ByteBuffer.wrap(value);
+      return new EventReference(new UUID(buffer.getLong(), buffer.getLong()), buffer.getInt());
+    }
+
+    // Event references used to be marshalled as JSON, which is always longer than 20 bytes
+    private static EventReference unmarshalJson(byte[] value) {
+      try {
+        JsonNode node = objectMapper.readTree(value);
+        if (node.isNull()) {
+          return null;
+        }
+        return new EventReference(UUID.fromString(node.get("entityId").asText()), node.get("eventNumber").asInt());
+      } catch (IOException e) {
+        throw new IllegalArgumentException("Not an event reference: " + value.length + " bytes", e);
+      }
+    }
+
+    @Override
+    public byte[] marshal(EventReference value) {
+      if (value == null) {
+        return new byte[0];
+      }
+      return ByteBuffer.allocate(LENGTH)
+          .putLong(value.entityId().getMostSignificantBits())
+          .putLong(value.entityId().getLeastSignificantBits())
+          .putInt(value.eventNumber())
+          .array();
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+      return obj instanceof EventReferenceDataType;
+    }
+
+    @Override
+    public int hashCode() {
+      return EventReferenceDataType.class.hashCode();
     }
   }
 
