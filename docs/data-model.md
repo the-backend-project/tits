@@ -1,8 +1,10 @@
 # Data model
 
-The state machine stores everything in a single Microsoft SQL Server schema, which it creates on startup (see
-`CreateSchema`). Entities are event sourced: the current state of an entity is derived by replaying its events, so the
-event logs are the source of truth and the other tables hold pending work.
+The state machine stores everything in a single Microsoft SQL Server or PostgreSQL schema, which it creates on startup
+(see `CreateSchema` in [database-mssql](../database-mssql) and [database-pgsql](../database-pgsql)). The tables and
+columns are the same in both, with the corresponding types of each database. Entities are event sourced: the current
+state of an entity is derived by replaying its events, so the event logs are the source of truth and the other tables
+hold pending work.
 
 ```mermaid
 erDiagram
@@ -103,6 +105,7 @@ index lookup (`EventsByIdEvent`). If two transitions add the same id concurrentl
 index, and its changes are computed again with the entity that got the id.
 
 `Data` is limited to 1684 bytes, leaving room for `Type` in the 1700 bytes SQL Server allows for an index key.
+PostgreSQL has no such limit in the schema, but its B-tree indexes take keys of at most about 2700 bytes.
 
 ### IndexEvent
 

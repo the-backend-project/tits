@@ -296,7 +296,7 @@ public class TestApiTest {
     machine.onEvent(trigger(CloseWhenSettled, Account, account.value())).blockFirst();
 
     try (var connection = Init.dataSource().getConnection();
-         var statement = connection.prepareStatement("SELECT COUNT(*) FROM [" + schema + "].[DelayedTrigger] WHERE EntityId=?")) {
+         var statement = connection.prepareStatement("SELECT COUNT(*) FROM \"" + schema + "\".\"DelayedTrigger\" WHERE EntityId=?")) {
       statement.setObject(1, account.value());
       try (var rs = statement.executeQuery()) {
         rs.next();

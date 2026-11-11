@@ -3,10 +3,8 @@ package com.github.thxmasj.backend.templates.cardpayment;
 import static com.github.thxmasj.backend.templates.cardpayment.Aggregate.Merchant;
 
 import com.github.thxmasj.backend.core.StateMachine;
-import com.github.thxmasj.backend.core.database.Client.Config;
-import com.github.thxmasj.backend.core.database.jdbc.DataSourceBuilder;
+import com.github.thxmasj.backend.core.test.Init;
 import java.time.Clock;
-import java.time.Duration;
 import java.util.Map;
 import java.util.UUID;
 import javax.sql.DataSource;
@@ -123,27 +121,8 @@ public class MerchantTest {
 //    }
 //  };
 
-  private static final DataSource dataSource = new DataSourceBuilder(databaseConfig(
-      "testlogin",
-      "Please_hide_me!"
-  )).build();
-  private static final DataSource migrationDataSource = new DataSourceBuilder(databaseConfig(
-      "sa",
-      "A_Str0ng_Required_Password"
-  )).build();
-
-  private static Config databaseConfig(String username, String password) {
-    return new Config(
-        "localhost",
-        11433,
-        "work",
-        username,
-        password,
-        true,
-        10,
-        Duration.ofSeconds(10)
-    );
-  }
+  private static final DataSource dataSource = Init.dataSource();
+  private static final DataSource migrationDataSource = Init.migrationDataSource();
 
 
 }

@@ -5,6 +5,8 @@ import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.StateMachine;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.backend.core.database.Client.Config;
+import com.github.thxmasj.backend.core.database.Database;
+import com.github.thxmasj.backend.core.database.Storage;
 import com.github.thxmasj.backend.core.database.jdbc.DataSourceBuilder;
 import com.sun.net.httpserver.HttpContext;
 import com.sun.net.httpserver.HttpServer;
@@ -22,11 +24,26 @@ import reactor.core.publisher.Mono;
 
 public class Init {
 
-  private static final DataSource dataSource = new DataSourceBuilder(databaseConfig("testlogin", "Please_hide_me!")).build();
-  private static final DataSource migrationDataSource = new DataSourceBuilder(databaseConfig("sa", "A_Str0ng_Required_Password")).build();
+  // The tests run on SQL Server by default, and on PostgreSQL with -Ddatabase=pgsql
+  private static final Database database = Database.named(System.getProperty("database", "mssql"));
+  private static final boolean pgsql = database.name().equals("pgsql");
+  private static final DataSource dataSource = new DataSourceBuilder(database, databaseConfig("testlogin", "Please_hide_me!")).build();
+  private static final DataSource migrationDataSource = new DataSourceBuilder(database, databaseConfig(
+      pgsql ? "postgres" : "sa",
+      "A_Str0ng_Required_Password"
+  )).build();
 
   public static DataSource dataSource() {
     return dataSource;
+  }
+
+  public static DataSource migrationDataSource() {
+    return migrationDataSource;
+  }
+
+  /// The storage of a schema in the test database
+  public static Storage storage(String schemaName, Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions) {
+    return database.storage(dataSource, transitions, schemaName, Clock.systemUTC());
   }
 
   public static StateMachine stateMachine(
@@ -136,7 +153,7 @@ public class Init {
   private static Config databaseConfig(String username, String password) {
     return new Config(
         "localhost",
-        11433,
+        pgsql ? 15432 : 11433,
         "work",
         username,
         password,

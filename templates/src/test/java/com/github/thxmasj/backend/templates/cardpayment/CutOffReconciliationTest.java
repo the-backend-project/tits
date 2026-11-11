@@ -53,8 +53,6 @@ import com.github.thxmasj.backend.core.Tuples.Tuple4;
 import com.github.thxmasj.backend.core.Tuples.Tuple6;
 import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.Validated.Valid;
-import com.github.thxmasj.backend.core.database.Client.Config;
-import com.github.thxmasj.backend.core.database.jdbc.DataSourceBuilder;
 import com.github.thxmasj.backend.core.http.NettyHttpClient;
 import com.github.thxmasj.backend.core.http.NettyHttpClientBuilder;
 import com.github.thxmasj.backend.http.inbox.HttpInbox.RoutedRequest;
@@ -70,6 +68,7 @@ import com.github.thxmasj.backend.http.outbox.HttpOutboxRequest;
 import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
 import com.github.thxmasj.backend.core.message.http.TypedHttpRequest;
 import com.github.thxmasj.backend.core.message.http.TypedHttpResponse;
+import com.github.thxmasj.backend.core.test.Init;
 import com.github.thxmasj.backend.templates.cardpayment.AuthenticationDataCreator.AuthenticationData;
 import com.github.thxmasj.backend.templates.cardpayment.DummyTransitions.Request;
 import com.github.thxmasj.backend.templates.cardpayment.DummyTransitions.Response;
@@ -107,14 +106,8 @@ import reactor.core.publisher.Mono;
 public class CutOffReconciliationTest {
 
   private static final String AGGREGATOR_ID = "aggregator";
-  private static final DataSource dataSource = new DataSourceBuilder(databaseConfig(
-      "testlogin",
-      "Please_hide_me!"
-  )).build();
-  private static final DataSource migrationDataSource = new DataSourceBuilder(databaseConfig(
-      "sa",
-      "A_Str0ng_Required_Password"
-  )).build();
+  private static final DataSource dataSource = Init.dataSource();
+  private static final DataSource migrationDataSource = Init.migrationDataSource();
 
   private static HttpServer acquirer;
   // The paths of the requests received by the acquirer and the merchant (they share the same test server)
@@ -405,10 +398,6 @@ public class CutOffReconciliationTest {
         .isAttemptAvailable(_ -> true)
         .backoffAlgorithm(_ -> Duration.ofSeconds(1))
         .build(id.name(), id.id());
-  }
-
-  private static Config databaseConfig(String username, String password) {
-    return new Config("localhost", 11433, "work", username, password, true, 10, Duration.ofSeconds(10));
   }
 
 }

@@ -1,0 +1,13 @@
+{
+  "resources": [
+    {
+      "glob": "com/microsoft/sqlserver/jdbc/SQLServerResource_en.properties"
+    },
+    {
+      "glob": "com/microsoft/sqlserver/jdbc/SQLServerResource_en_US.properties"
+    },
+    {
+      "bundle": "com.microsoft.sqlserver.jdbc.SQLServerResource"
+    }
+  ]
+}

@@ -58,6 +58,25 @@
         </dependency>
         <dependency>
             <groupId>com.github.thxmasj.backend</groupId>
+            <artifactId>core</artifactId>
+            <version>0.3.0-SNAPSHOT</version>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.github.thxmasj.backend</groupId>
+            <artifactId>database-mssql</artifactId>
+            <version>0.3.0-SNAPSHOT</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.github.thxmasj.backend</groupId>
+            <artifactId>database-pgsql</artifactId>
+            <version>0.3.0-SNAPSHOT</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.github.thxmasj.backend</groupId>
             <artifactId>http-inbox</artifactId>
             <version>0.3.0-SNAPSHOT</version>
         </dependency>

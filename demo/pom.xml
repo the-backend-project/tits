@@ -60,6 +60,11 @@
       <version>${project.version}</version>
     </dependency>
     <dependency>
+      <groupId>com.github.thxmasj.backend</groupId>
+      <artifactId>database-mssql</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter</artifactId>
       <scope>test</scope>

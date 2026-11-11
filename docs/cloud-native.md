@@ -106,9 +106,10 @@ work around.
   server certificate against `*.database.windows.net`. Any other SQL Server must either have such a certificate or be
   trusted blindly with `DATABASE_TRUST_SERVER_CERTIFICATE`. The certificate host name should be configurable, and
   a connection URL, the common way to attach a backing service, is not supported.
-- **SQL Server only.** The state machine supports no other database. Locally on arm64 the only option is Azure SQL
-  Edge 1.0.7, which Microsoft has retired, while the build uses version 2.0.0, which is amd64-only, so local
-  development and the build do not run the same database.
+- **SQL Server only.** The state machine also supports PostgreSQL, but the demo's configuration and deployment are
+  for SQL Server only. Locally on arm64 the only option for SQL Server is Azure SQL Edge 1.0.7, which Microsoft has
+  retired, while the build uses version 2.0.0, which is amd64-only, so local development and the build do not run the
+  same database.
 
 ### Admin processes
 
