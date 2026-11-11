@@ -293,7 +293,7 @@ public class StateMachine implements AutoCloseable {
 
     /// An id event not stored, as its id exists
     ///
-    /// @param idEvent the existing id event
+    /// @param idEvent the id event not stored
     /// @param log     the event log of the entity having the id
     record IdExists<T>(EventType<?, T> eventType, Event<?> idEvent, EventLog log) implements ProcessResult<T> {
 
@@ -591,12 +591,12 @@ public class StateMachine implements AutoCloseable {
               );
           case ProcessResult<?> r -> Mono.error(new RuntimeException("onEvent: " + r));
         })
-        // Calculates the changes again, with the existing id event as the result of triggering the id event
+        // Calculates the changes again, with the id existing as the result of triggering the id event
         .onErrorResume(
             IdEventAlreadyExists.class,
             e -> eventsByIdEvent.execute(e.idEvent().type(), e.idEvent().getMarshalledData())
                 .switchIfEmpty(Mono.error(e))
-                .flatMap(existing -> onEvent(
+                .flatMap(log -> onEvent(
                     correlationId,
                     eventType,
                     input,
@@ -604,7 +604,7 @@ public class StateMachine implements AutoCloseable {
                     stage1,
                     Stream.concat(
                         existingIds.stream(),
-                        Stream.of(ProcessResult.idExists(e.idEvent().type(), existing.idEvent(), existing.log()))
+                        Stream.of(ProcessResult.idExists(e.idEvent().type(), e.idEvent(), log))
                     ).toList(),
                     triggerType,
                     triggerId,
@@ -620,7 +620,7 @@ public class StateMachine implements AutoCloseable {
     EventType<I, O> type = eventTrigger.eventSpec().eventType();
     return tail.firstInitialChangeContext().existingIds().stream()
         .filter(existing -> existing.idEvent().type().id().equals(type.id())
-            && Arrays.equals(existing.idEvent().data(), type.inputDataType().marshal(data)))
+            && Arrays.equals(existing.idEvent().getMarshalledData(), type.inputDataType().marshal(data)))
         .findFirst()
         .map(existing -> new IdExistsChangeContext<>(tail, ProcessResult.idExists(type, existing.idEvent(), existing.log())))
         .orElse(null);
@@ -755,7 +755,6 @@ public class StateMachine implements AutoCloseable {
 
   private <T> Mono<EventLog> eventLog(ByIdEvent<T> selector, EntityModel entityModel, ChangeContext<?> changeContext) {
     Mono<EventLog> log = eventsByIdEvent.execute(selector.type(), selector.type().outputDataType().marshal(selector.id()))
-        .map(EventsByIdEvent.IdEventLog::log)
         .filter(l -> l.entityModel().equals(entityModel));
     return switch (selector.creationMode()) {
       case NeverCreate -> log.switchIfEmpty(Mono.defer(() -> selector.fallback() != null ?
