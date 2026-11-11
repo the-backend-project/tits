@@ -13,7 +13,7 @@ import static java.util.stream.Collectors.toMap;
 import com.github.thxmasj.backend.core.EntitySelector.ById;
 import com.github.thxmasj.backend.core.EntitySelector.ByIdFromSession;
 import com.github.thxmasj.backend.core.EntitySelector.ByIdEvent;
-import com.github.thxmasj.backend.core.EntitySelector.ByLastIndexed;
+import com.github.thxmasj.backend.core.EntitySelector.ByLastInIdGroup;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.Accepted;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.Completed;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.IdExists;
@@ -42,7 +42,7 @@ import com.github.thxmasj.backend.core.database.mssql.CreateSchema;
 import com.github.thxmasj.backend.core.database.mssql.DeleteExpiredDeadline;
 import com.github.thxmasj.backend.core.database.mssql.EventsByEntityId;
 import com.github.thxmasj.backend.core.database.mssql.EventsByIdEvent;
-import com.github.thxmasj.backend.core.database.mssql.EventsByLastIndexEvent;
+import com.github.thxmasj.backend.core.database.mssql.EventsByLastEntity;
 import com.github.thxmasj.backend.core.database.mssql.NextDeadline;
 import jakarta.annotation.Nullable;
 import jakarta.validation.constraints.NotNull;
@@ -80,7 +80,7 @@ public class StateMachine implements AutoCloseable {
   private final ChangeState changeState;
   private final EventsByEntityId eventsByEntityId;
   private final EventsByIdEvent eventsByIdEvent;
-  private final EventsByLastIndexEvent eventsByLastIndexEvent;
+  private final EventsByLastEntity eventsByLastEntity;
   private final NextDeadline nextDeadline;
   private final DeleteExpiredDeadline deleteExpiredDeadline;
   private final ConditionTriggers conditionTriggers;
@@ -155,7 +155,7 @@ public class StateMachine implements AutoCloseable {
     this.changeState = new ChangeState(jdbcClient, schemaName, clock);
     this.eventsByEntityId = new EventsByEntityId(dataSource, entityModels, schemaName, clock);
     this.eventsByIdEvent = new EventsByIdEvent(dataSource, eventTypesByEntityModel, schemaName, clock);
-    this.eventsByLastIndexEvent = new EventsByLastIndexEvent(dataSource, schemaName, clock);
+    this.eventsByLastEntity = new EventsByLastEntity(dataSource, schemaName, clock);
     this.nextDeadline = new NextDeadline(jdbcClient, eventTypes, clock, entityModels, schemaName);
     this.deleteExpiredDeadline = new DeleteExpiredDeadline(jdbcClient, schemaName);
     this.conditionTriggers = new ConditionTriggers(jdbcClient, eventTypesByEntityModel, clock, schemaName);
@@ -748,7 +748,7 @@ public class StateMachine implements AutoCloseable {
         };
       }
       case ByIdEvent<?> s -> eventLog(s, entityModel, changeContext);
-      case ByLastIndexed<?> s -> eventLog(s, entityModel);
+      case ByLastInIdGroup<?> s -> eventLog(s, entityModel);
       case EntitySelector s -> throw new IllegalStateException("Unexpected value: " + s);
     };
   }
@@ -767,15 +767,15 @@ public class StateMachine implements AutoCloseable {
   }
 
   @SuppressWarnings("unchecked")
-  private <G> Mono<EventLog> eventLog(ByLastIndexed<G> selector, EntityModel entityModel) {
+  private <G> Mono<EventLog> eventLog(ByLastInIdGroup<G> selector, EntityModel entityModel) {
     if (!(selector.type().outputDataType() instanceof GroupedDataType<?, ?> dataType))
-      throw new IllegalArgumentException("Data type of index event type " + selector.type().name() + " is not grouped");
-    Mono<EventLog> log = eventsByLastIndexEvent.execute(
+      throw new IllegalArgumentException("Data type of id event type " + selector.type().name() + " is not grouped");
+    Mono<EventLog> log = eventsByLastEntity.execute(
         entityModel,
         eventTypesByEntityModel.get(entityModel),
         selector.type().id(),
         ((GroupedDataType<?, G>) dataType).marshalGroup(selector.group()),
-        selector.position()
+        selector.lastPosition()
     );
     return switch (selector.creationMode()) {
       case NeverCreate -> log.switchIfEmpty(Mono.error(() -> new EntityGroupNotInitialised(entityModel, selector.type(), selector.group())));

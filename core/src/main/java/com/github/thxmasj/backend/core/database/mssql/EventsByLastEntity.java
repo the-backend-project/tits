@@ -22,15 +22,15 @@ import java.util.UUID;
 import javax.sql.DataSource;
 import reactor.core.publisher.Mono;
 
-/// Events of the entity with the last index event of a group, i.e. the index entity with the last index event of a type
-/// whose data starts with the marshalled group, ordered by data, or of the one before it, and so on
-public class EventsByLastIndexEvent {
+/// Events of the entity with the last id of a group, i.e. the id entity with the last id event of a type whose data
+/// starts with the marshalled group, ordered by data, or of the one before it, and so on
+public class EventsByLastEntity {
 
   private final DataSource dataSource;
   private final Clock clock;
   private final String sql;
 
-  public EventsByLastIndexEvent(DataSource dataSource, String schemaName, Clock clock) {
+  public EventsByLastEntity(DataSource dataSource, String schemaName, Clock clock) {
     this.dataSource = dataSource;
     this.clock = clock;
     this.sql =
@@ -41,7 +41,7 @@ public class EventsByLastIndexEvent {
         SELECT TOP(1) @entityId=EntityId
         FROM (
           SELECT TOP(:position) EntityId, Data
-          FROM [{schema}].[IndexEvent] WITH (INDEX(ixType_Data))
+          FROM [{schema}].[IdEvent] WITH (INDEX(ixType_Data))
           WHERE Type=:type AND Data >= :group AND Data < :groupEnd
           ORDER BY Data DESC
         ) Indexed
@@ -56,10 +56,10 @@ public class EventsByLastIndexEvent {
         """.replace("{schema}", schemaName);
   }
 
-  /// Completes empty if the group has no index events. If it has fewer index events than the position, the entity of
-  /// the first one is given.
+  /// Completes empty if the group has no ids. If it has fewer ids than the position, the entity of the first one is
+  /// given.
   ///
-  /// @param group the marshalled group, i.e. the prefix of the data of its index events
+  /// @param group the marshalled group, i.e. the prefix of the data of its id events
   public Mono<EventLog> execute(EntityModel entityModel, List<EventType<?, ?>> eventTypes, UUID type, byte[] group, int position) {
     return Mono.fromCallable(() -> {
       try (
@@ -87,7 +87,7 @@ public class EventsByLastIndexEvent {
           try {
             events.add(eventMapper.apply(new EntityId.UUID(entityId), new JDBCRow(rs)));
           } catch (MappingFailure e) {
-            throw new MappingFailure("EventsByLastIndexEvent: Failed to map row to event for entity model " + entityModel.name(), e);
+            throw new MappingFailure("EventsByLastEntity: Failed to map row to event for entity model " + entityModel.name(), e);
           }
         }
         return new EventLog(entityModel, new EntityId.UUID(entityId), Collections.unmodifiableList(events));

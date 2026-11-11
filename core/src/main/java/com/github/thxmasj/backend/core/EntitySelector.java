@@ -6,11 +6,11 @@ import static com.github.thxmasj.backend.core.EntitySelector.CreationMode.NeverC
 import com.github.thxmasj.backend.core.EntitySelector.ById;
 import com.github.thxmasj.backend.core.EntitySelector.ByIdFromSession;
 import com.github.thxmasj.backend.core.EntitySelector.ByIdEvent;
-import com.github.thxmasj.backend.core.EntitySelector.ByLastIndexed;
+import com.github.thxmasj.backend.core.EntitySelector.ByLastInIdGroup;
 import java.util.UUID;
 import java.util.function.Function;
 
-public sealed class EntitySelector permits ById, ByIdFromSession, ByIdEvent, ByLastIndexed {
+public sealed class EntitySelector permits ById, ByIdFromSession, ByIdEvent, ByLastInIdGroup {
 
   public static ById entityId(EntityId entityId) {
     return new ById(entityId, NeverCreate);
@@ -53,23 +53,23 @@ public sealed class EntitySelector permits ById, ByIdFromSession, ByIdEvent, ByL
     return new ByIdEvent<>(type, id, NeverCreate, fallback);
   }
 
-  /// The entity with the last index event of a group, i.e. the last of the index events of the type whose data is in
-  /// the group, as ordered by the type's GroupedDataType
-  public static <G> ByLastIndexed<G> lastIndexed(EventType<?, ?> type, G group) {
-    return lastIndexed(type, group, NeverCreate);
+  /// The entity with the last id of a group, i.e. the last of the id events of the type whose data is in the group, as
+  /// ordered by the type's GroupedDataType
+  public static <G> ByLastInIdGroup<G> lastInIdGroup(EventType<?, ?> type, G group) {
+    return lastInIdGroup(type, group, NeverCreate);
   }
 
-  public static <G> ByLastIndexed<G> lastIndexed(EventType<?, ?> type, G group, CreationMode creationMode) {
-    return new ByLastIndexed<>(type, group, creationMode, 1);
+  public static <G> ByLastInIdGroup<G> lastInIdGroup(EventType<?, ?> type, G group, CreationMode creationMode) {
+    return new ByLastInIdGroup<>(type, group, creationMode, 1);
   }
 
-  /// The entity with the index event before the last one of a group, or the last one if it is the only one
-  public static <G> ByLastIndexed<G> secondToLastIndexed(EventType<?, ?> type, G group) {
-    return secondToLastIndexed(type, group, NeverCreate);
+  /// The entity with the id before the last one of a group, or the last one if it is the only one
+  public static <G> ByLastInIdGroup<G> secondToLastInIdGroup(EventType<?, ?> type, G group) {
+    return new ByLastInIdGroup<>(type, group, NeverCreate, 2);
   }
 
-  public static <G> ByLastIndexed<G> secondToLastIndexed(EventType<?, ?> type, G group, CreationMode creationMode) {
-    return new ByLastIndexed<>(type, group, creationMode, 2);
+  public static <G> ByLastInIdGroup<G> secondToLastInIdGroup(EventType<?, ?> type, G group,  CreationMode creationMode) {
+    return new ByLastInIdGroup<>(type, group, creationMode, 2);
   }
 
   public enum CreationMode{AlwaysCreate, CreateIfNotExists, NeverCreate}
@@ -143,18 +143,22 @@ public sealed class EntitySelector permits ById, ByIdFromSession, ByIdEvent, ByL
     }
   }
 
-  public static final class ByLastIndexed<G> extends EntitySelector {
+  public static final class ByLastInIdGroup<G> extends EntitySelector {
 
     private final EventType<?, ?> type;
     private final G group;
-    private final int position;
+    private final int lastPostition;
 
-    /// @param position 1 for the last entity, 2 for the one before it, and so on
-    public ByLastIndexed(EventType<?, ?> type, G group, CreationMode creationMode, int position) {
+    public ByLastInIdGroup(
+        EventType<?, ?> type,
+        G group,
+        CreationMode creationMode,
+        int lastPostition
+    ) {
       super(creationMode, null);
       this.type = type;
       this.group = group;
-      this.position = position;
+      this.lastPostition = lastPostition;
     }
 
     public EventType<?, ?> type() {
@@ -165,8 +169,8 @@ public sealed class EntitySelector permits ById, ByIdFromSession, ByIdEvent, ByL
       return group;
     }
 
-    public int position() {
-      return position;
+    public int lastPosition() {
+      return lastPostition;
     }
   }
 

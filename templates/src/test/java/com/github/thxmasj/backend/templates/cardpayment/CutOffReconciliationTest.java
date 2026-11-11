@@ -352,7 +352,6 @@ public class CutOffReconciliationTest {
     transitions.put(RequestDispatching, requestDispatchingTransitions(routes, List.of()));
     transitions.put(MessageIds, MessageIds.transitions());
     transitions.put(Identifiers.Ids, Identifiers.Ids.transitions());
-    transitions.put(Identifiers.Index, Identifiers.Index.transitions());
     transitions.put(Index, Index.transitions());
     transitions.putAll(payment.outboxTransitions());
     transitions.putAll(settlement.outboxTransitions());

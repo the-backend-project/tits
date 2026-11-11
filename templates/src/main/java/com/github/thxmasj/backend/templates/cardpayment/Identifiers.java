@@ -4,7 +4,6 @@ import com.github.thxmasj.backend.core.BasicEventType;
 import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.IdEntityModel;
-import com.github.thxmasj.backend.core.IndexEntityModel;
 import java.util.UUID;
 
 public interface Identifiers {
@@ -15,10 +14,11 @@ public interface Identifiers {
       DataType.string()
   );
 
+  /// Batch numbers of the settlements of a merchant, of which the last one is the current settlement of the merchant
   EventType<BatchNumber, BatchNumber> BatchNumber = BasicEventType.of(
       "BatchNumber",
       UUID.fromString("e0ca999b-0853-43eb-b1a6-f0f2ef6130b5"),
-      DataType.json(BatchNumber.class)
+      new BatchNumberDataType()
   );
 
   EventType<AcquirerBatchNumber, AcquirerBatchNumber> AcquirerBatchNumber = BasicEventType.of(
@@ -34,20 +34,6 @@ public interface Identifiers {
       MerchantId,
       BatchNumber,
       AcquirerBatchNumber
-  );
-
-  /// Settlements of a merchant, by batch number grouped by merchant id. The last one is the current settlement of the
-  /// merchant.
-  EventType<BatchNumber, BatchNumber> Batch = BasicEventType.of(
-      "Batch",
-      UUID.fromString("a4e6c8f0-2b3d-4f5a-8c7e-9d1b3f5a7c92"),
-      new BatchNumberDataType()
-  );
-
-  IndexEntityModel Index = IndexEntityModel.of(
-      "CardPaymentIndex",
-      UUID.fromString("c7b9d1f3-5e6a-4b8c-a0d2-e4f6a8b0c2d5"),
-      Batch
   );
 
 }

@@ -1,11 +1,10 @@
 package com.github.thxmasj.backend.core.database.mssql;
 
 import static com.github.thxmasj.backend.core.EntityModel.Begin;
-import static com.github.thxmasj.backend.core.EntitySelector.lastIndexed;
+import static com.github.thxmasj.backend.core.EntitySelector.lastInIdGroup;
 import static com.github.thxmasj.backend.core.EntitySelector.CreationMode.CreateIfNotExists;
 import static com.github.thxmasj.backend.core.EntitySelector.entityId;
-import static com.github.thxmasj.backend.core.EntitySelector.newEntityId;
-import static com.github.thxmasj.backend.core.EntitySelector.secondToLastIndexed;
+import static com.github.thxmasj.backend.core.EntitySelector.secondToLastInIdGroup;
 import static com.github.thxmasj.backend.core.EventTrigger.trigger;
 import static com.github.thxmasj.backend.core.TransitionModelBuilder.WithEvent.onEvent;
 import static com.github.thxmasj.backend.core.Tuples.tuple;
@@ -25,7 +24,6 @@ import com.github.thxmasj.backend.core.EventTrigger.EventSpec;
 import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.GroupedDataType;
 import com.github.thxmasj.backend.core.IdEntityModel;
-import com.github.thxmasj.backend.core.IndexEntityModel;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.StateMachine;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionModel;
@@ -49,8 +47,6 @@ public class IdEventTest {
   static EventType<String, String> AccountNumber = BasicEventType.of("AccountNumber", UUID.fromString("0c3f6a0e-2b51-4d55-9f43-a7a1d7f86d2b"), DataType.string());
   static EventType<String, String> Alias = BasicEventType.of("Alias", UUID.fromString("6e2a9c4d-8b1f-4d3a-a5e7-2c9b0f4d6a18"), DataType.string());
 
-  static IdEntityModel Ids = IdEntityModel.of("Ids", UUID.fromString("9a7c5e3b-1d2f-4a6b-8c0e-4f6a8b0c2d4e"), AccountNumber, Alias);
-
   record StatementNumber(String account, long number) {}
 
   /// Statement numbers grouped by account and ordered by number
@@ -70,8 +66,10 @@ public class IdEventTest {
     }
   }
 
-  static EventType<StatementNumber, StatementNumber> StatementOfAccount = BasicEventType.of("StatementOfAccount", UUID.fromString("b9f6e6a4-7a0d-4c1f-a5a9-1f7b0c8e3d42"), new StatementNumberDataType());
-  static IndexEntityModel Index = IndexEntityModel.of("Index", UUID.fromString("2d4f6a8c-0e1b-4c3d-9e5f-7a9b1c3d5e7f"), StatementOfAccount);
+  static EventType<StatementNumber, StatementNumber> StatementNumber = BasicEventType.of("StatementNumber", UUID.fromString("b9f6e6a4-7a0d-4c1f-a5a9-1f7b0c8e3d42"), new StatementNumberDataType());
+
+  static IdEntityModel Ids = IdEntityModel.of("Ids", UUID.fromString("9a7c5e3b-1d2f-4a6b-8c0e-4f6a8b0c2d4e"), AccountNumber, Alias, StatementNumber);
+
 
   static EntityModel Account = EntityModel.of("Account", UUID.fromString("5d1b3c86-1b0e-4f7e-8a8c-2d6c9f0b7e15"));
   static EntityModel Statement = EntityModel.of("Statement", UUID.fromString("e4a7d2f9-6c3b-4e8a-9b1d-7f5c0a2e8d36"));
@@ -102,13 +100,12 @@ public class IdEventTest {
           Begin, List.of(
               onEvent(Issue).to(States.Issued)
                   .assemble(c -> tuple(c.input(), c.log().entityId()))
-                  .trigger(StatementOfAccount).with(Tuple2::t1).on(Index).identifiedBy(d -> newEntityId(d.t2().value()))
+                  .trigger(StatementNumber).with(Tuple2::t1).on(Ids).identifiedBy(d -> entityId(d.t2(), CreateIfNotExists))
                   .output(d -> d.t1().t1())
           ),
           States.Issued, List.of(onEvent(Read).toSelf().assemble(c -> c.log().entityId().value().toString()).output(d -> d))
       ),
-      Ids, Ids.transitions(),
-      Index, Index.transitions()
+      Ids, Ids.transitions()
     ), clock);
   }
 
@@ -154,27 +151,27 @@ public class IdEventTest {
   }
 
   @Test
-  public void entityIsFoundByTheLastIndexEventsOfAGroup() {
+  public void entityIsFoundByTheLastIdsOfAGroup() {
     List<UUID> issued = new ArrayList<>();
     for (var number : List.of(new StatementNumber("A", 1), new StatementNumber("A", 2), new StatementNumber("B", 1), new StatementNumber("A", 3)))
       issued.add(machine.onEvent(trigger(Issue, Statement), number).blockFirst().entityId());
 
-    assertEquals(issued.get(3).toString(), read(lastIndexed(StatementOfAccount, "A")));
-    assertEquals(issued.get(1).toString(), read(secondToLastIndexed(StatementOfAccount, "A")));
-    assertEquals(issued.get(2).toString(), read(lastIndexed(StatementOfAccount, "B")));
+    assertEquals(issued.get(3).toString(), read(lastInIdGroup(StatementNumber, "A")));
+    assertEquals(issued.get(1).toString(), read(secondToLastInIdGroup(StatementNumber, "A")));
+    assertEquals(issued.get(2).toString(), read(lastInIdGroup(StatementNumber, "B")));
     // The only one is both the last and the second to last
-    assertEquals(issued.get(2).toString(), read(secondToLastIndexed(StatementOfAccount, "B")));
+    assertEquals(issued.get(2).toString(), read(secondToLastInIdGroup(StatementNumber, "B")));
   }
 
   @Test
-  public void groupIsOrderedByDataNotByTimeOfIndexing() {
+  public void groupIsOrderedByDataNotByTimeOfCreation() {
     StateMachine frozen = stateMachine(UUID.randomUUID().toString(), Clock.fixed(Instant.parse("2026-11-11T12:00:00Z"), ZoneOffset.UTC));
     List<UUID> issued = new ArrayList<>();
     for (long number : List.of(10L, 9L, 2L))
       issued.add(frozen.onEvent(trigger(Issue, Statement), new StatementNumber("C", number)).blockFirst().entityId());
 
-    assertEquals(issued.get(0).toString(), read(frozen, lastIndexed(StatementOfAccount, "C")));
-    assertEquals(issued.get(1).toString(), read(frozen, secondToLastIndexed(StatementOfAccount, "C")));
+    assertEquals(issued.get(0).toString(), read(frozen, lastInIdGroup(StatementNumber, "C")));
+    assertEquals(issued.get(1).toString(), read(frozen, secondToLastInIdGroup(StatementNumber, "C")));
   }
 
   private String read(EntitySelector selector) {
