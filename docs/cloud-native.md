@@ -33,8 +33,8 @@ the build uses (see `bin/start-mssql.sh`).
 Native compilation depends on metadata about reflection and resources that static analysis cannot find. The demo
 needs none of its own. The libraries ship metadata for what they use in
 `META-INF/native-image/com.github.thxmasj.backend/<artifact>/`, and Netty and Reactor ship their own. The core
-library's covers HikariCP, the SQL Server driver, and Jackson's handling of records. The HTTP inbox's covers the
-message ids it stores as JSON, and makes Netty initialize one class at run time (see [Gaps](#gaps)).
+library's covers HikariCP, the SQL Server driver, and Jackson's handling of records. The HTTP inbox's makes Netty
+initialize one class at run time (see [Gaps](#gaps)).
 
 To check the metadata after changing the libraries, add `--exact-reachability-metadata
 -H:MissingRegistrationReportingMode=Warn` to the `native-image` command in the `Dockerfile`, run the demo, and look for
@@ -87,8 +87,8 @@ work around.
   The image build therefore compiles the libraries with `-Dmaven.compiler.release=25`. This works as long as the
   libraries do not use language features or APIs newer than Java 25.
 - **Jackson needs reflection.** The state machine marshals event data with Jackson, which accesses the data classes
-  reflectively. Applications must provide reachability metadata for their own data classes. Event references, which the
-  HTTP inbox stores with its events, use `DataType.eventReference()`, which needs no reflection.
+  reflectively. Applications must provide reachability metadata for their own data classes. Event references and message
+  ids, which the HTTP inbox stores with its events, use data types that need no reflection.
 - **Netty puts a direct buffer in the image heap.** Netty 4.1 initializes its classes at build time, but
   `CleartextHttp2ServerUpgradeHandler`, used by the reactor-netty HTTP server, holds a direct buffer, which fails the
   build with GraalVM 25. The HTTP inbox therefore initializes that class at run time. The setting could go away with a

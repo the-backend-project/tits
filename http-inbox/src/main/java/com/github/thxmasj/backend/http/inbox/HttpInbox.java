@@ -123,12 +123,12 @@ public interface HttpInbox {
   EventType<MessageId, MessageId> MessageId = BasicEventType.of(
       "MessageId",
       UUID.fromString("f721bf54-891b-41a0-aa63-5d3cbde52437"),
-      DataType.json(MessageId.class)
+      new MessageIdDataType()
   );
   EventType<MessageId, MessageId> RollbackMessageId = BasicEventType.of(
       "RollbackMessageId",
       UUID.fromString("58cafda3-1818-4015-8f97-3d9f3bd2856f"),
-      DataType.json(MessageId.class)
+      new MessageIdDataType()
   );
   /// Ids of the requests, by the entity id of their RequestDispatching
   IdEntityModel MessageIds = IdEntityModel.of(
