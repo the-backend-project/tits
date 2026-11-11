@@ -422,7 +422,7 @@ public class StateMachine implements AutoCloseable {
     Many<Event<?>> responseSink = Sinks.many().unicast().onBackpressureBuffer();
     return eventLog(eventTrigger, input, null)
         .flatMapMany(log ->
-                onEvent(correlationId, eventTrigger.eventSpec().eventType(), adaptedInput, log, null, eventTrigger.triggerType(), eventTrigger.triggerId(), triggerEvent, List.of())
+                onEvent(correlationId, eventTrigger.eventSpec().eventType(), adaptedInput, log, null, List.of(), eventTrigger.triggerType(), eventTrigger.triggerId(), triggerEvent)
                     .contextWrite(ctx -> ctx.put("RS/" + log.entityId().value(), responseSink))
                     .thenMany(responseSink.asFlux())
                     .retryWhen(RetrySpec.fixedDelay(3, Duration.ofMillis(500))
@@ -445,7 +445,7 @@ public class StateMachine implements AutoCloseable {
       EventLog eventLog,
       ChangeContext<?> requestChangeContext
   ) {
-    return onEvent(correlationId, inputEvent.eventType(), inputEvent.data(), eventLog, requestChangeContext);
+    return onEvent(correlationId, inputEvent.eventType(), inputEvent.data(), eventLog, requestChangeContext, List.of());
   }
 
   private List<Change> changes(@NotNull ChangeContext<?> tail) {
@@ -496,12 +496,12 @@ public class StateMachine implements AutoCloseable {
 
   private <I> Mono<ProcessResult<?>> onEvent(
       String correlationId,
-      EventType<I, ?> eventType,
-      I input,
+      InputEvent<I> inputEvent,
       EventLog eventLog,
-      ChangeContext<?> stage1
+      ChangeContext<?> stage1,
+      List<IdExists<?>> existingIds
   ) {
-    return onEvent(correlationId, eventType, input, eventLog, stage1, null, null, null, List.of());
+    return onEvent(correlationId, inputEvent.eventType(), inputEvent.data(), eventLog, stage1, existingIds);
   }
 
   private <I> Mono<ProcessResult<?>> onEvent(
@@ -510,10 +510,21 @@ public class StateMachine implements AutoCloseable {
       I input,
       EventLog eventLog,
       ChangeContext<?> stage1,
+      List<IdExists<?>> existingIds
+  ) {
+    return onEvent(correlationId, eventType, input, eventLog, stage1, existingIds, null, null, null);
+  }
+
+  private <I> Mono<ProcessResult<?>> onEvent(
+      String correlationId,
+      EventType<I, ?> eventType,
+      I input,
+      EventLog eventLog,
+      ChangeContext<?> stage1,
+      List<IdExists<?>> existingIds,
       TriggerType triggerType,
       UUID triggerId,
-      @Nullable EventReference triggerEvent,
-      List<IdExists<?>> existingIds
+      @Nullable EventReference triggerEvent
   ) {
     System.out.println(eventLog.entityModel().name() + ": onEvent " + eventType.name() + " with log " + eventLog.events().stream().map(Event::typeName).collect(joining(",")));
     var now = ZonedDateTime.now(clock);
@@ -541,9 +552,9 @@ public class StateMachine implements AutoCloseable {
                 correlationId,
                 input,
                 this,
+                existingIds,
                 triggerType,
-                triggerId,
-                existingIds
+                triggerId
             )
         )
         .flatMap(this::calculatePendingChanges)
@@ -568,7 +579,8 @@ public class StateMachine implements AutoCloseable {
                           eventType,
                           r.exception.getMessage()
                       ),
-                      this
+                      this,
+                      List.of()
                   )
               )
               .flatMap(rejectChanges -> rejectChanges.stepOutput().isAccepted() ?
@@ -590,13 +602,13 @@ public class StateMachine implements AutoCloseable {
                     input,
                     eventLog,
                     stage1,
-                    triggerType,
-                    triggerId,
-                    triggerEvent,
                     Stream.concat(
                         existingIds.stream(),
                         Stream.of(ProcessResult.idExists(e.idEvent().type(), existing.idEvent(), existing.log()))
-                    ).toList()
+                    ).toList(),
+                    triggerType,
+                    triggerId,
+                    triggerEvent
                 ))
         );
   }
@@ -876,7 +888,8 @@ public class StateMachine implements AutoCloseable {
                     tail.initialChangeContext().timestamp(),
                     tail.initialChangeContext().correlationId(),
                     adaptedData,
-                    tail.initialChangeContext().stateMachine()
+                    tail.initialChangeContext().stateMachine(),
+                    List.of()
                 )
             ))
     );
@@ -1061,7 +1074,8 @@ public class StateMachine implements AutoCloseable {
                 correlationId,
                 triggerResult,
                 actionTrigger.eventLog(),
-                stage1
+                stage1,
+                List.of()
             )
             .doOnError(e -> System.out.println("onEvent ERROR for " + triggerResult.eventType().name() + " on " + actionTrigger.eventLog().entityModel().name() + ":" + actionTrigger.eventLog().entityId().value() + ": " + e))
             .retryWhen(RetrySpec.fixedDelay(3, Duration.ofMillis(500))

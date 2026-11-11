@@ -122,9 +122,9 @@ public class TransitionModelBuilder<I, T, O> {
         String correlationId,
         I input,
         StateMachine stateMachine,
+        List<IdExists<?>> existingIds,
         TriggerType triggerType,
-        UUID triggerId,
-        List<IdExists<?>> existingIds
+        UUID triggerId
     ) implements ChangeContext<I>, TransitionContext<I> {
       public InitialChangeContext(
           ChangeContext<?> stage1,
@@ -137,9 +137,10 @@ public class TransitionModelBuilder<I, T, O> {
           ZonedDateTime timestamp,
           String correlationId,
           I input,
-          StateMachine stateMachine
+          StateMachine stateMachine,
+          List<IdExists<?>> existingIds
       ) {
-        this(stage1, previous, triggerEvent, transitionModel, from, eventNumber, log, timestamp, correlationId, input, stateMachine, null, null, List.of());
+        this(stage1, previous, triggerEvent, transitionModel, from, eventNumber, log, timestamp, correlationId, input, stateMachine, existingIds, null, null);
       }
       @Override public I stepOutput() {return input;}
       @Override public String toString() {
@@ -417,7 +418,8 @@ public class TransitionModelBuilder<I, T, O> {
                       i.timestamp(),
                       i.correlationId(),
                       i.stepOutput(),
-                      i.stateMachine()
+                      i.stateMachine(),
+                      List.of()
                   ))
               ));
             }
@@ -847,9 +849,9 @@ public class TransitionModelBuilder<I, T, O> {
                             c.initialChangeContext().correlationId(),
                             filter.alternative().dataAdapter().apply(c.stepOutput()),
                             c.initialChangeContext().stateMachine(),
+                            List.of(),
                             c.initialChangeContext().triggerType(),
-                            c.initialChangeContext().triggerId(),
-                            List.of()
+                            c.initialChangeContext().triggerId()
                         )
                     ).map(alternativeOutput -> new ChoiceChangeContext<>(alternativeOutput, c));
               })
