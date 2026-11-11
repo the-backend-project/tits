@@ -10,7 +10,6 @@ public interface Listener {
 
     record Change(
         Entity entity,
-        ZonedDateTime timeout,
         Event event
     ) {
       public record Entity(
