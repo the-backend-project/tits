@@ -84,3 +84,18 @@ body {
   color: #000000;
   background-color: #4b5320;
 }
+
+/* Mermaid renders into a closed shadow root, so diagrams are styled through the variables it inherits */
+.md-typeset .mermaid {
+  --md-mermaid-node-fg-color: #4b5320;
+  --md-mermaid-node-bg-color: #9bb08a;
+  --md-mermaid-edge-color: #353b16;
+  --md-mermaid-label-fg-color: #000000;
+  --md-mermaid-label-bg-color: #9bb08a;
+  --md-default-bg-color: rgba(155, 176, 138, 0.6);
+}
+
+[data-md-color-scheme="slate"] .md-typeset .mermaid {
+  --md-mermaid-edge-color: #a3b06a;
+  --md-mermaid-label-bg-color: #353b16;
+}
