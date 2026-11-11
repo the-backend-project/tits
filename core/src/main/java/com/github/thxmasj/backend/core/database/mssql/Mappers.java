@@ -40,12 +40,16 @@ public class Mappers {
   public static Map<EntityModel, List<EventType<?, ?>>> eventTypesByEntityModel(
       Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions
   ) {
-    return transitions.entrySet().stream().collect(toMap(Entry::getKey, e -> eventTypes(e.getValue().values())));
+    return transitions.entrySet().stream().collect(toMap(Entry::getKey, e -> eventTypes(transitionsOf(e).values())));
   }
 
   /// The event types of the transitions of all entity models, including the builtin event types
   public static List<EventType<?, ?>> eventTypes(Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions) {
-    return eventTypes(transitions.values().stream().flatMap(t -> t.values().stream()).toList());
+    return eventTypes(transitions.entrySet().stream().flatMap(e -> transitionsOf(e).values().stream()).toList());
+  }
+
+  private static Map<State, List<TransitionModel<?, ?>>> transitionsOf(Entry<EntityModel, Map<State, List<TransitionModel<?, ?>>>> entry) {
+    return requireNonNull(entry.getValue(), () -> "Entity model " + entry.getKey().name() + " has no transitions");
   }
 
   private static List<EventType<?, ?>> eventTypes(Collection<List<TransitionModel<?, ?>>> transitions) {

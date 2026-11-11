@@ -31,10 +31,13 @@ import reactor.core.publisher.Mono;
 public class EntitiesByIndex {
 
   private final DataSource dataSource;
-  private final BiFunction<EntityId, Row, Event<?>> eventMapper;
+  private final Map<UUID, BiFunction<EntityId, Row, Event<?>>> eventMappers;
   private final Map<UUID, EntityModel> entityModels;
   private final String sql;
 
+  /// Maps the events of all the entity models with the same event types. Entity models whose event types share ids but
+  /// differ in data types, like outbox requests with different payloads, need
+  /// [#EntitiesByIndex(DataSource, Map, String, Clock)].
   public EntitiesByIndex(
       DataSource dataSource,
       List<? extends EntityModel> entityModels,
@@ -42,9 +45,25 @@ public class EntitiesByIndex {
       List<EventType<?, ?>> eventTypes,
       Clock clock
   ) {
+    this(
+        dataSource,
+        entityModels.stream().collect(Collectors.toMap(Function.identity(), _ -> eventTypes)),
+        schemaName,
+        clock
+    );
+  }
+
+  /// Maps the events of each entity model with its own event types
+  public EntitiesByIndex(
+      DataSource dataSource,
+      Map<? extends EntityModel, List<EventType<?, ?>>> eventTypesByEntityModel,
+      String schemaName,
+      Clock clock
+  ) {
     this.dataSource = dataSource;
-    this.eventMapper = Mappers.eventMapper(eventTypes, clock);
-    this.entityModels = entityModels.stream().collect(Collectors.toMap(EntityModel::id, Function.identity()));
+    this.eventMappers = eventTypesByEntityModel.entrySet().stream()
+        .collect(Collectors.toMap(e -> e.getKey().id(), e -> Mappers.eventMapper(e.getValue(), clock)));
+    this.entityModels = eventTypesByEntityModel.keySet().stream().collect(Collectors.toMap(EntityModel::id, Function.identity()));
     this.sql = String.format(
         """
         SELECT
@@ -91,7 +110,7 @@ public class EntitiesByIndex {
               UUID entityModelId = rs.getObject("EntityModelId", UUID.class);
               if (!entityModels.containsKey(entityModelId)) continue;
               entityModelIdByEntityId.putIfAbsent(entityId, entityModelId);
-              eventsByEntityId.computeIfAbsent(entityId, _ -> new ArrayList<>()).add(eventMapper.apply(new EntityId.UUID(entityId), new JDBCRow(rs)));
+              eventsByEntityId.computeIfAbsent(entityId, _ -> new ArrayList<>()).add(eventMappers.get(entityModelId).apply(new EntityId.UUID(entityId), new JDBCRow(rs)));
             }
             rs.close();
             List<EventLog> eventLogs = new ArrayList<>();
