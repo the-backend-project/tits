@@ -1,14 +1,12 @@
 package com.github.thxmasj.backend.core;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 
 import com.github.thxmasj.backend.core.Tuples.Tuple2;
 import com.github.thxmasj.backend.core.http.HttpDataType;
 import com.github.thxmasj.backend.core.message.http.HttpRequestMessage.Method;
 import com.github.thxmasj.backend.core.message.http.TypedHttpRequest;
 import java.net.URI;
-import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -77,13 +75,5 @@ public class DataTypeTest {
     Tuple2<String, EventReference> original = Tuples.tuple("Nothing to roll back", null);
 
     assertEquals(original, dataType.unmarshal(dataType.marshal(original)));
-  }
-
-  @Test
-  public void eventReferenceUnmarshallingFromJson() {
-    EventReference original = new EventReference(UUID.randomUUID(), 7);
-
-    assertEquals(original, DataType.eventReference().unmarshal(DataType.json(EventReference.class).marshal(original)));
-    assertNull(DataType.eventReference().unmarshal("null".getBytes(StandardCharsets.UTF_8)));
   }
 }

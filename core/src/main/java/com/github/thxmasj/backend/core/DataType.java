@@ -9,9 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
-import tools.jackson.core.JacksonException;
 import tools.jackson.core.StreamReadFeature;
-import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.cfg.DateTimeFeature;
 import tools.jackson.databind.json.JsonMapper;
@@ -201,23 +199,10 @@ public interface DataType<T> {
         return null;
       }
       if (value.length != LENGTH) {
-        return unmarshalJson(value);
+        throw new IllegalArgumentException("Event reference must be exactly " + LENGTH + " bytes long, got " + value.length);
       }
       ByteBuffer buffer = ByteBuffer.wrap(value);
       return new EventReference(new UUID(buffer.getLong(), buffer.getLong()), buffer.getInt());
-    }
-
-    // Event references used to be marshalled as JSON, which is always longer than 20 bytes
-    private static EventReference unmarshalJson(byte[] value) {
-      try {
-        JsonNode node = objectMapper.readTree(value);
-        if (node.isNull()) {
-          return null;
-        }
-        return new EventReference(UUID.fromString(node.get("entityId").asString()), node.get("eventNumber").asInt());
-      } catch (JacksonException e) {
-        throw new IllegalArgumentException("Not an event reference: " + value.length + " bytes", e);
-      }
     }
 
     @Override
