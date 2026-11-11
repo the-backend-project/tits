@@ -7,6 +7,9 @@ to a native executable. See [Cloud native demo](docs/cloud-native.md). The [depl
 application built the same way, to Azure Functions with a serverless Azure SQL database. See
 [Deploying to Azure Functions](docs/azure-functions.md).
 
+The [test-api](test-api) module is an API for tests to look into and manipulate the database of a state machine.
+See [Testing](docs/testing.md).
+
 ## Building
 
 Requires Java 27 and Maven 3.9 or later.

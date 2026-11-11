@@ -1,7 +1,6 @@
 package com.github.thxmasj.backend.core;
 
 import static com.github.thxmasj.backend.core.Tuples.tuple;
-import static com.github.thxmasj.backend.core.database.mssql.Mappers.eventTypesFor;
 import static java.time.Duration.ofHours;
 import static java.time.Duration.ofMinutes;
 import static java.time.Duration.ofSeconds;
@@ -43,6 +42,7 @@ import com.github.thxmasj.backend.core.database.mssql.DeleteDelayedTrigger;
 import com.github.thxmasj.backend.core.database.mssql.EventsByEntityId;
 import com.github.thxmasj.backend.core.database.mssql.EventsByIdEvent;
 import com.github.thxmasj.backend.core.database.mssql.EventsByLastIndexEvent;
+import com.github.thxmasj.backend.core.database.mssql.Mappers;
 import com.github.thxmasj.backend.core.database.mssql.NextDelayedTrigger;
 import jakarta.annotation.Nullable;
 import jakarta.validation.constraints.NotNull;
@@ -123,26 +123,8 @@ public class StateMachine implements AutoCloseable {
     System.out.println("Supported entity models:\n" + transitions.keySet().stream().map(EntityModel::name).collect(joining("\n")));
     this.traversers = transitions.entrySet().stream().collect(toMap(Entry::getKey, e -> new Traverser(e.getValue())));
     List<EntityModel> entityModels = transitions.keySet().stream().toList();
-    this.eventTypesByEntityModel = transitions.entrySet().stream()
-        .collect(toMap(
-            e -> e.getKey(),
-            e -> Stream.concat(
-                    BuiltinEventTypes.ALL.stream(),
-                    e.getValue().values().stream().flatMap(tl -> tl.stream()).flatMap(t -> eventTypesFor(t).stream())
-                )
-                .distinct().toList()
-        ));
-    List<EventType<?, ?>> eventTypes =
-        Stream.concat(
-                BuiltinEventTypes.ALL.stream(),
-                transitions.values()
-                    .stream()
-                    .flatMap(tl -> tl.values().stream())
-                    .flatMap(tl -> tl.stream())
-                    .flatMap(t -> eventTypesFor(t).stream())
-            )
-            .distinct()
-            .toList();
+    this.eventTypesByEntityModel = Mappers.eventTypesByEntityModel(transitions);
+    List<EventType<?, ?>> eventTypes = Mappers.eventTypes(transitions);
     this.delayer = delayer != null ? delayer : _ -> Mono.empty();
     if (schemaDataSource != null) {
       new CreateSchema(schemaName, role).execute(new JDBCClient(schemaDataSource))

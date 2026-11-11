@@ -65,13 +65,18 @@ public class EntitiesByIndex {
   }
 
   public Flux<EventLog> execute(UUID key, EventType<?, ?> referenceType) {
+    return execute(DataType.uuid().marshal(key), referenceType);
+  }
+
+  /// @param key the marshalled index key
+  public Flux<EventLog> execute(byte[] key, EventType<?, ?> referenceType) {
     return Mono.fromCallable(() -> {
           try (
               var connection = dataSource.getConnection();
               var statement = prepare(
                   sql,
                   Map.of(
-                      "value", new Parameter<>(byte[].class, DataType.uuid().marshal(key)),
+                      "value", new Parameter<>(byte[].class, key),
                       "referenceType", new Parameter<>(UUID.class, referenceType.id())
                   ),
                   connection
