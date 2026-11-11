@@ -11,6 +11,8 @@ import static com.github.thxmasj.backend.core.TransitionModelBuilder.WithEvent.o
 import static com.github.thxmasj.backend.core.Tuples.tuple;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.github.thxmasj.backend.core.BasicEventType;
 import com.github.thxmasj.backend.core.BasicEventType.ReadOnly;
@@ -28,6 +30,8 @@ import com.github.thxmasj.backend.core.IdEntityModel;
 import com.github.thxmasj.backend.core.IndexEntityModel;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.StateMachine;
+import com.github.thxmasj.backend.core.StateMachine.RejectedEvent;
+import com.github.thxmasj.backend.core.StateMachine.RejectedEvent.Reason;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.backend.core.Tuples.Tuple2;
 import com.github.thxmasj.backend.core.test.Init;
@@ -133,6 +137,18 @@ public class IdEventTest {
 
     assertEquals(opened.entityId(), touched.entityId());
     assertEquals(2, touched.eventNumber());
+  }
+
+  @Test
+  public void eventIsRejectedWhenNoEntityHasTheId() {
+    RejectedEvent rejected = assertThrows(
+        RejectedEvent.class,
+        () -> machine.onEvent(trigger(Touch, Account, Alias, "alias-unknown")).blockFirst()
+    );
+
+    assertEquals(Reason.UnknownEntity, rejected.reason());
+    assertEquals(Account, rejected.entityModel());
+    assertNull(rejected.entityId());
   }
 
   @Test
