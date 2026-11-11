@@ -139,6 +139,12 @@ public class RollbackTest {
   }
 
   @Test
+  public void statusOfUnknownEntityIsEmpty() {
+    StepVerifier.create(eventListener.onStatus(entityId(UUID.randomUUID()), Pacman))
+        .verifyComplete();
+  }
+
+  @Test
   public void rollbackOfTwoEvents() {
     StepVerifier
         .create(eventListener.onEvent(trigger(Forward, Pacman))

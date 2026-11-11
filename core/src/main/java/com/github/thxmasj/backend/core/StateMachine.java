@@ -664,9 +664,13 @@ public class StateMachine implements AutoCloseable {
   }
 
 
+  /**
+   * The current state of the selected entity. Completes empty if the entity does not exist.
+   */
   public Mono<State> onStatus(EntitySelector entitySelector, EntityModel entityModel) {
     return eventLog(entitySelector, entityModel, null)
-        .map(log -> traversers.get(entityModel).currentState(log));
+        .map(log -> traversers.get(entityModel).currentState(log))
+        .onErrorResume(UnknownEntity.class, _ -> Mono.empty());
   }
 
   private <T> Flux<Event<?>> fireConditionTrigger(ConditionTrigger<T> conditionTrigger) {
