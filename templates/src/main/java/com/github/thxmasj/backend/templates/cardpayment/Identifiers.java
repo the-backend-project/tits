@@ -36,11 +36,12 @@ public interface Identifiers {
       AcquirerBatchNumber
   );
 
-  /// Settlements of a merchant, by merchant id. The last one is the current settlement of the merchant.
-  EventType<String, String> Batch = BasicEventType.of(
+  /// Settlements of a merchant, by batch number grouped by merchant id. The last one is the current settlement of the
+  /// merchant.
+  EventType<BatchNumber, BatchNumber> Batch = BasicEventType.of(
       "Batch",
       UUID.fromString("a4e6c8f0-2b3d-4f5a-8c7e-9d1b3f5a7c92"),
-      DataType.string()
+      new BatchNumberDataType()
   );
 
   IndexEntityModel Index = IndexEntityModel.of(

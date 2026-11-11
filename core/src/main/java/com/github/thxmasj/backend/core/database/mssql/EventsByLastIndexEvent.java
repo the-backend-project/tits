@@ -14,6 +14,7 @@ import com.github.thxmasj.backend.core.database.jdbc.JDBCRow;
 import java.sql.ResultSet;
 import java.time.Clock;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -21,8 +22,8 @@ import java.util.UUID;
 import javax.sql.DataSource;
 import reactor.core.publisher.Mono;
 
-/// Events of the entity last indexed by a key, i.e. the index entity with the last index event of a type with the key
-/// as data, or of the one indexed before it, and so on
+/// Events of the entity with the last index event of a group, i.e. the index entity with the last index event of a type
+/// whose data starts with the marshalled group, ordered by data, or of the one before it, and so on
 public class EventsByLastIndexEvent {
 
   private final DataSource dataSource;
@@ -39,12 +40,12 @@ public class EventsByLastIndexEvent {
 
         SELECT TOP(1) @entityId=EntityId
         FROM (
-          SELECT TOP(:position) EntityId, Sequence
-          FROM [{schema}].[IndexEvent] WITH (INDEX(ixData_Type_Sequence))
-          WHERE Data=:key AND Type=:type
-          ORDER BY Sequence DESC
+          SELECT TOP(:position) EntityId, Data
+          FROM [{schema}].[IndexEvent] WITH (INDEX(ixType_Data))
+          WHERE Type=:type AND Data >= :group AND Data < :groupEnd
+          ORDER BY Data DESC
         ) Indexed
-        ORDER BY Sequence ASC;
+        ORDER BY Data ASC;
 
         SELECT @entityId AS EntityId;
 
@@ -55,9 +56,11 @@ public class EventsByLastIndexEvent {
         """.replace("{schema}", schemaName);
   }
 
-  /// Completes empty if no entity is indexed by the key. If fewer entities than the position are indexed by it, the
-  /// first one is given.
-  public Mono<EventLog> execute(EntityModel entityModel, List<EventType<?, ?>> eventTypes, UUID type, byte[] key, int position) {
+  /// Completes empty if the group has no index events. If it has fewer index events than the position, the entity of
+  /// the first one is given.
+  ///
+  /// @param group the marshalled group, i.e. the prefix of the data of its index events
+  public Mono<EventLog> execute(EntityModel entityModel, List<EventType<?, ?>> eventTypes, UUID type, byte[] group, int position) {
     return Mono.fromCallable(() -> {
       try (
           var connection = dataSource.getConnection();
@@ -65,7 +68,8 @@ public class EventsByLastIndexEvent {
               sql,
               Map.of(
                   "type", new Parameter<>(UUID.class, type),
-                  "key", new Parameter<>(byte[].class, key),
+                  "group", new Parameter<>(byte[].class, group),
+                  "groupEnd", new Parameter<>(byte[].class, end(group)),
                   "position", new Parameter<>(Integer.class, position)
               ),
               connection
@@ -89,6 +93,18 @@ public class EventsByLastIndexEvent {
         return new EventLog(entityModel, new EntityId.UUID(entityId), Collections.unmodifiableList(events));
       }
     });
+  }
+
+  /// The least value greater than all values starting with the prefix
+  private static byte[] end(byte[] prefix) {
+    byte[] end = Arrays.copyOf(prefix, prefix.length);
+    for (int i = end.length - 1; i >= 0; i--) {
+      if (end[i] != (byte) 0xFF) {
+        end[i]++;
+        return Arrays.copyOf(end, i + 1);
+      }
+    }
+    throw new IllegalArgumentException("Prefix has no end, as all its bytes are 0xFF");
   }
 
 }

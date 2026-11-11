@@ -9,6 +9,7 @@ import static com.github.thxmasj.backend.core.EntitySelector.secondToLastIndexed
 import static com.github.thxmasj.backend.core.EventTrigger.trigger;
 import static com.github.thxmasj.backend.core.TransitionModelBuilder.WithEvent.onEvent;
 import static com.github.thxmasj.backend.core.Tuples.tuple;
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.github.thxmasj.backend.core.BasicEventType;
@@ -22,6 +23,7 @@ import com.github.thxmasj.backend.core.EventLog;
 import com.github.thxmasj.backend.core.EventTrigger;
 import com.github.thxmasj.backend.core.EventTrigger.EventSpec;
 import com.github.thxmasj.backend.core.EventType;
+import com.github.thxmasj.backend.core.GroupedDataType;
 import com.github.thxmasj.backend.core.IdEntityModel;
 import com.github.thxmasj.backend.core.IndexEntityModel;
 import com.github.thxmasj.backend.core.State;
@@ -29,10 +31,12 @@ import com.github.thxmasj.backend.core.StateMachine;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.backend.core.Tuples.Tuple2;
 import com.github.thxmasj.backend.core.test.Init;
+import java.nio.ByteBuffer;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -47,7 +51,26 @@ public class IdEventTest {
 
   static IdEntityModel Ids = IdEntityModel.of("Ids", UUID.fromString("9a7c5e3b-1d2f-4a6b-8c0e-4f6a8b0c2d4e"), AccountNumber, Alias);
 
-  static EventType<String, String> StatementOfAccount = BasicEventType.of("StatementOfAccount", UUID.fromString("b9f6e6a4-7a0d-4c1f-a5a9-1f7b0c8e3d42"), DataType.string());
+  record StatementNumber(String account, long number) {}
+
+  /// Statement numbers grouped by account and ordered by number
+  static class StatementNumberDataType implements GroupedDataType<StatementNumber, String> {
+    @Override public String name() {return "StatementNumber";}
+    @Override public byte[] marshalGroup(String account) {
+      byte[] bytes = account.getBytes(UTF_8);
+      return Arrays.copyOf(bytes, bytes.length + 1);
+    }
+    @Override public byte[] marshal(StatementNumber value) {
+      byte[] group = marshalGroup(value.account());
+      return ByteBuffer.allocate(group.length + Long.BYTES).put(group).putLong(value.number()).array();
+    }
+    @Override public StatementNumber unmarshal(byte[] value) {
+      int accountLength = value.length - Long.BYTES - 1;
+      return new StatementNumber(new String(value, 0, accountLength, UTF_8), ByteBuffer.wrap(value, accountLength + 1, Long.BYTES).getLong());
+    }
+  }
+
+  static EventType<StatementNumber, StatementNumber> StatementOfAccount = BasicEventType.of("StatementOfAccount", UUID.fromString("b9f6e6a4-7a0d-4c1f-a5a9-1f7b0c8e3d42"), new StatementNumberDataType());
   static IndexEntityModel Index = IndexEntityModel.of("Index", UUID.fromString("2d4f6a8c-0e1b-4c3d-9e5f-7a9b1c3d5e7f"), StatementOfAccount);
 
   static EntityModel Account = EntityModel.of("Account", UUID.fromString("5d1b3c86-1b0e-4f7e-8a8c-2d6c9f0b7e15"));
@@ -55,7 +78,7 @@ public class IdEventTest {
 
   static EventType<String, String> Open = BasicEventType.of("Open", UUID.fromString("a2d4f6b8-1c3e-4a5b-8d7f-9e0a1b2c3d4e"), DataType.string());
   static EventType<Void, Void> Touch = BasicEventType.of("Touch", UUID.fromString("f1e2d3c4-b5a6-4978-8a6b-5c4d3e2f1a0b"));
-  static EventType<String, String> Issue = BasicEventType.of("Issue", UUID.fromString("3b5d7f9a-2c4e-4a6b-8c0d-1e2f3a4b5c6d"), DataType.string());
+  static EventType<StatementNumber, StatementNumber> Issue = BasicEventType.of("Issue", UUID.fromString("3b5d7f9a-2c4e-4a6b-8c0d-1e2f3a4b5c6d"), DataType.json(StatementNumber.class));
   static EventType<Void, String> Read = new ReadOnly<>("Read", UUID.fromString("7c9e1a3b-5d7f-4b9a-8c1e-3f5a7b9c1d2e"), DataType.none(), DataType.string());
 
   private static final String schema = UUID.randomUUID().toString();
@@ -131,10 +154,10 @@ public class IdEventTest {
   }
 
   @Test
-  public void entityIsFoundByTheLastIndexEventsOfAKey() {
+  public void entityIsFoundByTheLastIndexEventsOfAGroup() {
     List<UUID> issued = new ArrayList<>();
-    for (String account : List.of("A", "A", "B", "A"))
-      issued.add(machine.onEvent(trigger(Issue, Statement), account).blockFirst().entityId());
+    for (var number : List.of(new StatementNumber("A", 1), new StatementNumber("A", 2), new StatementNumber("B", 1), new StatementNumber("A", 3)))
+      issued.add(machine.onEvent(trigger(Issue, Statement), number).blockFirst().entityId());
 
     assertEquals(issued.get(3).toString(), read(lastIndexed(StatementOfAccount, "A")));
     assertEquals(issued.get(1).toString(), read(secondToLastIndexed(StatementOfAccount, "A")));
@@ -144,13 +167,13 @@ public class IdEventTest {
   }
 
   @Test
-  public void entitiesIndexedAtTheSameTimeAreOrderedByIndexing() {
+  public void groupIsOrderedByDataNotByTimeOfIndexing() {
     StateMachine frozen = stateMachine(UUID.randomUUID().toString(), Clock.fixed(Instant.parse("2026-11-11T12:00:00Z"), ZoneOffset.UTC));
     List<UUID> issued = new ArrayList<>();
-    for (int i = 0; i < 3; i++)
-      issued.add(frozen.onEvent(trigger(Issue, Statement), "C").blockFirst().entityId());
+    for (long number : List.of(10L, 9L, 2L))
+      issued.add(frozen.onEvent(trigger(Issue, Statement), new StatementNumber("C", number)).blockFirst().entityId());
 
-    assertEquals(issued.get(2).toString(), read(frozen, lastIndexed(StatementOfAccount, "C")));
+    assertEquals(issued.get(0).toString(), read(frozen, lastIndexed(StatementOfAccount, "C")));
     assertEquals(issued.get(1).toString(), read(frozen, secondToLastIndexed(StatementOfAccount, "C")));
   }
 

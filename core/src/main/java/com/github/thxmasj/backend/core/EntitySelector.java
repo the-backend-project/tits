@@ -53,22 +53,23 @@ public sealed class EntitySelector permits ById, ByIdFromSession, ByIdEvent, ByL
     return new ByIdEvent<>(type, id, NeverCreate, fallback);
   }
 
-  /// The entity last indexed by the key, i.e. having the last index event of the type with the key as data
-  public static <T> ByLastIndexed<T> lastIndexed(EventType<?, T> type, T key) {
-    return lastIndexed(type, key, NeverCreate);
+  /// The entity with the last index event of a group, i.e. the last of the index events of the type whose data is in
+  /// the group, as ordered by the type's GroupedDataType
+  public static <G> ByLastIndexed<G> lastIndexed(EventType<?, ?> type, G group) {
+    return lastIndexed(type, group, NeverCreate);
   }
 
-  public static <T> ByLastIndexed<T> lastIndexed(EventType<?, T> type, T key, CreationMode creationMode) {
-    return new ByLastIndexed<>(type, key, creationMode, 1);
+  public static <G> ByLastIndexed<G> lastIndexed(EventType<?, ?> type, G group, CreationMode creationMode) {
+    return new ByLastIndexed<>(type, group, creationMode, 1);
   }
 
-  /// The entity indexed by the key before the last one, or the last one if it is the only one
-  public static <T> ByLastIndexed<T> secondToLastIndexed(EventType<?, T> type, T key) {
-    return secondToLastIndexed(type, key, NeverCreate);
+  /// The entity with the index event before the last one of a group, or the last one if it is the only one
+  public static <G> ByLastIndexed<G> secondToLastIndexed(EventType<?, ?> type, G group) {
+    return secondToLastIndexed(type, group, NeverCreate);
   }
 
-  public static <T> ByLastIndexed<T> secondToLastIndexed(EventType<?, T> type, T key, CreationMode creationMode) {
-    return new ByLastIndexed<>(type, key, creationMode, 2);
+  public static <G> ByLastIndexed<G> secondToLastIndexed(EventType<?, ?> type, G group, CreationMode creationMode) {
+    return new ByLastIndexed<>(type, group, creationMode, 2);
   }
 
   public enum CreationMode{AlwaysCreate, CreateIfNotExists, NeverCreate}
@@ -142,26 +143,26 @@ public sealed class EntitySelector permits ById, ByIdFromSession, ByIdEvent, ByL
     }
   }
 
-  public static final class ByLastIndexed<T> extends EntitySelector {
+  public static final class ByLastIndexed<G> extends EntitySelector {
 
-    private final EventType<?, T> type;
-    private final T key;
+    private final EventType<?, ?> type;
+    private final G group;
     private final int position;
 
     /// @param position 1 for the last entity, 2 for the one before it, and so on
-    public ByLastIndexed(EventType<?, T> type, T key, CreationMode creationMode, int position) {
+    public ByLastIndexed(EventType<?, ?> type, G group, CreationMode creationMode, int position) {
       super(creationMode, null);
       this.type = type;
-      this.key = key;
+      this.group = group;
       this.position = position;
     }
 
-    public EventType<?, T> type() {
+    public EventType<?, ?> type() {
       return type;
     }
 
-    public T key() {
-      return key;
+    public G group() {
+      return group;
     }
 
     public int position() {

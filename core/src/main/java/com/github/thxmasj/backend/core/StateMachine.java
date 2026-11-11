@@ -766,16 +766,19 @@ public class StateMachine implements AutoCloseable {
     };
   }
 
-  private <T> Mono<EventLog> eventLog(ByLastIndexed<T> selector, EntityModel entityModel) {
+  @SuppressWarnings("unchecked")
+  private <G> Mono<EventLog> eventLog(ByLastIndexed<G> selector, EntityModel entityModel) {
+    if (!(selector.type().outputDataType() instanceof GroupedDataType<?, ?> dataType))
+      throw new IllegalArgumentException("Data type of index event type " + selector.type().name() + " is not grouped");
     Mono<EventLog> log = eventsByLastIndexEvent.execute(
         entityModel,
         eventTypesByEntityModel.get(entityModel),
         selector.type().id(),
-        selector.type().outputDataType().marshal(selector.key()),
+        ((GroupedDataType<?, G>) dataType).marshalGroup(selector.group()),
         selector.position()
     );
     return switch (selector.creationMode()) {
-      case NeverCreate -> log.switchIfEmpty(Mono.error(() -> new EntityGroupNotInitialised(entityModel, selector.type(), selector.key())));
+      case NeverCreate -> log.switchIfEmpty(Mono.error(() -> new EntityGroupNotInitialised(entityModel, selector.type(), selector.group())));
       case CreateIfNotExists -> log.switchIfEmpty(Mono.fromSupplier(() -> emptyEventLog(entityModel)));
       case AlwaysCreate -> throw new IllegalStateException("Unexpected value: " + selector.creationMode());
     };
