@@ -3,8 +3,8 @@
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <parent>
-    <groupId>com.github.thxmasj</groupId>
-    <artifactId>state-machine-parent</artifactId>
+    <groupId>com.github.thxmasj.backend</groupId>
+    <artifactId>backend-parent</artifactId>
     <version>0.3.0-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
@@ -13,7 +13,7 @@
   <artifactId>demo</artifactId>
 
   <properties>
-    <java.module.name>com.github.thxmasj.statemachine.demo</java.module.name>
+    <java.module.name>com.github.thxmasj.backend.demo</java.module.name>
     <!-- Not a library -->
     <maven.deploy.skip>true</maven.deploy.skip>
   </properties>
@@ -27,7 +27,7 @@
         <configuration>
           <archive>
             <manifest>
-              <mainClass>com.github.thxmasj.statemachine.demo.Demo</mainClass>
+              <mainClass>com.github.thxmasj.backend.demo.Demo</mainClass>
               <addClasspath>true</addClasspath>
               <classpathPrefix>lib/</classpathPrefix>
             </manifest>
@@ -55,7 +55,7 @@
 
   <dependencies>
     <dependency>
-      <groupId>com.github.thxmasj</groupId>
+      <groupId>com.github.thxmasj.backend</groupId>
       <artifactId>http-inbox</artifactId>
       <version>${project.version}</version>
     </dependency>

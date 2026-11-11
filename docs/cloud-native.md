@@ -23,6 +23,8 @@ The image can also be built alone, from the repository root:
 docker build -f demo/Dockerfile -t tits-demo .
 ```
 
+To run the demo in Azure, see [Deploying to Azure Functions](azure-functions.md).
+
 The application without native compilation is an ordinary Maven module. `DemoTest` runs it against the test database
 the build uses (see `bin/start-mssql.sh`).
 
@@ -34,7 +36,7 @@ JVM with the GraalVM tracing agent. Record it again after changing the demo or t
 
 ```shell
 mvn clean package -pl demo -am -DskipTests -Dmaven.compiler.release=25
-agent=-agentlib:native-image-agent=config-merge-dir=demo/src/main/resources/META-INF/native-image/com.github.thxmasj/demo
+agent=-agentlib:native-image-agent=config-merge-dir=demo/src/main/resources/META-INF/native-image/com.github.thxmasj.backend/demo
 java $agent -jar demo/target/demo.jar migrate
 java $agent -jar demo/target/demo.jar
 ```
@@ -116,10 +118,7 @@ without changing the libraries.
 ### Admin processes
 
 - **Schema creation is coupled with the state machine.** The `StateMachine` constructor creates the schema when given a
-  schema data source. To create the schema as a separate admin process, the demo calls `CreateSchema` directly, and has
-  to compute its list of secondary id models the same way `StateMachine` does. If the two ever differ, the checksum of
-  the schema does not match and the application fails to start. A public migration entry point taking the transition
-  models would avoid this.
+  schema data source. To create the schema as a separate admin process, the demo calls `CreateSchema` directly.
 - **No schema evolution.** A schema that differs from what the code expects is rejected with a checksum mismatch.
   There is no way to migrate an existing schema to a new version.
 
