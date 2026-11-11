@@ -5,6 +5,7 @@ repo_name = "the-backend-project/tits"
 extra_css = ["stylesheets/extra.css"]
 nav = [
   { "Overview" = "index.md" },
+  { "Data model" = "data-model.md" },
   { "Templates" = [
     { "Batching" = "batching.md" },
     { "Card payments" = [
