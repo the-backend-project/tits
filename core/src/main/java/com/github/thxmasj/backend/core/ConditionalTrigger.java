@@ -4,7 +4,7 @@ import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.UUID;
 
-public record ConditionTrigger<T>(
+public record ConditionalTrigger<T>(
     UUID id,
     EventReference triggerEvent,
     EntityModel entityModel,

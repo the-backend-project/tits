@@ -3,7 +3,7 @@ package com.github.thxmasj.backend.core.database.mssql;
 import static java.util.stream.Collectors.joining;
 
 import com.github.thxmasj.backend.core.BasicEventType;
-import com.github.thxmasj.backend.core.ConditionTrigger;
+import com.github.thxmasj.backend.core.ConditionalTrigger;
 import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.DelayedEvent;
 import com.github.thxmasj.backend.core.EntityId;
@@ -55,20 +55,20 @@ public class ChangeState {
     if (change.triggerType() != null) {
       spec.bind("triggerId", change.triggerId());
     }
-    if (change.conditionTrigger() != null) {
+    if (change.conditionalTrigger() != null) {
       spec
-          .bind("conditionTriggerId", change.conditionTrigger().id())
-          .bind("type", change.conditionTrigger().type().id())
-          .bindNullable("data", byte[].class, marshal(change.conditionTrigger()))
-          .bind("conditionEntityModelId", change.conditionTrigger().entityModel().id())
-          .bind("triggerEntityId", change.conditionTrigger().triggerEvent().entityId())
-          .bind("triggerEventNumber", change.conditionTrigger().triggerEvent().eventNumber())
-          .bind("lastTypes", change.conditionTrigger().lastTypes().stream()
+          .bind("conditionalTriggerId", change.conditionalTrigger().id())
+          .bind("type", change.conditionalTrigger().type().id())
+          .bindNullable("data", byte[].class, marshal(change.conditionalTrigger()))
+          .bind("conditionEntityModelId", change.conditionalTrigger().entityModel().id())
+          .bind("triggerEntityId", change.conditionalTrigger().triggerEvent().entityId())
+          .bind("triggerEventNumber", change.conditionalTrigger().triggerEvent().eventNumber())
+          .bind("lastTypes", change.conditionalTrigger().lastTypes().stream()
               .map(t -> t.id().toString())
               .collect(Collectors.joining(",")))
-          .bind("referenceType", change.conditionTrigger().referenceType().id())
-          .bind("indexKey", DataType.uuid().marshal(change.conditionTrigger().indexKey()))
-          .bind("correlationId", change.conditionTrigger().correlationId());
+          .bind("referenceType", change.conditionalTrigger().referenceType().id())
+          .bind("indexKey", DataType.uuid().marshal(change.conditionalTrigger().indexKey()))
+          .bind("correlationId", change.conditionalTrigger().correlationId());
     }
     if (change.delayedEvent() != null) {
       ZonedDateTime deadline = change.delayedEvent().after();
@@ -85,8 +85,8 @@ public class ChangeState {
     return delayedEvent.type().inputDataType().marshal(delayedEvent.data());
   }
 
-  private static <T> byte[] marshal(ConditionTrigger<T> conditionTrigger) {
-    return conditionTrigger.type().inputDataType().marshal(conditionTrigger.data());
+  private static <T> byte[] marshal(ConditionalTrigger<T> conditionalTrigger) {
+    return conditionalTrigger.type().inputDataType().marshal(conditionalTrigger.data());
   }
 
   public interface Change {
@@ -99,7 +99,7 @@ public class ChangeState {
 
     DelayedEvent<?> delayedEvent();
 
-    default ConditionTrigger<?> conditionTrigger() {
+    default ConditionalTrigger<?> conditionalTrigger() {
       return null;
     }
 
@@ -118,16 +118,16 @@ public class ChangeState {
       return null;
     }
 
-    static Change fromConditionTrigger(ConditionTrigger<?> conditionTrigger) {
+    static Change fromConditionalTrigger(ConditionalTrigger<?> conditionalTrigger) {
       return new Change() {
         @Override
         public EntityModel entityModel() {
-          return conditionTrigger.entityModel();
+          return conditionalTrigger.entityModel();
         }
 
         @Override
         public EntityId entityId() {
-          return new EntityId.UUID(conditionTrigger.entityId());
+          return new EntityId.UUID(conditionalTrigger.entityId());
         }
 
         @Override
@@ -141,15 +141,15 @@ public class ChangeState {
         }
 
         @Override
-        public ConditionTrigger<?> conditionTrigger() {
-          return conditionTrigger;
+        public ConditionalTrigger<?> conditionalTrigger() {
+          return conditionalTrigger;
         }
 
         @Override
         public String toString() {
           return entityModel().name() + ":" +
-              conditionTrigger.entityId() + ":trigger(condition):[" +
-              conditionTrigger.type().name() + "]";
+              conditionalTrigger.entityId() + ":trigger(conditional):[" +
+              conditionalTrigger.type().name() + "]";
         }
 
       };
@@ -258,7 +258,7 @@ public class ChangeState {
             changes.get(i).entityModel(),
             changes.get(i).newEvent(),
             changes.get(i).delayedEvent(),
-            changes.get(i).conditionTrigger(),
+            changes.get(i).conditionalTrigger(),
             changes.get(i).triggerType()
         )).collect(joining("\n")) +
             """
@@ -289,7 +289,7 @@ public class ChangeState {
       EntityModel entityModel,
       Event<?> event,
       DelayedEvent<?> delayedEvent,
-      ConditionTrigger<?> conditionTrigger,
+      ConditionalTrigger<?> conditionalTrigger,
       TriggerType triggerType
   ) {
     String sql =
@@ -348,19 +348,19 @@ public class ChangeState {
           )
           """.replace("{schema}", schema)
               .replace("{changeIndex}", String.valueOf(changeIndex));
-      if (triggerType == TriggerType.CONDITION) {
+      if (triggerType == TriggerType.CONDITIONAL) {
         sql +=
             """
-            DELETE [{schema}].[ConditionTrigger]
+            DELETE [{schema}].[ConditionalTrigger]
             WHERE Id=:triggerId;
             """.replace("{schema}", schema);
       }
     }
 
-    if (conditionTrigger != null) {
+    if (conditionalTrigger != null) {
       sql +=
           """
-          INSERT INTO [{schema}].[ConditionTrigger] (
+          INSERT INTO [{schema}].[ConditionalTrigger] (
             Id,
             EntityId,
             EntityModelId,
@@ -374,7 +374,7 @@ public class ChangeState {
             IndexKey,
             CorrelationId
           ) VALUES (
-            :conditionTriggerId,
+            :conditionalTriggerId,
             @entityId{changeIndex},
             :conditionEntityModelId,
             :triggerEntityId,

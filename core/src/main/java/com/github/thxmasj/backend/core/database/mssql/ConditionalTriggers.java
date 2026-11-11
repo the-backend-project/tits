@@ -2,7 +2,7 @@ package com.github.thxmasj.backend.core.database.mssql;
 
 import static java.lang.String.format;
 
-import com.github.thxmasj.backend.core.ConditionTrigger;
+import com.github.thxmasj.backend.core.ConditionalTrigger;
 import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.EventReference;
@@ -22,7 +22,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import reactor.core.publisher.Flux;
 
-public class ConditionTriggers {
+public class ConditionalTriggers {
 
   private final Client databaseClient;
   private final Clock clock;
@@ -30,7 +30,7 @@ public class ConditionTriggers {
   private final Map<UUID, EntityModel> entityModels;
   private final String sql;
 
-  public ConditionTriggers(
+  public ConditionalTriggers(
       Client databaseClient,
       Map<EntityModel, List<EventType<?, ?>>> eventTypesByEntityModel,
       Clock clock,
@@ -49,7 +49,7 @@ public class ConditionTriggers {
     this.sql =
         """
         SELECT TOP (:limit) ce.Id, ce.EntityId, ce.EntityModelId, ce.TriggerEntityId, ce.TriggerEventNumber, ce.Type, ce.Data, ce.Timestamp, ce.LastTypes, ce.ReferenceType, ce.IndexKey, ce.CorrelationId
-        FROM [{schema}].[ConditionTrigger] ce
+        FROM [{schema}].[ConditionalTrigger] ce
         WHERE EXISTS (
             SELECT 1 FROM [{schema}].[IndexEvent] ie
             WHERE ie.Data = ce.IndexKey AND ie.Type = ce.ReferenceType
@@ -69,17 +69,17 @@ public class ConditionTriggers {
   }
 
   /**
-   * The oldest waiting condition triggers whose condition is met, at most the given limit.
+   * The oldest waiting conditional triggers whose condition is met, at most the given limit.
    */
-  public Flux<ConditionTrigger<?>> execute(int limit) {
+  public Flux<ConditionalTrigger<?>> execute(int limit) {
     return databaseClient.sql(sql)
-        .name("ConditionTriggers")
+        .name("ConditionalTriggers")
         .bind("limit", limit)
-        .<ConditionTrigger<?>>map(this::map)
+        .<ConditionalTrigger<?>>map(this::map)
         .all();
   }
 
-  private ConditionTrigger<?> map(Row row) {
+  private ConditionalTrigger<?> map(Row row) {
     UUID entityModelId = row.get("EntityModelId", UUID.class);
     EntityModel entityModel = entityModels.get(entityModelId);
     if (entityModel == null)
@@ -120,7 +120,7 @@ public class ConditionTriggers {
         .orElseThrow(() -> new MappingFailure(format("No event type for type id %s", eventTypeId)));
   }
 
-  private <T> ConditionTrigger<T> create(
+  private <T> ConditionalTrigger<T> create(
       UUID id,
       EventReference triggerEvent,
       EntityModel entityModel,
@@ -133,7 +133,7 @@ public class ConditionTriggers {
       UUID indexKey,
       String correlationId
   ) {
-    return new ConditionTrigger<>(
+    return new ConditionalTrigger<>(
         id,
         triggerEvent,
         entityModel,

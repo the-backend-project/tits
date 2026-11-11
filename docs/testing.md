@@ -64,7 +64,7 @@ All operations are reactive, like the rest of the state machine, and complete em
 | `entitiesByIndex(indexType, key)` | The event logs of the entities indexed by a key, e.g. the outbox requests of a payment |
 | `lastIndexed(entityModel, indexType, group)` | The event log of the last entity of a group, e.g. the open settlement of a merchant |
 | `delayedTrigger(entityId)` | The event the entity is waiting for, with its deadline and the number of attempts so far |
-| `conditionTriggers(entityId)` | The events the entity is waiting for on conditions on other entities |
+| `conditionalTriggers(entityId)` | The events the entity is waiting for on conditions on other entities |
 
 ### Forcing states
 

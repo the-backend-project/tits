@@ -21,7 +21,7 @@ import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext.Acti
 import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext.AssembledChangeContext;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext.ChoiceChangeContext;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext.CombinedChangeContext;
-import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext.ConditionTriggerChangeContext;
+import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext.ConditionalTriggerChangeContext;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext.DelayedTriggerChangeContext;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext.InitialChangeContext;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext.OutputChangeContext;
@@ -190,14 +190,14 @@ public class TransitionModelBuilder<I, T, O> {
       }
     }
 
-    record ConditionTriggerChangeContext<T, I1>(
+    record ConditionalTriggerChangeContext<T, I1>(
         ChangeContext<T> previous,
-        ConditionTrigger<I1> conditionTrigger
+        ConditionalTrigger<I1> conditionalTrigger
     ) implements ChangeContext<T> {
       @Override public String toString() {
-        return "Condition trigger: " + conditionTrigger.entityModel().name() + "/" + conditionTrigger.type().name() + "/"
-            + conditionTrigger.entityId() + " when last event is one of "
-            + conditionTrigger.lastTypes().stream().map(EventType::name).toList();
+        return "Conditional trigger: " + conditionalTrigger.entityModel().name() + "/" + conditionalTrigger.type().name() + "/"
+            + conditionalTrigger.entityId() + " when last event is one of "
+            + conditionalTrigger.lastTypes().stream().map(EventType::name).toList();
       }
 
       @Override
@@ -990,13 +990,13 @@ public class TransitionModelBuilder<I, T, O> {
   ) {
     Function<Mono<ChangeContext<T>>, Mono<ChangeContext<T>>> f =
         changeContext -> changeContext
-            // The event is always stored as a ConditionTrigger. If its condition is already met it is fired right after
+            // The event is always stored as a ConditionalTrigger. If its condition is already met it is fired right after
             // the triggering change is committed, otherwise it is fired by the poller once the condition is met.
             .flatMap(c -> withData(conditionalTrigger, reactiveDataAdapter, c).map(eventTrigger -> {
               var condition = eventTrigger.condition();
-              return new ConditionTriggerChangeContext<>(
+              return new ConditionalTriggerChangeContext<>(
                   c,
-                  new ConditionTrigger<>(
+                  new ConditionalTrigger<>(
                       UUID.randomUUID(),
                       new EventReference(
                           c.initialChangeContext().log().entityId().value(),
