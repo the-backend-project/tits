@@ -45,6 +45,10 @@ public interface DataType<T> {
     return new StringDataType();
   }
 
+  static DataType<EventReference> eventReference() {
+    return new EventReferenceDataType();
+  }
+
   static DataType<byte[]> binary() {
     return new BinaryDataType();
   }
@@ -175,6 +179,52 @@ public interface DataType<T> {
     @Override
     public boolean equals(Object obj) {
       return obj instanceof UUIDDataType;
+    }
+  }
+
+  /// Marshals an event reference as its entity id followed by its event number, in 20 bytes. Unlike
+  /// [JsonDataType], it needs no reflection.
+  class EventReferenceDataType implements DataType<EventReference> {
+
+    private static final int LENGTH = 16 + 4;
+
+    @Override
+    public String name() {
+      return "event reference";
+    }
+
+    @Override
+    public EventReference unmarshal(byte[] value) {
+      if (value.length == 0) {
+        return null;
+      }
+      if (value.length != LENGTH) {
+        throw new IllegalArgumentException("Event reference must be exactly " + LENGTH + " bytes long, got " + value.length);
+      }
+      ByteBuffer buffer = ByteBuffer.wrap(value);
+      return new EventReference(new UUID(buffer.getLong(), buffer.getLong()), buffer.getInt());
+    }
+
+    @Override
+    public byte[] marshal(EventReference value) {
+      if (value == null) {
+        return new byte[0];
+      }
+      return ByteBuffer.allocate(LENGTH)
+          .putLong(value.entityId().getMostSignificantBits())
+          .putLong(value.entityId().getLeastSignificantBits())
+          .putInt(value.eventNumber())
+          .array();
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+      return obj instanceof EventReferenceDataType;
+    }
+
+    @Override
+    public int hashCode() {
+      return EventReferenceDataType.class.hashCode();
     }
   }
 

@@ -15,7 +15,7 @@ public class ResponseEventType<I> implements EventType<I, Tuple2<HttpResponseMes
   private final DataType<I> inputDataType;
   public static final DataType<Tuple2<HttpResponseMessage, EventReference>> outputDataType = DataType.tuple(
       HttpDataType.forResponse(),
-      DataType.json(EventReference.class)
+      DataType.eventReference()
   );
 
   public ResponseEventType(String name, UUID id, DataType<I> inputDataType) {
