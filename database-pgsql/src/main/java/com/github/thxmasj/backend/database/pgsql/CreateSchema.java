@@ -3,19 +3,20 @@ package com.github.thxmasj.backend.database.pgsql;
 import static com.github.thxmasj.backend.database.pgsql.Names.quote;
 import static com.github.thxmasj.backend.database.pgsql.Names.table;
 
-import com.github.thxmasj.backend.core.database.Client;
 import java.nio.charset.StandardCharsets;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.Set;
+import java.sql.Statement;
 import java.util.zip.CRC32;
+import javax.sql.DataSource;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /// The same tables as for SQL Server, with PostgreSQL types. Index names are prefixed with their table, as they are
 /// unique within the schema and not only within the table.
 public class CreateSchema {
-
-  // undefined_table and invalid_schema_name
-  private static final Set<String> missingSchemaStates = Set.of("42P01", "3F000");
 
   private final String schema;
   private final String role;
@@ -132,26 +133,67 @@ public class CreateSchema {
             .replace("{role}", quote(role));
   }
 
-  public Mono<Integer> execute(Client databaseClient) {
-    return databaseClient.sql("SELECT Checksum FROM " + table(schema, "Metadata"))
-        .map(row -> row.get("Checksum", Long.class))
-        .one()
-        .onErrorResume(
-            e -> e.getCause() instanceof SQLException s && missingSchemaStates.contains(s.getSQLState()),
-            _ -> Mono.empty()
-        )
-        .flatMap(checksum -> checksum == checksum() ?
-            Mono.just(0) :
-            Mono.error(new RuntimeException("Checksum mismatch on schema " + schema + ". Used following clear text: " + coreSql()))
-        )
-        // The statements are executed in a single implicit transaction
-        .switchIfEmpty(databaseClient.sql(createSql()).name("CreateSchema").update().thenReturn(1))
+  /// Creates the schema, or verifies the checksum of the existing one. Completes with 0 if the schema exists.
+  ///
+  /// The check and the creation are done in a transaction holding an advisory lock on the schema name, so that state
+  /// machines initialising at the same time do not compete for the creation.
+  public Mono<Integer> execute(DataSource dataSource) {
+    return Mono.fromCallable(() -> {
+          try (Connection connection = dataSource.getConnection()) {
+            connection.setAutoCommit(false);
+            try {
+              int result = execute(connection);
+              connection.commit();
+              return result;
+            } catch (SQLException | RuntimeException e) {
+              connection.rollback();
+              throw e;
+            }
+          }
+        })
+        .subscribeOn(Schedulers.boundedElastic())
         .doOnNext(updateCount -> {
           if (updateCount == 0)
             System.out.println("Schema " + schema + " exists, checksum verified");
           else
             System.out.println("Schema " + schema + " created");
         });
+  }
+
+  private int execute(Connection connection) throws SQLException {
+    try (PreparedStatement lock = connection.prepareStatement("SELECT pg_advisory_xact_lock(hashtext(?))")) {
+      lock.setString(1, "CreateSchema " + schema);
+      lock.executeQuery().close();
+    }
+    Long checksum = existingChecksum(connection);
+    if (checksum == null) {
+      try (Statement create = connection.createStatement()) {
+        create.executeUpdate(createSql());
+      }
+      return 1;
+    }
+    if (checksum != checksum())
+      throw new RuntimeException("Checksum mismatch on schema " + schema + ". Used following clear text: " + coreSql());
+    return 0;
+  }
+
+  /// The checksum of the existing schema, or null if it does not exist
+  private Long existingChecksum(Connection connection) throws SQLException {
+    try (PreparedStatement exists = connection.prepareStatement("SELECT to_regclass(?) IS NOT NULL")) {
+      exists.setString(1, table(schema, "Metadata"));
+      try (ResultSet rs = exists.executeQuery()) {
+        rs.next();
+        if (!rs.getBoolean(1))
+          return null;
+      }
+    }
+    try (
+        Statement select = connection.createStatement();
+        ResultSet rs = select.executeQuery("SELECT Checksum FROM " + table(schema, "Metadata"))
+    ) {
+      rs.next();
+      return rs.getLong(1);
+    }
   }
 
 }

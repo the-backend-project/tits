@@ -1,9 +1,17 @@
 package com.github.thxmasj.backend.database.mssql;
 
-import com.github.thxmasj.backend.core.database.Client;
 import java.nio.charset.StandardCharsets;
+import java.sql.CallableStatement;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.sql.Types;
 import java.util.zip.CRC32;
+import javax.sql.DataSource;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 public class CreateSchema {
 
@@ -126,29 +134,87 @@ public class CreateSchema {
             .replace("{role}", role);
   }
 
-  public Mono<Integer> execute(Client databaseClient) {
-    return databaseClient.sql("SELECT Checksum FROM [{schema}].Metadata".replace("{schema}", schema))
-        .map(row -> row.get("Checksum", Long.class))
-        .one()
-        .onErrorResume((e) -> e.getCause().getMessage().equals("Invalid object name '" + schema + ".Metadata'.") ?
-            Mono.empty() :
-            Mono.error(e)
-        )
-        .flatMap(checksum -> checksum == checksum() ?
-            Mono.just(0) :
-            Mono.error(new RuntimeException("Checksum mismatch on schema " + schema + ". Used following clear text: " + coreSql()))
-        )
-        .switchIfEmpty(
-            databaseClient.sql("CREATE SCHEMA [" + schema + "]").name("CreateSchema0").update()
-                .onErrorResume(t -> t.getCause() != null && t.getCause().getMessage().equals("There is already an object named '" + schema + "' in the database."), _ -> Mono.just(0))
-                .then(databaseClient.sql(createSql()).name("CreateSchema1").update())
-        )
+  /// Creates the schema, or verifies the checksum of the existing one. Completes with 0 if the schema exists.
+  ///
+  /// The check and the creation are done holding an application lock on the schema name, so that state machines
+  /// initialising at the same time do not compete for the creation. The creation is done in a transaction.
+  public Mono<Integer> execute(DataSource dataSource) {
+    return Mono.fromCallable(() -> {
+          try (Connection connection = dataSource.getConnection()) {
+            // The lock is owned by the session, as a procedure call does not begin an implicit transaction
+            applock(connection, "sp_getapplock", "{? = call sp_getapplock(?, 'Exclusive', 'Session')}");
+            try {
+              connection.setAutoCommit(false);
+              int result = execute(connection);
+              connection.commit();
+              return result;
+            } catch (SQLException | RuntimeException e) {
+              connection.rollback();
+              throw e;
+            } finally {
+              connection.setAutoCommit(true);
+              applock(connection, "sp_releaseapplock", "{? = call sp_releaseapplock(?, 'Session')}");
+            }
+          }
+        })
+        .subscribeOn(Schedulers.boundedElastic())
         .doOnNext(updateCount -> {
           if (updateCount == 0)
             System.out.println("Schema " + schema + " exists, checksum verified");
           else
             System.out.println("Schema " + schema + " created");
         });
+  }
+
+  /// Gets or releases the application lock on the schema name. Getting it waits until the query times out.
+  private void applock(Connection connection, String procedure, String call) throws SQLException {
+    try (CallableStatement statement = connection.prepareCall(call)) {
+      statement.registerOutParameter(1, Types.INTEGER);
+      statement.setString(2, "CreateSchema " + schema);
+      statement.execute();
+      if (statement.getInt(1) < 0)
+        throw new RuntimeException(procedure + " on schema " + schema + " failed with " + statement.getInt(1));
+    }
+  }
+
+  private int execute(Connection connection) throws SQLException {
+    Long checksum = existingChecksum(connection);
+    if (checksum == null) {
+      try (Statement create = connection.createStatement()) {
+        if (!exists(connection, "SELECT SCHEMA_ID(?)", schema))
+          create.executeUpdate("CREATE SCHEMA [" + schema + "]");
+        create.executeUpdate(createSql());
+      }
+      return 1;
+    }
+    if (checksum != checksum())
+      throw new RuntimeException("Checksum mismatch on schema " + schema + ". Used following clear text: " + coreSql());
+    return 0;
+  }
+
+  /// The checksum of the existing schema, or null if it does not exist
+  private Long existingChecksum(Connection connection) throws SQLException {
+    if (!exists(connection, "SELECT OBJECT_ID(?, 'U')", "[" + schema + "].[Metadata]"))
+      return null;
+    try (
+        Statement select = connection.createStatement();
+        ResultSet rs = select.executeQuery("SELECT Checksum FROM [" + schema + "].[Metadata]")
+    ) {
+      rs.next();
+      return rs.getLong(1);
+    }
+  }
+
+  /// Whether the query of an object's id finds the named object
+  private static boolean exists(Connection connection, String sql, String name) throws SQLException {
+    try (PreparedStatement statement = connection.prepareStatement(sql)) {
+      statement.setString(1, name);
+      try (ResultSet rs = statement.executeQuery()) {
+        rs.next();
+        rs.getObject(1);
+        return !rs.wasNull();
+      }
+    }
   }
 
 }

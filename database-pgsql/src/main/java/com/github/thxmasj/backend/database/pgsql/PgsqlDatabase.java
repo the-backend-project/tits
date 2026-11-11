@@ -81,7 +81,7 @@ public class PgsqlDatabase implements Database {
 
   @Override
   public Mono<Integer> createSchema(DataSource schemaDataSource, String schemaName, String role) {
-    return new CreateSchema(schemaName, role).execute(client(schemaDataSource));
+    return new CreateSchema(schemaName, role).execute(schemaDataSource);
   }
 
 }

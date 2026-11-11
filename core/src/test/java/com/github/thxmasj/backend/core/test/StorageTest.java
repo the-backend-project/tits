@@ -26,8 +26,11 @@ import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Flux;
+import reactor.core.scheduler.Schedulers;
 
 /// Verifies the storage on the database selected for the tests (see [Init])
 @Tag("database")
@@ -108,6 +111,19 @@ public class StorageTest {
     assertThrows(IdEventAlreadyExists.class, () -> store(storage, person(bob, "Alice")));
 
     assertThrows(UnknownEntity.class, () -> storage.eventsByEntityId().execute(Person, List.of(Create), new EntityId.UUID(bob)).block());
+  }
+
+  @Test
+  public void schemaIsCreatedOnceWhenCreatedConcurrently() {
+    String schema = UUID.randomUUID().toString();
+
+    List<Integer> results = Flux.fromStream(IntStream.range(0, 5).boxed())
+        .flatMap(_ -> Storage.createSchema(Init.migrationDataSource(), schema, "Test").subscribeOn(Schedulers.boundedElastic()))
+        .collectList()
+        .block();
+
+    assertEquals(5, results.size());
+    assertEquals(4, results.stream().filter(result -> result == 0).count());
   }
 
 }
