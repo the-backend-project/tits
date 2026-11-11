@@ -6,6 +6,7 @@ import com.zaxxer.hikari.HikariDataSource;
 import com.zaxxer.hikari.pool.HikariPool;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.time.Duration;
 import javax.sql.DataSource;
 
 public class DataSourceBuilder {
@@ -31,7 +32,9 @@ public class DataSourceBuilder {
     HikariDataSource hikariDataSource = new HikariDataSource();
     hikariDataSource.setMaximumPoolSize(config.maximumPoolSize());
     hikariDataSource.setDataSource(dataSource);
-    // The pool starts on the first connection. Start it now to fail fast, as the HikariDataSource(HikariConfig) constructor does.
+    // Keep retrying the first connection instead of failing at once, so services wait for the database to come up
+    hikariDataSource.setInitializationFailTimeout(Duration.ofSeconds(90).toMillis());
+    // The pool starts on the first connection. Start it now, as the HikariDataSource(HikariConfig) constructor does.
     try (Connection _ = hikariDataSource.getConnection()) {
       return hikariDataSource;
     } catch (SQLException | HikariPool.PoolInitializationException e) {
