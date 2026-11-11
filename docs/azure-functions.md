@@ -105,7 +105,7 @@ Structured values are set with `--path`, for example `pulumi config set --path '
 
 ## Limitations
 
-- **Background work stops when the app scales to zero.** The state machine processes deadlines and forwards
+- **Background work stops when the app scales to zero.** The state machine processes delayed triggers and forwards
   outgoing requests in the background, which only happens while an instance of the function app is running. With no
   incoming requests, timeouts and retries are delayed until the next request starts an instance. Configure
   [always ready instances](https://learn.microsoft.com/azure/azure-functions/flex-consumption-how-to#set-always-ready-instance-counts)

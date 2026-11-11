@@ -39,11 +39,11 @@ import com.github.thxmasj.backend.core.database.mssql.ChangeState;
 import com.github.thxmasj.backend.core.database.mssql.ChangeState.Change;
 import com.github.thxmasj.backend.core.database.mssql.ConditionTriggers;
 import com.github.thxmasj.backend.core.database.mssql.CreateSchema;
-import com.github.thxmasj.backend.core.database.mssql.DeleteExpiredDeadline;
+import com.github.thxmasj.backend.core.database.mssql.DeleteDelayedTrigger;
 import com.github.thxmasj.backend.core.database.mssql.EventsByEntityId;
 import com.github.thxmasj.backend.core.database.mssql.EventsByIdEvent;
 import com.github.thxmasj.backend.core.database.mssql.EventsByLastIndexEvent;
-import com.github.thxmasj.backend.core.database.mssql.NextDeadline;
+import com.github.thxmasj.backend.core.database.mssql.NextDelayedTrigger;
 import jakarta.annotation.Nullable;
 import jakarta.validation.constraints.NotNull;
 import java.time.Clock;
@@ -81,8 +81,8 @@ public class StateMachine implements AutoCloseable {
   private final EventsByEntityId eventsByEntityId;
   private final EventsByIdEvent eventsByIdEvent;
   private final EventsByLastIndexEvent eventsByLastIndexEvent;
-  private final NextDeadline nextDeadline;
-  private final DeleteExpiredDeadline deleteExpiredDeadline;
+  private final NextDelayedTrigger nextDelayedTrigger;
+  private final DeleteDelayedTrigger deleteDelayedTrigger;
   private final ConditionTriggers conditionTriggers;
   private final Map<EntityModel, Traverser> traversers;
   private final Map<EntityModel, List<EventType<?, ?>>> eventTypesByEntityModel;
@@ -156,8 +156,8 @@ public class StateMachine implements AutoCloseable {
     this.eventsByEntityId = new EventsByEntityId(dataSource, entityModels, schemaName, clock);
     this.eventsByIdEvent = new EventsByIdEvent(dataSource, eventTypesByEntityModel, schemaName, clock);
     this.eventsByLastIndexEvent = new EventsByLastIndexEvent(dataSource, schemaName, clock);
-    this.nextDeadline = new NextDeadline(jdbcClient, eventTypes, clock, entityModels, schemaName);
-    this.deleteExpiredDeadline = new DeleteExpiredDeadline(jdbcClient, schemaName);
+    this.nextDelayedTrigger = new NextDelayedTrigger(jdbcClient, eventTypes, clock, entityModels, schemaName);
+    this.deleteDelayedTrigger = new DeleteDelayedTrigger(jdbcClient, schemaName);
     this.conditionTriggers = new ConditionTriggers(jdbcClient, eventTypesByEntityModel, clock, schemaName);
     this.listener = listener;
     if (withResolving) {
@@ -185,7 +185,7 @@ public class StateMachine implements AutoCloseable {
     System.out.println("Initialized " + getClass().getName() + " on database schema " + schemaName);
   }
 
-  /// Stops the workers resolving deadlines and condition triggers, waits for their ongoing work to complete, and closes
+  /// Stops the workers resolving delayed triggers and condition triggers, waits for their ongoing work to complete, and closes
   /// the data source if it is closeable, e.g. a connection pool. Requests should be stopped before this is called.
   @Override
   public void close() throws Exception {
@@ -207,52 +207,52 @@ public class StateMachine implements AutoCloseable {
 
   public enum ResolverStatus {Ok, Empty, Error}
 
-  private <T> InputEvent<T> inputEvent(Deadline<T> deadline) {
-    return new InputEvent<>(deadline.eventType(), deadline.data());
+  private <T> InputEvent<T> inputEvent(DelayedTrigger<T> delayedTrigger) {
+    return new InputEvent<>(delayedTrigger.eventType(), delayedTrigger.data());
   }
 
   /**
-   * Process the next delayed event that has reached its deadline.
+   * Process the next delayed event that has reached its delayedTrigger.
    */
   public Mono<ResolverStatus> resolveState() {
     var backoff = new DelaySpecification(ofSeconds(10), ofMinutes(10), ofHours(5), 1.5);
-    return nextDeadline.execute(backoff)
-        .doOnNext(d -> System.out.println(ZonedDateTime.now() + ": Next deadline: " + d))
-        .zipWhen(deadline -> eventsByEntityId.execute(deadline.entityModel(), eventTypesByEntityModel.get(deadline.entityModel()), deadline.entityId())
-            .switchIfEmpty(Mono.error(new RuntimeException("Unknown entity " + deadline.entityId().value() + " for delayed event")))
+    return nextDelayedTrigger.execute(backoff)
+        .doOnNext(d -> System.out.println(ZonedDateTime.now() + ": Next delayed trigger: " + d))
+        .zipWhen(delayedTrigger -> eventsByEntityId.execute(delayedTrigger.entityModel(), eventTypesByEntityModel.get(delayedTrigger.entityModel()), delayedTrigger.entityId())
+            .switchIfEmpty(Mono.error(new RuntimeException("Unknown entity " + delayedTrigger.entityId().value() + " for delayed event")))
         )
-        .flatMap(deadlineAndEventLog -> {
-          Deadline<?> deadline = deadlineAndEventLog.getT1();
-          EventLog eventLog = deadlineAndEventLog.getT2();
-          if (eventLog.events().getLast().eventNumber() + 1 != deadline.eventNumber()) {
-            System.out.println("Deleting scheduled event: Event number (" + deadline.eventNumber() + ") != event log's last number (" + eventLog.events().getLast().eventNumber() + ") + 1");
+        .flatMap(delayedTriggerAndEventLog -> {
+          DelayedTrigger<?> delayedTrigger = delayedTriggerAndEventLog.getT1();
+          EventLog eventLog = delayedTriggerAndEventLog.getT2();
+          if (eventLog.events().getLast().eventNumber() + 1 != delayedTrigger.eventNumber()) {
+            System.out.println("Deleting scheduled event: Event number (" + delayedTrigger.eventNumber() + ") != event log's last number (" + eventLog.events().getLast().eventNumber() + ") + 1");
             // Race! The state has already been resolved by another resolver or incoming request. Which is OK!
-            return deleteExpiredDeadline.execute(deadline.entityId().value(), deadline.eventNumber()).map(_ -> ResolverStatus.Ok);
+            return deleteDelayedTrigger.execute(delayedTrigger.entityId().value(), delayedTrigger.eventNumber()).map(_ -> ResolverStatus.Ok);
           }
-          System.out.println("Deadline eventNumber: " + deadline.eventNumber() + ", log's last event number: "
+          System.out.println("Delayed trigger eventNumber: " + delayedTrigger.eventNumber() + ", log's last event number: "
               + eventLog.lastEventNumber());
-          var currentState = traversers.get(deadline.entityModel()).currentState(eventLog);
+          var currentState = traversers.get(delayedTrigger.entityModel()).currentState(eventLog);
           if (currentState == null)
             return Mono.error(new RuntimeException(
                 "Invalid event log: " + eventLog.events().stream().map(Event::typeName).collect(joining(","))));
-          InputEvent<?> event = inputEvent(deadline);
+          InputEvent<?> event = inputEvent(delayedTrigger);
           System.out.println("resolveState with: " + event);
           return onEvent(
-              deadline.correlationId(),
+              delayedTrigger.correlationId(),
               event,
               eventLog,
               null
           )
               .flatMap(processResult -> switch (processResult) {
-                    // State is resolved and deadline already deleted by the change triggered by this event.
+                    // State is resolved and delayed trigger already deleted by the change triggered by this event.
                     case Accepted<?> _ -> Mono.just(ResolverStatus.Ok);
                     case Completed<?> _ -> Mono.just(ResolverStatus.Ok);
                     case ProcessResult<?> r -> Mono.error(new IllegalStateException("Unexpected result for state resolving: " + r));
                   }
-              ).contextWrite(Correlation.contextOf(deadline.correlationId()));
+              ).contextWrite(Correlation.contextOf(delayedTrigger.correlationId()));
         })
         .onErrorReturn(MappingFailure.class, ResolverStatus.Error)
-        .doOnError(e -> { if (listener != null) listener.processNextDeadlineFailed(e); })
+        .doOnError(e -> { if (listener != null) listener.processNextDelayedTriggerFailed(e); })
         .onErrorReturn(ResolverStatus.Error)
         .switchIfEmpty(Mono.just(ResolverStatus.Empty));
   }

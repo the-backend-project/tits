@@ -89,7 +89,7 @@ public class CreateSchema {
         GRANT INSERT, SELECT ON [{schema}].[IdEvent] TO [{role}];
         CREATE UNIQUE INDEX ixType_Data ON [{schema}].[IdEvent] (Type, Data);
 
-        CREATE TABLE [{schema}].[Timeout]
+        CREATE TABLE [{schema}].[DelayedTrigger]
         (
             EntityId      UNIQUEIDENTIFIER NOT NULL,
             EntityModelId UNIQUEIDENTIFIER NOT NULL,
@@ -101,9 +101,9 @@ public class CreateSchema {
             CorrelationId VARCHAR(36)      NOT NULL,
             Attempt       INT              NOT NULL
         );
-        GRANT INSERT, DELETE, SELECT, UPDATE ON [{schema}].[Timeout] TO [{role}];
-        CREATE UNIQUE INDEX ixEntityId ON [{schema}].[Timeout] (EntityId);
-        CREATE INDEX ixDeadline ON [{schema}].[Timeout] (Deadline);
+        GRANT INSERT, DELETE, SELECT, UPDATE ON [{schema}].[DelayedTrigger] TO [{role}];
+        CREATE UNIQUE INDEX ixEntityId ON [{schema}].[DelayedTrigger] (EntityId);
+        CREATE INDEX ixDeadline ON [{schema}].[DelayedTrigger] (Deadline);
 
         CREATE TABLE [{schema}].[ConditionTrigger]
         (

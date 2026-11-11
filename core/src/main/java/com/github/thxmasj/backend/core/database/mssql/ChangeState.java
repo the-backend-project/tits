@@ -329,7 +329,7 @@ public class ChangeState {
       }
       sql +=
           """
-          DELETE [{schema}].[Timeout] FROM [{schema}].[Timeout] WITH (INDEX([ixEntityId]))
+          DELETE [{schema}].[DelayedTrigger] FROM [{schema}].[DelayedTrigger] WITH (INDEX([ixEntityId]))
           WHERE EntityId=@entityId{changeIndex} AND EventNumber=:eventNumber - 1;
           """.replace("{changeIndex}", String.valueOf(changeIndex))
               .replace("{schema}", schema);
@@ -387,13 +387,13 @@ public class ChangeState {
     if (delayedEvent != null) {
       sql +=
           """
-          DELETE [{schema}].[Timeout] FROM [{schema}].[Timeout] WITH (INDEX([ixEntityId]))
+          DELETE [{schema}].[DelayedTrigger] FROM [{schema}].[DelayedTrigger] WITH (INDEX([ixEntityId]))
           WHERE EntityId=@entityId{changeIndex} AND EventNumber=:eventNumber - 1;
           """.replace("{changeIndex}", String.valueOf(changeIndex))
               .replace("{schema}", schema);
       sql +=
           """
-          INSERT INTO [{schema}].[Timeout] (
+          INSERT INTO [{schema}].[DelayedTrigger] (
             EntityId,
             EntityModelId,
             EventNumber,
