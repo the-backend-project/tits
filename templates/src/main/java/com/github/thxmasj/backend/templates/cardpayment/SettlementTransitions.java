@@ -18,7 +18,7 @@ import static com.github.thxmasj.backend.templates.cardpayment.Identifiers.Batch
 import static com.github.thxmasj.backend.templates.cardpayment.Identifiers.Index;
 import static com.github.thxmasj.backend.templates.cardpayment.Identifiers.Ids;
 import static com.github.thxmasj.backend.templates.cardpayment.Identifiers.MerchantId;
-import static com.github.thxmasj.backend.templates.cardpayment.Identifiers.SettlementOfMerchant;
+import static com.github.thxmasj.backend.templates.cardpayment.Identifiers.Batch;
 import static com.github.thxmasj.backend.templates.cardpayment.MerchantEvent.Get;
 import static com.github.thxmasj.backend.templates.cardpayment.PaymentState.Error;
 import static com.github.thxmasj.backend.templates.cardpayment.PaymentState.AwaitingAcquirerBatchNumber;
@@ -130,13 +130,13 @@ public class SettlementTransitions {
                 .assemble(c -> tuple(c.input(), c.log().entityId()))
                 .trigger(BatchNumber).with(d -> d.t1().batchNumber()).on(Ids).identifiedBy(d -> entityId(d.t2(), CreateIfNotExists))
                 .trigger(AcquirerBatchNumber).with(d -> d.t1().t1().acquirerBatchNumber()).on(Ids).identifiedBy(d -> entityId(d.t1().t2(), CreateIfNotExists))
-                .trigger(SettlementOfMerchant).with(d -> d.t1().t1().t1().batchNumber().merchantId()).on(Index).identifiedBy(d -> newEntityId(d.t1().t1().t2().value()))
+                .trigger(Batch).with(d -> d.t1().t1().t1().batchNumber().merchantId()).on(Index).identifiedBy(d -> newEntityId(d.t1().t1().t2().value()))
                 .output(d -> d.t1().t1().t1().t1()),
             // The first settlement of a merchant. The acquirer's batch number is assigned when it is first seen in a response.
             onEvent(OpenInitial).to(AwaitingAcquirerBatchNumber)
                 .assemble(c -> tuple(new BatchNumber(c.input().value(), 1), c.log().entityId()))
                 .trigger(BatchNumber).with(Tuple2::t1).on(Ids).identifiedBy(d -> entityId(d.t2(), CreateIfNotExists))
-                .trigger(SettlementOfMerchant).with(d -> d.t1().t1().merchantId()).on(Index).identifiedBy(d -> newEntityId(d.t1().t2().value()))
+                .trigger(Batch).with(d -> d.t1().t1().merchantId()).on(Index).identifiedBy(d -> newEntityId(d.t1().t2().value()))
                 .output(d -> d.t1().t1().t1())
         ),
         // Open, but the acquirer's batch number is not known until the first response referring to the settlement

@@ -37,8 +37,8 @@ public interface Identifiers {
   );
 
   /// Settlements of a merchant, by merchant id. The last one is the current settlement of the merchant.
-  EventType<String, String> SettlementOfMerchant = BasicEventType.of(
-      "SettlementOfMerchant",
+  EventType<String, String> Batch = BasicEventType.of(
+      "Batch",
       UUID.fromString("a4e6c8f0-2b3d-4f5a-8c7e-9d1b3f5a7c92"),
       DataType.string()
   );
@@ -46,7 +46,7 @@ public interface Identifiers {
   IndexEntityModel Index = IndexEntityModel.of(
       "CardPaymentIndex",
       UUID.fromString("c7b9d1f3-5e6a-4b8c-a0d2-e4f6a8b0c2d5"),
-      SettlementOfMerchant
+      Batch
   );
 
 }

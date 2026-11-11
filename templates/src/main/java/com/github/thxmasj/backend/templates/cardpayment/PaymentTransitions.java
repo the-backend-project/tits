@@ -24,7 +24,7 @@ import static com.github.thxmasj.backend.templates.cardpayment.Aggregate.Settlem
 import static com.github.thxmasj.backend.templates.cardpayment.Identifiers.AcquirerBatchNumber;
 import static com.github.thxmasj.backend.templates.cardpayment.Identifiers.BatchNumber;
 import static com.github.thxmasj.backend.templates.cardpayment.Identifiers.MerchantId;
-import static com.github.thxmasj.backend.templates.cardpayment.Identifiers.SettlementOfMerchant;
+import static com.github.thxmasj.backend.templates.cardpayment.Identifiers.Batch;
 import static com.github.thxmasj.backend.templates.cardpayment.MerchantEvent.Get;
 import static com.github.thxmasj.backend.templates.cardpayment.PaymentEvent.AcquirerDeclined;
 import static com.github.thxmasj.backend.templates.cardpayment.PaymentEvent.AcquirerResponded;
@@ -456,7 +456,7 @@ public class PaymentTransitions {
                             .trigger(GetAcquirerBatchNumber)
                             .with(d -> new MerchantId(d.t1().t2().id()))
                             .on(Settlement)
-                            .identifiedBy(d -> lastIndexed(SettlementOfMerchant, d.t1().t2().id(), CreateIfNotExists))
+                            .identifiedBy(d -> lastIndexed(Batch, d.t1().t2().id(), CreateIfNotExists))
                             .trigger(authorisation.requestDispatched()).withReactive(d -> authorisation.input(d.t1().t4(), tuple(
                                 d.t1().t1().t1(),
                                 d.t1().t1().t2(),
@@ -494,7 +494,7 @@ public class PaymentTransitions {
                                     .trigger(GetAcquirerBatchNumber)
                                     .with(d -> new MerchantId(d.t2().id()))
                                     .on(Settlement)
-                                    .identifiedBy(d -> lastIndexed(SettlementOfMerchant, d.t2().id(), CreateIfNotExists))
+                                    .identifiedBy(d -> lastIndexed(Batch, d.t2().id(), CreateIfNotExists))
                                     .trigger(GetCurrentBatchNumber)
                                     .with(d -> new MerchantId(d.t1().t2().id()))
                                     .on(Settlement)
@@ -597,7 +597,7 @@ public class PaymentTransitions {
                                 d -> idEvent(
                                     AcquirerBatchNumber,
                                     new AcquirerBatchNumber(d.t1().merchantId(), d.t3().batchNumber()),
-                                    lastIndexed(SettlementOfMerchant, d.t1().merchantId(), CreateIfNotExists)
+                                    lastIndexed(Batch, d.t1().merchantId(), CreateIfNotExists)
                                 )
                             )
                             .trigger(MerchantCredit)
@@ -619,7 +619,7 @@ public class PaymentTransitions {
                             .reversible(
                                 assemble((log, _) -> log.one(ValidPaymentRequest).t1())
                                     .trigger(MerchantCreditReversed).with(d -> d.amount().requested()).on(Settlement)
-                                    .identifiedBy(d -> lastIndexed(SettlementOfMerchant, d.merchantId()))
+                                    .identifiedBy(d -> lastIndexed(Batch, d.merchantId()))
                             )
                             .output(d -> d.t1().t1().t1().t1().t3()),
                         d -> d.t1()
@@ -660,9 +660,9 @@ public class PaymentTransitions {
                             d -> idEvent(
                                 AcquirerBatchNumber,
                                 new AcquirerBatchNumber(d.t1().merchantId(), d.t3().batchNumber()),
-                                lastIndexed(SettlementOfMerchant, d.t1().merchantId(), CreateIfNotExists)
+                                lastIndexed(Batch, d.t1().merchantId(), CreateIfNotExists)
                             ),
-                            d -> lastIndexed(SettlementOfMerchant, d.t1().merchantId(), CreateIfNotExists)
+                            d -> lastIndexed(Batch, d.t1().merchantId(), CreateIfNotExists)
                         )
                     .trigger(MerchantCredit).with(d -> d.t1().t3().amount()).on(Settlement)
                         .identifiedBy(d -> entityId(d.t2().accepted().event().entityId()))
@@ -778,7 +778,7 @@ public class PaymentTransitions {
                 .assemble(c -> tuple(c.input(), c.eventReference(), DispatchContext.of(c)))
                 .trigger(GetAcquirerBatchNumber)
                 .with(d -> new MerchantId(d.t1().merchant().id()))
-                .on(Settlement).identifiedBy(d -> lastIndexed(SettlementOfMerchant, d.t1().merchant().id(), CreateIfNotExists))
+                .on(Settlement).identifiedBy(d -> lastIndexed(Batch, d.t1().merchant().id(), CreateIfNotExists))
                 .trigger(capture.requestDispatched()).withReactive(d -> capture.input(d.t1().t3(), tuple(
                     d.t1().t1().authorisationData(),
                     d.t1().t1().merchant(),
@@ -814,7 +814,7 @@ public class PaymentTransitions {
                         .assemble(refundAssembler())
                         .trigger(GetAcquirerBatchNumber)
                         .with(d -> new MerchantId(d.merchant().id()))
-                        .on(Settlement).identifiedBy(d -> lastIndexed(SettlementOfMerchant, d.merchant().id()))
+                        .on(Settlement).identifiedBy(d -> lastIndexed(Batch, d.merchant().id()))
                         .trigger(refundAuthorisationToAcquirer.requestDispatched()).withReactive(d -> refundAuthorisationToAcquirer.input(d.t1().dispatchContext(), tuple(
                             d.t1().authorisationData(),
                             d.t1().merchant(),
@@ -849,7 +849,7 @@ public class PaymentTransitions {
                                 .trigger(GetAcquirerBatchNumber)
                                 .with(d -> new MerchantId(d.t2().id()))
                                 .on(Settlement)
-                                .identifiedBy(d -> lastIndexed(SettlementOfMerchant, d.t2().id()))
+                                .identifiedBy(d -> lastIndexed(Batch, d.t2().id()))
                                 .trigger(refundAuthorisationToAcquirer.rollbackDispatched())
                                 .with(d -> tuple(
                                     d.t1().t1(),
@@ -899,9 +899,9 @@ public class PaymentTransitions {
                         d -> idEvent(
                             AcquirerBatchNumber,
                             new AcquirerBatchNumber(d.t2().id(), d.t3().batchNumber()),
-                            lastIndexed(SettlementOfMerchant, d.t2().id())
+                            lastIndexed(Batch, d.t2().id())
                         ),
-                        d -> lastIndexed(SettlementOfMerchant, d.t2().id())
+                        d -> lastIndexed(Batch, d.t2().id())
                     )
                 .trigger(MerchantDebit).with(d -> d.t1().t3().amount()).on(Settlement)
                     .identifiedBy(d -> entityId(d.t2().accepted().event().entityId()))
@@ -915,7 +915,7 @@ public class PaymentTransitions {
                 .reversible(
                     assemble((log, _) -> tuple(log.last(ValidRefundRequest), log.one(ValidPaymentRequest).t2()))
                         .trigger(MerchantDebitReversed).with(d -> d.t1().refund().amount()).on(Settlement)
-                        .identifiedBy(d -> lastIndexed(SettlementOfMerchant, d.t2().id()))
+                        .identifiedBy(d -> lastIndexed(Batch, d.t2().id()))
                 )
                 .output(d -> d.t1().t1().t1().t1().t3()),
             onEvent(AcquirerDeclined).to(anchor)
