@@ -40,7 +40,7 @@ public class EventsByLastIndexEvent {
         SELECT TOP(1) @entityId=EntityId
         FROM (
           SELECT TOP(:position) EntityId, Sequence
-          FROM [{schema}].[IndexEvent] WITH (INDEX(ixData))
+          FROM [{schema}].[IndexEvent] WITH (INDEX(ixData_Type_Sequence))
           WHERE Data=:key AND Type=:type
           ORDER BY Sequence DESC
         ) Indexed

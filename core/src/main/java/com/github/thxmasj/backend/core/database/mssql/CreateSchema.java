@@ -66,7 +66,8 @@ public class CreateSchema {
             EventNumber SMALLINT           NOT NULL,
             Type        UNIQUEIDENTIFIER   NOT NULL,
             --Data        VARCHAR(1700)    NOT NULL,
-            Data        VARBINARY(1700)    NOT NULL,
+            -- Leaves room for Type and Sequence in the 1700 bytes of the index key
+            Data        VARBINARY(1676)    NOT NULL,
             Timestamp   DATETIME2          NOT NULL,
             -- Order of indexing, as index events of different entities can have the same timestamp
             Sequence    BIGINT IDENTITY    NOT NULL,
@@ -74,7 +75,8 @@ public class CreateSchema {
         );
         GRANT INSERT, SELECT ON [{schema}].[IndexEvent] TO [{role}];
         --CREATE UNIQUE INDEX ixEntityId_EventNumber ON [{schema}].[IndexEvent] (EntityId, EventNumber);
-        CREATE INDEX ixData ON [{schema}].[IndexEvent] (Data);
+        -- Finds the entities indexed by a key, in the order of indexing
+        CREATE INDEX ixData_Type_Sequence ON [{schema}].[IndexEvent] (Data, Type, Sequence);
 
         CREATE TABLE [{schema}].[IdEvent]
         (
