@@ -76,7 +76,7 @@ public class TestApi {
     this.eventsByEntityId = new EventsByEntityId(dataSource, models, schemaName, clock);
     this.eventsByIdEvent = new EventsByIdEvent(dataSource, eventTypesByEntityModel, schemaName, clock);
     this.eventsByLastIndexEvent = new EventsByLastIndexEvent(dataSource, schemaName, clock);
-    this.entitiesByIndex = new EntitiesByIndex(dataSource, models, schemaName, eventTypes, clock);
+    this.entitiesByIndex = new EntitiesByIndex(dataSource, eventTypesByEntityModel, schemaName, clock);
     this.changeState = new ChangeState(client, schemaName, clock);
     this.pending = "EventNumber=(SELECT COALESCE(MAX(EventNumber), 0) + 1 FROM [{schema}].[Event] WHERE EntityId=:entityId)";
   }
