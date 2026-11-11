@@ -19,7 +19,14 @@
   <build>
     <plugins>
       <plugin>
-        <!-- Test utilities (Init, Logger) are shared with the http-inbox and http-outbox modules -->
+        <!-- The tests that need a database are run by the database modules, on their database -->
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <excludedGroups>database</excludedGroups>
+        </configuration>
+      </plugin>
+      <plugin>
+        <!-- Test utilities (Init, Logger) and the tests that need a database are shared with the other modules -->
         <artifactId>maven-jar-plugin</artifactId>
         <executions>
           <execution>
@@ -86,14 +93,6 @@
     <dependency>
       <groupId>com.zaxxer</groupId>
       <artifactId>HikariCP</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>com.microsoft.sqlserver</groupId>
-      <artifactId>mssql-jdbc</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>org.postgresql</groupId>
-      <artifactId>postgresql</artifactId>
     </dependency>
     <dependency>
       <groupId>org.wiremock</groupId>

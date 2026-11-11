@@ -1,7 +1,7 @@
 package com.github.thxmasj.backend.core.database;
 
 import com.github.thxmasj.backend.core.EntityId;
-import com.github.thxmasj.backend.core.database.mssql.ChangeState.Change;
+import com.github.thxmasj.backend.core.database.ChangeState.Change;
 import java.util.List;
 
 public class EventAlreadyExists extends RuntimeException {

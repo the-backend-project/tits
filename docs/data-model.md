@@ -1,8 +1,10 @@
 # Data model
 
 The state machine stores everything in a single Microsoft SQL Server or PostgreSQL schema, which it creates on startup
-(see `CreateSchema`). The tables and columns are the same in both, with the corresponding types of each database. Entities are event sourced: the current state of an entity is derived by replaying its events, so the
-event logs are the source of truth and the other tables hold pending work.
+(see `CreateSchema` in [database-mssql](../database-mssql) and [database-pgsql](../database-pgsql)). The tables and
+columns are the same in both, with the corresponding types of each database. Entities are event sourced: the current
+state of an entity is derived by replaying its events, so the event logs are the source of truth and the other tables
+hold pending work.
 
 ```mermaid
 erDiagram

@@ -6,7 +6,6 @@ import static java.util.stream.Collectors.joining;
 import com.github.thxmasj.backend.core.database.Client;
 import com.github.thxmasj.backend.core.database.Parameter;
 import com.github.thxmasj.backend.core.database.Row;
-import com.microsoft.sqlserver.jdbc.SQLServerException;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -16,11 +15,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.function.Function;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import javax.sql.DataSource;
-import org.postgresql.util.PSQLException;
-import org.postgresql.util.ServerErrorMessage;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
@@ -97,46 +92,23 @@ public class JDBCClient implements Client {
   }
 
   private Function<? super Throwable, ? extends Throwable> errorMapper(String queryName, String sql, Map<String, Parameter<?>> parameters) {
-    return error -> switch (error) {
-      case SQLServerException e when e.getSQLServerError().getErrorNumber() == 2627 -> {
-        Matcher primaryKeyViolationMatcher = primaryKeyViolationPattern.matcher(e.getMessage());
-        if (primaryKeyViolationMatcher.matches())
-          yield new PrimaryKeyConstraintViolation(queryName, null, primaryKeyViolationMatcher.group(4), primaryKeyViolationMatcher.group(3), primaryKeyViolationMatcher.group(1), e);
-        else
-          yield new DataIntegrityViolation(queryName, null, "N/A", errorMessage(e.getMessage(), queryName, sql, parameters), e);
-      }
-      case SQLServerException f when f.getSQLServerError().getErrorNumber() == 2601 -> {
-        Matcher duplicateKeyRowMatcher = duplicateKeyRowPattern.matcher(f.getMessage());
-        if (duplicateKeyRowMatcher.matches())
-          yield new UniqueIndexConstraintViolation(queryName, null, duplicateKeyRowMatcher.group(4), duplicateKeyRowMatcher.group(2), duplicateKeyRowMatcher.group(3), f);
-        else
-          yield new DataIntegrityViolation(queryName, null, "N/A", errorMessage(f.getMessage(), queryName, sql, parameters), f);
-      }
-      case PSQLException e when UNIQUE_VIOLATION.equals(e.getSQLState()) && e.getServerErrorMessage() != null -> {
-        ServerErrorMessage serverError = e.getServerErrorMessage();
-        Matcher duplicateKeyMatcher = postgresDuplicateKeyPattern.matcher(String.valueOf(serverError.getDetail()));
-        if (serverError.getTable() == null || serverError.getConstraint() == null || !duplicateKeyMatcher.matches())
-          yield new DataIntegrityViolation(queryName, null, "N/A", errorMessage(e.getMessage(), queryName, sql, parameters), e);
-        // Primary keys are named with a "pk" prefix, see CreateSchema
-        else if (serverError.getConstraint().startsWith("pk"))
-          yield new PrimaryKeyConstraintViolation(queryName, null, duplicateKeyMatcher.group(1), serverError.getTable(), serverError.getConstraint(), e);
-        else
-          yield new UniqueIndexConstraintViolation(queryName, null, duplicateKeyMatcher.group(1), serverError.getTable(), serverError.getConstraint(), e);
-      }
-      case Throwable e -> new RuntimeException(errorMessage(e.getMessage(), queryName, sql, parameters), error);
+    return error -> {
+      String message = errorMessage(error.getMessage(), queryName, sql, parameters);
+      Throwable violation = error instanceof SQLException e ? constraintViolation(e, queryName, message) : null;
+      return violation != null ? violation : new RuntimeException(message, error);
     };
+  }
+
+  /// The constraint violation the error is, as reported by the database, or null if it is not a constraint violation.
+  /// Without a database specific client, no error is a constraint violation.
+  ///
+  /// @param errorMessage the error's message with the query and its parameters
+  protected Throwable constraintViolation(SQLException error, String queryName, String errorMessage) {
+    return null;
   }
 
   private String errorMessage(String message, String queryName, String sql, Map<String, Parameter<?>> parameters) {
     return "Query "+queryName+" failed: " + message + "\nParameters:\n" + parameters.entrySet().stream().map(e -> e.getKey() + "\t" + e.getValue()).collect(joining("\n")) + "\nSQL:\n" + sql;
   }
 
-  private static final Pattern duplicateKeyRowPattern = Pattern.compile(
-      "Cannot insert duplicate key row in object '(.*)\\.(.*)' with unique index '(.*)'. The duplicate key value is \\((.*)\\).");
-  private static final Pattern primaryKeyViolationPattern = Pattern.compile(
-      "Violation of PRIMARY KEY constraint '(.*)'. Cannot insert duplicate key in object '(.*)\\.(.*)'. The duplicate key value is \\((.*)\\).");
-  private static final String UNIQUE_VIOLATION = "23505";
-  private static final Pattern postgresDuplicateKeyPattern = Pattern.compile("Key \\(.*\\)=\\((.*)\\) already exists\\.");
-
 }
-

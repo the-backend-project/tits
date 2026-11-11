@@ -12,16 +12,19 @@ See [Testing](docs/testing.md).
 
 ## Databases
 
-The state machine stores its event logs in SQL Server (including Azure SQL) or PostgreSQL. The database is detected
-from the `DataSource` given to the `StateMachine`. To build a data source for PostgreSQL with `DataSourceBuilder`, set
-the dialect of the `Client.Config` to `Dialect.POSTGRES`. The [demo](demo) runs on SQL Server only.
+The state machine stores its event logs in SQL Server (including Azure SQL) or PostgreSQL. The SQL and JDBC driver of
+each are in a module of their own, [database-mssql](database-mssql) and [database-pgsql](database-pgsql), and an
+application depends on the one for its database. The `StateMachine` finds it on the module path or class path, by the
+database behind the `DataSource` it is given. To build a data source, give `DataSourceBuilder` the module's `Database`,
+e.g. `new DataSourceBuilder(new PgsqlDatabase(), config)`. The [demo](demo) runs on SQL Server only.
 
 ## Building
 
 Requires Java 27 and Maven 3.9 or later.
 
 The tests need a database. They run on SQL Server by default, which can be started with `bin/start-mssql.sh`. To run
-them on PostgreSQL, start it with `bin/start-postgres.sh` and run the build with `-Ddatabase=postgres -pl '!demo'`.
+them on PostgreSQL, start it with `bin/start-postgres.sh` and run the build with `-Ddatabase=pgsql -pl '!demo'`. The
+tests of the core module that need a database are run by the database modules, each on its own database.
 
 ### Dependency checksums
 

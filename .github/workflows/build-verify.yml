@@ -82,4 +82,4 @@ jobs:
           cache: maven
       # The demo runs on SQL Server only
       - name: Build Java artifacts and run any verifications on PostgreSQL
-        run: mvn -B verify --file pom.xml -pl '!demo' -Ddatabase=postgres -Daether.artifactResolver.postProcessor.trustedChecksums.failIfMissing=true
+        run: mvn -B verify --file pom.xml -pl '!demo' -Ddatabase=pgsql -Daether.artifactResolver.postProcessor.trustedChecksums.failIfMissing=true

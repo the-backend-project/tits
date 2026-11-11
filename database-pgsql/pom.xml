@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <parent>
+    <groupId>com.github.thxmasj.backend</groupId>
+    <artifactId>backend-parent</artifactId>
+    <version>0.3.0-SNAPSHOT</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+  <modelVersion>4.0.0</modelVersion>
+
+  <artifactId>database-pgsql</artifactId>
+
+  <properties>
+    <java.module.name>com.github.thxmasj.backend.database.pgsql</java.module.name>
+    <!-- The tests run on SQL Server unless -Ddatabase=pgsql -->
+    <skipTests>true</skipTests>
+  </properties>
+
+  <build>
+    <plugins>
+      <plugin>
+        <!-- Runs the tests of the core module that need a database, on PostgreSQL -->
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <dependenciesToScan>com.github.thxmasj.backend:core:test-jar:tests</dependenciesToScan>
+          <!-- The other tests of the core module are in packages of its named module, which are not found on the class path -->
+          <includes>com/github/thxmasj/backend/core/test/**</includes>
+          <groups>database</groups>
+          <systemPropertyVariables>
+            <database>pgsql</database>
+          </systemPropertyVariables>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+
+  <profiles>
+    <profile>
+      <!-- The tests run on PostgreSQL -->
+      <id>pgsql</id>
+      <activation>
+        <property>
+          <name>database</name>
+          <value>pgsql</value>
+        </property>
+      </activation>
+      <properties>
+        <skipTests>false</skipTests>
+      </properties>
+    </profile>
+  </profiles>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.github.thxmasj.backend</groupId>
+      <artifactId>core</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.postgresql</groupId>
+      <artifactId>postgresql</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.github.thxmasj.backend</groupId>
+      <artifactId>core</artifactId>
+      <version>${project.version}</version>
+      <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.projectreactor</groupId>
+      <artifactId>reactor-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+</project>

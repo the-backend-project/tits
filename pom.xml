@@ -12,6 +12,8 @@
 
     <modules>
         <module>core</module>
+        <module>database-mssql</module>
+        <module>database-pgsql</module>
         <module>http-inbox</module>
         <module>http-outbox</module>
         <module>test-api</module>

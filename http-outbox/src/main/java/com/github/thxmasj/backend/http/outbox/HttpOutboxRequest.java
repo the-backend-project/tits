@@ -1,7 +1,7 @@
 package com.github.thxmasj.backend.http.outbox;
 
 import static com.github.thxmasj.backend.core.IndexEntityModel.referenceEventType;
-import static com.github.thxmasj.backend.core.database.mssql.Mappers.eventTypesFor;
+import static com.github.thxmasj.backend.core.database.Mappers.eventTypesFor;
 
 import com.github.thxmasj.backend.core.BasicEventType;
 import com.github.thxmasj.backend.core.DataType;

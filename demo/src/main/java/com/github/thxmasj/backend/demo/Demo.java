@@ -1,9 +1,9 @@
 package com.github.thxmasj.backend.demo;
 
 import com.github.thxmasj.backend.core.StateMachine;
+import com.github.thxmasj.backend.core.database.Database;
 import com.github.thxmasj.backend.core.database.jdbc.DataSourceBuilder;
-import com.github.thxmasj.backend.core.database.jdbc.JDBCClient;
-import com.github.thxmasj.backend.core.database.mssql.CreateSchema;
+import com.github.thxmasj.backend.database.mssql.MssqlDatabase;
 import com.github.thxmasj.backend.http.inbox.HttpInboxListener;
 import com.github.thxmasj.backend.core.message.http.HttpRequestMessage.Method;
 import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
@@ -22,6 +22,9 @@ import reactor.netty.DisposableServer;
 /// - `demo` serves HTTP on `$PORT` until terminated.
 /// - `demo migrate` creates the database schema and exits. Run it as a one-off admin process before serving.
 public final class Demo {
+
+  // The demo is configured and deployed for SQL Server, including Azure SQL
+  private static final Database database = new MssqlDatabase();
 
   private Demo() {}
 
@@ -61,7 +64,7 @@ public final class Demo {
   public static void migrate(Config config) {
     if (config.role() == null)
       throw new IllegalArgumentException("Environment variable DATABASE_ROLE is required for migration");
-    new CreateSchema(config.schema(), config.role()).execute(new JDBCClient(new DataSourceBuilder(config.database()).build()))
+    database.createSchema(new DataSourceBuilder(database, config.database()).build(), config.schema(), config.role())
         .timeout(Duration.ofSeconds(30))
         .block();
   }
@@ -70,7 +73,7 @@ public final class Demo {
     return new StateMachine(
         null,
         HelloWorld.transitions(),
-        new DataSourceBuilder(config.database()).buildPooled(),
+        new DataSourceBuilder(database, config.database()).buildPooled(),
         null, // The schema is created by the migrate admin process
         config.schema(),
         null,
