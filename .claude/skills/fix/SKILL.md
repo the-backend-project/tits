@@ -6,7 +6,7 @@ argument-hint: <issue-number>
 
 Start work on issue #$ARGUMENTS (or the number given in "Fix #N").
 
-Use `/opt/homebrew/bin/gh`. The repo is `the-backend-project/tits`; the board is
+The repo is `the-backend-project/tits`; the board is
 org project 1 ("The Backend").
 
 1. **Check the working tree.** If `git status --porcelain` is not empty, stop and
