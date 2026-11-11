@@ -32,6 +32,7 @@ import com.github.thxmasj.backend.core.test.Init;
 import com.github.thxmasj.backend.testapi.TestApi.PendingConditionTrigger;
 import com.github.thxmasj.backend.testapi.TestApi.ScheduledEvent;
 import java.nio.ByteBuffer;
+import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -244,6 +245,21 @@ public class TestApiTest {
     assertEquals(List.of("1:Open", "2:Expire"), eventNames(awaitEvents(account, 2)));
     assertNull(api.delayedTrigger(account).block());
     assertFalse(api.expireDelayedTrigger(account).block());
+  }
+
+  @Test
+  public void delayedTriggerIsDeletedByNextEvent() throws SQLException {
+    EntityId account = open("1013");
+    machine.onEvent(trigger(CloseWhenSettled, Account, account.value())).blockFirst();
+
+    try (var connection = Init.dataSource().getConnection();
+         var statement = connection.prepareStatement("SELECT COUNT(*) FROM [" + schema + "].[DelayedTrigger] WHERE EntityId=?")) {
+      statement.setObject(1, account.value());
+      try (var rs = statement.executeQuery()) {
+        rs.next();
+        assertEquals(0, rs.getInt(1));
+      }
+    }
   }
 
   @Test

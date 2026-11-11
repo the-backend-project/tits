@@ -327,10 +327,11 @@ public class ChangeState {
             """.replace("{schema}", schema)
                 .replace("{changeIndex}", String.valueOf(changeIndex));
       }
+      // A delayed trigger holds the number its event would get, so it is stale once that number is taken
       sql +=
           """
           DELETE [{schema}].[DelayedTrigger] FROM [{schema}].[DelayedTrigger] WITH (INDEX([ixEntityId]))
-          WHERE EntityId=@entityId{changeIndex} AND EventNumber=:eventNumber - 1;
+          WHERE EntityId=@entityId{changeIndex} AND EventNumber<=:eventNumber;
           """.replace("{changeIndex}", String.valueOf(changeIndex))
               .replace("{schema}", schema);
       sql +=
@@ -385,10 +386,11 @@ public class ChangeState {
     }
 
     if (delayedEvent != null) {
+      // Replace the previous delayed trigger, which may not have been deleted yet by the new event's change
       sql +=
           """
           DELETE [{schema}].[DelayedTrigger] FROM [{schema}].[DelayedTrigger] WITH (INDEX([ixEntityId]))
-          WHERE EntityId=@entityId{changeIndex} AND EventNumber=:eventNumber - 1;
+          WHERE EntityId=@entityId{changeIndex} AND EventNumber<:eventNumber;
           """.replace("{changeIndex}", String.valueOf(changeIndex))
               .replace("{schema}", schema);
       sql +=
