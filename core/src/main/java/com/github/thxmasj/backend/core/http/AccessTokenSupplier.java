@@ -24,10 +24,15 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 
-public class AccessTokenSupplier implements Supplier<String> {
+public class AccessTokenSupplier implements Supplier<String>, AutoCloseable {
 
   private final AtomicReference<AccessToken> cachedToken = new AtomicReference<>();
-  private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+  // Daemon thread, so a pending (re)fetch never keeps the JVM alive, e.g. after a failed application startup
+  private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+    var thread = new Thread(r, "access-token-supplier");
+    thread.setDaemon(true);
+    return thread;
+  });
   private final Clock clock;
   private final CountDownLatch readyLatch = new CountDownLatch(1);
 
@@ -117,6 +122,11 @@ public class AccessTokenSupplier implements Supplier<String> {
   public synchronized void shutDown() {
     shutDown = true;
     scheduler.shutdown();
+  }
+
+  @Override
+  public void close() {
+    shutDown();
   }
 
   public static class Builder {
