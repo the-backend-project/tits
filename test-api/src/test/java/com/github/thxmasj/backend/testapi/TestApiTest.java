@@ -87,6 +87,34 @@ public class TestApiTest {
   static EventType<Issuing, Issuing> Issue = BasicEventType.of("Issue", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b0c"), DataType.json(Issuing.class));
   static EventType<Void, Void> Settle = BasicEventType.of("Settle", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b0d"));
 
+  enum ShipmentStates implements State {Sent}
+
+  record Parcel(int weight) {}
+
+  /// Shipments of letters and parcels share the id of their event type, like the outbox requests of different
+  /// payloads, but differ in data type
+  static UUID SendId = UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b0e");
+  static EventType<String, String> SendLetter = BasicEventType.of("Send", SendId, DataType.string());
+  static EventType<Parcel, Parcel> SendParcel = BasicEventType.of("Send", SendId, DataType.json(Parcel.class));
+  static EventType<UUID, UUID> ShipmentOfAccount = IndexEntityModel.referenceEventType("ShipmentOfAccount", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b0f"));
+  static IndexEntityModel ShipmentIndex = IndexEntityModel.of("ShipmentIndex", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b10"), ShipmentOfAccount);
+  static EntityModel LetterShipment = EntityModel.of("LetterShipment", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b11"));
+  static EntityModel ParcelShipment = EntityModel.of("ParcelShipment", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b12"));
+
+  static <T> Map<State, List<TransitionModel<?, ?>>> shipmentTransitions(EventType<T, T> send) {
+    return Map.of(
+        Begin, List.of(
+            onEvent(send).to(ShipmentStates.Sent)
+                .assemble(c -> tuple(c.input(), c.log().entityId()))
+                .trigger(ShipmentOfAccount).with(_ -> shipmentAccount).on(ShipmentIndex).identifiedBy(d -> newEntityId(d.t2().value()))
+                .output(d -> d.t1().t1())
+        ),
+        ShipmentStates.Sent, List.of()
+    );
+  }
+
+  static final UUID shipmentAccount = UUID.randomUUID();
+
   static Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions = Map.of(
       Account, Map.<State, List<TransitionModel<?, ?>>>of(
           Begin, List.of(
@@ -124,7 +152,10 @@ public class TestApiTest {
           StatementStates.Settled, List.of()
       ),
       Ids, Ids.transitions(),
-      Index, Index.transitions()
+      Index, Index.transitions(),
+      LetterShipment, shipmentTransitions(SendLetter),
+      ParcelShipment, shipmentTransitions(SendParcel),
+      ShipmentIndex, ShipmentIndex.transitions()
   );
 
   private static final String schema = UUID.randomUUID().toString();
@@ -209,6 +240,18 @@ public class TestApiTest {
 
     assertEquals(2, statements.size());
     assertTrue(statements.containsAll(List.of(statement1, statement2)));
+  }
+
+  @Test
+  public void entitiesByIndexHaveTheEventTypesOfTheirEntityModel() {
+    machine.onEvent(trigger(SendLetter, LetterShipment), "Dear account").blockFirst();
+    machine.onEvent(trigger(SendParcel, ParcelShipment), new Parcel(2)).blockFirst();
+
+    Map<EntityModel, Object> sent = api.entitiesByIndex(ShipmentOfAccount, shipmentAccount)
+        .collectMap(EventLog::entityModel, log -> (Object) log.events().getFirst().getUnmarshalledData())
+        .block();
+
+    assertEquals(Map.of(LetterShipment, "Dear account", ParcelShipment, new Parcel(2)), sent);
   }
 
   @Test
