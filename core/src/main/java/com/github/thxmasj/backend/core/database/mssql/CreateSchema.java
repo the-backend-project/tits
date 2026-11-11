@@ -68,6 +68,8 @@ public class CreateSchema {
             --Data        VARCHAR(1700)    NOT NULL,
             Data        VARBINARY(1700)    NOT NULL,
             Timestamp   DATETIME2          NOT NULL,
+            -- Order of indexing, as index events of different entities can have the same timestamp
+            Sequence    BIGINT IDENTITY    NOT NULL,
             CONSTRAINT [pkIndexEvent] PRIMARY KEY (EntityId, EventNumber)
         );
         GRANT INSERT, SELECT ON [{schema}].[IndexEvent] TO [{role}];

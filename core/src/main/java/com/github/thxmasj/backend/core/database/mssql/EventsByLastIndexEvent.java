@@ -39,12 +39,12 @@ public class EventsByLastIndexEvent {
 
         SELECT TOP(1) @entityId=EntityId
         FROM (
-          SELECT TOP(:position) EntityId, Timestamp, EventNumber
+          SELECT TOP(:position) EntityId, Sequence
           FROM [{schema}].[IndexEvent] WITH (INDEX(ixData))
           WHERE Data=:key AND Type=:type
-          ORDER BY Timestamp DESC, EventNumber DESC
+          ORDER BY Sequence DESC
         ) Indexed
-        ORDER BY Timestamp ASC, EventNumber ASC;
+        ORDER BY Sequence ASC;
 
         SELECT @entityId AS EntityId;
 

@@ -30,6 +30,8 @@ import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.backend.core.Tuples.Tuple2;
 import com.github.thxmasj.backend.core.test.Init;
 import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -57,7 +59,10 @@ public class IdEventTest {
   static EventType<Void, String> Read = new ReadOnly<>("Read", UUID.fromString("7c9e1a3b-5d7f-4b9a-8c1e-3f5a7b9c1d2e"), DataType.none(), DataType.string());
 
   private static final String schema = UUID.randomUUID().toString();
-  private static final StateMachine machine = Init.stateMachine(schema, Map.of(
+  private static final StateMachine machine = stateMachine(schema, Clock.systemUTC());
+
+  private static StateMachine stateMachine(String schema, Clock clock) {
+    return Init.stateMachine(schema, Map.of(
       Account, Map.<State, List<TransitionModel<?, ?>>>of(
           Begin, List.of(
               onEvent(Open).to(States.Opened)
@@ -81,7 +86,8 @@ public class IdEventTest {
       ),
       Ids, Ids.transitions(),
       Index, Index.transitions()
-  ));
+    ), clock);
+  }
 
   @Test
   public void idsAreEventsOfASeparateIdEntity() {
@@ -137,7 +143,22 @@ public class IdEventTest {
     assertEquals(issued.get(2).toString(), read(secondToLastIndexed(StatementOfAccount, "B")));
   }
 
+  @Test
+  public void entitiesIndexedAtTheSameTimeAreOrderedByIndexing() {
+    StateMachine frozen = stateMachine(UUID.randomUUID().toString(), Clock.fixed(Instant.parse("2026-11-11T12:00:00Z"), ZoneOffset.UTC));
+    List<UUID> issued = new ArrayList<>();
+    for (int i = 0; i < 3; i++)
+      issued.add(frozen.onEvent(trigger(Issue, Statement), "C").blockFirst().entityId());
+
+    assertEquals(issued.get(2).toString(), read(frozen, lastIndexed(StatementOfAccount, "C")));
+    assertEquals(issued.get(1).toString(), read(frozen, secondToLastIndexed(StatementOfAccount, "C")));
+  }
+
   private String read(EntitySelector selector) {
+    return read(machine, selector);
+  }
+
+  private static String read(StateMachine machine, EntitySelector selector) {
     return (String) machine.onEvent(new EventTrigger<Void, Void, String>(new EventSpec<>(Read, d -> d), List.of(_ -> selector), Statement, false))
         .blockFirst()
         .getUnmarshalledData();

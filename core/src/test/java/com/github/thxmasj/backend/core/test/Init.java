@@ -33,6 +33,14 @@ public class Init {
       String schemaName,
       Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions
   ) {
+    return stateMachine(schemaName, transitions, Clock.systemUTC());
+  }
+
+  public static StateMachine stateMachine(
+      String schemaName,
+      Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions,
+      Clock clock
+  ) {
     return new StateMachine(
         _ -> Mono.empty(),
         transitions,
@@ -40,7 +48,7 @@ public class Init {
         migrationDataSource,
         schemaName,
         "Test", // role
-        Clock.systemUTC(),
+        clock,
         new Logger("Test")
     );
   }
