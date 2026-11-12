@@ -121,7 +121,8 @@ public class AccessTokenSupplier implements Supplier<String>, AutoCloseable {
 
   public synchronized void shutDown() {
     shutDown = true;
-    scheduler.shutdown();
+    // Drops the pending (re)fetch too, which would otherwise keep the thread until it has run
+    scheduler.shutdownNow();
   }
 
   @Override
