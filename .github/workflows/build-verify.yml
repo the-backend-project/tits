@@ -60,8 +60,7 @@ jobs:
             echo "${app%%:*}=$affected" | tee -a "$GITHUB_OUTPUT"
           done
 
-  # The native images are built in quick build mode (-Ob), as these jobs only check that they run. Their layers are
-  # cached in the GitHub Actions cache.
+  # The native images are built in quick build mode (-Ob), as these jobs only check that they run.
   demo:
     needs: changes
     if: needs.changes.outputs.demo == 'true'
@@ -69,18 +68,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
       - name: Build the demo native image
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: demo/Dockerfile
-          tags: tits-demo
-          load: true
-          build-args: NATIVE_IMAGE_OPTS=-Ob
-          cache-from: type=gha,scope=demo
-          cache-to: type=gha,scope=demo,mode=max
+        working-directory: demo
+        run: docker compose build --build-arg NATIVE_IMAGE_OPTS=-Ob migrate
       - name: Run it with its database
         working-directory: demo
         run: docker compose up --detach --no-build
@@ -100,18 +90,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
       - name: Build the identity provider native image
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: apps/identity-provider/Dockerfile
-          tags: tits-identity-provider
-          load: true
-          build-args: NATIVE_IMAGE_OPTS=-Ob
-          cache-from: type=gha,scope=identity-provider
-          cache-to: type=gha,scope=identity-provider,mode=max
+        working-directory: apps/identity-provider
+        run: docker compose build --build-arg NATIVE_IMAGE_OPTS=-Ob migrate
       - name: Run it with its database
         working-directory: apps/identity-provider
         run: |

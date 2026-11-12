@@ -5,9 +5,10 @@
 # GraalVM Community 25 (multi-arch index digest). No GraalVM release supports Java 27 yet, so the build targets 25.
 FROM ghcr.io/graalvm/native-image-community:25i5-25.0.5.0.3-ol10@sha256:2800b5bd11cbb9bf11c92591d05ea37d9a735522bdc0e86827302d998843ad79 AS build
 
+# Maven Central is much faster than archive.apache.org, and keeps every release.
 ARG MAVEN_VERSION=3.10.0
 ARG MAVEN_SHA512=908b1501bfb420bf7c8affb855534a9c407fd6099367bfb9f2f2dcb8e9799102bffb84518cde74c679bd76870247c6528683abdd620581bffa90f95d92d175aa
-RUN curl -fsSL -o /tmp/maven.tar.gz https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz \
+RUN curl -fsSL -o /tmp/maven.tar.gz https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/${MAVEN_VERSION}/apache-maven-${MAVEN_VERSION}-bin.tar.gz \
  && echo "${MAVEN_SHA512}  /tmp/maven.tar.gz" | sha512sum -c - \
  && tar -xzf /tmp/maven.tar.gz -C /opt \
  && rm /tmp/maven.tar.gz
