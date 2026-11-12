@@ -139,8 +139,8 @@ The identity provider is configured by environment variables:
 | `CLIENTS` | The JSON of `CLIENTS_FILE` itself, for when that is easier to provide. At most one of the two may be set. |
 | `PORT` | Default 8080. |
 | `DATABASE` | `mssql` or `pgsql`. Default `mssql`. |
-| `DATABASE_HOST`, `DATABASE_PORT`, `DATABASE_NAME`, `DATABASE_USER`, `DATABASE_PASSWORD` | The database. The port defaults to that of the database. The user and password depend on `DATABASE_AUTHENTICATION`. |
-| `DATABASE_AUTHENTICATION` | How to authenticate to the database. `SqlPassword` (the default) with the user and password of a login. For Azure SQL with Microsoft Entra ID: `ActiveDirectoryServicePrincipal` with the client id of the service principal as `DATABASE_USER` and its client secret as `DATABASE_PASSWORD`, or `ActiveDirectoryManagedIdentity` with the managed identity of the host, without `DATABASE_PASSWORD`, and with the client id of a user-assigned identity as `DATABASE_USER` (unset for the system-assigned identity). Entra ID is for `mssql` only, and on the JVM only: the driver gets its tokens with `com.azure:azure-identity`, which is not in the native image. Add it and `com.azure:azure-core-http-jdk-httpclient` to the classpath, at the versions managed by the parent POM, or build with the Maven profile `entra-id`. |
+| `DATABASE_HOST`, `DATABASE_PORT`, `DATABASE_NAME` | The database. The port defaults to that of the database. |
+| `DATABASE_AUTHENTICATION`, `DATABASE_USER`, `DATABASE_PASSWORD`, `DATABASE_ACCESS_TOKEN` | How to log in to the database, as for the [hello world demo](hello-world.md#configuration). Microsoft Entra ID is for `mssql` only. For `ActiveDirectoryServicePrincipal`, which works on the JVM only, build with the Maven profile `entra-id`. |
 | `DATABASE_SCHEMA` | Default `identity_provider`. |
 | `DATABASE_ROLE` | The role given access to the schema. Required by `migrate`. |
 | `DATABASE_TRUST_SERVER_CERTIFICATE`, `DATABASE_POOL_SIZE`, `DATABASE_QUERY_TIMEOUT_SECONDS` | As for the [hello world demo](hello-world.md#configuration). |

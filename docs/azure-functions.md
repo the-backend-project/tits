@@ -11,17 +11,23 @@ database's compute only while it has connections.
 All resources are created in a resource group of their own:
 
 - An Azure SQL server with a serverless database, and firewall rules letting through Azure services and the deploying
-  machine. The server administrator's password and the application's password are generated.
+  machine. The server allows [Microsoft Entra authentication](https://learn.microsoft.com/azure/azure-sql/database/authentication-aad-overview)
+  only, so there are no passwords. Its administrator is the user or service principal the Azure CLI is logged in as.
 - A function app on the Flex Consumption plan, with a storage account for the Functions host and the deployment
-  package, which the app accesses with its managed identity.
+  package, which the app accesses with its system-assigned managed identity.
+- A user-assigned managed identity, which the application logs in to the database as.
 - Application Insights with a Log Analytics workspace, which collects what the application writes to stdout.
 
 Deploying then runs three steps on the deploying machine:
 
-1. Provisions the database: a contained database user for the application, and the role which the migrate admin
-   process grants access to the schema. This is the counterpart of the `database/init.sql` of the apps for local runs.
-2. Runs the migrate admin process from the application's image, with the server administrator's credentials.
+1. Provisions the database: a contained database user for the application's managed identity, and the role which the
+   migrate admin process grants access to the schema. This is the counterpart of the `database/init.sql` of the apps
+   for local runs.
+2. Runs the migrate admin process from the application's image, as the server administrator.
 3. Deploys the application to the function app.
+
+The first two steps log in to the database with an access token of the server administrator, from
+`az account get-access-token`.
 
 Each step runs again when its inputs change, so a new image is migrated and deployed by running `pulumi up` again.
 
@@ -36,7 +42,9 @@ linked with, and a launcher script which passes the port the Functions host choo
 - [Docker](https://docs.docker.com/get-docker/), to build the image and run the migrate admin process
 - The [Pulumi CLI](https://www.pulumi.com/docs/iac/download-install/)
 - The [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli), logged in with `az login` to a subscription
-  where you may create role assignments, for example as Owner. Pulumi uses the same login.
+  where you may create role assignments, for example as Owner. Pulumi uses the same login. The user or service
+  principal logged in becomes the Microsoft Entra administrator of the database server, so deploy the stack again with
+  the same login, or the administrator changes to the new one.
 
 ## Deploying the hello world demo
 
@@ -108,8 +116,10 @@ Another application is deployed the same way, as long as it follows the conventi
 - It is a container image for `linux/amd64` with an entry point which serves HTTP on `$PORT`, built from `scratch` or
   otherwise holding only what the executable needs. The executable is linked statically, or dynamically against a C
   library in the image.
-- It reads the location of its database and its credentials from `DATABASE_HOST`, `DATABASE_NAME`, `DATABASE_USER`
-  and `DATABASE_PASSWORD`, and the schema from `DATABASE_SCHEMA`.
+- It reads the location of its database from `DATABASE_HOST` and `DATABASE_NAME`, and the schema from
+  `DATABASE_SCHEMA`. It logs in as the managed identity with the client id in `DATABASE_USER` when
+  `DATABASE_AUTHENTICATION` is `ActiveDirectoryManagedIdentity`, and with the access token in `DATABASE_ACCESS_TOKEN`
+  when it is `ActiveDirectoryAccessToken`, see the [configuration of the demo](hello-world.md#configuration).
 - Running the entry point with the arguments in `migrateArgs` creates or verifies the schema, granting access to the
   role in `DATABASE_ROLE`, and exits.
 
@@ -152,9 +162,8 @@ Structured values are set with `--path`, for example `pulumi config set --path '
 - **Resuming a paused database is slow.** The first connection to a paused database waits until it has resumed, which
   can take a minute, while the Functions host expects the application to start within 30 to 60 seconds. The first
   requests after a pause may therefore fail. Set `databaseAutoPauseDelay` to `-1` to keep the database running.
-- **SQL authentication.** The application logs in with a password, as the state machine supports no other way. With
-  Microsoft Entra authentication, the function app's managed identity could log in without one, and the server could
-  allow Entra authentication only.
+- **The database administrator is a single principal.** The server's Entra administrator is whoever deploys. To let
+  others administer the database, a group would be the administrator instead, but that is not configurable.
 - **Secrets are app settings.** The values of `secretEnvironment` are app settings of the function app, readable by
   anyone allowed to read its configuration. Key Vault references would keep them in a key vault instead.
 - **The URL is that of the function app.** The function app is named by the deployment, with a random suffix, so that

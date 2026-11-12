@@ -56,6 +56,22 @@ public class ConfigTest {
   }
 
   @Test
+  public void whenAccessTokenThenTokenIsRequiredAndUserAndPasswordAreNotAllowed() {
+    var config = Config.fromEnvironment(env("DATABASE_AUTHENTICATION", "ActiveDirectoryAccessToken", "DATABASE_ACCESS_TOKEN", "token")).databaseConfig();
+    assertThat(config.authentication()).isEqualTo(Authentication.ActiveDirectoryAccessToken);
+    assertThat(config.user()).isNull();
+    assertThat(config.password()).isEqualTo("token");
+    assertThatThrownBy(() -> Config.fromEnvironment(env("DATABASE_AUTHENTICATION", "ActiveDirectoryAccessToken")))
+        .hasMessageContaining("DATABASE_ACCESS_TOKEN");
+    assertThatThrownBy(() -> Config.fromEnvironment(env("DATABASE_AUTHENTICATION", "ActiveDirectoryAccessToken", "DATABASE_ACCESS_TOKEN", "token", "DATABASE_USER", "u")))
+        .hasMessageContaining("DATABASE_USER");
+    assertThatThrownBy(() -> Config.fromEnvironment(env("DATABASE_AUTHENTICATION", "ActiveDirectoryAccessToken", "DATABASE_ACCESS_TOKEN", "token", "DATABASE_PASSWORD", "p")))
+        .hasMessageContaining("DATABASE_PASSWORD");
+    assertThatThrownBy(() -> Config.fromEnvironment(env("DATABASE_USER", "u", "DATABASE_PASSWORD", "p", "DATABASE_ACCESS_TOKEN", "token")))
+        .hasMessageContaining("DATABASE_ACCESS_TOKEN");
+  }
+
+  @Test
   public void whenAuthenticationIsUnknownOrEntraIdOnPgsqlThenFails() {
     assertThatThrownBy(() -> Config.fromEnvironment(env("DATABASE_AUTHENTICATION", "Kerberos", "DATABASE_USER", "u", "DATABASE_PASSWORD", "p")))
         .hasMessageContaining("DATABASE_AUTHENTICATION");
@@ -132,8 +148,15 @@ public class ConfigTest {
   public void whenEntraIdThenMssqlDataSourceUsesIt() {
     var config = Config.fromEnvironment(env("DATABASE_AUTHENTICATION", "ActiveDirectoryManagedIdentity", "DATABASE_USER", "client-id")).databaseConfig();
     var dataSource = (com.microsoft.sqlserver.jdbc.SQLServerDataSource) new com.github.thxmasj.backend.database.mssql.MssqlDatabase().dataSource(config);
-    assertThat(dataSource.getAuthentication()).isEqualTo("ActiveDirectoryManagedIdentity");
-    assertThat(dataSource.getUser()).isEqualTo("client-id");
+    // The tokens are fetched by the application rather than by the driver, which needs azure-identity for that
+    assertThat(dataSource.getAuthentication()).isEqualTo("NotSpecified");
+    assertThat(dataSource.getUser()).isNull();
+    assertThat(dataSource.getAccessTokenCallback()).isNotNull();
+
+    config = Config.fromEnvironment(env("DATABASE_AUTHENTICATION", "ActiveDirectoryAccessToken", "DATABASE_ACCESS_TOKEN", "token")).databaseConfig();
+    dataSource = (com.microsoft.sqlserver.jdbc.SQLServerDataSource) new com.github.thxmasj.backend.database.mssql.MssqlDatabase().dataSource(config);
+    assertThat(dataSource.getAccessToken()).isEqualTo("token");
+    assertThat(dataSource.getUser()).isNull();
   }
 
 }
