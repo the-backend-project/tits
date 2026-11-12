@@ -46,6 +46,7 @@ public class PgsqlVertxClient implements DatabaseClient {
   }
 
   public static PgsqlVertxClient of(Config config) {
+    config.requireSqlPassword("pgsql-vertx");
     Vertx vertx = Vertx.vertx();
     var options = new PgConnectOptions()
         .setHost(config.host())

@@ -1,8 +1,8 @@
 package com.github.thxmasj.backend.identityprovider;
 
 import static com.github.thxmasj.backend.identityprovider.Inbox.ClientIdHeader;
+import static com.github.thxmasj.backend.identityprovider.Inbox.RegisteredByHeader;
 import static com.github.thxmasj.backend.identityprovider.Inbox.SecretHashHeader;
-import static com.github.thxmasj.backend.identityprovider.Inbox.SubjectHeader;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 import com.github.thxmasj.backend.core.DataType;
@@ -25,18 +25,21 @@ import tools.jackson.databind.node.ObjectNode;
 
 /// The edge between the HTTP clients and the state machine. Credentials are handled here and nowhere else: client
 /// secrets are hashed before a request enters the event log, generated secrets are added to responses after they leave
-/// it, access tokens are signed on their way out and verified on their way in. The event log only records hashes and
-/// the claims of the tokens.
+/// it, access tokens are signed on their way out and verified on their way in, and the secrets of imported clients are
+/// verified against their BCrypt hashes. The event log only records hashes and the claims of the tokens.
 ///
 /// The edge also serves what does not change with the requests: the health check, the public keys and the metadata.
 final class Edge implements HttpInboxListener.Filter {
 
   private final Keys keys;
   private final String metadata;
+  /// The BCrypt hashes of the secrets of the imported clients, by client id
+  private final Map<String, String> importedSecretHashes;
 
-  Edge(Keys keys) {
+  Edge(Keys keys, Map<String, String> importedSecretHashes) {
     this.keys = keys;
     this.metadata = metadata(keys);
+    this.importedSecretHashes = Map.copyOf(importedSecretHashes);
   }
 
   @Override
@@ -86,13 +89,20 @@ final class Edge implements HttpInboxListener.Filter {
     var headers = new HashMap<>(request.headers());
     headers.keySet().removeIf(name -> name.equalsIgnoreCase("Authorization"));
     headers.put(ClientIdHeader, clientId);
-    headers.put(SecretHashHeader, Secrets.hash(secret));
+    headers.put(SecretHashHeader, secretHash(clientId, secret));
     return next.apply(new HttpRequestMessage(request.method(), request.uri(), headers, request.body()))
         .map(response -> switch (response.statusCode()) {
           case 200 -> tokenResponse(response);
           case 401 -> withHeader(response, "WWW-Authenticate", basicChallenge());
           default -> response;
         });
+  }
+
+  /// The hash the state machine compares with that of the client. The secret of an imported client is verified here
+  /// against its BCrypt hash, see [ImportedClients].
+  private String secretHash(String clientId, String secret) {
+    String bcryptHash = importedSecretHashes.get(clientId);
+    return bcryptHash != null ? ImportedClients.secretHash(secret, bcryptHash) : Secrets.hash(secret);
   }
 
   /// The access token response of RFC 6749 section 5.1, with the token signed from the claims the state machine
@@ -121,14 +131,16 @@ final class Edge implements HttpInboxListener.Filter {
     String secret = Secrets.generate();
     var headers = new HashMap<>(request.headers());
     headers.keySet().removeIf(name -> name.equalsIgnoreCase("Authorization"));
-    return next.apply(registration(headers, principal.get().subject(), Secrets.hash(secret), request))
+    return next.apply(registration(headers, principal.get().clientId(), Secrets.hash(secret), request))
         .map(response -> response.statusCode() == 201 ? withSecret(response, secret) : response);
   }
 
   /// A registration request as it enters the state machine
-  static HttpRequestMessage registration(Map<String, String> headers, String subject, String secretHash, HttpRequestMessage request) {
+  ///
+  /// @param registeredBy the client id of the client registering the client
+  static HttpRequestMessage registration(Map<String, String> headers, String registeredBy, String secretHash, HttpRequestMessage request) {
     var trusted = new HashMap<>(headers);
-    trusted.put(SubjectHeader, subject);
+    trusted.put(RegisteredByHeader, registeredBy);
     trusted.put(SecretHashHeader, secretHash);
     return new HttpRequestMessage(request.method(), request.uri(), trusted, request.body());
   }

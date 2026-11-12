@@ -47,8 +47,28 @@ public class MssqlDatabase implements Database {
     ds.setHostNameInCertificate("*.database.windows.net");
     ds.setQueryTimeout((int)config.queryTimeout().toSeconds());
     ds.setTrustServerCertificate(config.trustServerCertificate());
-    ds.setUser(config.user());
-    ds.setPassword(config.password());
+    // Microsoft Entra ID authentication needs azure-identity at runtime, which the driver loads when connecting
+    switch (config.authentication()) {
+      case SqlPassword -> {
+        ds.setUser(config.user());
+        ds.setPassword(config.password());
+      }
+      case ActiveDirectoryServicePrincipal -> {
+        if (config.user() == null || config.password() == null)
+          throw new IllegalArgumentException("Authentication " + config.authentication() + " needs the client id as user and the client secret as password");
+        ds.setAuthentication(config.authentication().name());
+        ds.setUser(config.user());
+        ds.setPassword(config.password());
+      }
+      case ActiveDirectoryManagedIdentity -> {
+        if (config.password() != null)
+          throw new IllegalArgumentException("Authentication " + config.authentication() + " takes no password");
+        ds.setAuthentication(config.authentication().name());
+        // The client id of a user-assigned managed identity, or none for the system-assigned one
+        if (config.user() != null)
+          ds.setUser(config.user());
+      }
+    }
     return ds;
   }
 

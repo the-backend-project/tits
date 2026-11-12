@@ -42,6 +42,7 @@ public class PgsqlR2dbcClient implements DatabaseClient {
 
   /// The pool keeps as many connections as it may have, as the pool of the JDBC driver does
   public static PgsqlR2dbcClient of(Config config) {
+    config.requireSqlPassword("pgsql-r2dbc");
     var connectionFactory = new PostgresqlConnectionFactory(PostgresqlConnectionConfiguration.builder()
         .host(config.host())
         .port(config.port())
