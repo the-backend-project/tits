@@ -21,7 +21,7 @@ import reactor.core.publisher.Flux;
 
 public class ConditionalTriggers {
 
-  private final Client databaseClient;
+  private final DatabaseClient databaseClient;
   private final Clock clock;
   private final Map<UUID, Map<UUID, EventType<?, ?>>> eventTypesByEntityModelId;
   private final Map<UUID, EntityModel> entityModels;
@@ -29,7 +29,7 @@ public class ConditionalTriggers {
 
   /// @param sql the SQL selecting the oldest conditional triggers whose condition is met, at most `:limit` of them
   public ConditionalTriggers(
-      Client databaseClient,
+      DatabaseClient databaseClient,
       String sql,
       Map<EntityModel, List<EventType<?, ?>>> eventTypesByEntityModel,
       Clock clock

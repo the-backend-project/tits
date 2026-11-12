@@ -4,8 +4,8 @@ import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionModel;
-import com.github.thxmasj.backend.core.database.Client;
-import com.github.thxmasj.backend.core.database.Client.Config;
+import com.github.thxmasj.backend.core.database.DatabaseClient;
+import com.github.thxmasj.backend.core.database.DatabaseClient.Config;
 import com.github.thxmasj.backend.core.database.ConditionalTriggers;
 import com.github.thxmasj.backend.core.database.Database;
 import com.github.thxmasj.backend.core.database.DeleteDelayedTrigger;
@@ -53,26 +53,25 @@ public class MssqlDatabase implements Database {
   }
 
   @Override
-  public Client client(DataSource dataSource) {
+  public DatabaseClient client(DataSource dataSource) {
     return new MssqlClient(dataSource);
   }
 
   @Override
   public Storage storage(
-      DataSource dataSource,
+      DatabaseClient client,
       Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions,
       String schemaName,
       Clock clock
   ) {
     List<EntityModel> entityModels = List.copyOf(transitions.keySet());
     Map<EntityModel, List<EventType<?, ?>>> eventTypesByEntityModel = Mappers.eventTypesByEntityModel(transitions);
-    var client = client(dataSource);
     return new Storage(
         new ChangeState(client, schemaName, clock),
-        new EventsByEntityId(dataSource, table -> Queries.eventsByEntityId(schemaName, table), entityModels, clock),
-        new EventsByIdEvent(dataSource, Queries.eventsByIdEvent(schemaName), eventTypesByEntityModel, clock),
-        new EventsByLastIndexEvent(dataSource, Queries.eventsByLastIndexEvent(schemaName), clock),
-        new EntitiesByIndex(dataSource, Queries.entitiesByIndex(schemaName), eventTypesByEntityModel, clock),
+        new EventsByEntityId(client, table -> Queries.eventsByEntityId(schemaName, table), entityModels, clock),
+        new EventsByIdEvent(client, Queries.eventsByIdEvent(schemaName), eventTypesByEntityModel, clock),
+        new EventsByLastIndexEvent(client, Queries.eventsByLastIndexEvent(schemaName), clock),
+        new EntitiesByIndex(client, Queries.entitiesByIndex(schemaName), eventTypesByEntityModel, clock),
         new NextDelayedTrigger(client, Queries.nextDelayedTrigger(schemaName), Mappers.eventTypes(transitions), clock, entityModels),
         new DeleteDelayedTrigger(client, Queries.deleteDelayedTrigger(schemaName)),
         new ConditionalTriggers(client, Queries.conditionalTriggers(schemaName), eventTypesByEntityModel, clock)

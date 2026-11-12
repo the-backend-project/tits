@@ -10,9 +10,9 @@ import com.github.thxmasj.backend.core.Event;
 import com.github.thxmasj.backend.core.IdEntityModel;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult;
 import com.github.thxmasj.backend.core.TriggerType;
-import com.github.thxmasj.backend.core.database.Client.PrimaryKeyConstraintViolation;
-import com.github.thxmasj.backend.core.database.Client.Query.Builder;
-import com.github.thxmasj.backend.core.database.Client.UniqueIndexConstraintViolation;
+import com.github.thxmasj.backend.core.database.DatabaseClient.PrimaryKeyConstraintViolation;
+import com.github.thxmasj.backend.core.database.DatabaseClient.Query.Builder;
+import com.github.thxmasj.backend.core.database.DatabaseClient.UniqueIndexConstraintViolation;
 import java.time.Clock;
 import java.time.ZonedDateTime;
 import java.util.List;
@@ -24,10 +24,10 @@ import reactor.core.publisher.Flux;
 /// Stores the changes of a transition atomically
 public abstract class ChangeState {
 
-  private final Client databaseClient;
+  private final DatabaseClient databaseClient;
   private final Clock clock;
 
-  protected ChangeState(Client databaseClient, Clock clock) {
+  protected ChangeState(DatabaseClient databaseClient, Clock clock) {
     this.databaseClient = databaseClient;
     this.clock = clock;
   }

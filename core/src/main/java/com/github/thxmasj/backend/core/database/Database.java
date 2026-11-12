@@ -5,7 +5,8 @@ import static java.util.stream.Collectors.joining;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionModel;
-import com.github.thxmasj.backend.core.database.Client.Config;
+import com.github.thxmasj.backend.core.database.DatabaseClient.Config;
+import com.github.thxmasj.backend.core.database.jdbc.DataSourceBuilder;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Clock;
@@ -16,27 +17,36 @@ import java.util.ServiceLoader.Provider;
 import javax.sql.DataSource;
 import reactor.core.publisher.Mono;
 
-/// A database the state machine can store its schema in, with the SQL of its dialect and its JDBC driver. Databases
-/// are provided by modules such as database-mssql and database-pgsql, and found on the module path or class path.
+/// A database the state machine can store its schema in, with the SQL of its dialect and its driver. Databases are
+/// provided by the modules database-mssql, database-pgsql-jdbc, database-pgsql-r2dbc and database-pgsql-vertx, and
+/// found on the module path or class path. The schema is created through JDBC, while the state machine's queries go
+/// through a [DatabaseClient], which may use another driver.
 public interface Database {
 
   /// The name the database is selected by, e.g. "mssql"
   String name();
 
-  /// Whether this is the database with the product name reported by the JDBC driver
+  /// Whether this is the database with the product name reported by the JDBC driver, and so the one used for a data
+  /// source by [#of(DataSource)]
   boolean isProduct(String productName);
 
   /// A data source connecting to the database as configured, without a connection pool
   DataSource dataSource(Config config);
 
-  /// A client mapping the database's constraint violations
-  Client client(DataSource dataSource);
+  /// A client of the data source, mapping the database's constraint violations
+  DatabaseClient client(DataSource dataSource);
+
+  /// A client connecting to the database as configured, with a connection pool, which is closed with the client
+  default DatabaseClient client(Config config) {
+    return client(new DataSourceBuilder(this, config).buildPooled());
+  }
 
   /// The queries and updates of the schema
   ///
+  /// @param client a client of this database
   /// @param transitions the transitions of the state machine, which give the entity models and event types
   Storage storage(
-      DataSource dataSource,
+      DatabaseClient client,
       Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions,
       String schemaName,
       Clock clock

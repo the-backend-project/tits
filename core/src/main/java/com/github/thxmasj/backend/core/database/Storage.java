@@ -30,7 +30,8 @@ public record Storage(
       String schemaName,
       Clock clock
   ) {
-    return Database.of(dataSource).storage(dataSource, transitions, schemaName, clock);
+    Database database = Database.of(dataSource);
+    return database.storage(database.client(dataSource), transitions, schemaName, clock);
   }
 
   /// Creates the schema, or verifies the checksum of the existing one, in the database behind the data source.

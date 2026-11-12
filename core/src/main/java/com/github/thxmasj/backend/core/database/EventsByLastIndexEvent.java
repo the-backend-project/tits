@@ -1,41 +1,32 @@
 package com.github.thxmasj.backend.core.database;
 
-import static com.github.thxmasj.backend.core.database.jdbc.PreparedStatementSupport.nextResultSet;
-import static com.github.thxmasj.backend.core.database.jdbc.PreparedStatementSupport.prepare;
-
 import com.github.thxmasj.backend.core.EntityId;
 import com.github.thxmasj.backend.core.EntityModel;
-import com.github.thxmasj.backend.core.Event;
 import com.github.thxmasj.backend.core.EventLog;
 import com.github.thxmasj.backend.core.EventType;
-import com.github.thxmasj.backend.core.database.jdbc.JDBCRow;
-import java.sql.ResultSet;
 import java.time.Clock;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
-import javax.sql.DataSource;
 import reactor.core.publisher.Mono;
 
 /// Events of the entity with the last index event of a group, i.e. the index entity with the last index event of a type
 /// whose data starts with the marshalled group, ordered by data, or of the one before it, and so on
 public class EventsByLastIndexEvent {
 
-  private final DataSource dataSource;
+  private final DatabaseClient client;
   private final Clock clock;
   private final String sql;
 
-  /// @param sql the SQL selecting a row with the entity id, which is null if the group has no index events, and then
-  ///            the events of the entity
+  /// @param sql the SQL selecting the events of the entity, with its entity id on each row. It selects no rows if the
+  ///            group has no index events.
   public EventsByLastIndexEvent(
-      DataSource dataSource,
+      DatabaseClient client,
       String sql,
       Clock clock
   ) {
-    this.dataSource = dataSource;
+    this.client = client;
     this.clock = clock;
     this.sql = sql;
   }
@@ -45,38 +36,29 @@ public class EventsByLastIndexEvent {
   ///
   /// @param group the marshalled group, i.e. the prefix of the data of its index events
   public Mono<EventLog> execute(EntityModel entityModel, List<EventType<?, ?>> eventTypes, UUID type, byte[] group, int position) {
-    return Mono.fromCallable(() -> {
-      try (
-          var connection = dataSource.getConnection();
-          var statement = prepare(
-              sql,
-              Map.of(
-                  "type", new Parameter<>(UUID.class, type),
-                  "group", new Parameter<>(byte[].class, group),
-                  "groupEnd", new Parameter<>(byte[].class, end(group)),
-                  "position", new Parameter<>(Integer.class, position)
-              ),
-              connection
-          )
-      ) {
-        ResultSet rs = nextResultSet(statement, statement.execute());
-        rs.next();
-        UUID entityId = rs.getObject("EntityId", UUID.class);
-        if (entityId == null)
-          return null;
-        rs = nextResultSet(statement, statement.getMoreResults());
-        var eventMapper = Mappers.eventMapper(eventTypes, clock);
-        List<Event<?>> events = new ArrayList<>();
-        while (rs.next()) {
+    var eventMapper = Mappers.eventMapper(eventTypes, clock);
+    return client.sql(sql)
+        .name("EventsByLastIndexEvent")
+        .bind("type", type)
+        .bind("group", group)
+        .bind("groupEnd", end(group))
+        .bind("position", position)
+        .map(row -> {
+          EntityId entityId = new EntityId.UUID(row.get("EntityId", UUID.class));
           try {
-            events.add(eventMapper.apply(new EntityId.UUID(entityId), new JDBCRow(rs)));
+            return eventMapper.apply(entityId, row);
           } catch (MappingFailure e) {
             throw new MappingFailure("EventsByLastIndexEvent: Failed to map row to event for entity model " + entityModel.name(), e);
           }
-        }
-        return new EventLog(entityModel, new EntityId.UUID(entityId), Collections.unmodifiableList(events));
-      }
-    });
+        })
+        .all()
+        .collectList()
+        .filter(events -> !events.isEmpty())
+        .map(events -> new EventLog(
+            entityModel,
+            new EntityId.UUID(events.getFirst().entityId()),
+            Collections.unmodifiableList(events)
+        ));
   }
 
   /// The least value greater than all values starting with the prefix

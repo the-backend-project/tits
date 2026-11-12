@@ -82,4 +82,66 @@ jobs:
           cache: maven
       # The demo runs on SQL Server only
       - name: Build Java artifacts and run any verifications on PostgreSQL
-        run: mvn -B verify --file pom.xml -pl '!demo' -Ddatabase=pgsql -Daether.artifactResolver.postProcessor.trustedChecksums.failIfMissing=true
+        run: mvn -B verify --file pom.xml -pl '!demo' -Ddatabase=pgsql-jdbc -Daether.artifactResolver.postProcessor.trustedChecksums.failIfMissing=true
+
+  build-postgres-r2dbc:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18.4@sha256:a02db8cac496f15b094798a38254f14d6e00741f709360e5e00bb6668ea31636
+        ports:
+          - 15432:5432
+        env:
+          POSTGRES_PASSWORD: A_Str0ng_Required_Password
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Initialize test database
+        env:
+          PGPASSWORD: A_Str0ng_Required_Password
+        run: |
+          until psql -h localhost -p 15432 -U postgres -c 'SELECT 1' > /dev/null 2>&1; do
+            echo "postgres init: server not yet ready"
+            sleep 1
+          done
+          psql -h localhost -p 15432 -U postgres -v ON_ERROR_STOP=1 -f test/postgres/init.sql
+      - name: Set up Java
+        uses: actions/setup-java@v6
+        with:
+          java-version: '27'
+          distribution: 'temurin'
+          cache: maven
+      # The demo runs on SQL Server only
+      - name: Build Java artifacts and run any verifications on PostgreSQL through R2DBC
+        run: mvn -B verify --file pom.xml -pl '!demo' -Ddatabase=pgsql-r2dbc -Daether.artifactResolver.postProcessor.trustedChecksums.failIfMissing=true
+
+  build-postgres-vertx:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18.4@sha256:a02db8cac496f15b094798a38254f14d6e00741f709360e5e00bb6668ea31636
+        ports:
+          - 15432:5432
+        env:
+          POSTGRES_PASSWORD: A_Str0ng_Required_Password
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Initialize test database
+        env:
+          PGPASSWORD: A_Str0ng_Required_Password
+        run: |
+          until psql -h localhost -p 15432 -U postgres -c 'SELECT 1' > /dev/null 2>&1; do
+            echo "postgres init: server not yet ready"
+            sleep 1
+          done
+          psql -h localhost -p 15432 -U postgres -v ON_ERROR_STOP=1 -f test/postgres/init.sql
+      - name: Set up Java
+        uses: actions/setup-java@v6
+        with:
+          java-version: '27'
+          distribution: 'temurin'
+          cache: maven
+      # The demo runs on SQL Server only
+      - name: Build Java artifacts and run any verifications on PostgreSQL through the Vert.x client
+        run: mvn -B verify --file pom.xml -pl '!demo' -Ddatabase=pgsql-vertx -Daether.artifactResolver.postProcessor.trustedChecksums.failIfMissing=true

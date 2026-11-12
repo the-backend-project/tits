@@ -63,7 +63,7 @@ public class StorageTest {
   private static Storage storage() {
     String schema = UUID.randomUUID().toString();
     Storage.createSchema(Init.migrationDataSource(), schema, "Test").block();
-    return Storage.of(Init.dataSource(), transitions, schema, clock);
+    return Init.storage(schema, transitions);
   }
 
   private static void store(Storage storage, Change... changes) {

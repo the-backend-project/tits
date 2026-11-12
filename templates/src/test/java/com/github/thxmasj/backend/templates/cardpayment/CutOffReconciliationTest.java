@@ -106,7 +106,6 @@ import reactor.core.publisher.Mono;
 public class CutOffReconciliationTest {
 
   private static final String AGGREGATOR_ID = "aggregator";
-  private static final DataSource dataSource = Init.dataSource();
   private static final DataSource migrationDataSource = Init.migrationDataSource();
 
   private static HttpServer acquirer;
@@ -353,12 +352,14 @@ public class CutOffReconciliationTest {
     return new StateMachine(
         _ -> Mono.empty(),
         transitions,
-        dataSource,
+        Init.database(),
+        Init.client(),
         migrationDataSource,
         UUID.randomUUID().toString(),
         "Test",
         Clock.systemUTC(),
-        new Logger("CutOffReconciliationTest")
+        new Logger("CutOffReconciliationTest"),
+        true
     );
   }
 

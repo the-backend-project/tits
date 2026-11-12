@@ -160,7 +160,7 @@ public class TestApiTest {
 
   private static final String schema = UUID.randomUUID().toString();
   private static final StateMachine machine = Init.stateMachine(schema, transitions);
-  private static final TestApi api = new TestApi(Init.dataSource(), schema, transitions, Clock.systemUTC());
+  private static final TestApi api = new TestApi(Init.database(), Init.client(), schema, transitions, Clock.systemUTC());
 
   private static EntityId open(String accountNumber) {
     return new EntityId.UUID(machine.onEvent(trigger(Open, Account), accountNumber).blockFirst().entityId());

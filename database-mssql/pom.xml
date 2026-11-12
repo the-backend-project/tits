@@ -36,12 +36,38 @@
 
   <profiles>
     <profile>
-      <!-- The tests run on PostgreSQL instead -->
-      <id>pgsql</id>
+      <!-- The tests run on PostgreSQL through JDBC instead -->
+      <id>pgsql-jdbc</id>
       <activation>
         <property>
           <name>database</name>
-          <value>pgsql</value>
+          <value>pgsql-jdbc</value>
+        </property>
+      </activation>
+      <properties>
+        <skipTests>true</skipTests>
+      </properties>
+    </profile>
+    <profile>
+      <!-- The tests run on PostgreSQL through R2DBC instead -->
+      <id>pgsql-r2dbc</id>
+      <activation>
+        <property>
+          <name>database</name>
+          <value>pgsql-r2dbc</value>
+        </property>
+      </activation>
+      <properties>
+        <skipTests>true</skipTests>
+      </properties>
+    </profile>
+    <profile>
+      <!-- The tests run on PostgreSQL through the Vert.x client instead -->
+      <id>pgsql-vertx</id>
+      <activation>
+        <property>
+          <name>database</name>
+          <value>pgsql-vertx</value>
         </property>
       </activation>
       <properties>
