@@ -3,7 +3,7 @@ package com.github.thxmasj.backend.core.database.jdbc;
 import static com.github.thxmasj.backend.core.database.jdbc.PreparedStatementSupport.prepare;
 import static java.util.stream.Collectors.joining;
 
-import com.github.thxmasj.backend.core.database.Client;
+import com.github.thxmasj.backend.core.database.DatabaseClient;
 import com.github.thxmasj.backend.core.database.MappingFailure;
 import com.github.thxmasj.backend.core.database.Parameter;
 import com.github.thxmasj.backend.core.database.Row;
@@ -23,7 +23,7 @@ import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 
 /// A client of a JDBC data source, which is closed with the client if it is closeable, e.g. a connection pool
-public class JDBCClient implements Client {
+public class JDBCClient implements DatabaseClient {
 
   private final DataSource dataSource;
   private final Scheduler scheduler = Schedulers.fromExecutorService(Executors.newVirtualThreadPerTaskExecutor());

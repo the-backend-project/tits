@@ -4,8 +4,8 @@ import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionModel;
-import com.github.thxmasj.backend.core.database.Client;
-import com.github.thxmasj.backend.core.database.Client.Config;
+import com.github.thxmasj.backend.core.database.DatabaseClient;
+import com.github.thxmasj.backend.core.database.DatabaseClient.Config;
 import com.github.thxmasj.backend.core.database.ConditionalTriggers;
 import com.github.thxmasj.backend.core.database.Database;
 import com.github.thxmasj.backend.core.database.DeleteDelayedTrigger;
@@ -53,13 +53,13 @@ public class PgsqlDatabase implements Database {
   }
 
   @Override
-  public Client client(DataSource dataSource) {
+  public DatabaseClient client(DataSource dataSource) {
     return new PgsqlClient(dataSource);
   }
 
   @Override
   public Storage storage(
-      Client client,
+      DatabaseClient client,
       Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions,
       String schemaName,
       Clock clock

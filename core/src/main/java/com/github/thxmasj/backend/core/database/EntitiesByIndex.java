@@ -25,7 +25,7 @@ import reactor.core.publisher.Mono;
 
 public class EntitiesByIndex {
 
-  private final Client client;
+  private final DatabaseClient client;
   private final Map<UUID, BiFunction<EntityId, Row, Event<?>>> eventMappers;
   private final Map<UUID, EntityModel> entityModels;
   private final String sql;
@@ -34,7 +34,7 @@ public class EntitiesByIndex {
   ///
   /// @param sql the SQL selecting the events of the indexed entities
   public EntitiesByIndex(
-      Client client,
+      DatabaseClient client,
       String sql,
       Map<? extends EntityModel, List<EventType<?, ?>>> eventTypesByEntityModel,
       Clock clock

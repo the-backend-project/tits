@@ -19,13 +19,13 @@ import reactor.core.publisher.Mono;
 
 public class EventsByEntityId {
 
-  private final Client client;
+  private final DatabaseClient client;
   private final Map<EntityModel, String> sqls;
   private final Clock clock;
 
   /// @param sql the SQL selecting the events of an entity from an event table, given the table name
   public EventsByEntityId(
-      Client client,
+      DatabaseClient client,
       Function<String, String> sql,
       List<EntityModel> entityModels,
       Clock clock

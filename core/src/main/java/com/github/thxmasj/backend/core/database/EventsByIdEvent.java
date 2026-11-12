@@ -18,7 +18,7 @@ import reactor.core.publisher.Mono;
 /// Events of the entity having an id, found by the id event of its id entity
 public class EventsByIdEvent {
 
-  private final Client client;
+  private final DatabaseClient client;
   private final Map<UUID, EntityModel> entityModels;
   private final Map<EntityModel, List<EventType<?, ?>>> eventTypesByEntityModel;
   private final Clock clock;
@@ -27,7 +27,7 @@ public class EventsByIdEvent {
   /// @param sql the SQL selecting the events of the entity, with its entity id and entity model id on each row. It
   ///            selects no rows if no entity has the id.
   public EventsByIdEvent(
-      Client client,
+      DatabaseClient client,
       String sql,
       Map<EntityModel, List<EventType<?, ?>>> eventTypesByEntityModel,
       Clock clock

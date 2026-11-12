@@ -17,7 +17,7 @@ import reactor.core.publisher.Mono;
 
 public class NextDelayedTrigger {
 
-  private final Client databaseClient;
+  private final DatabaseClient databaseClient;
   private final Clock clock;
   private final String sql;
   private final Map<UUID, EntityModel> entityModels;
@@ -26,7 +26,7 @@ public class NextDelayedTrigger {
   /// @param sql the SQL selecting the delayed trigger with the earliest passed deadline, if any, and postponing its
   ///            deadline to its next attempt
   public NextDelayedTrigger(
-      Client databaseClient,
+      DatabaseClient databaseClient,
       String sql,
       List<EventType<?, ?>> eventTypes,
       Clock clock,

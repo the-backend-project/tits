@@ -5,7 +5,7 @@ import static java.util.stream.Collectors.joining;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionModel;
-import com.github.thxmasj.backend.core.database.Client.Config;
+import com.github.thxmasj.backend.core.database.DatabaseClient.Config;
 import com.github.thxmasj.backend.core.database.jdbc.DataSourceBuilder;
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -20,7 +20,7 @@ import reactor.core.publisher.Mono;
 /// A database the state machine can store its schema in, with the SQL of its dialect and its driver. Databases are
 /// provided by the modules database-mssql, database-pgsql-jdbc, database-pgsql-r2dbc and database-pgsql-vertx, and
 /// found on the module path or class path. The schema is created through JDBC, while the state machine's queries go
-/// through a [Client], which may use another driver.
+/// through a [DatabaseClient], which may use another driver.
 public interface Database {
 
   /// The name the database is selected by, e.g. "mssql"
@@ -34,10 +34,10 @@ public interface Database {
   DataSource dataSource(Config config);
 
   /// A client of the data source, mapping the database's constraint violations
-  Client client(DataSource dataSource);
+  DatabaseClient client(DataSource dataSource);
 
   /// A client connecting to the database as configured, with a connection pool, which is closed with the client
-  default Client client(Config config) {
+  default DatabaseClient client(Config config) {
     return client(new DataSourceBuilder(this, config).buildPooled());
   }
 
@@ -46,7 +46,7 @@ public interface Database {
   /// @param client a client of this database
   /// @param transitions the transitions of the state machine, which give the entity models and event types
   Storage storage(
-      Client client,
+      DatabaseClient client,
       Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions,
       String schemaName,
       Clock clock

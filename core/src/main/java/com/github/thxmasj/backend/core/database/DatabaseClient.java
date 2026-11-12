@@ -11,7 +11,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /// Runs the queries and updates of the state machine. A client with a connection pool closes it when it is closed.
-public interface Client extends AutoCloseable {
+public interface DatabaseClient extends AutoCloseable {
 
   default Query.Builder sql(String sql) {
     return new Query.Builder(this).sql(sql);
@@ -49,18 +49,18 @@ public interface Client extends AutoCloseable {
 
   class Query<T> {
 
-    private final Client client;
+    private final DatabaseClient client;
     private final Map<String, Parameter<?>> parameters;
     private final String sql;
     private final String name;
     private Function<Row, T> rowMapper;
 
-    Query(String name, String sql, Map<String, Parameter<?>> parameters, Client client, Function<Row, T> rowMapper) {
+    Query(String name, String sql, Map<String, Parameter<?>> parameters, DatabaseClient client, Function<Row, T> rowMapper) {
       this(name, sql, parameters, client);
       this.rowMapper = rowMapper;
     }
 
-    Query(String name, String sql, Map<String, Parameter<?>> parameters, Client client) {
+    Query(String name, String sql, Map<String, Parameter<?>> parameters, DatabaseClient client) {
       this.name = name;
       this.sql = sql;
       this.parameters = parameters;
@@ -82,12 +82,12 @@ public interface Client extends AutoCloseable {
     public static class Builder {
 
       private final Map<String, Parameter<?>> parameters = new HashMap<>();
-      private final Client client;
+      private final DatabaseClient client;
       private String name;
       private String parameterPrefix;
       private String sql;
 
-      public Builder(Client client) {
+      public Builder(DatabaseClient client) {
         this.client = client;
       }
 

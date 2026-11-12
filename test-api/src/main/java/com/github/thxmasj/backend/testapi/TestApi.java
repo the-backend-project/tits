@@ -14,7 +14,7 @@ import com.github.thxmasj.backend.core.IdEntityModel;
 import com.github.thxmasj.backend.core.IndexEntityModel;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionModel;
-import com.github.thxmasj.backend.core.database.Client;
+import com.github.thxmasj.backend.core.database.DatabaseClient;
 import com.github.thxmasj.backend.core.database.Database;
 import com.github.thxmasj.backend.core.database.Storage;
 import com.github.thxmasj.backend.core.database.UnknownEntity;
@@ -45,7 +45,7 @@ import reactor.core.publisher.Mono;
 /// meant for putting entities in a specific state before a test. It is therefore not to be used in production code.
 public class TestApi {
 
-  private final Client client;
+  private final DatabaseClient client;
   private final String schema;
   private final Clock clock;
   private final Map<UUID, EntityModel> entityModels;
@@ -76,7 +76,7 @@ public class TestApi {
   /// @param transitions the transitions of the state machine, which give the entity models and event types
   public TestApi(
       Database database,
-      Client client,
+      DatabaseClient client,
       String schemaName,
       Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions,
       Clock clock

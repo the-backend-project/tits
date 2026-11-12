@@ -1,6 +1,6 @@
 package com.github.thxmasj.backend.demo;
 
-import com.github.thxmasj.backend.core.database.Client;
+import com.github.thxmasj.backend.core.database.DatabaseClient;
 import java.time.Duration;
 import java.util.Map;
 
@@ -8,7 +8,7 @@ import java.util.Map;
 /// deploy have defaults; credentials and the location of the database never do.
 public record Config(
     int port,
-    Client.Config database,
+    DatabaseClient.Config database,
     String schema,
     String role
 ) {
@@ -16,7 +16,7 @@ public record Config(
   public static Config fromEnvironment(Map<String, String> env) {
     return new Config(
         Integer.parseInt(env.getOrDefault("PORT", "8080")),
-        new Client.Config(
+        new DatabaseClient.Config(
             required(env, "DATABASE_HOST"),
             Integer.parseInt(env.getOrDefault("DATABASE_PORT", "1433")),
             required(env, "DATABASE_NAME"),

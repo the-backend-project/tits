@@ -2,8 +2,8 @@
 
 The state machine creates its [schema](data-model.md) if it does not exist, and verifies it if it does. This is done by
 `Database.createSchema`, implemented by `CreateSchema` in [database-mssql](../database-mssql) and
-[database-pgsql-jdbc](../database-pgsql-jdbc), whose `CreateSchema` the reactive PostgreSQL [modules](databases.md) use too, and
-called either:
+[database-pgsql-jdbc](../database-pgsql-jdbc), whose `CreateSchema` the reactive PostgreSQL [modules](databases.md)
+use too, and called either:
 
 * by the `StateMachine` constructor, when it is given a schema data source and a role, or
 * by a separate admin process, such as `demo migrate` in the [cloud native demo](cloud-native.md), in which case the
@@ -94,8 +94,8 @@ When the whole host or its network goes away, nothing closes the connection, and
 keepalive. SQL Server's `KeepAlive` setting is 30 seconds by default. PostgreSQL's `tcp_keepalives_idle` defaults to
 that of the operating system, which on Linux is over two hours. Set it lower on PostgreSQL servers where this matters.
 
-Until the lock is released, state machines on a schema that does not exist yet can not create it. Waiting for the
-lock is limited by the query timeout of the schema data source (`Client.Config.queryTimeout`), and the `StateMachine`
+Until the lock is released, state machines on a schema that does not exist yet can not create it. Waiting for the lock
+is limited by the query timeout of the schema data source (`DatabaseClient.Config.queryTimeout`), and the `StateMachine`
 constructor gives up on the schema creation after 20 seconds, so their startup fails, and is retried by whatever
 restarts them, until the lock is released. State machines on an existing schema are not affected, as they verify it
 without the lock.

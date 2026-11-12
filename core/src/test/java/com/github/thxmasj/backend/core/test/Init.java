@@ -4,8 +4,8 @@ import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.StateMachine;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionModel;
-import com.github.thxmasj.backend.core.database.Client;
-import com.github.thxmasj.backend.core.database.Client.Config;
+import com.github.thxmasj.backend.core.database.DatabaseClient;
+import com.github.thxmasj.backend.core.database.DatabaseClient.Config;
 import com.github.thxmasj.backend.core.database.Database;
 import com.github.thxmasj.backend.core.database.Storage;
 import com.github.thxmasj.backend.core.database.jdbc.DataSourceBuilder;
@@ -30,7 +30,7 @@ public class Init {
   private static final boolean pgsql = database.name().startsWith("pgsql");
   private static final DataSource dataSource = new DataSourceBuilder(database, databaseConfig("testlogin", "Please_hide_me!")).build();
   // Shared by the state machines of the tests, which do not close them
-  private static final Client client = database.client(databaseConfig("testlogin", "Please_hide_me!"));
+  private static final DatabaseClient client = database.client(databaseConfig("testlogin", "Please_hide_me!"));
   private static final DataSource migrationDataSource = new DataSourceBuilder(database, databaseConfig(
       pgsql ? "postgres" : "sa",
       "A_Str0ng_Required_Password"
@@ -46,7 +46,7 @@ public class Init {
   }
 
   /// The client the state machines of the tests use
-  public static Client client() {
+  public static DatabaseClient client() {
     return client;
   }
 

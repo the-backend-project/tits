@@ -15,14 +15,14 @@ import reactor.core.publisher.Mono;
 /// whose data starts with the marshalled group, ordered by data, or of the one before it, and so on
 public class EventsByLastIndexEvent {
 
-  private final Client client;
+  private final DatabaseClient client;
   private final Clock clock;
   private final String sql;
 
   /// @param sql the SQL selecting the events of the entity, with its entity id on each row. It selects no rows if the
   ///            group has no index events.
   public EventsByLastIndexEvent(
-      Client client,
+      DatabaseClient client,
       String sql,
       Clock clock
   ) {

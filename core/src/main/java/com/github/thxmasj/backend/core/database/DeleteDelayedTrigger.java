@@ -5,11 +5,11 @@ import java.util.UUID;
 
 public class DeleteDelayedTrigger {
 
-  private final Client databaseClient;
+  private final DatabaseClient databaseClient;
   private final String sql;
 
   /// @param sql the SQL deleting the delayed trigger of an entity with an event number
-  public DeleteDelayedTrigger(Client databaseClient, String sql) {
+  public DeleteDelayedTrigger(DatabaseClient databaseClient, String sql) {
     this.databaseClient = databaseClient;
     this.sql = sql;
   }

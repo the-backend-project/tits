@@ -1,8 +1,8 @@
 package com.github.thxmasj.backend.database.mssql;
 
-import com.github.thxmasj.backend.core.database.Client.DataIntegrityViolation;
-import com.github.thxmasj.backend.core.database.Client.PrimaryKeyConstraintViolation;
-import com.github.thxmasj.backend.core.database.Client.UniqueIndexConstraintViolation;
+import com.github.thxmasj.backend.core.database.DatabaseClient.DataIntegrityViolation;
+import com.github.thxmasj.backend.core.database.DatabaseClient.PrimaryKeyConstraintViolation;
+import com.github.thxmasj.backend.core.database.DatabaseClient.UniqueIndexConstraintViolation;
 import com.github.thxmasj.backend.core.database.jdbc.JDBCClient;
 import com.microsoft.sqlserver.jdbc.SQLServerException;
 import java.sql.SQLException;

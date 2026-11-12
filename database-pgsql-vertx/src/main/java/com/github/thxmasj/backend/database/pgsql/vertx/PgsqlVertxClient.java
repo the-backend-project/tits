@@ -2,7 +2,7 @@ package com.github.thxmasj.backend.database.pgsql.vertx;
 
 import static java.util.stream.Collectors.joining;
 
-import com.github.thxmasj.backend.core.database.Client;
+import com.github.thxmasj.backend.core.database.DatabaseClient;
 import com.github.thxmasj.backend.core.database.MappingFailure;
 import com.github.thxmasj.backend.core.database.Parameter;
 import com.github.thxmasj.backend.core.database.Row;
@@ -35,7 +35,7 @@ import reactor.core.publisher.Mono;
 /// The statements are pipelined, i.e. sent without waiting for the results of the ones before them, so they take a
 /// single round trip, as with the JDBC driver. The rows of the last statement are given, as by
 /// [com.github.thxmasj.backend.core.database.jdbc.JDBCClient].
-public class PgsqlVertxClient implements Client {
+public class PgsqlVertxClient implements DatabaseClient {
 
   private final Vertx vertx;
   private final Pool pool;

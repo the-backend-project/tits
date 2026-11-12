@@ -9,7 +9,7 @@ import com.github.thxmasj.backend.core.Event;
 import com.github.thxmasj.backend.core.IdEntityModel;
 import com.github.thxmasj.backend.core.IndexEntityModel;
 import com.github.thxmasj.backend.core.TriggerType;
-import com.github.thxmasj.backend.core.database.Client;
+import com.github.thxmasj.backend.core.database.DatabaseClient;
 import java.time.Clock;
 import java.util.HexFormat;
 import java.util.List;
@@ -20,7 +20,7 @@ class ChangeState extends com.github.thxmasj.backend.core.database.ChangeState {
 
   private final String schema;
 
-  ChangeState(Client databaseClient, String schema, Clock clock) {
+  ChangeState(DatabaseClient databaseClient, String schema, Clock clock) {
     super(databaseClient, clock);
     this.schema = schema;
   }

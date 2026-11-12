@@ -3,7 +3,7 @@ package com.github.thxmasj.backend.database.pgsql.r2dbc;
 import static java.util.function.Function.identity;
 import static java.util.stream.Collectors.joining;
 
-import com.github.thxmasj.backend.core.database.Client;
+import com.github.thxmasj.backend.core.database.DatabaseClient;
 import com.github.thxmasj.backend.core.database.MappingFailure;
 import com.github.thxmasj.backend.core.database.Parameter;
 import com.github.thxmasj.backend.core.database.Row;
@@ -32,7 +32,7 @@ import reactor.core.publisher.Mono;
 /// R2DBC runs one statement with parameters at a time, so SQL of several statements, separated by a semicolon at the
 /// end of a line, is run statement by statement in a transaction. The rows of the last statement are given, as by
 /// [com.github.thxmasj.backend.core.database.jdbc.JDBCClient].
-public class PgsqlR2dbcClient implements Client {
+public class PgsqlR2dbcClient implements DatabaseClient {
 
   private final ConnectionPool pool;
 

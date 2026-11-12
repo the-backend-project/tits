@@ -28,7 +28,7 @@ import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext.Pend
 import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext.RejectedChangeContext;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.backend.core.Tuples.Tuple3;
-import com.github.thxmasj.backend.core.database.Client;
+import com.github.thxmasj.backend.core.database.DatabaseClient;
 import com.github.thxmasj.backend.core.database.Database;
 import com.github.thxmasj.backend.core.database.EntityGroupNotInitialised;
 import com.github.thxmasj.backend.core.database.EventAlreadyExists;
@@ -71,7 +71,7 @@ public class StateMachine implements AutoCloseable {
   private final Clock clock;
   private final Listener listener;
   private final List<Looper<?>> workers = new ArrayList<>();
-  private final Client client;
+  private final DatabaseClient client;
   private final Storage storage;
   private final Map<EntityModel, Traverser> traversers;
   private final Map<EntityModel, List<EventType<?, ?>>> eventTypesByEntityModel;
@@ -121,7 +121,7 @@ public class StateMachine implements AutoCloseable {
       Function<List<String>, Mono<Void>> delayer,
       Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions,
       Database database,
-      Client client,
+      DatabaseClient client,
       DataSource schemaDataSource,
       String schemaName,
       String role,
