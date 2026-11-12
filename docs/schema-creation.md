@@ -30,6 +30,9 @@ then verify it. `CreateSchema` does so in the following steps, on a single conne
    partially created schema behind.
 5. Release the lock.
 
+The check without the lock is done in auto-commit mode. The connection's auto-commit mode and isolation level are
+restored afterwards, so that a connection pool which does not reset them gets the connection back as it lent it.
+
 The lock is named after the schema, `CreateSchema <schema>`, so state machines on different schemas do not wait for
 each other.
 

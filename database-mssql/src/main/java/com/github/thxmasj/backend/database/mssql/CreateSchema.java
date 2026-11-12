@@ -142,8 +142,16 @@ public class CreateSchema {
   public Mono<Integer> execute(DataSource dataSource) {
     return Mono.fromCallable(() -> {
           try (Connection connection = dataSource.getConnection()) {
-            Long checksum = unlockedChecksum(connection);
-            return checksum != null ? verified(checksum) : createLocked(connection);
+            // Restored, as a pool may not reset it when the connection is returned
+            boolean autoCommit = connection.getAutoCommit();
+            try {
+              // The check without the lock is not done in a transaction
+              connection.setAutoCommit(true);
+              Long checksum = unlockedChecksum(connection);
+              return checksum != null ? verified(checksum) : createLocked(connection);
+            } finally {
+              connection.setAutoCommit(autoCommit);
+            }
           }
         })
         .subscribeOn(Schedulers.boundedElastic())
@@ -178,12 +186,8 @@ public class CreateSchema {
       connection.rollback();
       throw e;
     } finally {
-      // Released first, so that it is not left on a pooled connection if restoring the auto-commit mode fails
-      try {
-        applock(connection, "sp_releaseapplock", "{? = call sp_releaseapplock(?, 'Session')}");
-      } finally {
-        connection.setAutoCommit(true);
-      }
+      // Released before the auto-commit mode is restored, so that it is not left on a pooled connection if that fails
+      applock(connection, "sp_releaseapplock", "{? = call sp_releaseapplock(?, 'Session')}");
     }
   }
 

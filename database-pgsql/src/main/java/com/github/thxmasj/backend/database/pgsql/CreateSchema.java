@@ -141,9 +141,19 @@ public class CreateSchema {
   public Mono<Integer> execute(DataSource dataSource) {
     return Mono.fromCallable(() -> {
           try (Connection connection = dataSource.getConnection()) {
-            // A schema being created by another transaction is not visible until it is committed
-            Long checksum = existingChecksum(connection);
-            return checksum != null ? verified(checksum) : createLocked(connection);
+            // Restored, as a pool may not reset them when the connection is returned
+            boolean autoCommit = connection.getAutoCommit();
+            int isolation = connection.getTransactionIsolation();
+            try {
+              // The check without the lock is not done in a transaction, which would prevent changing the isolation
+              connection.setAutoCommit(true);
+              // A schema being created by another transaction is not visible until it is committed
+              Long checksum = existingChecksum(connection);
+              return checksum != null ? verified(checksum) : createLocked(connection);
+            } finally {
+              connection.setTransactionIsolation(isolation);
+              connection.setAutoCommit(autoCommit);
+            }
           }
         })
         .subscribeOn(Schedulers.boundedElastic())
