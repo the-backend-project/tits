@@ -10,7 +10,7 @@ identity provider's public keys.
 | Endpoint | Description |
 |---|---|
 | `POST /token` | The [token endpoint](https://www.rfc-editor.org/rfc/rfc6749#section-3.2). Takes `grant_type=client_credentials` and an optional `scope`. Without a scope the token gets all the scopes of the client. |
-| `POST /clients` | Registers a client, e.g. `{"client_id": "orders", "scope": "orders:read orders:write"}`, with an optional `subject` (see below). Requires a bearer token with the scope `client-registration`. Responds with the client's generated `client_secret`, which is shown only this once, and its `subject` if it has one. |
+| `POST /clients` | Registers a client, e.g. `{"client_id": "orders", "scope": "orders:read orders:write"}`, with an optional `subject` (see below). Without a `scope` the client has no scopes. Requires a bearer token with the scope `client-registration`. Responds with the client's generated `client_secret`, which is shown only this once, and its `subject` if it has one. |
 | `GET /.well-known/jwks.json` | The public keys the tokens are signed with. |
 | `GET /.well-known/oauth-authorization-server` | The [authorization server metadata](https://www.rfc-editor.org/rfc/rfc8414). |
 | `GET /health` | Responds 200 while the process is serving. |
@@ -78,6 +78,22 @@ The edge tells the state machine what it found in `X-Idp-` headers, which it rem
 log therefore holds the hashes of secrets and the claims of tokens, but never a secret or a token. Secrets are 256
 random bits, so a fast hash (SHA-256) is enough: slow hashes only protect secrets that can be guessed.
 
+### Imported clients
+
+Clients moved from another identity provider keep their secrets, which may be guessable and are known here only by
+their BCrypt hashes, e.g. of Spring Security's `BCryptPasswordEncoder`. The clients are declared in the configuration
+(see `CLIENTS_FILE` below), and are registered at startup unless their client ids are taken. The edge keeps their BCrypt
+hashes in memory, and verifies the secret of an imported client against its BCrypt hash:
+
+- A matching secret is passed on as the SHA-256 hash of the BCrypt hash, which is what the client is registered with.
+- A secret which does not match is passed on as a hash that matches no client, also when the secret is the BCrypt hash
+  itself.
+
+The state machine thus compares hashes as for any other client, and neither the secrets nor their BCrypt hashes enter
+the event log. The responses to an unknown client and a wrong secret are the same, but a wrong secret of an imported
+client takes the time of BCrypt to refuse, which tells that the client id is that of an imported client. Imported
+clients are registered by `(import)`, which is no client id.
+
 ## Running
 
 Requires Docker (or Podman) with Compose. From the `apps/identity-provider` directory:
@@ -117,6 +133,8 @@ The identity provider is configured by environment variables:
 | `TOKEN_LIFETIME_SECONDS` | How long the tokens are valid. Default 300. |
 | `TOKEN_AUDIENCE` | The `aud` of the tokens. Default none. |
 | `BOOTSTRAP_CLIENT_ID`, `BOOTSTRAP_CLIENT_SECRET` | A client registered at startup with the scope `client-registration`, so the first clients can be registered. The secret must have at least 32 characters. If the client id is taken, e.g. by an earlier start, the registered client is kept as is. |
+| `CLIENTS_FILE` | The path of a JSON file with clients to import at startup, see [Imported clients](#imported-clients) and below. |
+| `CLIENTS` | The JSON of `CLIENTS_FILE` itself, for when that is easier to provide. At most one of the two may be set. |
 | `PORT` | Default 8080. |
 | `DATABASE` | `mssql` or `pgsql`. Default `mssql`. |
 | `DATABASE_HOST`, `DATABASE_PORT`, `DATABASE_NAME`, `DATABASE_USER`, `DATABASE_PASSWORD` | The database. The port defaults to that of the database. The user and password depend on `DATABASE_AUTHENTICATION`. |
@@ -142,10 +160,45 @@ curl -s -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
   -d '{"client_id": "orders", "scope": "orders:read orders:write"}' https://idp.example.com/clients
 ```
 
+The clients to import are a JSON array:
+
+```json
+[
+  {
+    "client_id": "example-wallet",
+    "secret_hash": "$2a$10$Uekj8xXissq6Wy3fUSUOW.epdfkVAf3.uY6/DkL8L43gfnvmTrB82",
+    "subject": "https://wallet.example.com/provider/example",
+    "scope": "payments:read payments:write",
+    "client_name": "Example wallet"
+  },
+  {"client_id": "aggregator", "secret_hash": "$2b$12$..."}
+]
+```
+
+| Field | Description |
+|---|---|
+| `client_id` | Required. A client id as for a registration. |
+| `secret_hash` | Required. The BCrypt hash of the secret, with the prefix `$2a$`, `$2b$` or `$2y$` and any cost. |
+| `subject` | Optional. The `sub` of the client's tokens, as for a registration. |
+| `scope` | Optional. The space separated scopes of the client. Absent or empty for none. |
+| `client_name` | Optional. Only logged. |
+
+Startup fails if the JSON is invalid, a field is unknown or invalid, a client id is repeated, or a client id is that of
+the bootstrap client. A client whose client id is taken, e.g. by an earlier start, is kept as is and logged: changing
+the subject, scope or secret hash of an imported client has no effect once it is registered, and a changed secret hash
+locks the client out, as the edge verifies secrets against the hash in the configuration. Likewise, a client id taken by
+a client registered through `POST /clients` must not be imported, as the edge would no longer accept its secret.
+
+A process which resolves the configuration itself, e.g. the signing keys from a key vault, can run the identity
+provider on the JVM with `IdentityProvider.run(args, env)`, which takes the commands of the executable and is
+configured by the map `env` instead of the environment variables. `IdentityProvider.main(args)` runs it with the
+environment variables. Like `main`, `run` exits the process if serving fails to start.
+
 `IdentityProviderTest` runs the identity provider against the test database.
 
 ## Gaps
 
-- Clients can't be changed or removed, and their secrets can't be rotated.
+- Clients can't be changed or removed, and their secrets can't be rotated. This includes imported clients, whose changes
+  in the configuration are ignored once they are registered.
 - Tokens can't be revoked, which keeps their lifetime short.
 - The image is only run on SQL Server. On PostgreSQL the identity provider is only tested on the JVM.

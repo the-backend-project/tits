@@ -11,6 +11,7 @@ import com.github.thxmasj.backend.core.http.NettyHttpClient;
 import com.github.thxmasj.backend.core.http.NettyHttpClientBuilder;
 import com.github.thxmasj.backend.core.test.Init;
 import com.github.thxmasj.backend.identityprovider.Config.BootstrapClient;
+import com.github.thxmasj.backend.identityprovider.ImportedClients.ImportedClient;
 import com.nimbusds.jose.JOSEObjectType;
 import com.nimbusds.jose.crypto.RSASSAVerifier;
 import com.nimbusds.jose.jwk.JWKSet;
@@ -39,6 +40,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import reactor.netty.DisposableServer;
 import tools.jackson.databind.JsonNode;
 
@@ -50,17 +52,30 @@ public class IdentityProviderTest {
   private static final String adminId = "admin";
   private static final String adminSecret = "the-secret-of-the-bootstrap-client";
   private static final Duration tokenLifetime = Duration.ofMinutes(5);
+  /// An imported client with a hash made by Spring Security's BCryptPasswordEncoder when the test starts
+  private static final String partnerSecret = "Please_hide_me!";
+  private static final String partnerSubject = "merchantaggregator:6f1c2a9e-3b7d-4e58-9a0c-2d4b8e1f7a63";
+  /// An imported client with a hash made once by BCryptPasswordEncoder
+  private static final String legacySecret = "A_fixed_secret_of_an_imported_client";
+  private static final String legacyHash = "$2a$10$Uekj8xXissq6Wy3fUSUOW.epdfkVAf3.uY6/DkL8L43gfnvmTrB82";
+  private static final String legacySubject = "https://wallet.example.com/provider/example";
 
   private static final String schema = UUID.randomUUID().toString();
   private static StateMachine stateMachine;
   private static DisposableServer server;
   private static String adminToken;
+  private static String partnerHash;
+  private static List<ImportedClient> importedClients;
 
   @BeforeAll
   public static void setUp() throws Exception {
     stateMachine = Init.stateMachine(schema, Inbox.transitions(tokenLifetime));
     IdentityProvider.bootstrap(stateMachine, new BootstrapClient(adminId, adminSecret));
-    server = IdentityProvider.serve(stateMachine, new Keys(Keys.generate(), issuer, null, Clock.systemUTC()), 0);
+    partnerHash = new BCryptPasswordEncoder().encode(partnerSecret);
+    assertThat(partnerHash).startsWith("$2a$10$");
+    importedClients = importedClients(partnerHash);
+    IdentityProvider.importClients(stateMachine, importedClients);
+    server = IdentityProvider.serve(stateMachine, new Keys(Keys.generate(), issuer, null, Clock.systemUTC()), 0, importedClients);
     adminToken = json(token(adminId, adminSecret, "grant_type=client_credentials")).get("access_token").asString();
   }
 
@@ -164,6 +179,50 @@ public class IdentityProviderTest {
   }
 
   @Test
+  public void whenImportedClientAuthenticatesThenItGetsTokensWithItsSubjectAndScopes() throws Exception {
+    HttpResponse<String> response = token("partner", partnerSecret, "grant_type=client_credentials");
+
+    assertThat(response.statusCode()).as(response.body()).isEqualTo(200);
+    assertThat(json(response).get("scope").asString()).isEqualTo("payments:read payments:write");
+    JWTClaimsSet claims = claims(json(response));
+    assertThat(claims.getSubject()).isEqualTo(partnerSubject);
+    assertThat(claims.getStringClaim("client_id")).isEqualTo("partner");
+    assertThat(claims.getStringClaim("scope")).isEqualTo("payments:read payments:write");
+  }
+
+  @Test
+  public void whenImportedClientHasFixedSpringHashAndNoScopeThenItGetsTokensWithoutScopes() throws Exception {
+    HttpResponse<String> response = token("legacy", legacySecret, "grant_type=client_credentials");
+
+    assertThat(response.statusCode()).as(response.body()).isEqualTo(200);
+    JWTClaimsSet claims = claims(json(response));
+    assertThat(claims.getSubject()).isEqualTo(legacySubject);
+    assertThat(claims.getStringClaim("client_id")).isEqualTo("legacy");
+    assertThat(claims.getStringClaim("scope")).isEmpty();
+    assertThat(token("legacy", legacySecret, "grant_type=client_credentials&scope=a").statusCode()).isEqualTo(400);
+  }
+
+  @Test
+  public void whenImportedClientHasWrongSecretThenInvalidClient() throws Exception {
+    assertInvalidClient(token("partner", "wrong-secret", "grant_type=client_credentials"));
+    assertInvalidClient(token("legacy", partnerSecret, "grant_type=client_credentials"));
+    // The BCrypt hash is not a secret
+    assertInvalidClient(token("partner", partnerHash, "grant_type=client_credentials"));
+    assertInvalidClient(token("legacy", legacyHash, "grant_type=client_credentials"));
+  }
+
+  @Test
+  public void whenImportedAgainThenRegisteredClientsAreKept() throws Exception {
+    String otherHash = new BCryptPasswordEncoder().encode("another-secret");
+
+    assertThatNoException().isThrownBy(() -> IdentityProvider.importClients(stateMachine, importedClients(otherHash)));
+    assertThatNoException().isThrownBy(() -> IdentityProvider.importClients(stateMachine, importedClients));
+
+    assertThat(token("partner", partnerSecret, "grant_type=client_credentials").statusCode()).isEqualTo(200);
+    assertThat(token("legacy", legacySecret, "grant_type=client_credentials").statusCode()).isEqualTo(200);
+  }
+
+  @Test
   public void credentialsAreNotInTheEventLog() throws Exception {
     String secret = register("discreet", "a");
     String token = json(token("discreet", secret, "grant_type=client_credentials")).get("access_token").asString();
@@ -177,7 +236,11 @@ public class IdentityProviderTest {
         .doesNotContain(adminSecret)
         .doesNotContain(basic("discreet", secret).substring("Basic ".length()))
         .doesNotContain(token)
-        .doesNotContain(adminToken);
+        .doesNotContain(adminToken)
+        .doesNotContain(partnerSecret)
+        .doesNotContain(partnerHash)
+        .doesNotContain(legacySecret)
+        .doesNotContain(legacyHash);
   }
 
   @Test
@@ -310,6 +373,14 @@ public class IdentityProviderTest {
   public void whenUnknownPathOrMethodThenNotFoundOrNotAllowed() throws Exception {
     assertThat(get("/unknown").statusCode()).isEqualTo(404);
     assertThat(get("/token").statusCode()).isEqualTo(405);
+  }
+
+  private static List<ImportedClient> importedClients(String partnerHash) {
+    var clients = List.of(
+        Map.of("client_id", "partner", "secret_hash", partnerHash, "subject", partnerSubject, "scope", "payments:read payments:write", "client_name", "A partner"),
+        Map.of("client_id", "legacy", "secret_hash", legacyHash, "subject", legacySubject)
+    );
+    return ImportedClients.parse(DataType.objectMapper.writeValueAsString(clients), "test");
   }
 
   private static void assertInvalidClient(HttpResponse<String> response) {

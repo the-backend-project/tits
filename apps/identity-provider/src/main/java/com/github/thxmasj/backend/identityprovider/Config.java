@@ -2,9 +2,11 @@ package com.github.thxmasj.backend.identityprovider;
 
 import com.github.thxmasj.backend.core.database.DatabaseClient;
 import com.github.thxmasj.backend.core.database.DatabaseClient.Config.Authentication;
+import com.github.thxmasj.backend.identityprovider.ImportedClients.ImportedClient;
 import java.net.URI;
 import java.time.Duration;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 
 /// All configuration is read from environment variables (12-factor III). Only settings with a sensible value in every
@@ -18,6 +20,7 @@ import java.util.Map;
 /// @param tokenLifetime   how long an access token is valid
 /// @param audience        the `aud` of the access tokens, if any
 /// @param bootstrapClient a client registered at startup, which can register other clients
+/// @param clients         the clients imported at startup, with the BCrypt hashes of their secrets
 public record Config(
     int port,
     String database,
@@ -28,7 +31,8 @@ public record Config(
     String signingKeys,
     Duration tokenLifetime,
     String audience,
-    BootstrapClient bootstrapClient
+    BootstrapClient bootstrapClient,
+    List<ImportedClient> clients
 ) {
 
   public record BootstrapClient(String id, String secret) {}
@@ -45,8 +49,17 @@ public record Config(
         env.get("SIGNING_KEYS"),
         Duration.ofSeconds(Long.parseLong(env.getOrDefault("TOKEN_LIFETIME_SECONDS", "300"))),
         env.get("TOKEN_AUDIENCE"),
-        bootstrapClient(env)
+        bootstrapClient(env),
+        importedClients(env)
     );
+  }
+
+  private static List<ImportedClient> importedClients(Map<String, String> env) {
+    List<ImportedClient> clients = ImportedClients.fromEnvironment(env);
+    String bootstrapId = env.get("BOOTSTRAP_CLIENT_ID");
+    if (clients.stream().anyMatch(client -> client.clientId().equals(bootstrapId)))
+      throw new IllegalArgumentException("The bootstrap client " + bootstrapId + " can't also be imported");
+    return clients;
   }
 
   /// The user and password are those of a SQL login, or of an Entra ID service principal, or the user is the optional

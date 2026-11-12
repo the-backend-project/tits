@@ -136,7 +136,7 @@ public interface Inbox {
   }
 
   /// A registration request, e.g. `{"client_id": "orders", "scope": "orders:read orders:write"}`, with an optional
-  /// `subject` for the `sub` of the client's tokens
+  /// `subject` for the `sub` of the client's tokens. A client without `scope` has no scopes.
   private static Validated<Registration> registration(HttpRequestMessage request) {
     String registeredBy = request.headerValue(RegisteredByHeader);
     String secretHash = request.headerValue(SecretHashHeader);
@@ -153,8 +153,9 @@ public interface Inbox {
     JsonNode clientId = body.get("client_id");
     if (clientId == null || !clientId.isString() || !Clients.isValidClientId(clientId.asString()))
       return invalid("client_id must be 1 to 100 of the characters A-Z, a-z, 0-9, '.', '_', '~' and '-'");
+    // A client without scopes, which is imported, has no scope
     JsonNode scope = body.get("scope");
-    if (scope == null || !scope.isString() || !Scopes.isValid(scope.asString()))
+    if (scope != null && (!scope.isString() || !Scopes.isValid(scope.asString())))
       return invalid("scope must be a space separated list of scopes");
     JsonNode subject = body.get("subject");
     if (subject != null && (!subject.isString() || !Clients.isValidSubject(subject.asString())))
@@ -163,7 +164,7 @@ public interface Inbox {
         clientId.asString(),
         subject != null ? subject.asString() : null,
         secretHash,
-        Scopes.parse(scope.asString()),
+        scope != null ? Scopes.parse(scope.asString()) : List.of(),
         registeredBy
     ));
   }

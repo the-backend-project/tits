@@ -25,18 +25,21 @@ import tools.jackson.databind.node.ObjectNode;
 
 /// The edge between the HTTP clients and the state machine. Credentials are handled here and nowhere else: client
 /// secrets are hashed before a request enters the event log, generated secrets are added to responses after they leave
-/// it, access tokens are signed on their way out and verified on their way in. The event log only records hashes and
-/// the claims of the tokens.
+/// it, access tokens are signed on their way out and verified on their way in, and the secrets of imported clients are
+/// verified against their BCrypt hashes. The event log only records hashes and the claims of the tokens.
 ///
 /// The edge also serves what does not change with the requests: the health check, the public keys and the metadata.
 final class Edge implements HttpInboxListener.Filter {
 
   private final Keys keys;
   private final String metadata;
+  /// The BCrypt hashes of the secrets of the imported clients, by client id
+  private final Map<String, String> importedSecretHashes;
 
-  Edge(Keys keys) {
+  Edge(Keys keys, Map<String, String> importedSecretHashes) {
     this.keys = keys;
     this.metadata = metadata(keys);
+    this.importedSecretHashes = Map.copyOf(importedSecretHashes);
   }
 
   @Override
@@ -86,13 +89,20 @@ final class Edge implements HttpInboxListener.Filter {
     var headers = new HashMap<>(request.headers());
     headers.keySet().removeIf(name -> name.equalsIgnoreCase("Authorization"));
     headers.put(ClientIdHeader, clientId);
-    headers.put(SecretHashHeader, Secrets.hash(secret));
+    headers.put(SecretHashHeader, secretHash(clientId, secret));
     return next.apply(new HttpRequestMessage(request.method(), request.uri(), headers, request.body()))
         .map(response -> switch (response.statusCode()) {
           case 200 -> tokenResponse(response);
           case 401 -> withHeader(response, "WWW-Authenticate", basicChallenge());
           default -> response;
         });
+  }
+
+  /// The hash the state machine compares with that of the client. The secret of an imported client is verified here
+  /// against its BCrypt hash, see [ImportedClients].
+  private String secretHash(String clientId, String secret) {
+    String bcryptHash = importedSecretHashes.get(clientId);
+    return bcryptHash != null ? ImportedClients.secretHash(secret, bcryptHash) : Secrets.hash(secret);
   }
 
   /// The access token response of RFC 6749 section 5.1, with the token signed from the claims the state machine

@@ -278,6 +278,7 @@
 4969c424f2db4f53b68934980b21000a139fd70bdf1c8941bc22edb74eeb7b8a  org/apache/maven/surefire/surefire-extensions-spi/3.6.1/surefire-extensions-spi-3.6.1.pom
 4a55cff79ca6326639181041b2ab1a6d9237661205c1f7f62db7bf85ccd7815f  org/apache/maven/plugins/maven-source-plugin/3.4.0/maven-source-plugin-3.4.0.jar
 4a8f3bc226f6f1b7f7362fa2a6e1da451561f86783ec512176e1c467a03708eb  org/apache/maven/shared/maven-shared-components/48/maven-shared-components-48.pom
+4aaa60bb612d5fece004c07f893b3a8d707c207bbd8585d10e0015b5301cd864  org/springframework/security/spring-security-crypto/7.1.2/spring-security-crypto-7.1.2.jar
 4ad1fafd3fbc9369d558950619f5c2a22389490f4127844a56338731e05d9e15  io/projectreactor/reactor-test/3.8.8/reactor-test-3.8.8.jar
 4aee72f9b30b507964c2f52b63f70e7b41fb9d957359cb5dc13c428abb4b6189  org/apache/maven/doxia/doxia-integration-tools/2.0.0/doxia-integration-tools-2.0.0.jar
 4b05895d1cd65013d4b8e7eeb09cde6b567b4c31729fe5c77c0f0898b5e04b88  org/apache/maven/doxia/doxia-sink-api/2.0.0/doxia-sink-api-2.0.0.pom
@@ -925,6 +926,7 @@ f7a76d3a3bbeb53f5f36e19ee57ddc2099f3be1d599039090254d1f0fdf0b854  org/codehaus/p
 f7bfa23ef465eb490100e52a5be48ce3939934b9eb47ed6665f429d0bd8b34d6  tools/jackson/core/jackson-core/3.3.0/jackson-core-3.3.0.pom
 f7fde2fff5101a5fc3a39e28810b911c2da202ddc2bd50765f89e7c6ff8ce7dd  org/hamcrest/hamcrest-core/2.2/hamcrest-core-2.2.pom
 f8698ab46ca996ce889c1afc8ca4f25eb8ac6b034dc898d4583742360016cc04  com/google/guava/guava-parent/26.0-android/guava-parent-26.0-android.pom
+f8d138da4b1e9d5bc9216c71c73a35376bdecd91c18761601a119ce22be53246  org/springframework/security/spring-security-crypto/7.1.2/spring-security-crypto-7.1.2.pom
 f9b90a9e408e97307fb38a51e9bce43b9e419b4d8a68b05da14c3d42bc3d463d  com/fasterxml/woodstox/woodstox-core/7.3.0/woodstox-core-7.3.0.pom
 f9bd338be70d4bc4d8f3f10cdfab7baec089fd3b3ef1013d4ca64c4e7f2163d5  org/eclipse/sisu/org.eclipse.sisu.plexus/1.0.0/org.eclipse.sisu.plexus-1.0.0.pom
 f9be07e1b32d3ddd387d14a3de9fcb9f4f5301ef71dc7ff2d104619e15ca644c  org/apache/maven/plugins/maven-install-plugin/3.2.0/maven-install-plugin-3.2.0.pom

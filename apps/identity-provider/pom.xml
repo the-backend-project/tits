@@ -85,6 +85,11 @@
       <artifactId>nimbus-jose-jwt</artifactId>
     </dependency>
     <dependency>
+      <!-- Verifies the secrets of imported clients against their BCrypt hashes -->
+      <groupId>org.springframework.security</groupId>
+      <artifactId>spring-security-crypto</artifactId>
+    </dependency>
+    <dependency>
       <groupId>com.github.thxmasj.backend</groupId>
       <artifactId>database-mssql</artifactId>
       <version>${project.version}</version>
@@ -111,6 +116,12 @@
       <artifactId>core</artifactId>
       <version>${project.version}</version>
       <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <!-- For the BCryptPasswordEncoder the hashes of the imported clients are made with -->
+      <groupId>commons-logging</groupId>
+      <artifactId>commons-logging</artifactId>
       <scope>test</scope>
     </dependency>
     <dependency>
