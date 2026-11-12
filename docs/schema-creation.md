@@ -56,9 +56,30 @@ The check without the lock is safe, as it can not mistake a schema being created
   that created it. If that transaction is rolled back, the read fails, and the state machine goes on to the lock
   instead of failing.
 
-The check after the lock looks the table up in `pg_tables` on PostgreSQL, rather than with `to_regclass`. That function
-uses the session's catalog cache, which getting an advisory lock does not refresh. Having found no table before
-waiting for the lock, it would still find none when another state machine has created it in the meantime.
+### Seeing the schema after the lock on PostgreSQL
+
+The check after the lock must see a schema that another state machine committed while this one waited for the lock.
+On PostgreSQL two things could hide it.
+
+**The catalog cache.** Name lookups such as `to_regclass('schema."Metadata"')` or a `::regclass` cast resolve the name
+through the session's catalog cache, which also remembers names that were not found. The cache is brought up to date
+with the catalog changes of other sessions when the session processes their invalidation messages, which it does at
+the start of a transaction and when it locks a table, but not when it gets an advisory lock. The check without the
+lock caches that the table does not exist. The transaction of the locked path then begins before the wait, as the
+lock is its first statement, and so does not see the creation either. A `to_regclass` after the lock would thus still
+find no table, and the creation would fail with `relation "Metadata" already exists`.
+
+`CreateSchema` therefore looks the table up by querying `pg_catalog.pg_tables`, an ordinary query of the catalog
+tables, which reads them with the statement's snapshot rather than through the cache. The concurrency test in
+`StorageTest` fails every time with `to_regclass`.
+
+**The snapshot.** That query sees the committed creation as each statement gets a new snapshot at the read committed
+isolation level, PostgreSQL's default. At repeatable read or serializable, the snapshot would be taken by the first
+statement, the one getting the lock, before the wait. `CreateSchema` therefore sets read committed for the locked
+transaction, in case the schema data source is configured otherwise.
+
+The check without the lock is not affected by either: it runs before any lock, and a schema created by others either
+is visible to it or is created after it, in which case the locked path finds it.
 
 ## When a process dies holding the lock
 

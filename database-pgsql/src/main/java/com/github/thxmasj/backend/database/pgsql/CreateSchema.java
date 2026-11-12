@@ -156,6 +156,8 @@ public class CreateSchema {
   }
 
   private int createLocked(Connection connection) throws SQLException {
+    // Each statement gets a new snapshot, so that the check after the lock sees a schema created while waiting for it
+    connection.setTransactionIsolation(Connection.TRANSACTION_READ_COMMITTED);
     connection.setAutoCommit(false);
     try {
       int result = createLockedInTransaction(connection);
@@ -191,7 +193,8 @@ public class CreateSchema {
   /// The checksum of the existing schema, or null if it does not exist. The table is looked up in pg_tables, which is
   /// read with the statement's snapshot, rather than with to_regclass. That uses the session's catalog cache, which is
   /// not refreshed by getting an advisory lock, so it would miss a schema created while this session waited for the
-  /// lock if it had looked the table up before.
+  /// lock if it had looked the table up before. See "Seeing the schema after the lock on PostgreSQL" in
+  /// docs/schema-creation.md.
   private Long existingChecksum(Connection connection) throws SQLException {
     try (PreparedStatement exists = connection.prepareStatement(
         "SELECT EXISTS (SELECT FROM pg_catalog.pg_tables WHERE schemaname = ? AND tablename = 'Metadata')"
