@@ -36,12 +36,12 @@
 
   <profiles>
     <profile>
-      <!-- The tests run on PostgreSQL instead -->
-      <id>pgsql</id>
+      <!-- The tests run on PostgreSQL through JDBC instead -->
+      <id>pgsql-jdbc</id>
       <activation>
         <property>
           <name>database</name>
-          <value>pgsql</value>
+          <value>pgsql-jdbc</value>
         </property>
       </activation>
       <properties>
@@ -50,11 +50,11 @@
     </profile>
     <profile>
       <!-- The tests run on PostgreSQL through R2DBC instead -->
-      <id>pgsql-reactive</id>
+      <id>pgsql-r2dbc</id>
       <activation>
         <property>
           <name>database</name>
-          <value>pgsql-reactive</value>
+          <value>pgsql-r2dbc</value>
         </property>
       </activation>
       <properties>

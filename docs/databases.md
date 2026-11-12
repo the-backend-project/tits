@@ -4,25 +4,25 @@ The state machine stores its [event logs](data-model.md) in SQL Server (includin
 each database and the driver it is reached through are in a module of their own, and an application depends on the one
 it uses:
 
-| Module                                               | Database                      | Driver                                    | Connection pool              |
-|------------------------------------------------------|-------------------------------|-------------------------------------------|------------------------------|
-| [database-mssql](../database-mssql)                  | SQL Server, Azure SQL         | JDBC (Microsoft JDBC Driver)              | HikariCP                     |
-| [database-pgsql](../database-pgsql)                  | PostgreSQL                    | JDBC (PgJDBC)                             | HikariCP                     |
-| [database-pgsql-reactive](../database-pgsql-reactive) | PostgreSQL                    | R2DBC (r2dbc-postgresql)                  | r2dbc-pool                   |
-| [database-pgsql-vertx](../database-pgsql-vertx)      | PostgreSQL                    | Vert.x PostgreSQL client                  | The Vert.x client's own pool |
+| Module                                          | Database              | Driver                       | Connection pool              |
+|-------------------------------------------------|-----------------------|------------------------------|------------------------------|
+| [database-mssql](../database-mssql)             | SQL Server, Azure SQL | JDBC (Microsoft JDBC Driver) | HikariCP                     |
+| [database-pgsql-jdbc](../database-pgsql-jdbc)   | PostgreSQL            | JDBC (PgJDBC)                | HikariCP                     |
+| [database-pgsql-r2dbc](../database-pgsql-r2dbc) | PostgreSQL            | R2DBC (r2dbc-postgresql)     | r2dbc-pool                   |
+| [database-pgsql-vertx](../database-pgsql-vertx) | PostgreSQL            | Vert.x PostgreSQL client     | The Vert.x client's own pool |
 
-The three PostgreSQL modules run the same SQL. The reactive ones reuse the queries of database-pgsql, and create the
-schema through its JDBC driver, as [schema creation](schema-creation.md) is done once at startup and does not need to be
-reactive. They differ in how the queries reach the database.
+The three PostgreSQL modules run the same SQL. The reactive ones reuse the queries of database-pgsql-jdbc, and create
+the schema through its JDBC driver, as [schema creation](schema-creation.md) is done once at startup and does not need
+to be reactive. They differ in how the queries reach the database.
 
 ## Choosing a module
 
 * **SQL Server or Azure SQL:** database-mssql, the only one for them. It is also the only one the
   [cloud native demo](cloud-native.md) and its Azure deployment are made for.
-* **PostgreSQL:** database-pgsql, unless there is a reason to avoid blocking drivers. It is the most mature driver, and
+* **PostgreSQL:** database-pgsql-jdbc, unless there is a reason to avoid blocking drivers. It is the most mature driver, and
   stores a transition in a single round trip.
 * **PostgreSQL without blocking:** database-pgsql-vertx, which also stores a transition in a single round trip.
-* **database-pgsql-reactive** is mainly for comparison. It stores a transition in several round trips, as explained
+* **database-pgsql-r2dbc** is mainly for comparison. It stores a transition in several round trips, as explained
   below, which makes it the slowest of the PostgreSQL modules when the database is not close by.
 
 ## Storing a transition
@@ -31,9 +31,9 @@ The changes of a transition, i.e. its new events and triggers, are stored atomic
 many round trips to the database this takes depends on the driver:
 
 * **database-mssql** sends the statements in one batch, with an explicit transaction inside it.
-* **database-pgsql** sends them in one execution. PgJDBC sends each statement separately, but all at once, and
+* **database-pgsql-jdbc** sends them in one execution. PgJDBC sends each statement separately, but all at once, and
   PostgreSQL runs them in a single implicit transaction, which is rolled back if any of them fails.
-* **database-pgsql-reactive** runs them one at a time between `BEGIN` and `COMMIT`. R2DBC runs one statement with
+* **database-pgsql-r2dbc** runs them one at a time between `BEGIN` and `COMMIT`. R2DBC runs one statement with
   parameters at a time, and r2dbc-postgresql does not send a statement before the one before it has completed, even
   when they are executed at once.
 * **database-pgsql-vertx** sends `BEGIN`, the statements and `COMMIT` at once, on one connection. The Vert.x client
@@ -43,20 +43,20 @@ many round trips to the database this takes depends on the driver:
 The round trips were measured with a ChangeState-like change of three inserts and a delete, through a proxy delaying
 each direction by 10 ms, on a single connection:
 
-| Module                  | Median time | Round trips |
-|-------------------------|-------------|-------------|
-| database-pgsql          | 27 ms       | 1           |
-| database-pgsql-vertx    | 25 ms       | 1           |
-| database-pgsql-reactive | 168 ms      | 6           |
+| Module               | Median time | Round trips |
+|----------------------|-------------|-------------|
+| database-pgsql-jdbc  | 27 ms       | 1           |
+| database-pgsql-vertx | 25 ms       | 1           |
+| database-pgsql-r2dbc | 168 ms      | 6           |
 
 This shows the effect of the round trips only, and is not a measure of throughput under load. With the database on
 the same host the difference is small, but it grows with the latency to the database.
 
 ## Threads
 
-* **database-mssql and database-pgsql** run each query on a virtual thread of its own, as the JDBC drivers block. A
+* **database-mssql and database-pgsql-jdbc** run each query on a virtual thread of its own, as the JDBC drivers block. A
   query holds a pooled connection while it runs.
-* **database-pgsql-reactive** runs the queries on the event loop threads of Reactor Netty, which the state machine's HTTP
+* **database-pgsql-r2dbc** runs the queries on the event loop threads of Reactor Netty, which the state machine's HTTP
   clients and servers also use. The state machine's processing of the results continues on those threads.
 * **database-pgsql-vertx** runs the queries on the event loop threads of a Vert.x instance of its own, next to those of
   Reactor Netty. The state machine's processing of the results continues on them.
@@ -79,7 +79,7 @@ Cons:
 * Connections are configured for Azure: encryption is always on, and the server certificate is validated against
   `*.database.windows.net` unless it is trusted blindly (see [cloud native](cloud-native.md)).
 
-### database-pgsql
+### database-pgsql-jdbc
 
 Pros:
 
@@ -92,7 +92,7 @@ Cons:
 * The driver blocks, so each query takes a virtual thread while it runs.
 * PostgreSQL has no index hints, so the choice of indexes is left to the planner and its statistics.
 
-### database-pgsql-reactive
+### database-pgsql-r2dbc
 
 Pros:
 
@@ -166,6 +166,6 @@ The state machine closes the data source or client, and with it the connection p
 ## Testing
 
 The tests run on SQL Server by default. To run them on PostgreSQL, run the build with `-pl '!demo'` and
-`-Ddatabase=pgsql`, `-Ddatabase=pgsql-reactive` or `-Ddatabase=pgsql-vertx`. The tests of the core module that need a
+`-Ddatabase=pgsql-jdbc`, `-Ddatabase=pgsql-r2dbc` or `-Ddatabase=pgsql-vertx`. The tests of the core module that need a
 database are run by the module of the database, and the other modules' tests use it too. See the
 [README](https://github.com/the-backend-project/tits#building).

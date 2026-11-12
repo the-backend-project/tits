@@ -25,7 +25,7 @@ import reactor.core.publisher.Mono;
 
 public class Init {
 
-  // The tests run on SQL Server by default, and on PostgreSQL with -Ddatabase=pgsql or -Ddatabase=pgsql-reactive
+  // The tests run on SQL Server by default, and on PostgreSQL with -Ddatabase=pgsql-jdbc or -Ddatabase=pgsql-r2dbc
   private static final Database database = Database.named(System.getProperty("database", "mssql"));
   private static final boolean pgsql = database.name().startsWith("pgsql");
   private static final DataSource dataSource = new DataSourceBuilder(database, databaseConfig("testlogin", "Please_hide_me!")).build();

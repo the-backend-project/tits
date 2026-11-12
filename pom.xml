@@ -13,8 +13,8 @@
     <modules>
         <module>core</module>
         <module>database-mssql</module>
-        <module>database-pgsql</module>
-        <module>database-pgsql-reactive</module>
+        <module>database-pgsql-jdbc</module>
+        <module>database-pgsql-r2dbc</module>
         <module>database-pgsql-vertx</module>
         <module>http-inbox</module>
         <module>http-outbox</module>

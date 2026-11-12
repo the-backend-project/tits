@@ -18,9 +18,9 @@ import javax.sql.DataSource;
 import reactor.core.publisher.Mono;
 
 /// A database the state machine can store its schema in, with the SQL of its dialect and its driver. Databases are
-/// provided by modules such as database-mssql, database-pgsql and database-pgsql-reactive, and found on the module path
-/// or class path. The schema is created through JDBC, while the state machine's queries go through a [Client], which
-/// may use another driver.
+/// provided by the modules database-mssql, database-pgsql-jdbc, database-pgsql-r2dbc and database-pgsql-vertx, and
+/// found on the module path or class path. The schema is created through JDBC, while the state machine's queries go
+/// through a [Client], which may use another driver.
 public interface Database {
 
   /// The name the database is selected by, e.g. "mssql"

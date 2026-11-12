@@ -61,7 +61,7 @@
     <dependency>
       <!-- The queries, and the schema creation through JDBC -->
       <groupId>com.github.thxmasj.backend</groupId>
-      <artifactId>database-pgsql</artifactId>
+      <artifactId>database-pgsql-jdbc</artifactId>
       <version>${project.version}</version>
     </dependency>
     <dependency>

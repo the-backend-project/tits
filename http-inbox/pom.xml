@@ -45,13 +45,13 @@
     </dependency>
     <dependency>
       <groupId>com.github.thxmasj.backend</groupId>
-      <artifactId>database-pgsql</artifactId>
+      <artifactId>database-pgsql-jdbc</artifactId>
       <version>${project.version}</version>
       <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>com.github.thxmasj.backend</groupId>
-      <artifactId>database-pgsql-reactive</artifactId>
+      <artifactId>database-pgsql-r2dbc</artifactId>
       <version>${project.version}</version>
       <scope>test</scope>
     </dependency>

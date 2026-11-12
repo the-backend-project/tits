@@ -13,13 +13,13 @@ See [Testing](docs/testing.md).
 ## Databases
 
 The state machine stores its event logs in SQL Server (including Azure SQL) or PostgreSQL. The SQL and JDBC driver of
-each are in a module of their own, [database-mssql](database-mssql) and [database-pgsql](database-pgsql), and an
-application depends on the one for its database. The `StateMachine` finds it on the module path or class path, by the
+each are in a module of their own, [database-mssql](database-mssql) and [database-pgsql-jdbc](database-pgsql-jdbc), and
+an application depends on the one for its database. The `StateMachine` finds it on the module path or class path, by the
 database behind the `DataSource` it is given. To build a data source, give `DataSourceBuilder` the module's `Database`,
 e.g. `new DataSourceBuilder(new PgsqlDatabase(), config)`. The [demo](demo) runs on SQL Server only.
 
 PostgreSQL can also be used without blocking, through the R2DBC driver with
-[database-pgsql-reactive](database-pgsql-reactive) or through the Vert.x client with
+[database-pgsql-r2dbc](database-pgsql-r2dbc) or through the Vert.x client with
 [database-pgsql-vertx](database-pgsql-vertx). A state machine is then given the module's `Database` and a `Client` from
 its `client(config)`, which has a connection pool of its own, instead of a data source. See
 [Databases](docs/databases.md) for the pros and cons of each module.
@@ -29,9 +29,9 @@ its `client(config)`, which has a connection pool of its own, instead of a data 
 Requires Java 27 and Maven 3.9 or later.
 
 The tests need a database. They run on SQL Server by default, which can be started with `bin/start-mssql.sh`. To run
-them on PostgreSQL, start it with `bin/start-postgres.sh` and run the build with `-Ddatabase=pgsql -pl '!demo'`, or
-with `-Ddatabase=pgsql-reactive` or `-Ddatabase=pgsql-vertx` for its reactive drivers. The tests of the core module that need a database
-are run by the database modules, each on its own database.
+them on PostgreSQL, start it with `bin/start-postgres.sh` and run the build with `-Ddatabase=pgsql-jdbc -pl '!demo'`, or
+with `-Ddatabase=pgsql-r2dbc` or `-Ddatabase=pgsql-vertx` for its reactive drivers. The tests of the core module that
+need a database are run by the database modules, each on its own database.
 
 ### Dependency checksums
 
