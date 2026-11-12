@@ -3,7 +3,6 @@ package com.github.thxmasj.backend.core;
 import static com.github.thxmasj.backend.core.EntitySelector.entityId;
 import static com.github.thxmasj.backend.core.TransitionModelBuilder.WithEvent.onEvent;
 
-import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionModel;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;

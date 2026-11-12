@@ -1,4 +1,4 @@
-package com.github.thxmasj.backend.demo;
+package com.github.thxmasj.backend.helloworld;
 
 import static com.github.thxmasj.backend.core.EntityModel.Begin;
 import static com.github.thxmasj.backend.core.EntitySelector.entityIdFromSession;
@@ -17,7 +17,7 @@ import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.State;
-import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionModel;
+import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.http.inbox.HttpInbox.CustomResponse;
 import com.github.thxmasj.backend.http.inbox.HttpRequestRoute;
 import com.github.thxmasj.backend.http.inbox.ResponseEventType;
@@ -28,7 +28,7 @@ import java.util.Map;
 import java.util.UUID;
 
 /// A greeting is an entity which is created for every `GET /`. Its creation responds with a hello world page.
-public interface HelloWorld {
+public interface Greetings {
 
   EntityModel Greeting = EntityModel.of("Greeting", UUID.fromString("8a4c1d36-4f0e-4b8e-9a47-2f5f0c0b6d11"));
 

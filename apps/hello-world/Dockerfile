@@ -1,6 +1,7 @@
-# Builds the demo as a native executable and packages it in an image from scratch. Build from the repository root:
+# Builds the hello world application as a native executable and packages it in an image from scratch. Build from the
+# repository root:
 #
-#   docker build -f demo/Dockerfile -t tits-demo .
+#   docker build -f apps/hello-world/Dockerfile -t tits-hello-world .
 
 # GraalVM Community 25 (multi-arch index digest). No GraalVM release supports Java 27 yet, so the build targets 25.
 FROM ghcr.io/graalvm/native-image-community:25i5-25.0.5.0.3-ol10@sha256:2800b5bd11cbb9bf11c92591d05ea37d9a735522bdc0e86827302d998843ad79 AS build
@@ -17,7 +18,7 @@ ENV PATH=/opt/apache-maven-${MAVEN_VERSION}/bin:$PATH
 WORKDIR /src
 COPY . .
 RUN --mount=type=cache,target=/root/.m2 \
-    mvn -B -q package -pl demo -am -DskipTests -Dmaven.compiler.release=25 \
+    mvn -B -q package -pl apps/hello-world -am -DskipTests -Dmaven.compiler.release=25 \
       -Daether.artifactResolver.postProcessor.trustedChecksums.failIfMissing=true
 
 # NATIVE_IMAGE_OPTS passes extra options to native-image. CI sets it to -Ob (quick build mode), which builds faster
@@ -32,13 +33,13 @@ RUN mkdir -p /rootfs \
       ${NATIVE_IMAGE_OPTS} \
       --static-nolibc \
       -march=compatibility \
-      -o /rootfs/demo \
-      -jar demo/target/demo.jar \
- && ldd /rootfs/demo | grep -o '/[^ ]*' | xargs -I{} cp --parents -L {} /rootfs \
+      -o /rootfs/hello-world \
+      -jar apps/hello-world/target/hello-world.jar \
+ && ldd /rootfs/hello-world | grep -o '/[^ ]*' | xargs -I{} cp --parents -L {} /rootfs \
  && mkdir -m 1777 /rootfs/tmp
 
 FROM scratch
 COPY --from=build /rootfs /
 USER 65532:65532
 EXPOSE 8080
-ENTRYPOINT ["/demo"]
+ENTRYPOINT ["/hello-world"]

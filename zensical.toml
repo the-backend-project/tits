@@ -6,19 +6,23 @@ copyright = "Background photo by <a href=\"https://unsplash.com/@annaval\">Anna 
 extra_css = ["stylesheets/extra.css"]
 nav = [
   { "Overview" = "index.md" },
-  { "Databases" = "databases.md" },
-  { "Data model" = "data-model.md" },
-  { "Schema creation" = "schema-creation.md" },
-  { "Testing" = "testing.md" },
+  { "Architecture" = [
+    { "Overview" = "architecture.md" },
+    { "Databases" = "databases.md" },
+    { "Data model" = "data-model.md" },
+    { "Schema creation" = "schema-creation.md" },
+    { "Testing" = "testing.md" },
+  ] },
   { "Templates" = [
     { "Card payments" = [
       { "Overview" = "cardpayments.md" },
       { "PSD2 and PSD3 compliance" = "psd2.md" },
     ] },
   ] },
-  { "Identity provider" = "identity-provider.md" },
-  { "Cloud native demo" = [
-    { "Overview" = "cloud-native.md" },
+  { "Apps" = [
+    { "Overview" = "apps.md" },
+    { "Identity provider" = "identity-provider.md" },
+    { "Hello world demo" = "hello-world.md" },
     { "Deploying to Azure Functions" = "azure-functions.md" },
   ] },
 ]

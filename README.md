@@ -2,13 +2,15 @@
 
 Documentation is available at https://the-backend-project.github.io/tits/.
 
-The [demo](demo) module is a hello world web application following the principles of the twelve-factor app, compiled
-to a native executable. See [Cloud native demo](docs/cloud-native.md). The [deploy](deploy) module deploys it, or any
-application built the same way, to Azure Functions with a serverless Azure SQL database. See
-[Deploying to Azure Functions](docs/azure-functions.md).
+The [apps](apps) are applications built with the HTTP inbox and the state machine, compiled to native executables:
 
-The [identity provider](apps/identity-provider) is an OAuth 2.0 authorization server for the client credentials grant,
-built with the HTTP inbox and the state machine. See [Identity provider](docs/identity-provider.md).
+* The [identity provider](apps/identity-provider) is an OAuth 2.0 authorization server for the client credentials
+  grant. See [Identity provider](docs/identity-provider.md).
+* The [hello world demo](apps/hello-world) is a web application following the principles of the twelve-factor app. See
+  [Hello world demo](docs/hello-world.md).
+
+The [deploy](deploy) module deploys either of them, or any application built the same way, to Azure Functions with a
+serverless Azure SQL database. See [Deploying to Azure Functions](docs/azure-functions.md).
 
 The [test-api](test-api) module is an API for tests to look into and manipulate the database of a state machine.
 See [Testing](docs/testing.md).
@@ -19,7 +21,7 @@ The state machine stores its event logs in SQL Server (including Azure SQL) or P
 each are in a module of their own, [database-mssql](database-mssql) and [database-pgsql-jdbc](database-pgsql-jdbc), and
 an application depends on the one for its database. The `StateMachine` finds it on the module path or class path, by the
 database behind the `DataSource` it is given. To build a data source, give `DataSourceBuilder` the module's `Database`,
-e.g. `new DataSourceBuilder(new PgsqlDatabase(), config)`. The [demo](demo) runs on SQL Server only.
+e.g. `new DataSourceBuilder(new PgsqlDatabase(), config)`. The [hello world demo](apps/hello-world) runs on SQL Server only.
 
 PostgreSQL can also be used without blocking, through the R2DBC driver with [database-pgsql-r2dbc](database-pgsql-r2dbc)
 or through the Vert.x client with [database-pgsql-vertx](database-pgsql-vertx). A state machine is then given the
@@ -31,7 +33,7 @@ a data source. See [Databases](docs/databases.md) for the pros and cons of each 
 Requires Java 27 and Maven 3.9 or later.
 
 The tests need a database. They run on SQL Server by default, which can be started with `bin/start-mssql.sh`. To run
-them on PostgreSQL, start it with `bin/start-postgres.sh` and run the build with `-Ddatabase=pgsql-jdbc -pl '!demo'`, or
+them on PostgreSQL, start it with `bin/start-postgres.sh` and run the build with `-Ddatabase=pgsql-jdbc -pl '!apps/hello-world'`, or
 with `-Ddatabase=pgsql-r2dbc` or `-Ddatabase=pgsql-vertx` for its reactive drivers. The tests of the core module that
 need a database are run by the database modules, each on its own database.
 

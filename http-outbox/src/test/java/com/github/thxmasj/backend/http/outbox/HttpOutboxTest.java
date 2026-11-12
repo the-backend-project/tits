@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.github.thxmasj.backend.core.BasicEventType;
 import com.github.thxmasj.backend.core.BasicEventType.Rollback.Data;
+import com.github.thxmasj.backend.core.Calculation;
 import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.DelaySpecification;
 import com.github.thxmasj.backend.core.EntityModel;
@@ -32,10 +33,10 @@ import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.test.Init;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.StateMachine;
-import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext;
-import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext.InitialChangeContext;
-import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext.TriggerChangeContext;
-import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionModel;
+import com.github.thxmasj.backend.core.TransitionStep;
+import com.github.thxmasj.backend.core.TransitionStep.InputStep;
+import com.github.thxmasj.backend.core.TransitionStep.TriggerStep;
+import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.core.Tuples.Tuple2;
 import com.github.thxmasj.backend.core.http.NettyHttpClient;
 import com.github.thxmasj.backend.core.http.NettyHttpClientBuilder;
@@ -421,11 +422,11 @@ public class HttpOutboxTest {
         tuple(new TypedHttpRequest<>(POST, URI.create("http://localhost/test"), Map.of(), null), processEntityId)
     );
     var log = new EventLog(model.exchange(), UUID.randomUUID(), List.of(reqDispatchedEvent));
-    var initialContext = new InitialChangeContext<Void>(null, null, null, timeoutTransition, AtMostOnce.States.InFlight, 2, log, ZonedDateTime.now(), "corr-1", null, model.machine(), List.of());
+    var initialContext = new InputStep<Void>(null, null, null, timeoutTransition, AtMostOnce.States.InFlight, 2, log, ZonedDateTime.now(), "corr-1", null, model.machine(), new Calculation());
     var occ = timeoutTransition.calculate(initialContext).block();
     assertNotNull(occ);
 
-    var triggerContext = (TriggerChangeContext<?, ?>) occ.previous();
+    var triggerContext = (TriggerStep<?, ?>) occ.previous();
     assertNotNull(triggerContext);
     assertEquals(model.missingResponse(), triggerContext.eventTrigger().eventSpec().eventType());
     assertEquals(model.process(), triggerContext.eventTrigger().entityModel());
@@ -444,7 +445,7 @@ public class HttpOutboxTest {
     UUID triggerEntityId = UUID.randomUUID();
     var triggerEvent = new EventReference(triggerEntityId, 1);
     var log = new EventLog(model.exchange(), UUID.randomUUID(), List.of());
-    var initialContext = new InitialChangeContext<>(null, null, triggerEvent, reqDispatchedTransition, Begin, 1, log, ZonedDateTime.now(), "corr-1", HttpOutboxTest.<Void>requestMessage("/test"), model.machine(), List.of());
+    var initialContext = new InputStep<>(null, null, triggerEvent, reqDispatchedTransition, Begin, 1, log, ZonedDateTime.now(), "corr-1", HttpOutboxTest.<Void>requestMessage("/test"), model.machine(), new Calculation());
     var occ = reqDispatchedTransition.calculate(initialContext).block();
     assertNotNull(occ);
     assertTrue(occ.stepOutput().isAccepted());
@@ -497,13 +498,13 @@ public class HttpOutboxTest {
     );
     var log = new EventLog(alo, UUID.randomUUID(), List.of(reqDispatchedEvent));
     var responseMessage = new HttpResponseMessage(200, "OK", Map.of(), null);
-    var initialContext = new InitialChangeContext<HttpResponseMessage>(null, null, null, responseReceivedTransition, AtLeastOnce.States.InFlight, 2, log, ZonedDateTime.now(), "corr-1", responseMessage, machine, List.of());
+    var initialContext = new InputStep<HttpResponseMessage>(null, null, null, responseReceivedTransition, AtLeastOnce.States.InFlight, 2, log, ZonedDateTime.now(), "corr-1", responseMessage, machine, new Calculation());
     var occ = responseReceivedTransition.calculate(initialContext).block();
     assertNotNull(occ);
 
-    TriggerChangeContext<?, ?> triggerContext = null;
-    for (ChangeContext<?> c = occ; c != null; c = c.previous()) {
-      if (c instanceof TriggerChangeContext<?, ?> tc) {
+    TriggerStep<?, ?> triggerContext = null;
+    for (TransitionStep<?> c = occ; c != null; c = c.previous()) {
+      if (c instanceof TriggerStep<?, ?> tc) {
         triggerContext = tc;
         break;
       }
@@ -543,7 +544,7 @@ public class HttpOutboxTest {
     UUID triggerEntityId = UUID.randomUUID();
     var triggerEvent = new EventReference(triggerEntityId, 1);
     var log = new EventLog(alo, UUID.randomUUID(), List.of());
-    var initialContext = new InitialChangeContext<>(null, null, triggerEvent, reqDispatchedTransition, Begin, 1, log, ZonedDateTime.now(), "corr-1", HttpOutboxTest.<Void>requestMessage("/test"), machine, List.of());
+    var initialContext = new InputStep<>(null, null, triggerEvent, reqDispatchedTransition, Begin, 1, log, ZonedDateTime.now(), "corr-1", HttpOutboxTest.<Void>requestMessage("/test"), machine, new Calculation());
     var occ = reqDispatchedTransition.calculate(initialContext).block();
     assertNotNull(occ);
     assertTrue(occ.stepOutput().isAccepted());

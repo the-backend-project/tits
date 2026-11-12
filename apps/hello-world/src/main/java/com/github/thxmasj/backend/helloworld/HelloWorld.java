@@ -1,4 +1,4 @@
-package com.github.thxmasj.backend.demo;
+package com.github.thxmasj.backend.helloworld;
 
 import com.github.thxmasj.backend.core.StateMachine;
 import com.github.thxmasj.backend.core.database.Database;
@@ -19,14 +19,14 @@ import reactor.netty.DisposableServer;
 ///
 /// Usage:
 ///
-/// - `demo` serves HTTP on `$PORT` until terminated.
-/// - `demo migrate` creates the database schema and exits. Run it as a one-off admin process before serving.
-public final class Demo {
+/// - `hello-world` serves HTTP on `$PORT` until terminated.
+/// - `hello-world migrate` creates the database schema and exits. Run it as a one-off admin process before serving.
+public final class HelloWorld {
 
-  // The demo is configured and deployed for SQL Server, including Azure SQL
+  // The application is configured and deployed for SQL Server, including Azure SQL
   private static final Database database = new MssqlDatabase();
 
-  private Demo() {}
+  private HelloWorld() {}
 
   public static void main(String[] args) {
     long t0 = System.nanoTime();
@@ -54,7 +54,7 @@ public final class Demo {
         System.out.println("Migrated schema " + config.schema());
       }
       default -> {
-        System.err.println("Usage: demo [serve|migrate]");
+        System.err.println("Usage: hello-world [serve|migrate]");
         System.exit(2);
       }
     }
@@ -72,7 +72,7 @@ public final class Demo {
   public static StateMachine stateMachine(Config config) {
     return new StateMachine(
         null,
-        HelloWorld.transitions(),
+        Greetings.transitions(),
         new DataSourceBuilder(database, config.database()).buildPooled(),
         null, // The schema is created by the migrate admin process
         config.schema(),

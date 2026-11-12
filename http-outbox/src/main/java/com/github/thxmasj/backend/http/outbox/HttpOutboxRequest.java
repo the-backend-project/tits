@@ -9,8 +9,7 @@ import com.github.thxmasj.backend.core.EventLog;
 import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.IndexEntityModel;
 import com.github.thxmasj.backend.core.State;
-import com.github.thxmasj.backend.core.TransitionModelBuilder;
-import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionModel;
+import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.core.http.HttpDataType;
 import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
 import com.github.thxmasj.backend.core.message.http.TypedHttpRequest;
@@ -29,7 +28,7 @@ import java.util.stream.Stream;
 /// the creator of its request messages.
 public sealed interface HttpOutboxRequest<RQ> extends com.github.thxmasj.backend.core.EntityModel permits AtLeastOnce, AtMostOnce {
 
-  Map<State, List<TransitionModelBuilder.TransitionModel<?, ?>>> transitions();
+  Map<State, List<TransitionModel<?, ?>>> transitions();
 
   default List<EventType<?, ?>> eventTypes() {
     return transitions().values()

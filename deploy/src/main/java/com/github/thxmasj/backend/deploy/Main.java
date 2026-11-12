@@ -32,6 +32,9 @@ public final class Main {
             config.require("image"),
             config.getObject("migrateArgs", TypeShape.list(String.class)).orElse(List.of("migrate")),
             config.getObject("environment", TypeShape.map(String.class, String.class)).orElse(Map.of()),
+            config.getSecretObject("secretEnvironment", TypeShape.map(String.class, String.class))
+                .applyValue(e -> e.orElse(Map.of())),
+            config.getObject("urlEnvironment", TypeShape.list(String.class)).orElse(List.of()),
             config.get("databaseRole").orElse("App"),
             config.get("databaseSchema").orElse(null),
             config.get("databaseCollation").orElse("Norwegian_100_CS_AS_SC_UTF8"),

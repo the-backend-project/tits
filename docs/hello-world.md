@@ -1,14 +1,14 @@
-# Cloud native demo
+# Hello world demo
 
-The `demo` module is a hello world web application built with the HTTP inbox and the state machine. It aims at
-following the principles of [the twelve-factor app](https://12factor.net/), is compiled with GraalVM to a native
+The `apps/hello-world` module is a hello world web application built with the HTTP inbox and the state machine. It
+aims at following the principles of [the twelve-factor app](https://12factor.net/), is compiled with GraalVM to a native
 executable which boots in a few tens of milliseconds, and is packaged in a container image built from `scratch`.
 
 Every `GET /` creates a `Greeting` entity, whose transition to the `Greeted` state responds with a page saying hello.
 
 ## Running
 
-Requires Docker (or Podman) with Compose. From the `demo` directory:
+Requires Docker (or Podman) with Compose. From the `apps/hello-world` directory:
 
 ```shell
 docker compose up --build
@@ -20,7 +20,7 @@ database and login for the demo, runs the schema migration as a one-off process,
 The image can also be built alone, from the repository root:
 
 ```shell
-docker build -f demo/Dockerfile -t tits-demo .
+docker build -f apps/hello-world/Dockerfile -t tits-hello-world .
 ```
 
 Native compilation takes a few minutes. For a quicker build of a less optimized image, as in CI, pass options to
@@ -32,7 +32,7 @@ docker build -f demo/Dockerfile -t tits-demo --build-arg NATIVE_IMAGE_OPTS=-Ob .
 
 To run the demo in Azure, see [Deploying to Azure Functions](azure-functions.md).
 
-The application without native compilation is an ordinary Maven module. `DemoTest` runs it against the test database
+The application without native compilation is an ordinary Maven module. `HelloWorldTest` runs it against the test database
 the build uses (see `bin/start-mssql.sh`).
 
 ### Reachability metadata
@@ -53,7 +53,7 @@ service providers, such as SLF4J providers, and for native transports of other a
 | Factor | How the demo follows it |
 |---|---|
 | I. Codebase | The demo lives in the same repository as the libraries, and the same image is deployed everywhere. |
-| II. Dependencies | Dependencies are declared in `demo/pom.xml` and verified against pinned checksums. Maven and the GraalVM builder image are pinned by checksum and digest. The executable is statically linked except for glibc, which is copied into the image, so the image contains nothing it does not declare. |
+| II. Dependencies | Dependencies are declared in `apps/hello-world/pom.xml` and verified against pinned checksums. Maven and the GraalVM builder image are pinned by checksum and digest. The executable is statically linked except for glibc, which is copied into the image, so the image contains nothing it does not declare. |
 | III. Config | All configuration is read from environment variables, see below. Credentials and the location of the database have no defaults. |
 | IV. Backing services | The database is an attached resource, located by `DATABASE_HOST`, `DATABASE_PORT` and `DATABASE_NAME`. |
 | V. Build, release, run | The `Dockerfile` is the build stage. An image combined with an environment is a release, which is run without modification. |
@@ -63,7 +63,7 @@ service providers, such as SLF4J providers, and for native transports of other a
 | IX. Disposability | The native executable is listening after a few tens of milliseconds. On `SIGTERM` it stops accepting requests and lets those in flight complete, then stops the state machine's workers once their ongoing work completes, and closes the database connection pool. |
 | X. Dev/prod parity | Locally, Compose runs the same image against the same kind of database as other environments. |
 | XI. Logs | Logs are written unbuffered to stdout, one line per event. |
-| XII. Admin processes | The schema is created by `demo migrate`, run as a one-off process from the same image with the same configuration, but with credentials allowed to create the schema. |
+| XII. Admin processes | The schema is created by `hello-world migrate`, run as a one-off process from the same image with the same configuration, but with credentials allowed to create the schema. |
 
 ### Configuration
 
@@ -78,7 +78,7 @@ service providers, such as SLF4J providers, and for native transports of other a
 | `DATABASE_TRUST_SERVER_CERTIFICATE` | `false` | Whether to skip validation of the server certificate. For local use only. |
 | `DATABASE_POOL_SIZE` | `10` | Maximum number of database connections |
 | `DATABASE_QUERY_TIMEOUT_SECONDS` | `10` | Query timeout |
-| `DATABASE_SCHEMA` | `demo` | Schema holding the state machine's tables |
+| `DATABASE_SCHEMA` | `hello_world` | Schema holding the state machine's tables |
 | `DATABASE_ROLE` | | Role to grant access to the schema. Required by `migrate` only. |
 
 `GET /health` responds `200 OK` as long as the process is able to serve HTTP. It does not involve the database.

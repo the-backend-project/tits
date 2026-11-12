@@ -6,7 +6,7 @@ The state machine creates its [schema](data-model.md) if it does not exist, and 
 use too, and called either:
 
 * by the `StateMachine` constructor, when it is given a schema data source and a role, or
-* by a separate admin process, such as `demo migrate` in the [cloud native demo](cloud-native.md), in which case the
+* by a separate admin process, such as `hello-world migrate` in the [hello world demo](hello-world.md), in which case the
   state machine is given no schema data source.
 
 The schema data source needs credentials allowed to create the schema, which the state machine's own data source does

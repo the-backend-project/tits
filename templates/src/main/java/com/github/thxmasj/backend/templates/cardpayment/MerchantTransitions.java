@@ -27,7 +27,7 @@ import static java.util.Optional.ofNullable;
 import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionContext;
-import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionModel;
+import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.templates.cardpayment.MerchantEvent.MerchantUpdate;
 import com.github.thxmasj.backend.templates.cardpayment.PaymentEvent.Merchant;
 import java.util.List;

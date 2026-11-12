@@ -10,8 +10,8 @@ import static java.util.stream.Collectors.toList;
 import static java.util.stream.Collectors.toMap;
 
 import com.github.thxmasj.backend.core.EntitySelector.ById;
-import com.github.thxmasj.backend.core.EntitySelector.ByIdFromSession;
 import com.github.thxmasj.backend.core.EntitySelector.ByIdEvent;
+import com.github.thxmasj.backend.core.EntitySelector.ByIdFromSession;
 import com.github.thxmasj.backend.core.EntitySelector.ByLastIndexed;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.Accepted;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.Completed;
@@ -19,26 +19,30 @@ import com.github.thxmasj.backend.core.StateMachine.ProcessResult.IdExists;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.Pending;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.Rejected;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.UnknownId;
-import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext;
-import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext.ChoiceChangeContext;
-import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext.IdExistsChangeContext;
-import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext.InitialChangeContext;
-import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext.OutputChangeContext;
-import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext.PendingChangeContext;
-import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext.RejectedChangeContext;
-import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionModel;
+import com.github.thxmasj.backend.core.TransitionStep.ActionStep;
+import com.github.thxmasj.backend.core.TransitionStep.AssembleStep;
+import com.github.thxmasj.backend.core.TransitionStep.ChoiceStep;
+import com.github.thxmasj.backend.core.TransitionStep.ConditionalTriggerStep;
+import com.github.thxmasj.backend.core.TransitionStep.DelayedTriggerStep;
+import com.github.thxmasj.backend.core.TransitionStep.IdExistsStep;
+import com.github.thxmasj.backend.core.TransitionStep.InputStep;
+import com.github.thxmasj.backend.core.TransitionStep.OutputStep;
+import com.github.thxmasj.backend.core.TransitionStep.PendingStep;
+import com.github.thxmasj.backend.core.TransitionStep.RejectedStep;
+import com.github.thxmasj.backend.core.TransitionStep.TriggerStep;
+import com.github.thxmasj.backend.core.TransitionStep.UnknownIdStep;
 import com.github.thxmasj.backend.core.Tuples.Tuple3;
-import com.github.thxmasj.backend.core.database.DatabaseClient;
+import com.github.thxmasj.backend.core.database.ChangeState.Change;
+import com.github.thxmasj.backend.core.database.ChangeState;
 import com.github.thxmasj.backend.core.database.Database;
+import com.github.thxmasj.backend.core.database.DatabaseClient;
 import com.github.thxmasj.backend.core.database.EntityGroupNotInitialised;
 import com.github.thxmasj.backend.core.database.EventAlreadyExists;
 import com.github.thxmasj.backend.core.database.IdEventAlreadyExists;
+import com.github.thxmasj.backend.core.database.Mappers;
 import com.github.thxmasj.backend.core.database.MappingFailure;
 import com.github.thxmasj.backend.core.database.Storage;
 import com.github.thxmasj.backend.core.database.UnknownEntity;
-import com.github.thxmasj.backend.core.database.ChangeState;
-import com.github.thxmasj.backend.core.database.ChangeState.Change;
-import com.github.thxmasj.backend.core.database.Mappers;
 import jakarta.annotation.Nullable;
 import jakarta.validation.constraints.NotNull;
 import java.time.Clock;
@@ -55,7 +59,6 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 import javax.sql.DataSource;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -404,7 +407,7 @@ public class StateMachine implements AutoCloseable {
     return eventLog(eventTrigger, input, null)
         .onErrorMap(UnknownEntity.class, e -> new RejectedEvent(eventTrigger.eventSpec().eventType(), e))
         .flatMapMany(log ->
-                onEvent(correlationId, eventTrigger.eventSpec().eventType(), adaptedInput, log, null, List.of(), eventTrigger.triggerType(), eventTrigger.triggerId(), triggerEvent)
+                onEvent(correlationId, eventTrigger.eventSpec().eventType(), adaptedInput, log, null, eventTrigger.triggerType(), eventTrigger.triggerId(), triggerEvent)
                     .contextWrite(ctx -> ctx.put("RS/" + log.entityId(), responseSink))
                     .thenMany(responseSink.asFlux())
                     .retryWhen(RetrySpec.fixedDelay(3, Duration.ofMillis(500))
@@ -425,45 +428,42 @@ public class StateMachine implements AutoCloseable {
       String correlationId,
       InputEvent<I> inputEvent,
       EventLog eventLog,
-      ChangeContext<?> requestChangeContext
+      TransitionStep<?> requestStep
   ) {
-    return onEvent(correlationId, inputEvent.eventType(), inputEvent.data(), eventLog, requestChangeContext, List.of());
+    return onEvent(correlationId, inputEvent.eventType(), inputEvent.data(), eventLog, requestStep, null, null, null);
   }
 
-  private List<Change> changes(@NotNull ChangeContext<?> tail) {
+  private List<Change> changes(@NotNull TransitionStep<?> tail) {
     ArrayList<Change> changes = new ArrayList<>();
     for (var c = tail; c != null; c = c.previous()) {
       switch (c) {
-        case ChangeContext.OutputChangeContext<?> occ
-            when occ.stepOutput().isAccepted() && !(occ.previous() instanceof ChangeContext.ChoiceChangeContext<?>) ->
+        case OutputStep<?> occ
+            when occ.stepOutput().isAccepted() && !(occ.previous() instanceof ChoiceStep<?>) ->
             changes.add(Change.fromAcceptedEvent(occ.stepOutput().accepted()));
-        case ChangeContext.OutputChangeContext<?> _ -> {}
-        case ChangeContext.DelayedTriggerChangeContext<?, ?> dtcc -> changes.add(Change.fromDelayedEvent(dtcc.delayedEvent()));
-        case ChangeContext.ConditionalTriggerChangeContext<?, ?> ctcc -> changes.add(Change.fromConditionalTrigger(ctcc.conditionalTrigger()));
-        case ChangeContext.AssembledChangeContext<?> _ -> {}
-        case ChangeContext.ChoiceChangeContext<?> _ -> {}
-        case ChangeContext.InitialChangeContext<?> _ -> {}
-        case ChangeContext.PendingTriggerChangeContext<?, ?> _ -> {}
-        case ChangeContext.ScheduledChangeContext<?> _ -> {}
-        case ChangeContext.TriggerChangeContext<?, ?> _ -> {}
-        case ChangeContext.PendingChangeContext<?, ?, ?> _ -> {}
-        case ChangeContext.CombinedChangeContext<?, ?> _ -> {}
-        case ChangeContext.RejectedChangeContext<?> _ -> {}
-        case ChangeContext.UnknownIdChangeContext<?> _ -> {}
-        case ChangeContext.IdExistsChangeContext<?> _ -> {}
-        case ChangeContext.ActionChangeContext<?, ?> _ -> {}
+        case OutputStep<?> _ -> {}
+        case DelayedTriggerStep<?, ?> dtcc -> changes.add(Change.fromDelayedEvent(dtcc.delayedEvent()));
+        case ConditionalTriggerStep<?, ?> ctcc -> changes.add(Change.fromConditionalTrigger(ctcc.conditionalTrigger()));
+        case AssembleStep<?> _ -> {}
+        case ChoiceStep<?> _ -> {}
+        case InputStep<?> _ -> {}
+        case TriggerStep<?, ?> _ -> {}
+        case PendingStep<?, ?, ?> _ -> {}
+        case RejectedStep<?> _ -> {}
+        case UnknownIdStep<?> _ -> {}
+        case IdExistsStep<?> _ -> {}
+        case ActionStep<?, ?> _ -> {}
       }
     }
     return changes;
   }
 
-  private List<ActionTrigger<?>> actionTriggers(@NotNull ChangeContext<?> tail) {
+  private List<ActionTrigger<?>> actionTriggers(@NotNull TransitionStep<?> tail) {
     ArrayList<ActionTrigger<?>> actionTriggers = new ArrayList<>();
-    OutputChangeContext<?> lastOutput = null;
+    OutputStep<?> lastOutput = null;
     for (var c = tail; c != null; c = c.previous()) {
       switch (c) {
-        case OutputChangeContext.OutputChangeContext<?> occ -> lastOutput = occ;
-        case ChangeContext.ActionChangeContext<?, ?> acc -> {
+        case OutputStep<?> occ -> lastOutput = occ;
+        case ActionStep<?, ?> acc -> {
           if (lastOutput != null && lastOutput.stepOutput().isAccepted()) {
             actionTriggers.add(
                 acc.actionTrigger().withEvent(lastOutput.stepOutput().accepted().event())
@@ -478,32 +478,10 @@ public class StateMachine implements AutoCloseable {
 
   private <I> Mono<ProcessResult<?>> onEvent(
       String correlationId,
-      InputEvent<I> inputEvent,
-      EventLog eventLog,
-      ChangeContext<?> stage1,
-      List<IdExists<?>> existingIds
-  ) {
-    return onEvent(correlationId, inputEvent.eventType(), inputEvent.data(), eventLog, stage1, existingIds);
-  }
-
-  private <I> Mono<ProcessResult<?>> onEvent(
-      String correlationId,
       EventType<I, ?> eventType,
       I input,
       EventLog eventLog,
-      ChangeContext<?> stage1,
-      List<IdExists<?>> existingIds
-  ) {
-    return onEvent(correlationId, eventType, input, eventLog, stage1, existingIds, null, null, null);
-  }
-
-  private <I> Mono<ProcessResult<?>> onEvent(
-      String correlationId,
-      EventType<I, ?> eventType,
-      I input,
-      EventLog eventLog,
-      ChangeContext<?> stage1,
-      List<IdExists<?>> existingIds,
+      TransitionStep<?> stage1,
       TriggerType triggerType,
       UUID triggerId,
       @Nullable EventReference triggerEvent
@@ -521,127 +499,127 @@ public class StateMachine implements AutoCloseable {
     if (tuple.t3() != null) {
       System.out.println("onEvent " + eventType.name() + ": Current state: " +  tuple.t3());
     }
-    return tuple.t2().calculate(
-            new InitialChangeContext<>(
-                stage1,
-                null,
-                triggerEvent,
-                tuple.t2(),
-                tuple.t3(),
-                eventLog.lastEventNumber() + 1,
-                tuple.t1(),
-                now,
-                correlationId,
-                input,
-                this,
-                existingIds,
-                triggerType,
-                triggerId
-            )
+    // Deferred, as a retry is a calculation of its own
+    return Mono.defer(() -> calculateAndStore(
+        tuple.t2(),
+        new InputStep<>(
+            stage1,
+            null,
+            triggerEvent,
+            tuple.t2(),
+            tuple.t3(),
+            eventLog.lastEventNumber() + 1,
+            tuple.t1(),
+            now,
+            correlationId,
+            input,
+            this,
+            new Calculation(),
+            triggerType,
+            triggerId
         )
+    ));
+  }
+
+  /// Calculates the changes of the transition from its input step and stores them. If an id of the changes is
+  /// found to exist, the changes are calculated again from the first trigger of the id, with the id existing as the
+  /// result of triggering it. The steps before the trigger are not executed again, as the calculation has their results.
+  private <I, O> Mono<ProcessResult<?>> calculateAndStore(TransitionModel<I, O> transitionModel, InputStep<I> initial) {
+    return transitionModel.calculate(initial)
         .flatMap(this::calculatePendingChanges)
         .flatMap(output -> switch (finalResult(output)) {
-          case Accepted<?> _, Completed<?> _ -> storeChanges(now, correlationId, output)
+          case Accepted<?> _, Completed<?> _ -> storeChanges(initial.timestamp(), initial.correlationId(), output)
               .thenReturn(output.stepOutput());
-          case Rejected<?> r -> tuple.t2().rejectModel() == null ? Mono.error(r.exception()) :
-              tuple.t2().rejectModel().calculate(
-                  new InitialChangeContext<>(
+          case Rejected<?> r -> transitionModel.rejectModel() == null ? Mono.error(r.exception()) :
+              transitionModel.rejectModel().calculate(
+                  new InputStep<>(
                       null,
                       null,
                       null,
-                      tuple.t2(),
-                      tuple.t3(),
-                      eventLog.lastEventNumber() + 1,
-                      tuple.t1(),
-                      now,
-                      correlationId,
+                      transitionModel,
+                      initial.from(),
+                      initial.eventNumber(),
+                      initial.log(),
+                      initial.timestamp(),
+                      initial.correlationId(),
                       tuple(
-                          input,
-                          eventLog.entityModel(),
-                          eventType,
+                          initial.input(),
+                          initial.log().entityModel(),
+                          transitionModel.eventType(),
                           r.exception.getMessage()
                       ),
                       this,
-                      List.of()
+                      initial.calculation()
                   )
               )
               .flatMap(rejectChanges -> rejectChanges.stepOutput().isAccepted() ?
-                  storeChanges(now, correlationId, rejectChanges).thenReturn(rejectChanges.stepOutput()) :
+                  storeChanges(initial.timestamp(), initial.correlationId(), rejectChanges).thenReturn(rejectChanges.stepOutput()) :
                   Mono.error(new RuntimeException(
                       "Failed to handle rejected event: " + rejectChanges.stepOutput() + " (original: "
                       + output.stepOutput() + ")"))
               );
           case ProcessResult<?> r -> Mono.error(new RuntimeException("onEvent: " + r));
         })
-        // Calculates the changes again, with the id existing as the result of triggering the id event
         .onErrorResume(
             IdEventAlreadyExists.class,
             e -> storage.eventsByIdEvent().execute(e.idEvent().type(), e.idEvent().getMarshalledData())
                 .switchIfEmpty(Mono.error(e))
-                .flatMap(log -> onEvent(
-                    correlationId,
-                    eventType,
-                    input,
-                    eventLog,
-                    stage1,
-                    Stream.concat(
-                        existingIds.stream(),
-                        Stream.of(ProcessResult.idExists(e.idEvent().type(), e.idEvent(), log))
-                    ).toList(),
-                    triggerType,
-                    triggerId,
-                    triggerEvent
-                ))
+                .doOnNext(_ -> System.out.println("onEvent " + transitionModel.eventType().name() + ": " + e.getMessage()))
+                .flatMap(log -> initial.calculation().recalculateWith(ProcessResult.idExists(e.idEvent().type(), e.idEvent(), log)) ?
+                    calculateAndStore(transitionModel, initial) :
+                    // The id event would be calculated the same again
+                    Mono.error(e)
+                )
         );
   }
 
   /// The existing id, if the triggered event is an id event with an id found to exist when storing the changes
-  private <I, O> ChangeContext<ProcessResult<O>> idExists(EventTrigger<?, I, O> eventTrigger, ChangeContext<?> tail, I data) {
+  private <I, O> TransitionStep<ProcessResult<O>> idExists(EventTrigger<?, I, O> eventTrigger, TransitionStep<?> tail, I data) {
     if (!(eventTrigger.entityModel() instanceof IdEntityModel))
       return null;
     EventType<I, O> type = eventTrigger.eventSpec().eventType();
-    return tail.firstInitialChangeContext().existingIds().stream()
+    return tail.inputStep().calculation().existingIds().stream()
         .filter(existing -> existing.idEvent().type().id().equals(type.id())
             && Arrays.equals(existing.idEvent().getMarshalledData(), type.inputDataType().marshal(data)))
         .findFirst()
-        .map(existing -> new IdExistsChangeContext<>(tail, ProcessResult.idExists(type, existing.idEvent(), existing.log())))
+        .map(existing -> new IdExistsStep<>(tail, ProcessResult.idExists(type, existing.idEvent(), existing.log())))
         .orElse(null);
   }
 
-  public static String chainToString(ChangeContext<?> tail) {
+  public static String chainToString(TransitionStep<?> tail) {
     StringBuilder b = new StringBuilder();
-    for (ChangeContext<?> c = tail; c != null; c = c.previous()) {
+    for (TransitionStep<?> c = tail; c != null; c = c.previous()) {
       b.append(c).append("\n");
     }
     return b.toString();
   }
 
-  private ProcessResult<?> finalResult(@NotNull ChangeContext<? extends ProcessResult<?>> tail) {
-    for (ChangeContext<?> current = tail; current != null; current = current.previous()) {
-      if (current instanceof RejectedChangeContext<?> p && !p.stepOutput().isHandled()) return p.stepOutput();
+  private ProcessResult<?> finalResult(@NotNull TransitionStep<? extends ProcessResult<?>> tail) {
+    for (TransitionStep<?> current = tail; current != null; current = current.previous()) {
+      if (current instanceof RejectedStep<?> p && !p.stepOutput().isHandled()) return p.stepOutput();
     }
     return tail.stepOutput();
   }
 
-  private Mono<ChangeContext<? extends ProcessResult<?>>> calculatePendingChanges(@NotNull ChangeContext<? extends ProcessResult<?>> tail) {
-    List<PendingChangeContext<?, ?, ?>> pendingChanges = new ArrayList<>();
-    for (ChangeContext<?> current = tail; current != null; current = current.previous()) {
-      if (current instanceof PendingChangeContext<?, ?, ?> p) pendingChanges.add(p);
+  private Mono<TransitionStep<? extends ProcessResult<?>>> calculatePendingChanges(@NotNull TransitionStep<? extends ProcessResult<?>> tail) {
+    List<PendingStep<?, ?, ?>> pendingChanges = new ArrayList<>();
+    for (TransitionStep<?> current = tail; current != null; current = current.previous()) {
+      if (current instanceof PendingStep<?, ?, ?> p) pendingChanges.add(p);
     }
-    Mono<ChangeContext<? extends ProcessResult<?>>> result = Mono.just(tail);
+    Mono<TransitionStep<? extends ProcessResult<?>>> result = Mono.just(tail);
     for (var p : pendingChanges) {
       result = result.flatMap(r -> calculatePendingChange(p, r));
     }
     return result;
   }
 
-  private <T, I, O> Mono<? extends ChangeContext<? extends ProcessResult<?>>> calculatePendingChange(PendingChangeContext<T, I, O> p, ChangeContext<?> previous) {
+  private <T, I, O> Mono<? extends TransitionStep<? extends ProcessResult<?>>> calculatePendingChange(PendingStep<T, I, O> p, TransitionStep<?> previous) {
     return calculateTriggeredEvent(
         p.stepOutput().trigger(),
         previous,
         p.stepOutput().inputData(),
         true,
-        new EventReference(p.initialChangeContext().log().entityId(), p.initialChangeContext().eventNumber())
+        new EventReference(p.inputStep().log().entityId(), p.inputStep().eventNumber())
     );
   }
 
@@ -700,49 +678,49 @@ public class StateMachine implements AutoCloseable {
   private <T, I, O> Mono<EventLog> eventLog(
       EventTrigger<T, I, O> eventTrigger,
       T inputData,
-      ChangeContext<?> changeContext
+      TransitionStep<?> transitionStep
   ) {
     return eventTrigger.createEntity() ?
         Mono.just(emptyEventLog(eventTrigger.entityModel())) :
-        eventLog(eventTrigger.entitySelectors().getFirst().apply(inputData), eventTrigger.entityModel(), changeContext);
+        eventLog(eventTrigger.entitySelectors().getFirst().apply(inputData), eventTrigger.entityModel(), transitionStep);
   }
 
   private <I> Mono<EventLog> eventLog(
       EntitySelector entitySelector,
       EntityModel entityModel,
-      @Nullable ChangeContext<?> changeContext
+      @Nullable TransitionStep<?> transitionStep
   ) {
     return switch (entitySelector) {
       case EntitySelector.ByIdFromSession _ -> {
-        EventLog log = logFromChangeContext(changeContext, entityModel);
+        EventLog log = logFromSteps(transitionStep, entityModel);
         UUID id = log.entityId();
-        log = logFromNestedChanges(id, entityModel, changeContext);
+        log = logFromNestedChanges(id, entityModel, transitionStep);
         if (log == null) yield eventLogByEntityId(entityModel, id);
         else yield Mono.just(log);
       }
       case ById s -> {
         UUID entityId = s.id();
         yield switch (s.creationMode()) {
-          case NeverCreate -> Mono.justOrEmpty(logFromNestedChanges(entityId, entityModel, changeContext))
+          case NeverCreate -> Mono.justOrEmpty(logFromNestedChanges(entityId, entityModel, transitionStep))
               .switchIfEmpty(storage.eventsByEntityId().execute(entityModel, eventTypesByEntityModel.get(entityModel), entityId));
-          case CreateIfNotExists -> Mono.justOrEmpty(logFromNestedChanges(entityId, entityModel, changeContext))
+          case CreateIfNotExists -> Mono.justOrEmpty(logFromNestedChanges(entityId, entityModel, transitionStep))
               .switchIfEmpty(storage.eventsByEntityId().execute(entityModel, eventTypesByEntityModel.get(entityModel), entityId))
               .onErrorResume(UnknownEntity.class, _ -> Mono.just(emptyEventLog(entityModel, entityId)));
           case AlwaysCreate -> Mono.just(emptyEventLog(entityModel, s.id()));
         };
       }
-      case ByIdEvent<?> s -> eventLog(s, entityModel, changeContext);
+      case ByIdEvent<?> s -> eventLog(s, entityModel, transitionStep);
       case ByLastIndexed<?> s -> eventLog(s, entityModel);
       case EntitySelector s -> throw new IllegalStateException("Unexpected value: " + s);
     };
   }
 
-  private <T> Mono<EventLog> eventLog(ByIdEvent<T> selector, EntityModel entityModel, ChangeContext<?> changeContext) {
+  private <T> Mono<EventLog> eventLog(ByIdEvent<T> selector, EntityModel entityModel, TransitionStep<?> transitionStep) {
     Mono<EventLog> log = storage.eventsByIdEvent().execute(selector.type(), selector.type().outputDataType().marshal(selector.id()))
         .filter(l -> l.entityModel().equals(entityModel));
     return switch (selector.creationMode()) {
       case NeverCreate -> log.switchIfEmpty(Mono.defer(() -> selector.fallback() != null ?
-          eventLog(selector.fallback(), entityModel, changeContext) :
+          eventLog(selector.fallback(), entityModel, transitionStep) :
           Mono.error(new UnknownEntity(entityModel, selector.type(), selector.id()))
       ));
       case CreateIfNotExists -> log.switchIfEmpty(Mono.fromSupplier(() -> emptyEventLog(entityModel)));
@@ -768,66 +746,91 @@ public class StateMachine implements AutoCloseable {
     };
   }
 
-  private EventLog logFromChangeContext(ChangeContext<?> context, EntityModel entityModel) {
+  private EventLog logFromSteps(TransitionStep<?> context, EntityModel entityModel) {
     for (var c = context; c != null; c = c.previous()) {
-      if (c instanceof ChangeContext.InitialChangeContext<?> i && i.log().entityModel().equals(entityModel)) {
+      if (c instanceof InputStep<?> i && i.log().entityModel().equals(entityModel)) {
         return i.log();
       }
     }
-    InitialChangeContext<?> initial = null;
+    InputStep<?> initial = null;
     for (var c = context; c != null; c = c.previous()) {
-      if (c instanceof ChangeContext.InitialChangeContext<?> i) initial = i;
+      if (c instanceof InputStep<?> i) initial = i;
     }
     for (var c = initial.stage1(); c != null; c = c.previous()) {
-      if (c instanceof ChangeContext.InitialChangeContext<?> i && i.log().entityModel().equals(entityModel)) {
+      if (c instanceof InputStep<?> i && i.log().entityModel().equals(entityModel)) {
         return i.log();
       }
     }
-    throw new NoSuchElementException(entityModel.name() + " not found in change context");
+    throw new NoSuchElementException(entityModel.name() + " not found in transition step");
   }
 
   /// An id entity or index entity has the same entity id as its entity, so the entity model is matched too
-  private EventLog logFromNestedChanges(UUID entityId, EntityModel entityModel, ChangeContext<?> changeContext) {
-    for (var c = changeContext; c != null; c = c.previous()) {
-      if (c instanceof OutputChangeContext<?>(TransitionModelBuilder.ChangeContext<?> previous, ProcessResult<?> stepOutput)
+  private EventLog logFromNestedChanges(UUID entityId, EntityModel entityModel, TransitionStep<?> transitionStep) {
+    for (var c = transitionStep; c != null; c = c.previous()) {
+      if (c instanceof OutputStep<?>(TransitionStep<?> previous, ProcessResult<?> stepOutput)
           && stepOutput instanceof Accepted<?>(Event<?> event, EntityModel model, _, _)
           && event.entityId().equals(entityId)
           && model.equals(entityModel)
-          && !(previous instanceof ChoiceChangeContext)) {
-        return c.initialChangeContext().log().withNewEvent(event);
+          && !(previous instanceof ChoiceStep)) {
+        return c.inputStep().log().withNewEvent(event);
       }
     }
     return null;
   }
 
-  private void checkCircular(ChangeContext<?> tail, EntityModel entityModel, UUID entityId, InputEvent<?> inputEvent) {
+  private void checkCircular(TransitionStep<?> tail, EntityModel entityModel, UUID entityId, InputEvent<?> inputEvent) {
     for (var c = tail; c != null; c = c.previous()) {
       switch (c) {
-        case ChangeContext.OutputChangeContext<?> o
+        case OutputStep<?> o
             when o.stepOutput().isAccepted() && o.stepOutput().accepted().entityModel().equals(entityModel): return;
-        case ChangeContext.InitialChangeContext<?> i when i.log().entityModel().equals(entityModel):
+        case InputStep<?> i when i.log().entityModel().equals(entityModel):
           throw new CircularChange(inputEvent, entityModel, entityId);
         default:
       }
     }
   }
 
-  public <T, I, O> Mono<ChangeContext<ProcessResult<O>>> calculateTriggeredEvent(
+  public <T, I, O> Mono<TransitionStep<ProcessResult<O>>> calculateTriggeredEvent(
       EventTrigger<T, I, O> eventTrigger,
-      ChangeContext<?> tail,
+      TransitionStep<?> tail,
       T data,
       boolean skipCircularCheck,
       EventReference triggerEvent
   ) {
     I adaptedData = eventTrigger.eventSpec().inputAdapter() != null ? eventTrigger.eventSpec().inputAdapter().apply(data) : null;
-    ChangeContext<ProcessResult<O>> idExists = idExists(eventTrigger, tail, adaptedData);
+    // The step results in the input step the event is calculated from, or in the step of its id existing
+    return tail.inputStep().calculation()
+        .step(tail, () -> triggered(eventTrigger, tail, data, adaptedData, skipCircularCheck, triggerEvent))
+        .flatMap(triggered -> this.<I, O>calculate(triggered));
+  }
+
+  /// The step of the result of a triggered event: the given one, unless it is the input step of a transition,
+  /// which the event is then calculated from
+  @SuppressWarnings("unchecked")
+  private <I, O> Mono<? extends TransitionStep<ProcessResult<O>>> calculate(TransitionStep<?> triggered) {
+    return triggered instanceof InputStep<?> initial ?
+        ((TransitionModel<I, O>) initial.transitionModel()).calculate((InputStep<I>) initial) :
+        Mono.just((TransitionStep<ProcessResult<O>>) triggered);
+  }
+
+  /// The input step of the transition calculating the triggered event, or the step of its id existing, if it
+  /// is an id event with an id found to exist when storing the changes
+  private <T, I, O> Mono<TransitionStep<?>> triggered(
+      EventTrigger<T, I, O> eventTrigger,
+      TransitionStep<?> tail,
+      T data,
+      I adaptedData,
+      boolean skipCircularCheck,
+      EventReference triggerEvent
+  ) {
+    TransitionStep<ProcessResult<O>> idExists = idExists(eventTrigger, tail, adaptedData);
     if (idExists != null)
       return Mono.just(idExists);
     return Mono.deferContextual(ctx -> {
           UUID entityId = switch (eventTrigger.entitySelectors().getFirst().apply(data)) {
             case ByIdFromSession _ -> {
               try {
-                yield logFromChangeContext(tail, eventTrigger.entityModel()).entityId();
+                yield logFromSteps(tail, eventTrigger.entityModel()).entityId();
               } catch (NoSuchElementException e) {
                 throw new RuntimeException(e.getMessage() + "\nFound in Reactor context:\n" +
                     ctx.stream().map(x -> x.toString()).collect(joining("\n")));
@@ -862,21 +865,19 @@ public class StateMachine implements AutoCloseable {
                 // Rethrow the exception on exhaustion so it can be handled downstream
                 .onRetryExhaustedThrow((_, signal) -> signal.failure())
             )
-            .flatMap(tuple -> tuple.t2().calculate(
-                new InitialChangeContext<>(
-                    null,
-                    tail,
-                    triggerEvent,
-                    tuple.t2(),
-                    tuple.t3(),
-                    tuple.t1().lastEventNumber() + 1,
-                    tuple.t1(),
-                    tail.initialChangeContext().timestamp(),
-                    tail.initialChangeContext().correlationId(),
-                    adaptedData,
-                    tail.initialChangeContext().stateMachine(),
-                    List.of()
-                )
+            .map(tuple -> new InputStep<>(
+                null,
+                tail,
+                triggerEvent,
+                tuple.t2(),
+                tuple.t3(),
+                tuple.t1().lastEventNumber() + 1,
+                tuple.t1(),
+                tail.inputStep().timestamp(),
+                tail.inputStep().correlationId(),
+                adaptedData,
+                tail.inputStep().stateMachine(),
+                tail.inputStep().calculation()
             ))
     );
   }
@@ -1029,9 +1030,9 @@ public class StateMachine implements AutoCloseable {
   private Mono<Void> storeChanges(
       ZonedDateTime timestamp,
       String correlationId,
-      ChangeContext<?> changeContext
+      TransitionStep<?> transitionStep
   ) {
-    List<Change> changes = changes(changeContext);
+    List<Change> changes = changes(transitionStep);
     System.out.println("Changes to store:\n" + changes.stream().map(c -> "  |" + c.toString()).collect(joining("\n")));
     return Mono.just("")
         .delayUntil(_ -> delayer.apply(changes.stream()
@@ -1074,22 +1075,21 @@ public class StateMachine implements AutoCloseable {
                 })
                 // Forward outgoing requests (for guaranteed delivery this will be the first attempt)
                 .transformDeferredContextual((publisher, ctx) -> publisher
-                    .doOnNext(_ -> actionTriggers(changeContext).forEach(actionTrigger ->
-                        triggerAction(actionTrigger, correlationId, changeContext)
+                    .doOnNext(_ -> actionTriggers(transitionStep).forEach(actionTrigger ->
+                        triggerAction(actionTrigger, correlationId, transitionStep)
                             .contextWrite(ctx).subscribe()))
                 )
                 .then()
         );
   }
 
-  private <T> Mono<ProcessResult<?>> triggerAction(ActionTrigger<T> actionTrigger, String correlationId, ChangeContext<?> stage1) {
+  private <T> Mono<ProcessResult<?>> triggerAction(ActionTrigger<T> actionTrigger, String correlationId, TransitionStep<?> stage1) {
     return actionTrigger.trigger()
         .flatMap(triggerResult -> onEvent(
                 correlationId,
                 triggerResult,
                 actionTrigger.eventLog(),
-                stage1,
-                List.of()
+                stage1
             )
             .doOnError(e -> System.out.println("onEvent ERROR for " + triggerResult.eventType().name() + " on " + actionTrigger.eventLog().entityModel().name() + ":" + actionTrigger.eventLog().entityId() + ": " + e))
             .retryWhen(RetrySpec.fixedDelay(3, Duration.ofMillis(500))
