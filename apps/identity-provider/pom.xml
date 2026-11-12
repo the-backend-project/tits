@@ -52,6 +52,28 @@
     </plugins>
   </build>
 
+  <profiles>
+    <profile>
+      <!-- Microsoft Entra ID authentication to Azure SQL, see DATABASE_AUTHENTICATION. Only for the JVM, as the native
+           image does not build with azure-identity. -->
+      <id>entra-id</id>
+      <dependencies>
+        <dependency>
+          <!-- Loaded by mssql-jdbc when it connects with Entra ID -->
+          <groupId>com.azure</groupId>
+          <artifactId>azure-identity</artifactId>
+          <scope>runtime</scope>
+        </dependency>
+        <dependency>
+          <!-- The HTTP client of azure-identity, instead of that on Netty 4.1 -->
+          <groupId>com.azure</groupId>
+          <artifactId>azure-core-http-jdk-httpclient</artifactId>
+          <scope>runtime</scope>
+        </dependency>
+      </dependencies>
+    </profile>
+  </profiles>
+
   <dependencies>
     <dependency>
       <groupId>com.github.thxmasj.backend</groupId>
@@ -71,18 +93,6 @@
       <groupId>com.github.thxmasj.backend</groupId>
       <artifactId>database-pgsql-jdbc</artifactId>
       <version>${project.version}</version>
-    </dependency>
-    <dependency>
-      <!-- Loaded by mssql-jdbc for Microsoft Entra ID authentication, see DATABASE_AUTHENTICATION -->
-      <groupId>com.azure</groupId>
-      <artifactId>azure-identity</artifactId>
-      <scope>runtime</scope>
-    </dependency>
-    <dependency>
-      <!-- The HTTP client of azure-identity, instead of that on Netty 4.1 -->
-      <groupId>com.azure</groupId>
-      <artifactId>azure-core-http-jdk-httpclient</artifactId>
-      <scope>runtime</scope>
     </dependency>
     <dependency>
       <groupId>com.github.thxmasj.backend</groupId>

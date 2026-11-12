@@ -60,14 +60,11 @@ public class ConfigTest {
   }
 
   @Test
-  public void whenEntraIdThenMssqlDataSourceUsesIt() throws Exception {
+  public void whenEntraIdThenMssqlDataSourceUsesIt() {
     var config = Config.fromEnvironment(env("DATABASE_AUTHENTICATION", "ActiveDirectoryManagedIdentity", "DATABASE_USER", "client-id")).databaseConfig();
     var dataSource = (com.microsoft.sqlserver.jdbc.SQLServerDataSource) new com.github.thxmasj.backend.database.mssql.MssqlDatabase().dataSource(config);
     assertThat(dataSource.getAuthentication()).isEqualTo("ActiveDirectoryManagedIdentity");
     assertThat(dataSource.getUser()).isEqualTo("client-id");
-    // The driver loads azure-identity when it connects with Entra ID
-    assertThat(Class.forName("com.azure.identity.ManagedIdentityCredentialBuilder")).isNotNull();
-    assertThat(Class.forName("com.microsoft.aad.msal4j.ConfidentialClientApplication")).isNotNull();
   }
 
 }
