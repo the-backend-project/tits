@@ -1,7 +1,7 @@
 # Deploying to Azure Functions
 
 The `deploy` module is a [Pulumi](https://www.pulumi.com) program written in Java, which deploys the
-[cloud native demo](cloud-native.md), or any other application built the same way, to
+[apps](apps.md), or any other application built the same way, to
 [Azure Functions](https://learn.microsoft.com/azure/azure-functions/) on the Flex Consumption plan with a serverless
 Azure SQL database. Both scale to zero: you pay for the function app only while it handles requests, and for the
 database's compute only while it has connections.
@@ -19,7 +19,7 @@ All resources are created in a resource group of their own:
 Deploying then runs three steps on the deploying machine:
 
 1. Provisions the database: a contained database user for the application, and the role which the migrate admin
-   process grants access to the schema. This is the counterpart of `demo/database/init.sql` for local runs.
+   process grants access to the schema. This is the counterpart of the `database/init.sql` of the apps for local runs.
 2. Runs the migrate admin process from the application's image, with the server administrator's credentials.
 3. Deploys the application to the function app.
 
@@ -38,12 +38,12 @@ linked with, and a launcher script which passes the port the Functions host choo
 - The [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli), logged in with `az login` to a subscription
   where you may create role assignments, for example as Owner. Pulumi uses the same login.
 
-## Deploying the demo
+## Deploying the hello world demo
 
 Build the image for the platform Azure Functions runs on, which on an arm64 machine is emulated and takes a while:
 
 ```shell
-docker build --platform linux/amd64 -f demo/Dockerfile -t tits-demo .
+docker build --platform linux/amd64 -f apps/hello-world/Dockerfile -t tits-hello-world .
 ```
 
 Build the Pulumi program:
@@ -55,19 +55,55 @@ mvn package -pl deploy -am -DskipTests
 Then, from the `deploy` directory, create a stack, configure it, and deploy:
 
 ```shell
-pulumi stack init demo
+pulumi stack init hello-world
 pulumi config set azure-native:location northeurope
-pulumi config set image tits-demo
-pulumi config set databaseSchema demo
+pulumi config set image tits-hello-world
 pulumi up
 ```
 
 Choose a [region supporting Flex Consumption](https://learn.microsoft.com/azure/azure-functions/flex-consumption-how-to#view-currently-supported-regions).
 When done, `pulumi stack output url` is the address of the demo. `pulumi destroy` deletes everything again.
 
+## Deploying the identity provider
+
+The [identity provider](identity-provider.md) is deployed the same way, with its issuer set to the URL of the function
+app, and its signing keys and bootstrap client kept as secrets in the stack configuration. Build its image and the
+Pulumi program:
+
+```shell
+docker build --platform linux/amd64 -f apps/identity-provider/Dockerfile -t tits-identity-provider .
+mvn package -pl deploy -am -DskipTests
+```
+
+Then, from the `deploy` directory:
+
+```shell
+pulumi stack init identity-provider
+pulumi config set azure-native:location northeurope
+pulumi config set image tits-identity-provider
+pulumi config set --path 'urlEnvironment[0]' ISSUER
+docker run --rm --platform linux/amd64 tits-identity-provider generate-key | tr -d '\n' \
+  | pulumi config set --secret --path secretEnvironment.SIGNING_KEYS
+pulumi config set --secret --path secretEnvironment.BOOTSTRAP_CLIENT_ID admin
+openssl rand -hex 32 | tr -d '\n' | pulumi config set --secret --path secretEnvironment.BOOTSTRAP_CLIENT_SECRET
+pulumi up
+```
+
+and get a token for the bootstrap client:
+
+```shell
+curl -u "admin:$(pulumi config get --path secretEnvironment.BOOTSTRAP_CLIENT_SECRET)" \
+  -d grant_type=client_credentials "$(pulumi stack output url)token"
+```
+
+Other settings of the identity provider, such as `TOKEN_AUDIENCE`, are set in `environment`, and clients to import in
+`CLIENTS`, as the function app has no file for `CLIENTS_FILE`. The bootstrap client id is not secret, but is in
+`secretEnvironment` along with its secret, as the identity provider requires both or none, also when it migrates. To rotate the signing keys, set `SIGNING_KEYS` again and
+run `pulumi up`, which restarts the identity provider with the new keys.
+
 ## Deploying another application
 
-Another application is deployed the same way, as long as it follows the conventions of the demo:
+Another application is deployed the same way, as long as it follows the conventions of the apps:
 
 - It is a container image for `linux/amd64` with an entry point which serves HTTP on `$PORT`, built from `scratch` or
   otherwise holding only what the executable needs. The executable is linked statically, or dynamically against a C
@@ -77,7 +113,8 @@ Another application is deployed the same way, as long as it follows the conventi
 - Running the entry point with the arguments in `migrateArgs` creates or verifies the schema, granting access to the
   role in `DATABASE_ROLE`, and exits.
 
-Other environment variables are set with `environment`. Use one stack per application and environment, and pick a
+Other environment variables are set with `environment`, secret ones with `secretEnvironment`, and those which are to
+hold the URL of the application with `urlEnvironment`. Use one stack per application and environment, and pick a
 `name` for each, as names of Azure SQL servers and function apps must be globally unique. Pulumi adds a random suffix.
 
 A Pulumi program of your own can also use the `FunctionsApp` component directly, depending on the `deploy` module.
@@ -90,6 +127,8 @@ A Pulumi program of your own can also use the `FunctionsApp` component directly,
 | `name` | Stack name | Name of the application, used to name its resources. Lower case letters, digits and hyphens. |
 | `migrateArgs` | `["migrate"]` | Arguments to the image's entry point which run the migrate admin process |
 | `environment` | `{}` | Additional environment variables for the application and the migrate admin process |
+| `secretEnvironment` | `{}` | Additional environment variables for the application only, set with `--secret`. They are encrypted in the stack configuration and state, and are app settings of the function app. |
+| `urlEnvironment` | `[]` | Environment variables for the application and the migrate admin process set to the URL of the application, `https://` and its host name without a trailing slash |
 | `databaseRole` | `App` | Role given access to the schema by the migrate admin process, and to the application's user |
 | `databaseSchema` | | Schema holding the state machine's tables. Defaults to the application's default. |
 | `databaseCollation` | `Norwegian_100_CS_AS_SC_UTF8` | Collation of the database |
@@ -116,6 +155,10 @@ Structured values are set with `--path`, for example `pulumi config set --path '
 - **SQL authentication.** The application logs in with a password, as the state machine supports no other way. With
   Microsoft Entra authentication, the function app's managed identity could log in without one, and the server could
   allow Entra authentication only.
+- **Secrets are app settings.** The values of `secretEnvironment` are app settings of the function app, readable by
+  anyone allowed to read its configuration. Key Vault references would keep them in a key vault instead.
+- **The URL is that of the function app.** The function app is named by the deployment, with a random suffix, so that
+  its URL is known when its settings are. Custom domains are not set up, and `urlEnvironment` does not follow them.
 - **The database is public.** It is reachable from all of Azure and from the deploying machine, protected by its
   firewall and credentials. Virtual network integration of the function app and a private endpoint for the database
   would avoid that, at a cost.

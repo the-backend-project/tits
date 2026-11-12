@@ -21,8 +21,8 @@
         <module>test-api</module>
         <module>diagram</module>
         <module>templates</module>
-        <module>demo</module>
         <module>apps/identity-provider</module>
+        <module>apps/hello-world</module>
         <module>deploy</module>
     </modules>
 
@@ -159,6 +159,24 @@
                 <version>13.6.2.jre11</version>
             </dependency>
             <dependency>
+                <!-- For Microsoft Entra ID authentication with mssql-jdbc, at the version the driver is built with -->
+                <groupId>com.azure</groupId>
+                <artifactId>azure-identity</artifactId>
+                <version>1.18.4</version>
+                <exclusions>
+                    <!-- Built for Netty 4.1, while the one Netty is that of reactor-netty -->
+                    <exclusion>
+                        <groupId>com.azure</groupId>
+                        <artifactId>azure-core-http-netty</artifactId>
+                    </exclusion>
+                </exclusions>
+            </dependency>
+            <dependency>
+                <groupId>com.azure</groupId>
+                <artifactId>azure-core-http-jdk-httpclient</artifactId>
+                <version>1.0.5</version>
+            </dependency>
+            <dependency>
                 <groupId>org.postgresql</groupId>
                 <artifactId>postgresql</artifactId>
                 <version>42.7.14</version>
@@ -177,6 +195,12 @@
                 <groupId>tools.jackson.core</groupId>
                 <artifactId>jackson-databind</artifactId>
                 <version>${jackson.version}</version>
+            </dependency>
+            <dependency>
+                <!-- Shared by Jackson 3 and 2, the version of Jackson 3 rather than the older one of Jackson 2 in azure-core -->
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-annotations</artifactId>
+                <version>2.23</version>
             </dependency>
             <dependency>
                 <groupId>io.projectreactor.netty</groupId>
@@ -217,6 +241,18 @@
                 <groupId>io.projectreactor.addons</groupId>
                 <artifactId>reactor-pool</artifactId>
                 <version>1.2.8</version>
+            </dependency>
+            <dependency>
+                <!-- BCrypt of Spring Security, without dependencies, for the identity provider's imported clients -->
+                <groupId>org.springframework.security</groupId>
+                <artifactId>spring-security-crypto</artifactId>
+                <version>7.1.2</version>
+            </dependency>
+            <dependency>
+                <!-- The logging of Spring Security's BCryptPasswordEncoder, which BCrypt itself does without -->
+                <groupId>commons-logging</groupId>
+                <artifactId>commons-logging</artifactId>
+                <version>1.3.5</version>
             </dependency>
             <dependency>
                 <groupId>com.nimbusds</groupId>

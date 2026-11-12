@@ -1,8 +1,12 @@
 package com.github.thxmasj.backend.identityprovider;
 
 import com.github.thxmasj.backend.core.database.DatabaseClient;
+import com.github.thxmasj.backend.core.database.DatabaseClient.Config.Authentication;
+import com.github.thxmasj.backend.identityprovider.ImportedClients.ImportedClient;
 import java.net.URI;
 import java.time.Duration;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 
 /// All configuration is read from environment variables (12-factor III). Only settings with a sensible value in every
@@ -16,6 +20,7 @@ import java.util.Map;
 /// @param tokenLifetime   how long an access token is valid
 /// @param audience        the `aud` of the access tokens, if any
 /// @param bootstrapClient a client registered at startup, which can register other clients
+/// @param clients         the clients imported at startup, with the BCrypt hashes of their secrets
 public record Config(
     int port,
     String database,
@@ -26,7 +31,8 @@ public record Config(
     String signingKeys,
     Duration tokenLifetime,
     String audience,
-    BootstrapClient bootstrapClient
+    BootstrapClient bootstrapClient,
+    List<ImportedClient> clients
 ) {
 
   public record BootstrapClient(String id, String secret) {}
@@ -36,24 +42,57 @@ public record Config(
     return new Config(
         Integer.parseInt(env.getOrDefault("PORT", "8080")),
         database,
-        new DatabaseClient.Config(
-            required(env, "DATABASE_HOST"),
-            Integer.parseInt(env.getOrDefault("DATABASE_PORT", database.equals("pgsql") ? "5432" : "1433")),
-            required(env, "DATABASE_NAME"),
-            required(env, "DATABASE_USER"),
-            required(env, "DATABASE_PASSWORD"),
-            Boolean.parseBoolean(env.getOrDefault("DATABASE_TRUST_SERVER_CERTIFICATE", "false")),
-            Integer.parseInt(env.getOrDefault("DATABASE_POOL_SIZE", "10")),
-            Duration.ofSeconds(Long.parseLong(env.getOrDefault("DATABASE_QUERY_TIMEOUT_SECONDS", "10")))
-        ),
+        databaseConfig(env, database),
         env.getOrDefault("DATABASE_SCHEMA", "identity_provider"),
         env.get("DATABASE_ROLE"),
         env.containsKey("ISSUER") ? issuer(env.get("ISSUER")) : null,
         env.get("SIGNING_KEYS"),
         Duration.ofSeconds(Long.parseLong(env.getOrDefault("TOKEN_LIFETIME_SECONDS", "300"))),
         env.get("TOKEN_AUDIENCE"),
-        bootstrapClient(env)
+        bootstrapClient(env),
+        importedClients(env)
     );
+  }
+
+  private static List<ImportedClient> importedClients(Map<String, String> env) {
+    List<ImportedClient> clients = ImportedClients.fromEnvironment(env);
+    String bootstrapId = env.get("BOOTSTRAP_CLIENT_ID");
+    if (clients.stream().anyMatch(client -> client.clientId().equals(bootstrapId)))
+      throw new IllegalArgumentException("The bootstrap client " + bootstrapId + " can't also be imported");
+    return clients;
+  }
+
+  /// The user and password are those of a SQL login, or of an Entra ID service principal, or the user is the optional
+  /// client id of a managed identity, which has no password
+  private static DatabaseClient.Config databaseConfig(Map<String, String> env, String database) {
+    Authentication authentication = authentication(env);
+    if (database.equals("pgsql") && authentication != Authentication.SqlPassword)
+      throw new IllegalArgumentException("Environment variable DATABASE_AUTHENTICATION must be " + Authentication.SqlPassword + " for pgsql");
+    boolean managedIdentity = authentication == Authentication.ActiveDirectoryManagedIdentity;
+    if (managedIdentity && env.get("DATABASE_PASSWORD") != null)
+      throw new IllegalArgumentException("Environment variable DATABASE_PASSWORD must not be set with DATABASE_AUTHENTICATION " + authentication);
+    return new DatabaseClient.Config(
+        required(env, "DATABASE_HOST"),
+        Integer.parseInt(env.getOrDefault("DATABASE_PORT", database.equals("pgsql") ? "5432" : "1433")),
+        required(env, "DATABASE_NAME"),
+        managedIdentity ? optional(env, "DATABASE_USER") : required(env, "DATABASE_USER"),
+        managedIdentity ? null : required(env, "DATABASE_PASSWORD"),
+        Boolean.parseBoolean(env.getOrDefault("DATABASE_TRUST_SERVER_CERTIFICATE", "false")),
+        Integer.parseInt(env.getOrDefault("DATABASE_POOL_SIZE", "10")),
+        Duration.ofSeconds(Long.parseLong(env.getOrDefault("DATABASE_QUERY_TIMEOUT_SECONDS", "10"))),
+        authentication
+    );
+  }
+
+  private static Authentication authentication(Map<String, String> env) {
+    String value = optional(env, "DATABASE_AUTHENTICATION");
+    if (value == null)
+      return Authentication.SqlPassword;
+    try {
+      return Authentication.valueOf(value);
+    } catch (IllegalArgumentException e) {
+      throw new IllegalArgumentException("Environment variable DATABASE_AUTHENTICATION must be one of " + Arrays.toString(Authentication.values()));
+    }
   }
 
   /// Fails unless the configuration has what serving requires, which migration does not
@@ -86,6 +125,11 @@ public record Config(
     if (secret.length() < 32)
       throw new IllegalArgumentException("Environment variable BOOTSTRAP_CLIENT_SECRET must have at least 32 characters");
     return new BootstrapClient(id, secret);
+  }
+
+  private static String optional(Map<String, String> env, String name) {
+    String value = env.get(name);
+    return value == null || value.isBlank() ? null : value;
   }
 
   private static String required(Map<String, String> env, String name) {

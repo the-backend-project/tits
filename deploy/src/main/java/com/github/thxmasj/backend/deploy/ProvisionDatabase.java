@@ -10,7 +10,7 @@ import java.util.Map;
 /// the role which the migrate admin process grants access to the schema. Run by the deployment with the server
 /// administrator's credentials, and can be run any number of times.
 ///
-/// This is the Azure counterpart of `demo/database/init.sql`, which provisions a local database.
+/// This is the Azure counterpart of the `database/init.sql` of the apps, which provision a local database.
 public final class ProvisionDatabase {
 
   private static final String SQL = """

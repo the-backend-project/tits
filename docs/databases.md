@@ -18,7 +18,7 @@ to be reactive. They differ in how the queries reach the database.
 ## Choosing a module
 
 * **SQL Server or Azure SQL:** database-mssql, the only one for them. It is also the only one the
-  [cloud native demo](cloud-native.md) and its Azure deployment are made for.
+  [hello world demo](hello-world.md) and its Azure deployment are made for.
 * **PostgreSQL:** database-pgsql-jdbc, unless there is a reason to avoid blocking drivers. It is the most mature driver, and
   stores a transition in a single round trip.
 * **PostgreSQL without blocking:** database-pgsql-vertx, which also stores a transition in a single round trip.
@@ -77,7 +77,7 @@ Cons:
 
 * The driver blocks, so each query takes a virtual thread while it runs.
 * Connections are configured for Azure: encryption is always on, and the server certificate is validated against
-  `*.database.windows.net` unless it is trusted blindly (see [cloud native](cloud-native.md)).
+  `*.database.windows.net` unless it is trusted blindly (see [hello world demo](hello-world.md)).
 
 ### database-pgsql-jdbc
 
@@ -165,7 +165,7 @@ The state machine closes the data source or client, and with it the connection p
 
 ## Testing
 
-The tests run on SQL Server by default. To run them on PostgreSQL, run the build with `-pl '!demo'` and
+The tests run on SQL Server by default. To run them on PostgreSQL, run the build with `-pl '!apps/hello-world'` and
 `-Ddatabase=pgsql-jdbc`, `-Ddatabase=pgsql-r2dbc` or `-Ddatabase=pgsql-vertx`. The tests of the core module that need a
 database are run by the module of the database, and the other modules' tests use it too. See the
 [README](https://github.com/the-backend-project/tits#building).

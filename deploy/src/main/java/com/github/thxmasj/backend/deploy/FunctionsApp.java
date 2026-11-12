@@ -54,6 +54,8 @@ import com.pulumi.command.local.CommandArgs;
 import com.pulumi.core.Output;
 import com.pulumi.random.RandomPassword;
 import com.pulumi.random.RandomPasswordArgs;
+import com.pulumi.random.RandomString;
+import com.pulumi.random.RandomStringArgs;
 import com.pulumi.resources.ComponentResource;
 import com.pulumi.resources.ComponentResourceOptions;
 import com.pulumi.resources.CustomResourceOptions;
@@ -70,7 +72,7 @@ import java.util.stream.Stream;
 /// serverless Azure SQL database. The application scales to zero, and so does the database after some time without
 /// connections.
 ///
-/// The application is a container image like the demo's, see [FunctionsAppArgs#image()]. It is run as a custom
+/// The application is a container image like those of the apps, see [FunctionsAppArgs#image()]. It is run as a custom
 /// handler, see [FunctionPackage]. Deploying runs these steps on the deploying machine, which therefore needs the
 /// Docker CLI, the Azure CLI, and access to the database:
 ///
@@ -108,6 +110,16 @@ public class FunctionsApp extends ComponentResource {
     );
 
     var group = new ResourceGroup(name, ResourceGroupArgs.Empty, child());
+
+    // The function app is named here rather than by Pulumi, so that its URL is known before it is created and can be
+    // given to the application. Its name must be globally unique, as it is the first label of its host name.
+    var suffix = new RandomString(name + "-suffix", RandomStringArgs.builder()
+        .length(8)
+        .upper(false)
+        .special(false)
+        .build(), child());
+    Output<String> appName = Output.format("%s-%s", name, suffix.result());
+    Output<String> appHostName = Output.format("%s.azurewebsites.net", appName);
 
     // Database
 
@@ -156,6 +168,7 @@ public class FunctionsApp extends ComponentResource {
     if (args.databaseSchema() != null)
       databaseEnvironment.put("DATABASE_SCHEMA", Output.of(args.databaseSchema()));
     args.environment().forEach((key, value) -> databaseEnvironment.put(key, Output.of(value)));
+    args.urlEnvironment().forEach(key -> databaseEnvironment.put(key, Output.format("https://%s", appHostName)));
 
     var provision = new Command(name + "-provision-database", CommandArgs.builder()
         .create(shell(List.of(javaExecutable(), "-cp", classPath(), ProvisionDatabase.class.getName())))
@@ -225,14 +238,19 @@ public class FunctionsApp extends ComponentResource {
     settings.add(setting("DATABASE_USER", Output.of(DATABASE_USER)));
     settings.add(setting("DATABASE_PASSWORD", appPassword.result()));
 
+    Output<List<NameValuePairArgs>> secretSettings = args.secretEnvironment().applyValue(e -> e.entrySet().stream()
+        .map(s -> NameValuePairArgs.builder().name(s.getKey()).value(s.getValue()).build())
+        .toList());
+
     var app = new WebApp(name, WebAppArgs.builder()
+        .name(appName)
         .resourceGroupName(group.name())
         .kind("functionapp,linux")
         .serverFarmId(plan.id())
         .httpsOnly(true)
         .identity(ManagedServiceIdentityArgs.builder().type(ManagedServiceIdentityType.SystemAssigned).build())
-        .siteConfig(Output.all(settings).applyValue(s -> SiteConfigArgs.builder()
-            .appSettings(s)
+        .siteConfig(Output.tuple(Output.all(settings), secretSettings).applyValue(s -> SiteConfigArgs.builder()
+            .appSettings(Stream.concat(s.t1.stream(), s.t2.stream()).toList())
             .minTlsVersion("1.2")
             .build()))
         .functionAppConfig(FunctionAppConfigArgs.builder()
@@ -269,7 +287,12 @@ public class FunctionsApp extends ComponentResource {
         .triggers(functionPackage.sha256())
         .build(), child(migration, storageAccess, allowAzure));
 
-    this.url = Output.format("https://%s/", app.defaultHostName());
+    this.url = Output.tuple(app.defaultHostName(), appHostName).applyValue(h -> {
+      if (!h.t1.equals(h.t2))
+        throw new IllegalStateException("The host name of the function app is " + h.t1 + ", not " + h.t2
+            + " as given to the application");
+      return "https://" + h.t1 + "/";
+    });
     this.resourceGroupName = group.name();
     this.functionAppName = app.name();
     this.databaseServer = server.fullyQualifiedDomainName();

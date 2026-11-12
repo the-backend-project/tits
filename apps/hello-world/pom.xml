@@ -6,20 +6,20 @@
     <groupId>com.github.thxmasj.backend</groupId>
     <artifactId>backend-parent</artifactId>
     <version>0.3.0-SNAPSHOT</version>
-    <relativePath>../pom.xml</relativePath>
+    <relativePath>../../pom.xml</relativePath>
   </parent>
   <modelVersion>4.0.0</modelVersion>
 
-  <artifactId>demo</artifactId>
+  <artifactId>hello-world</artifactId>
 
   <properties>
-    <java.module.name>com.github.thxmasj.backend.demo</java.module.name>
+    <java.module.name>com.github.thxmasj.backend.helloworld</java.module.name>
     <!-- Not a library -->
     <maven.deploy.skip>true</maven.deploy.skip>
   </properties>
 
   <build>
-    <finalName>demo</finalName>
+    <finalName>hello-world</finalName>
     <plugins>
       <plugin>
         <!-- The native image is built from the jar, which finds its dependencies in lib/ -->
@@ -27,7 +27,7 @@
         <configuration>
           <archive>
             <manifest>
-              <mainClass>com.github.thxmasj.backend.demo.Demo</mainClass>
+              <mainClass>com.github.thxmasj.backend.helloworld.HelloWorld</mainClass>
               <addClasspath>true</addClasspath>
               <classpathPrefix>lib/</classpathPrefix>
             </manifest>
