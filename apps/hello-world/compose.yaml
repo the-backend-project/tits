@@ -1,4 +1,4 @@
-# Runs the demo with its backing database. From this directory:
+# Runs the hello world application with its backing database. From this directory:
 #
 #   docker compose up --build
 #
@@ -6,7 +6,7 @@
 
 x-database: &database
   DATABASE_HOST: database
-  DATABASE_NAME: demo
+  DATABASE_NAME: hello_world
   DATABASE_TRUST_SERVER_CERTIFICATE: "true"
 
 services:
@@ -27,7 +27,7 @@ services:
       - ./database/init.sql:/init.sql:ro
     environment:
       SQLCMDPASSWORD: A_Str0ng_Required_Password
-      DEMO_PASSWORD: Demo_Passw0rd
+      HELLO_WORLD_PASSWORD: Hello_W0rld_Passw0rd
     entrypoint:
       - bash
       - -c
@@ -35,9 +35,9 @@ services:
 
   migrate:
     build:
-      context: ..
-      dockerfile: demo/Dockerfile
-    image: tits-demo
+      context: ../..
+      dockerfile: apps/hello-world/Dockerfile
+    image: tits-hello-world
     command: migrate
     depends_on:
       database-init:
@@ -46,10 +46,10 @@ services:
       <<: *database
       DATABASE_USER: sa
       DATABASE_PASSWORD: A_Str0ng_Required_Password
-      DATABASE_ROLE: Demo
+      DATABASE_ROLE: HelloWorld
 
   app:
-    image: tits-demo
+    image: tits-hello-world
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -57,5 +57,5 @@ services:
       - "8080:8080"
     environment:
       <<: *database
-      DATABASE_USER: demo
-      DATABASE_PASSWORD: Demo_Passw0rd
+      DATABASE_USER: hello_world
+      DATABASE_PASSWORD: Hello_W0rld_Passw0rd

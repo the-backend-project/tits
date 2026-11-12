@@ -30,7 +30,7 @@ import java.util.stream.Stream;
 /// point as a [custom handler](https://learn.microsoft.com/azure/azure-functions/functions-custom-handlers) which every
 /// HTTP request is proxied to.
 ///
-/// The file system is that of an image built from `scratch` like the demo's, with an executable linked statically, or
+/// The file system is that of an image built from `scratch` like those of the apps, with an executable linked statically, or
 /// dynamically against a C library which is packaged with it. The Functions host provides a C library too, but not
 /// necessarily the version the executable was built with, so the packaged dynamic loader is used if there is one.
 ///

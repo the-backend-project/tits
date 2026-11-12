@@ -1,4 +1,4 @@
-package com.github.thxmasj.backend.demo;
+package com.github.thxmasj.backend.helloworld;
 
 import com.github.thxmasj.backend.core.database.DatabaseClient;
 import java.time.Duration;
@@ -26,7 +26,7 @@ public record Config(
             Integer.parseInt(env.getOrDefault("DATABASE_POOL_SIZE", "10")),
             Duration.ofSeconds(Long.parseLong(env.getOrDefault("DATABASE_QUERY_TIMEOUT_SECONDS", "10")))
         ),
-        env.getOrDefault("DATABASE_SCHEMA", "demo"),
+        env.getOrDefault("DATABASE_SCHEMA", "hello_world"),
         env.get("DATABASE_ROLE")
     );
   }

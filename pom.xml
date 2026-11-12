@@ -21,8 +21,8 @@
         <module>test-api</module>
         <module>diagram</module>
         <module>templates</module>
-        <module>demo</module>
         <module>apps/identity-provider</module>
+        <module>apps/hello-world</module>
         <module>deploy</module>
     </modules>
 
