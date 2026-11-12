@@ -6,7 +6,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.github.thxmasj.backend.core.Validated;
 import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
 import com.github.thxmasj.backend.core.message.http.HttpRequestMessage.Method;
-import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
 import com.github.thxmasj.backend.http.inbox.AccessTokenVerifier.AccessToken;
 import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JOSEObjectType;
@@ -26,10 +25,8 @@ import java.time.ZoneOffset;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.Test;
-import reactor.core.publisher.Mono;
 
 public class AccessTokenVerifierTest {
 
@@ -118,48 +115,37 @@ public class AccessTokenVerifierTest {
   }
 
   @Test
-  public void whenFilterVerifiesTokenThenClaimsReplaceIt() {
-    var forwarded = new AtomicReference<HttpRequestMessage>();
-    var response = filter(Map.of("Authorization", "Bearer " + token(key, c -> c)), forwarded);
-    assertThat(response.statusCode()).isEqualTo(200);
-    assertThat(forwarded.get().headerValue("Authorization")).isNull();
-    assertThat(forwarded.get().headerValue(BearerTokenFilter.SubjectHeader)).isEqualTo("https://wallet.example.com");
-    assertThat(forwarded.get().headerValue(BearerTokenFilter.ClientIdHeader)).isEqualTo("wallet");
-    assertThat(forwarded.get().headerValue(BearerTokenFilter.ScopeHeader)).isEqualTo("payments refunds");
-    assertThat(HttpInbox.bearerToken("payments").apply(forwarded.get(), null)).isEqualTo(Validated.valid("https://wallet.example.com"));
-    assertThat(HttpInbox.bearerToken("admin").apply(forwarded.get(), null).isInvalid()).isTrue();
+  public void whenAuthorizingValidTokenThenSubjectIsAuthorized() {
+    assertThat(authorize(Map.of("Authorization", "Bearer " + token(key, c -> c)), "payments", "refunds"))
+        .isEqualTo(Validated.valid("https://wallet.example.com"));
+    assertThat(authorize(Map.of("authorization", "bearer " + token(key, c -> c))))
+        .isEqualTo(Validated.valid("https://wallet.example.com"));
   }
 
   @Test
-  public void whenFilterFindsInvalidTokenThenUnauthorized() {
-    var forwarded = new AtomicReference<HttpRequestMessage>();
-    var response = filter(Map.of("Authorization", "Bearer " + token(otherKey, c -> c)), forwarded);
-    assertThat(response.statusCode()).isEqualTo(401);
-    assertThat(response.headerValue("WWW-Authenticate"))
-        .isEqualTo("Bearer realm=\"payments\", error=\"invalid_token\", error_description=\"The access token is invalid or expired\"");
-    assertThat(forwarded.get()).isNull();
+  public void whenAuthorizingTokenWithoutRequiredScopeThenInvalid() {
+    assertThat(authorize(Map.of("Authorization", "Bearer " + token(key, c -> c)), "payments", "admin").invalidReason())
+        .isEqualTo("Bearer token lacks the scope admin");
   }
 
   @Test
-  public void whenRequestSetsTheClaimHeadersThenTheyAreRemoved() {
-    var forwarded = new AtomicReference<HttpRequestMessage>();
-    var response = filter(Map.of("x-token-subject", "admin", "X-Token-Scope", "payments"), forwarded);
-    assertThat(response.statusCode()).isEqualTo(200);
-    assertThat(forwarded.get().headerValue(BearerTokenFilter.SubjectHeader)).isNull();
-    assertThat(forwarded.get().headerValue(BearerTokenFilter.ScopeHeader)).isNull();
-    assertThat(HttpInbox.bearerToken().apply(forwarded.get(), null).isInvalid()).isTrue();
+  public void whenAuthorizingInvalidTokenThenInvalid() {
+    assertThat(authorize(Map.of("Authorization", "Bearer " + token(otherKey, c -> c))).invalidReason())
+        .isEqualTo("Bearer token is invalid or expired");
+    assertThat(authorize(Map.of("Authorization", "Bearer " + token(key, c -> c.expirationTime(Date.from(now))))).invalidReason())
+        .isEqualTo("Bearer token is invalid or expired");
   }
 
-  private HttpResponseMessage filter(Map<String, String> headers, AtomicReference<HttpRequestMessage> forwarded) {
-    return new BearerTokenFilter(verifier, "payments")
-        .filter(
-            new HttpRequestMessage(Method.POST, URI.create("/payments"), headers, null),
-            request -> {
-              forwarded.set(request);
-              return Mono.just(new HttpResponseMessage(200, "OK"));
-            }
-        )
-        .block();
+  @Test
+  public void whenAuthorizingWithoutBearerTokenThenInvalid() {
+    assertThat(authorize(Map.of()).invalidReason()).isEqualTo("Authorization header missing");
+    assertThat(authorize(Map.of("Authorization", "Basic d2FsbGV0OnNlY3JldA==")).invalidReason())
+        .isEqualTo("Authorization token is not of type Bearer");
+  }
+
+  private Validated<String> authorize(Map<String, String> headers, String... requiredScopes) {
+    return HttpInbox.<Void>bearerToken(verifier, requiredScopes)
+        .apply(new HttpRequestMessage(Method.POST, URI.create("/payments"), headers, null), null);
   }
 
   private static AccessTokenVerifier verifier(String audience) {

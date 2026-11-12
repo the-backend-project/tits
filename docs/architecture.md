@@ -170,9 +170,9 @@ requests before they reach the inbox.
 ### Access tokens
 
 Routes requiring an access token, e.g. one issued by the [identity provider](identity-provider.md), take
-`HttpInbox.bearerToken(scopes...)` as their authorizer, which authorizes the `sub` of the token if it has the scopes.
-The token is verified by a `BearerTokenFilter` on the listener, with an `AccessTokenVerifier` given the keys of the
-issuer, its issuer URI and optionally the audience the tokens must have:
+`HttpInbox.bearerToken(verifier, scopes...)` as their authorizer, which authorizes the `sub` of the bearer token if the
+verifier finds it valid and it has the scopes. The `AccessTokenVerifier` is given the keys of the issuer, its issuer
+URI and optionally the audience the tokens must have:
 
 ```java
 var verifier = AccessTokenVerifier.fetchingKeys(
@@ -181,20 +181,14 @@ var verifier = AccessTokenVerifier.fetchingKeys(
     "payments-api",
     Clock.systemUTC()
 );
-new HttpInboxListener(stateMachine).filter(new BearerTokenFilter(verifier, "payments-api")).listen(8080);
+var authorizer = HttpInbox.bearerToken(verifier, "payments");
 ```
 
 The verifier accepts JWT access tokens as profiled by [RFC 9068](https://www.rfc-editor.org/rfc/rfc9068): of type
 `at+jwt`, signed with RS256 by a key of the issuer, of the issuer, not expired, for the audience if one is given, and
-with the claims `sub` and `client_id`. A request with an invalid token is answered with 401 by the filter. A valid
-token is replaced by its claims in the headers `X-Token-Subject`, `X-Token-Client-Id` and `X-Token-Scope`, which
-requests can't set themselves. A request without a token is refused by the routes requiring one with 400, as any
-request failing a route's authorizer.
-
-The token is verified before the request enters the state machine for two reasons: the event log records the claims
-of the token but never the token, and the routing of a request, which may be calculated again later, does not depend
-on whether the token has expired since. The keys are fetched once, so the verifier must be created again to see keys
-the issuer has added since.
+with the claims `sub` and `client_id`. A request without a valid token, or lacking a scope, is refused with 400, as any
+request failing a route's authorizer. The keys are fetched once, so the verifier must be created again to see keys the
+issuer has added since.
 
 ## HTTP outboxes
 

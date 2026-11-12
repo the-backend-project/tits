@@ -23,7 +23,6 @@ import com.github.thxmasj.backend.core.Validated;
 import com.github.thxmasj.backend.core.http.HttpDataType;
 import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
 import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
-import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.BiFunction;
@@ -145,20 +144,23 @@ public interface HttpInbox {
     return new JsonRequestValidator<>(contentType, validate);
   }
 
-  /// An authorizer for routes requiring a bearer token, verified by a [BearerTokenFilter] of the listener, with the
-  /// given scopes. The authorized subject is the `sub` of the token.
-  static <T> BiFunction<HttpRequestMessage, T, Validated<String>> bearerToken(String... requiredScopes) {
+  /// An authorizer for routes requiring a bearer token, RFC 6750, verified by the verifier and with the given scopes.
+  /// The authorized subject is the `sub` of the token.
+  static <T> BiFunction<HttpRequestMessage, T, Validated<String>> bearerToken(AccessTokenVerifier verifier, String... requiredScopes) {
     return (request, _) -> {
-      String subject = request.headerValue(BearerTokenFilter.SubjectHeader);
-      if (subject == null)
-        return invalid("Bearer token missing");
-      String scope = request.headerValue(BearerTokenFilter.ScopeHeader);
-      List<String> scopes = scope == null ? List.of() : Arrays.asList(scope.split(" "));
+      String authorization = request.headerValue("Authorization");
+      if (authorization == null)
+        return invalid("Authorization header missing");
+      if (!authorization.regionMatches(true, 0, "Bearer ", 0, 7))
+        return invalid("Authorization token is not of type Bearer");
+      var token = verifier.verify(authorization.substring(7).trim());
+      if (token.isEmpty())
+        return invalid("Bearer token is invalid or expired");
       for (String requiredScope : requiredScopes) {
-        if (!scopes.contains(requiredScope))
+        if (!token.get().scopes().contains(requiredScope))
           return invalid("Bearer token lacks the scope " + requiredScope);
       }
-      return valid(subject);
+      return valid(token.get().subject());
     };
   }
 
