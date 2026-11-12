@@ -73,6 +73,18 @@
       <version>${project.version}</version>
     </dependency>
     <dependency>
+      <!-- Loaded by mssql-jdbc for Microsoft Entra ID authentication, see DATABASE_AUTHENTICATION -->
+      <groupId>com.azure</groupId>
+      <artifactId>azure-identity</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <!-- The HTTP client of azure-identity, instead of that on Netty 4.1 -->
+      <groupId>com.azure</groupId>
+      <artifactId>azure-core-http-jdk-httpclient</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
       <groupId>com.github.thxmasj.backend</groupId>
       <artifactId>database-pgsql-r2dbc</artifactId>
       <version>${project.version}</version>

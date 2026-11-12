@@ -119,7 +119,8 @@ The identity provider is configured by environment variables:
 | `BOOTSTRAP_CLIENT_ID`, `BOOTSTRAP_CLIENT_SECRET` | A client registered at startup with the scope `client-registration`, so the first clients can be registered. The secret must have at least 32 characters. If the client id is taken, e.g. by an earlier start, the registered client is kept as is. |
 | `PORT` | Default 8080. |
 | `DATABASE` | `mssql` or `pgsql`. Default `mssql`. |
-| `DATABASE_HOST`, `DATABASE_PORT`, `DATABASE_NAME`, `DATABASE_USER`, `DATABASE_PASSWORD` | The database. The port defaults to that of the database. |
+| `DATABASE_HOST`, `DATABASE_PORT`, `DATABASE_NAME`, `DATABASE_USER`, `DATABASE_PASSWORD` | The database. The port defaults to that of the database. The user and password depend on `DATABASE_AUTHENTICATION`. |
+| `DATABASE_AUTHENTICATION` | How to authenticate to the database. `SqlPassword` (the default) with the user and password of a login. For Azure SQL with Microsoft Entra ID: `ActiveDirectoryServicePrincipal` with the client id of the service principal as `DATABASE_USER` and its client secret as `DATABASE_PASSWORD`, or `ActiveDirectoryManagedIdentity` with the managed identity of the host, without `DATABASE_PASSWORD`, and with the client id of a user-assigned identity as `DATABASE_USER` (unset for the system-assigned identity). Entra ID is for `mssql` only, and the driver gets its tokens with azure-identity, which the identity provider depends on at runtime. |
 | `DATABASE_SCHEMA` | Default `identity_provider`. |
 | `DATABASE_ROLE` | The role given access to the schema. Required by `migrate`. |
 | `DATABASE_TRUST_SERVER_CERTIFICATE`, `DATABASE_POOL_SIZE`, `DATABASE_QUERY_TIMEOUT_SECONDS` | As for the demo. |

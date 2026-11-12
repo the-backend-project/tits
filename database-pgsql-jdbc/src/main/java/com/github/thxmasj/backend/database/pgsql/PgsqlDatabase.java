@@ -39,6 +39,7 @@ public class PgsqlDatabase implements Database {
 
   @Override
   public DataSource dataSource(Config config) {
+    config.requireSqlPassword(name());
     PGSimpleDataSource ds = new PGSimpleDataSource();
     ds.setServerNames(new String[] {config.host()});
     ds.setPortNumbers(new int[] {config.port()});

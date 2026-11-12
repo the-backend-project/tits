@@ -26,6 +26,7 @@ public interface DatabaseClient extends AutoCloseable {
   @Override
   default void close() throws Exception {}
 
+  /// @param authentication how to authenticate, or null for [Authentication#SqlPassword]
   record Config(
       @NotBlank String host,
       int port,
@@ -34,8 +35,47 @@ public interface DatabaseClient extends AutoCloseable {
       String password,
       boolean trustServerCertificate,
       int maximumPoolSize,
-      Duration queryTimeout
+      Duration queryTimeout,
+      Authentication authentication
   ) {
+
+    /// How to authenticate to the database. Microsoft Entra ID is for SQL Server (Azure SQL) only, and needs
+    /// azure-identity at runtime.
+    public enum Authentication {
+      /// With the user and password of a database login or user
+      SqlPassword,
+      /// As the Microsoft Entra ID service principal with the client id of the user and the client secret of the
+      /// password
+      ActiveDirectoryServicePrincipal,
+      /// As the managed identity of the host, the user-assigned one with the client id of the user if given, without
+      /// a password
+      ActiveDirectoryManagedIdentity
+    }
+
+    /// Authenticates with the user and password
+    public Config(
+        String host,
+        int port,
+        String name,
+        String user,
+        String password,
+        boolean trustServerCertificate,
+        int maximumPoolSize,
+        Duration queryTimeout
+    ) {
+      this(host, port, name, user, password, trustServerCertificate, maximumPoolSize, queryTimeout, null);
+    }
+
+    public Authentication authentication() {
+      return Objects.requireNonNullElse(authentication, Authentication.SqlPassword);
+    }
+
+    /// Fails unless the authentication is with the user and password, for the databases which only support that
+    public Config requireSqlPassword(String database) {
+      if (authentication() != Authentication.SqlPassword)
+        throw new IllegalArgumentException("Authentication " + authentication() + " is not supported by " + database + ", only " + Authentication.SqlPassword);
+      return this;
+    }
 
     public int maximumPoolSize() {
       return maximumPoolSize != 0 ? maximumPoolSize : 10;
