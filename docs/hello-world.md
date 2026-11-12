@@ -27,7 +27,7 @@ Native compilation takes a few minutes. For a quicker build of a less optimized 
 `native-image` through a build argument:
 
 ```shell
-docker build -f demo/Dockerfile -t tits-demo --build-arg NATIVE_IMAGE_OPTS=-Ob .
+docker build -f apps/hello-world/Dockerfile -t tits-hello-world --build-arg NATIVE_IMAGE_OPTS=-Ob .
 ```
 
 To run the demo in Azure, see [Deploying to Azure Functions](azure-functions.md).
