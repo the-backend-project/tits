@@ -42,9 +42,10 @@ public interface Tokens {
   /// @param scope the requested scope, or null for all the scopes of the client
   record Request(String clientId, String secretHash, String scope) {}
 
+  /// @param subject   the `sub` of the token: the subject of the client, or its client id if it has none
   /// @param issuedAt  in seconds since the epoch
   /// @param expiresAt in seconds since the epoch
-  record IssuedToken(String id, String clientId, String scope, long issuedAt, long expiresAt) {}
+  record IssuedToken(String id, String clientId, String subject, String scope, long issuedAt, long expiresAt) {}
 
   /// @param error an error code of RFC 6749 section 5.2
   record Refusal(String clientId, String error, String description) {}
@@ -119,8 +120,9 @@ public interface Tokens {
     String scope = request.t1().scope() != null ?
         Scopes.format(Scopes.parse(request.t1().scope())) :
         Scopes.format(client.scopes());
+    String subject = client.subject() != null ? client.subject() : client.clientId();
     long issuedAt = request.t3().toEpochSecond();
-    return new IssuedToken(request.t2().toString(), client.clientId(), scope, issuedAt, issuedAt + lifetime.toSeconds());
+    return new IssuedToken(request.t2().toString(), client.clientId(), subject, scope, issuedAt, issuedAt + lifetime.toSeconds());
   }
 
 }

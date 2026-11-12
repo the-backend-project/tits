@@ -73,7 +73,7 @@ final class Keys {
   String sign(Tokens.IssuedToken token) {
     var claims = new JWTClaimsSet.Builder()
         .issuer(issuer.toString())
-        .subject(token.clientId())
+        .subject(token.subject())
         .claim("client_id", token.clientId())
         .claim("scope", token.scope())
         .jwtID(token.id())
@@ -93,7 +93,8 @@ final class Keys {
     return jwt.serialize();
   }
 
-  /// The subject and scopes of an access token issued by this identity provider, if it is valid
+  /// The client and scopes of an access token issued by this identity provider, if it is valid. The client is
+  /// identified by the `client_id` claim, as the `sub` claim is the subject of the client if it has one.
   Optional<Principal> verify(String token) {
     try {
       SignedJWT jwt = SignedJWT.parse(token);
@@ -106,15 +107,16 @@ final class Keys {
       if (!issuer.toString().equals(claims.getIssuer())
           || claims.getExpirationTime() == null
           || !claims.getExpirationTime().toInstant().isAfter(clock.instant())
-          || claims.getSubject() == null)
+          || claims.getSubject() == null
+          || claims.getStringClaim("client_id") == null)
         return Optional.empty();
       String scope = claims.getStringClaim("scope");
-      return Optional.of(new Principal(claims.getSubject(), Scopes.parse(scope != null ? scope : "")));
+      return Optional.of(new Principal(claims.getStringClaim("client_id"), Scopes.parse(scope != null ? scope : "")));
     } catch (ParseException | JOSEException e) {
       return Optional.empty();
     }
   }
 
-  record Principal(String subject, List<String> scopes) {}
+  record Principal(String clientId, List<String> scopes) {}
 
 }

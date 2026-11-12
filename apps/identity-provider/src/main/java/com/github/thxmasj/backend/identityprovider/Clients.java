@@ -26,7 +26,8 @@ import java.util.UUID;
 import java.util.regex.Pattern;
 
 /// The clients of the identity provider. A client is registered by a client with the registration scope, and is
-/// identified by its unique client id.
+/// identified by its unique client id. A client may have a subject, which is the `sub` of its tokens instead of its
+/// client id, for services which identify their callers by values a client id can't hold, e.g. URLs.
 ///
 /// Every registration request is an entity of its own, which records who requested what, and whether the client id
 /// was taken. Only accepted requests create a client.
@@ -44,9 +45,10 @@ public interface Clients {
     Rejected
   }
 
+  /// @param subject      the `sub` of the client's tokens, or null for its client id
   /// @param secretHash   the hash of the client's secret. The secret itself is never seen by the state machine.
   /// @param registeredBy the client id of the client which registered the client
-  record Registration(String clientId, String secretHash, List<String> scopes, String registeredBy) {}
+  record Registration(String clientId, String subject, String secretHash, List<String> scopes, String registeredBy) {}
 
   EventType<String, String> ClientId = BasicEventType.of(
       "ClientId",
@@ -90,6 +92,16 @@ public interface Clients {
   /// Client ids are restricted to characters which need no encoding anywhere, e.g. in a URL or a Basic credential
   static boolean isValidClientId(String clientId) {
     return clientId != null && clientIdPattern.matcher(clientId).matches();
+  }
+
+  int maxSubjectLength = 255;
+
+  /// Subjects can be any text, e.g. a URL or a URN, but not blank, too long or with control characters
+  static boolean isValidSubject(String subject) {
+    return subject != null
+        && !subject.isBlank()
+        && subject.length() <= maxSubjectLength
+        && subject.codePoints().noneMatch(Character::isISOControl);
   }
 
   static Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions() {
@@ -136,6 +148,8 @@ public interface Clients {
   private static Map<String, Object> registered(Registration registration, long issuedAt) {
     var response = new LinkedHashMap<String, Object>();
     response.put("client_id", registration.clientId());
+    if (registration.subject() != null)
+      response.put("subject", registration.subject());
     response.put("client_id_issued_at", issuedAt);
     response.put("scope", Scopes.format(registration.scopes()));
     response.put("grant_types", List.of("client_credentials"));

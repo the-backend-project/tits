@@ -26,10 +26,12 @@ import java.net.http.HttpRequest.BodyPublishers;
 import java.net.http.HttpResponse;
 import java.net.http.HttpResponse.BodyHandlers;
 import java.sql.SQLException;
+import java.text.ParseException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -107,6 +109,58 @@ public class IdentityProviderTest {
     JsonNode some = json(token("orders", secret, "grant_type=client_credentials&scope=orders%3Aread"));
     assertThat(some.get("scope").asString()).isEqualTo("orders:read");
     assertThat(SignedJWT.parse(some.get("access_token").asString()).getJWTClaimsSet().getStringClaim("scope")).isEqualTo("orders:read");
+  }
+
+  @Test
+  public void whenClientRegisteredWithSubjectThenItIsTheSubjectOfItsTokens() throws Exception {
+    String subject = "merchantaggregator:6f1c2a9e-3b7d-4e58-9a0c-2d4b8e1f7a63";
+    HttpResponse<String> response = registration("aggregator", "a", subject, adminToken);
+    assertThat(response.statusCode()).as(response.body()).isEqualTo(201);
+    assertThat(json(response).get("subject").asString()).isEqualTo(subject);
+
+    JWTClaimsSet claims = claims(json(token("aggregator", json(response).get("client_secret").asString(), "grant_type=client_credentials")));
+
+    assertThat(claims.getSubject()).isEqualTo(subject);
+    assertThat(claims.getStringClaim("client_id")).isEqualTo("aggregator");
+  }
+
+  @Test
+  public void whenClientRegisteredWithoutSubjectThenClientIdIsTheSubjectOfItsTokens() throws Exception {
+    HttpResponse<String> response = registration("subjectless", "a");
+    assertThat(response.statusCode()).as(response.body()).isEqualTo(201);
+    assertThat(json(response).has("subject")).isFalse();
+
+    JWTClaimsSet claims = claims(json(token("subjectless", json(response).get("client_secret").asString(), "grant_type=client_credentials")));
+
+    assertThat(claims.getSubject()).isEqualTo("subjectless");
+    assertThat(claims.getStringClaim("client_id")).isEqualTo("subjectless");
+  }
+
+  @Test
+  public void whenSubjectIsInvalidThenBadRequest() throws Exception {
+    for (String subject : List.of("", "   ", "a\nb", "a\u0000b", "x".repeat(Clients.maxSubjectLength + 1)))
+      assertThat(registration("invalid-subject", "a", subject, adminToken).statusCode()).as("subject %s", subject).isEqualTo(400);
+    for (String body : List.of(
+        "{\"client_id\":\"invalid-subject\",\"scope\":\"a\",\"subject\":null}",
+        "{\"client_id\":\"invalid-subject\",\"scope\":\"a\",\"subject\":42}"
+    ))
+      assertThat(post("/clients", Map.of("Content-Type", "application/json", "Authorization", "Bearer " + adminToken), body).statusCode()).as(body).isEqualTo(400);
+    // The client id is not taken by the rejected registrations
+    assertThat(registration("invalid-subject", "a", "x".repeat(Clients.maxSubjectLength), adminToken).statusCode()).isEqualTo(201);
+  }
+
+  @Test
+  public void whenRegistrarHasSubjectThenItRegistersClientsAsItsClientId() throws Exception {
+    String subject = "https://wallet.example.com/provider/registrar";
+    HttpResponse<String> registered = registration("registrar", Clients.RegistrationScope, subject, adminToken);
+    assertThat(registered.statusCode()).as(registered.body()).isEqualTo(201);
+    JsonNode tokenResponse = json(token("registrar", json(registered).get("client_secret").asString(), "grant_type=client_credentials"));
+    assertThat(claims(tokenResponse).getSubject()).isEqualTo(subject);
+
+    HttpResponse<String> response = registration("registered-by-registrar", "a", null, tokenResponse.get("access_token").asString());
+
+    assertThat(response.statusCode()).as(response.body()).isEqualTo(201);
+    assertThat(eventLog()).contains("\"registeredBy\":\"registrar\"");
   }
 
   @Test
@@ -197,7 +251,7 @@ public class IdentityProviderTest {
 
   @Test
   public void whenRegisteringWithoutTokenThenUnauthorized() throws Exception {
-    var response = post("/clients", Map.of("Content-Type", "application/json", Inbox.SubjectHeader, adminId), "{\"client_id\":\"x\",\"scope\":\"a\"}");
+    var response = post("/clients", Map.of("Content-Type", "application/json", Inbox.RegisteredByHeader, adminId), "{\"client_id\":\"x\",\"scope\":\"a\"}");
     assertThat(response.statusCode()).isEqualTo(401);
     assertThat(response.headers().firstValue("WWW-Authenticate")).hasValueSatisfying(v -> assertThat(v).startsWith("Bearer"));
   }
@@ -205,7 +259,7 @@ public class IdentityProviderTest {
   @Test
   public void whenRegisteringWithInvalidTokenThenUnauthorized() throws Exception {
     String forged = new Keys(Keys.generate(), issuer, null, Clock.systemUTC()).sign(new Tokens.IssuedToken(
-        UUID.randomUUID().toString(), adminId, Clients.RegistrationScope, Instant.now().getEpochSecond(), Instant.now().getEpochSecond() + 300
+        UUID.randomUUID().toString(), adminId, adminId, Clients.RegistrationScope, Instant.now().getEpochSecond(), Instant.now().getEpochSecond() + 300
     ));
     var response = post("/clients", Map.of("Content-Type", "application/json", "Authorization", "Bearer " + forged), "{\"client_id\":\"x\",\"scope\":\"a\"}");
     assertThat(response.statusCode()).isEqualTo(401);
@@ -275,8 +329,21 @@ public class IdentityProviderTest {
   }
 
   private static HttpResponse<String> registration(String clientId, String scope) throws IOException, InterruptedException {
-    String body = DataType.objectMapper.writeValueAsString(Map.of("client_id", clientId, "scope", scope));
-    return post("/clients", Map.of("Content-Type", "application/json", "Authorization", "Bearer " + adminToken), body);
+    return registration(clientId, scope, null, adminToken);
+  }
+
+  private static HttpResponse<String> registration(String clientId, String scope, String subject, String token) throws IOException, InterruptedException {
+    var fields = new LinkedHashMap<String, String>();
+    fields.put("client_id", clientId);
+    fields.put("scope", scope);
+    if (subject != null)
+      fields.put("subject", subject);
+    String body = DataType.objectMapper.writeValueAsString(fields);
+    return post("/clients", Map.of("Content-Type", "application/json", "Authorization", "Bearer " + token), body);
+  }
+
+  private static JWTClaimsSet claims(JsonNode tokenResponse) throws ParseException {
+    return SignedJWT.parse(tokenResponse.get("access_token").asString()).getJWTClaimsSet();
   }
 
   private static HttpResponse<String> token(String clientId, String secret, String form) throws IOException, InterruptedException {

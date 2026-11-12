@@ -10,7 +10,7 @@ identity provider's public keys.
 | Endpoint | Description |
 |---|---|
 | `POST /token` | The [token endpoint](https://www.rfc-editor.org/rfc/rfc6749#section-3.2). Takes `grant_type=client_credentials` and an optional `scope`. Without a scope the token gets all the scopes of the client. |
-| `POST /clients` | Registers a client, e.g. `{"client_id": "orders", "scope": "orders:read orders:write"}`. Requires a bearer token with the scope `client-registration`. Responds with the client's generated `client_secret`, which is shown only this once. |
+| `POST /clients` | Registers a client, e.g. `{"client_id": "orders", "scope": "orders:read orders:write"}`, with an optional `subject` (see below). Requires a bearer token with the scope `client-registration`. Responds with the client's generated `client_secret`, which is shown only this once, and its `subject` if it has one. |
 | `GET /.well-known/jwks.json` | The public keys the tokens are signed with. |
 | `GET /.well-known/oauth-authorization-server` | The [authorization server metadata](https://www.rfc-editor.org/rfc/rfc8414). |
 | `GET /health` | Responds 200 while the process is serving. |
@@ -21,14 +21,40 @@ body is refused (see [Credentials](#credentials)). Errors are the error response
 An unknown client and a wrong secret get the same response, so the token endpoint does not tell which clients exist.
 
 Access tokens are JWTs as profiled by [RFC 9068](https://www.rfc-editor.org/rfc/rfc9068): of type `at+jwt`, signed with
-RS256, and with the claims `iss`, `sub` and `client_id` (both the client id), `scope`, `jti`, `iat`, `exp`, and `aud`
-if configured. Core's `AccessTokenSupplier` gets tokens from the identity provider as from any other.
+RS256, and with the claims `iss`, `sub`, `client_id`, `scope`, `jti`, `iat`, `exp`, and `aud` if configured. Core's
+`AccessTokenSupplier` gets tokens from the identity provider as from any other.
+
+The `sub` of a token is the subject of its client, or the client id if the client has no subject. The `client_id` is
+always the client id. A subject lets a client be known to a service by a value a client id can't hold, e.g.
+`https://wallet.example.com/provider/example` or `merchantaggregator:6f1c2a9e-3b7d-4e58-9a0c-2d4b8e1f7a63`: any text of 1
+to 255 characters, not blank and without control characters. Subjects are not required to be unique. A registration
+with an invalid subject is refused with 400, like any other invalid registration:
+
+```json
+{"client_id": "example-wallet", "scope": "payments", "subject": "https://wallet.example.com/provider/example"}
+```
+
+```json
+{
+  "client_id": "example-wallet",
+  "subject": "https://wallet.example.com/provider/example",
+  "client_id_issued_at": 1794484429,
+  "scope": "payments",
+  "grant_types": ["client_credentials"],
+  "token_endpoint_auth_method": "client_secret_basic",
+  "client_secret": "...",
+  "client_secret_expires_at": 0
+}
+```
+
+The registration endpoint identifies the client of a bearer token by its `client_id` claim, so a client registers
+other clients as its client id whatever its subject. The bootstrap client has no subject.
 
 ## Model
 
 | Entity | Description |
 |---|---|
-| `Client` | A registered client, with the hash of its secret, its scopes and who registered it. Found by its client id, which is an id event of `ClientIds` and therefore unique. |
+| `Client` | A registered client, with its subject if it has one, the hash of its secret, its scopes and the client id of the client which registered it. Found by its client id, which is an id event of `ClientIds` and therefore unique. |
 | `Client registration` | A registration request: accepted, creating a client, or rejected because the client id is taken. |
 | `Token request` | A token request: the token issued, or why it was refused. Its entity id is the `jti` of the token. |
 
@@ -45,7 +71,7 @@ listener, the edge, which is the only place credentials are handled:
   enters the state machine, which compares the hash with that of the client.
 - The state machine issues the claims of a token, which the edge signs on their way out. The signing keys are never
   seen by the state machine.
-- The bearer token of a registration is verified by the edge, which passes on the client id of its subject. The edge
+- The bearer token of a registration is verified by the edge, which passes on its client id. The edge
   generates the secret of the new client, passes on its hash, and adds the secret to the response on its way out.
 
 The edge tells the state machine what it found in `X-Idp-` headers, which it removes from incoming requests. The event

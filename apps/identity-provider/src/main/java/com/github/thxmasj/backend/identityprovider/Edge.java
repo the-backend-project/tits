@@ -1,8 +1,8 @@
 package com.github.thxmasj.backend.identityprovider;
 
 import static com.github.thxmasj.backend.identityprovider.Inbox.ClientIdHeader;
+import static com.github.thxmasj.backend.identityprovider.Inbox.RegisteredByHeader;
 import static com.github.thxmasj.backend.identityprovider.Inbox.SecretHashHeader;
-import static com.github.thxmasj.backend.identityprovider.Inbox.SubjectHeader;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 import com.github.thxmasj.backend.core.DataType;
@@ -121,14 +121,16 @@ final class Edge implements HttpInboxListener.Filter {
     String secret = Secrets.generate();
     var headers = new HashMap<>(request.headers());
     headers.keySet().removeIf(name -> name.equalsIgnoreCase("Authorization"));
-    return next.apply(registration(headers, principal.get().subject(), Secrets.hash(secret), request))
+    return next.apply(registration(headers, principal.get().clientId(), Secrets.hash(secret), request))
         .map(response -> response.statusCode() == 201 ? withSecret(response, secret) : response);
   }
 
   /// A registration request as it enters the state machine
-  static HttpRequestMessage registration(Map<String, String> headers, String subject, String secretHash, HttpRequestMessage request) {
+  ///
+  /// @param registeredBy the client id of the client registering the client
+  static HttpRequestMessage registration(Map<String, String> headers, String registeredBy, String secretHash, HttpRequestMessage request) {
     var trusted = new HashMap<>(headers);
-    trusted.put(SubjectHeader, subject);
+    trusted.put(RegisteredByHeader, registeredBy);
     trusted.put(SecretHashHeader, secretHash);
     return new HttpRequestMessage(request.method(), request.uri(), trusted, request.body());
   }

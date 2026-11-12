@@ -41,8 +41,8 @@ public interface Inbox {
   /// The hash of the secret of the client requesting a token, or of the secret generated for a client being registered
   String SecretHashHeader = "X-Idp-Client-Secret-Hash";
   /// The client id of the authenticated client registering a client
-  String SubjectHeader = "X-Idp-Subject";
-  List<String> trustedHeaders = List.of(ClientIdHeader, SecretHashHeader, SubjectHeader);
+  String RegisteredByHeader = "X-Idp-Registered-By";
+  List<String> trustedHeaders = List.of(ClientIdHeader, SecretHashHeader, RegisteredByHeader);
 
   /// A JSON response to a request
   record Reply(int status, String body) {
@@ -85,7 +85,7 @@ public interface Inbox {
           Inbox::registration,
           List.of(anyContent(
               null,
-              (m, _) -> Validated.validElse(m.headerValue(SubjectHeader), "Unauthenticated"),
+              (m, _) -> Validated.validElse(m.headerValue(RegisteredByHeader), "Unauthenticated"),
               UUID.fromString("f7a2c6e9-4d15-4b83-9e0a-1c5d8b3f6e24"),
               Clients.RequestRegistration,
               Clients.ClientRegistration,
@@ -135,11 +135,12 @@ public interface Inbox {
     }
   }
 
-  /// A registration request, e.g. `{"client_id": "orders", "scope": "orders:read orders:write"}`
+  /// A registration request, e.g. `{"client_id": "orders", "scope": "orders:read orders:write"}`, with an optional
+  /// `subject` for the `sub` of the client's tokens
   private static Validated<Registration> registration(HttpRequestMessage request) {
-    String subject = request.headerValue(SubjectHeader);
+    String registeredBy = request.headerValue(RegisteredByHeader);
     String secretHash = request.headerValue(SecretHashHeader);
-    if (subject == null || secretHash == null)
+    if (registeredBy == null || secretHash == null)
       return invalid("Unauthenticated");
     JsonNode body;
     try {
@@ -155,7 +156,16 @@ public interface Inbox {
     JsonNode scope = body.get("scope");
     if (scope == null || !scope.isString() || !Scopes.isValid(scope.asString()))
       return invalid("scope must be a space separated list of scopes");
-    return valid(new Registration(clientId.asString(), secretHash, Scopes.parse(scope.asString()), subject));
+    JsonNode subject = body.get("subject");
+    if (subject != null && (!subject.isString() || !Clients.isValidSubject(subject.asString())))
+      return invalid("subject must be a string of 1 to " + Clients.maxSubjectLength + " characters, not blank and without control characters");
+    return valid(new Registration(
+        clientId.asString(),
+        subject != null ? subject.asString() : null,
+        secretHash,
+        Scopes.parse(scope.asString()),
+        registeredBy
+    ));
   }
 
   private static String reasonPhrase(int status) {
