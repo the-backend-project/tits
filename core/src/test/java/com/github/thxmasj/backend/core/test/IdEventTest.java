@@ -42,6 +42,8 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -85,6 +87,9 @@ public class IdEventTest {
   static EventType<StatementNumber, StatementNumber> Issue = BasicEventType.of("Issue", UUID.fromString("3b5d7f9a-2c4e-4a6b-8c0d-1e2f3a4b5c6d"), DataType.json(StatementNumber.class));
   static EventType<Void, String> Read = new ReadOnly<>("Read", UUID.fromString("7c9e1a3b-5d7f-4b9a-8c1e-3f5a7b9c1d2e"), DataType.none(), DataType.string());
 
+  /// The number of times the steps before the id triggers of Open are calculated, by input
+  private static final Map<String, AtomicInteger> openAssembled = new ConcurrentHashMap<>();
+
   private static final String schema = UUID.randomUUID().toString();
   private static final StateMachine machine = stateMachine(schema, Clock.systemUTC());
 
@@ -97,7 +102,10 @@ public class IdEventTest {
       Account, Map.<State, List<TransitionModel<?, ?>>>of(
           Begin, List.of(
               onEvent(Open).to(States.Opened)
-                  .assemble(c -> tuple(c.input(), c.log().entityId()))
+                  .assemble(c -> {
+                    openAssembled.computeIfAbsent(c.input(), _ -> new AtomicInteger()).incrementAndGet();
+                    return tuple(c.input(), c.log().entityId());
+                  })
                   .trigger(AccountNumber).with(Tuple2::t1).on(Ids).identifiedBy(d -> entityId(d.t2(), CreateIfNotExists))
                   .trigger(Alias).with(d -> "alias-" + d.t1().t1()).on(Ids).identifiedBy(d -> entityId(d.t1().t2(), CreateIfNotExists))
                   .output(d -> d.t1().t2().isIdExists() ?
@@ -171,6 +179,18 @@ public class IdEventTest {
             .onErrorReturn(List.of())
             .block()
     );
+  }
+
+  @Test
+  public void stepsBeforeTheTriggerOfAnExistingIdAreNotCalculatedAgain() {
+    machine.onEvent(trigger(Open, Account), "1011").blockFirst();
+    assertEquals(1, openAssembled.get("1011").get());
+
+    // Both ids exist, so storing the changes fails once for each of them
+    Event<?> second = machine.onEvent(trigger(Open, Account), "1011").blockFirst();
+
+    assertEquals(2, openAssembled.get("1011").get());
+    assertEquals("Duplicate of ", ((String) second.getUnmarshalledData()).substring(0, "Duplicate of ".length()));
   }
 
   @Test

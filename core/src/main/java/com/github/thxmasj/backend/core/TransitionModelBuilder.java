@@ -341,7 +341,7 @@ public class TransitionModelBuilder<I, T, O> {
   public static TransitionModel<Void, State> statusOn() {
     return new TransitionModel<>(
         new ModelContext<>(false, null, BuiltinEventTypes.Status, List.of(), List.of(), List.of(), null),
-        initialChangeContext -> initialChangeContext.flatMap(i -> Mono.just(new OutputChangeContext<>(
+        initialChangeContext -> initialChangeContext.map(i -> new OutputChangeContext<>(
             i,
             ProcessResult.accepted(
                 new Event<>(
@@ -355,14 +355,14 @@ public class TransitionModelBuilder<I, T, O> {
                 i.triggerType(),
                 i.triggerId()
             )
-        )))
+        ))
     );
   }
 
   public static TransitionModel<Data, Data> rollbackOn(EventType<Data, Data> eventType) {
     return new TransitionModel<>(
         new ModelContext<>(false, null, eventType, List.of(), List.of(), List.of(), null),
-        initialChangeContext -> initialChangeContext.flatMap(i -> {
+        initialChangeContext -> initialChangeContext.concatMap(i -> {
           int rollbackTo = i.stepOutput().toNumber();
           int actualRollbackTo = rollbackTo;
           if (rollbackTo < 0) {
@@ -378,7 +378,7 @@ public class TransitionModelBuilder<I, T, O> {
                   // Rollback from an event which is not the last
                   //|| rollbackFrom != i.log().lastEventNumber()
           ) {
-            return Mono.just(new OutputChangeContext<>(
+            return Candidates.just(new OutputChangeContext<>(
                 i,
                 ProcessResult.rejected(
                     eventType,
@@ -396,7 +396,7 @@ public class TransitionModelBuilder<I, T, O> {
           var effectiveEvents = log.effectiveEvents();
           List<Event<?>> eventsToRollback = effectiveEvents.subList(actualRollbackTo, effectiveEvents.size());
           Traverser traverser = i.stateMachine.traverser(log.entityModel());
-          Mono<ChangeContext<?>> currentContext = Mono.just(i);
+          Candidates<ChangeContext<?>> currentContext = Candidates.just(i);
           for (var event : eventsToRollback.reversed()) {
             var tm = traverser.transitionForEventNumber(log, event.eventNumber());
             if (tm == null) {
@@ -406,8 +406,8 @@ public class TransitionModelBuilder<I, T, O> {
               ));
             }
             if (tm.reverseModel() != null) {
-              currentContext = currentContext.flatMap(c -> tm.reverseModel().calculateReverse(
-                  Mono.just(new InitialChangeContext<>(
+              currentContext = currentContext.concatMap(c -> tm.reverseModel().calculateReverse(
+                  Candidates.just(new InitialChangeContext<>(
                       null,
                       c,
                       null,
@@ -473,10 +473,9 @@ public class TransitionModelBuilder<I, T, O> {
     public <T> TransitionModelBuilder<I, T, O> assemble(BiFunction<I, EventLog, T> assembler) {
       return new TransitionModelBuilder<>(
           modelContext,
-          initialChangeContext -> initialChangeContext.flatMap(c -> Mono.just(new AssembledChangeContext<>(
-                  c,
-                  assembler.apply(c.stepOutput(), c.log())
-              )
+          initialChangeContext -> initialChangeContext.map(c -> new AssembledChangeContext<>(
+              c,
+              assembler.apply(c.stepOutput(), c.log())
           ))
       );
     }
@@ -491,7 +490,7 @@ public class TransitionModelBuilder<I, T, O> {
     public <T> TransitionModelBuilder<I, T, O> assembleReactive(Function<TransitionContext<I>, Mono<T>> assembler) {
       return new TransitionModelBuilder<>(
           modelContext,
-          initialChangeContext -> initialChangeContext.flatMap(i -> assembler.apply(i).map(t -> new AssembledChangeContext<>(i, t)))
+          initialChangeContext -> initialChangeContext.concatMap(i -> Candidates.from(assembler.apply(i).map(t -> new AssembledChangeContext<>(i, t))))
       );
     }
 
@@ -522,11 +521,12 @@ public class TransitionModelBuilder<I, T, O> {
   }
 
   private final ModelContext<I, O> modelContext;
-  private final Function<Mono<InitialChangeContext<I>>, Mono<ChangeContext<T>>> builderFunction;
+  /// Calculates the candidate outcomes of the steps, see [TransitionModel#candidates]
+  private final Function<Candidates<InitialChangeContext<I>>, Candidates<ChangeContext<T>>> builderFunction;
 
   private TransitionModelBuilder(
       ModelContext<I, O> modelContext,
-      Function<Mono<InitialChangeContext<I>>, Mono<ChangeContext<T>>> builderFunction
+      Function<Candidates<InitialChangeContext<I>>, Candidates<ChangeContext<T>>> builderFunction
   ) {
     this.modelContext = modelContext;
     this.builderFunction = builderFunction;
@@ -829,14 +829,14 @@ public class TransitionModelBuilder<I, T, O> {
       return new TransitionModelBuilder<>(
           modelContext,
           this.builder.builderFunction.andThen(changeContext -> changeContext
-              .flatMap(c -> {
+              .concatMap(c -> {
                 if (c instanceof ChoiceChangeContext) {
-                  return Mono.just(c);
+                  return Candidates.just(c);
                 }
                 if (!filter.predicate().test(c.stepOutput())) {
-                  return Mono.just(c);
+                  return Candidates.just(c);
                 }
-                return filter.alternative().model().calculate(
+                return filter.alternative().model().candidates(
                         new InitialChangeContext<>(
                             null,
                             c,
@@ -880,16 +880,16 @@ public class TransitionModelBuilder<I, T, O> {
   ) {
     return new TransitionModelBuilder<>(
         new ModelContext<>(true /* !! */, null, BuiltinEventTypes.Rollback, List.of(), List.of(), List.of(), null),
-        initialChangeContext -> initialChangeContext.flatMap(
+        initialChangeContext -> initialChangeContext.concatMap(
             i -> {
               // TODO
               EventType<Data, Data> rollbackEventType = (EventType<Data, Data>)i.transitionModel().eventType();
               if (i.previous() != null && i.previous() instanceof ChangeContext.InitialChangeContext<?> pi)
                 rollbackEventType = (EventType<Data, Data>)pi.transitionModel().eventType();
-              return assembler.apply(
+              return Candidates.from(assembler.apply(
                   i,
                   rollbackEventType
-              ).map(assembled -> new AssembledChangeContext<>(i, assembled));
+              ).map(assembled -> new AssembledChangeContext<>(i, assembled)));
             }
         )
     );
@@ -914,9 +914,9 @@ public class TransitionModelBuilder<I, T, O> {
       EventTrigger<T, I1, O1> eventTrigger,
       Function<T, Mono<I1>> reactiveDataAdapter
   ) {
-    Function<Mono<ChangeContext<T>>, Mono<ChangeContext<Tuple2<T, ProcessResult<O1>>>>> f =
+    Function<Candidates<ChangeContext<T>>, Candidates<ChangeContext<Tuple2<T, ProcessResult<O1>>>>> f =
         changeContext -> changeContext
-            .flatMap(c -> withData(eventTrigger, reactiveDataAdapter, c).flatMap(t -> c.initialChangeContext().stateMachine().calculateTriggeredEvent(
+            .concatMap(c -> Candidates.from(withData(eventTrigger, reactiveDataAdapter, c)).concatMap(t -> c.initialChangeContext().stateMachine().calculateTriggeredEvent(
                         t,
                         c,
                         c.stepOutput(),
@@ -928,21 +928,21 @@ public class TransitionModelBuilder<I, T, O> {
                     )
                     .onErrorResume(
                         CircularChange.class,
-                        e -> Mono.just(new PendingChangeContext<>(
+                        e -> Candidates.just(new PendingChangeContext<>(
                             c,
                             ProcessResult.pending(eventTrigger, c.stepOutput(), e)
                         ))
                     )
                     .onErrorResume(
                         RejectedEvent.class,
-                        e -> Mono.just(new RejectedChangeContext<>(
+                        e -> Candidates.just(new RejectedChangeContext<>(
                             c,
                             ProcessResult.rejected(eventTrigger.eventSpec().eventType(), e)
                         ))
                     )
                     .onErrorResume(
                         UnknownEntity.class,
-                        e -> Mono.just(new UnknownIdChangeContext<>(
+                        e -> Candidates.just(new UnknownIdChangeContext<>(
                             c,
                             ProcessResult.unknownId(eventTrigger.eventSpec().eventType(), e)
                         ))
@@ -965,7 +965,7 @@ public class TransitionModelBuilder<I, T, O> {
   }
 
   private <I1, O1> TransitionModelBuilder<I, T, O> triggerDelayed(EventType<I1, O1> eventType, Function<T, I1> dataAdapter, Function<T, Duration> delay) {
-    Function<Mono<ChangeContext<T>>, Mono<ChangeContext<T>>> f =
+    Function<Candidates<ChangeContext<T>>, Candidates<ChangeContext<T>>> f =
         changeContext -> changeContext
             .map(c -> new DelayedTriggerChangeContext<>(
                 c,
@@ -988,11 +988,11 @@ public class TransitionModelBuilder<I, T, O> {
       EventTrigger<T, I1, O1> conditionalTrigger,
       Function<T, Mono<I1>> reactiveDataAdapter
   ) {
-    Function<Mono<ChangeContext<T>>, Mono<ChangeContext<T>>> f =
+    Function<Candidates<ChangeContext<T>>, Candidates<ChangeContext<T>>> f =
         changeContext -> changeContext
             // The event is always stored as a ConditionalTrigger. If its condition is already met it is fired right after
             // the triggering change is committed, otherwise it is fired by the poller once the condition is met.
-            .flatMap(c -> withData(conditionalTrigger, reactiveDataAdapter, c).map(eventTrigger -> {
+            .concatMap(c -> Candidates.from(withData(conditionalTrigger, reactiveDataAdapter, c).map(eventTrigger -> {
               var condition = eventTrigger.condition();
               return new ConditionalTriggerChangeContext<>(
                   c,
@@ -1013,7 +1013,7 @@ public class TransitionModelBuilder<I, T, O> {
                       c.initialChangeContext().correlationId()
                   )
               );
-            }));
+            })));
     var eventTriggers = join(modelContext.triggers, conditionalTrigger);
     return new TransitionModelBuilder<>(
         new ModelContext<>(
@@ -1135,7 +1135,7 @@ public class TransitionModelBuilder<I, T, O> {
   public static class TransitionModel<I, O> {
 
     private final ModelContext<I, O> modelContext;
-    private final Function<Mono<InitialChangeContext<I>>, Mono<OutputChangeContext<O>>> chain;
+    private final Function<Candidates<InitialChangeContext<I>>, Candidates<OutputChangeContext<O>>> chain;
 
     @Override
     public int hashCode() {
@@ -1159,7 +1159,7 @@ public class TransitionModelBuilder<I, T, O> {
 
     TransitionModel(
         ModelContext<I, O> modelContext,
-        Function<Mono<InitialChangeContext<I>>, Mono<OutputChangeContext<O>>> chain
+        Function<Candidates<InitialChangeContext<I>>, Candidates<OutputChangeContext<O>>> chain
     ) {
       this.modelContext = modelContext;
       this.chain = chain;
@@ -1173,12 +1173,21 @@ public class TransitionModelBuilder<I, T, O> {
       return null;
     }
 
+    /// The first candidate outcome of the transition, see [#candidates].
     public Mono<OutputChangeContext<O>> calculate(InitialChangeContext<I> initialChangeContext) {
-      log(modelContext, "calculate [" + eventType().name() + "] on [" + initialChangeContext.log().entityModel().name() + ":" + initialChangeContext.log().entityId() + "] (input: " + initialChangeContext.input() + ")");
-      return chain.apply(Mono.just(initialChangeContext));
+      return candidates(initialChangeContext).first();
     }
 
-    private Mono<OutputChangeContext<O>> calculateReverse(Mono<InitialChangeContext<I>> initial) {
+    /// The candidate outcomes of the transition, in order of preference. There is more than one candidate when an id
+    /// event is triggered, as the id may be found to exist only when the changes are stored. The next candidate, with
+    /// the id existing, is calculated when it is requested. Only the steps following the trigger of the id event are
+    /// then calculated again, the steps before it are not.
+    public Candidates<OutputChangeContext<O>> candidates(InitialChangeContext<I> initialChangeContext) {
+      log(modelContext, "calculate [" + eventType().name() + "] on [" + initialChangeContext.log().entityModel().name() + ":" + initialChangeContext.log().entityId() + "] (input: " + initialChangeContext.input() + ")");
+      return chain.apply(Candidates.just(initialChangeContext));
+    }
+
+    private Candidates<OutputChangeContext<O>> calculateReverse(Candidates<InitialChangeContext<I>> initial) {
       return chain.apply(initial);
     }
 
