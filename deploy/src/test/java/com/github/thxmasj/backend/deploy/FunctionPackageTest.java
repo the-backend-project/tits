@@ -50,9 +50,11 @@ public class FunctionPackageTest {
   }
 
   @Test
-  void packageIsReproducible() throws IOException {
+  void packageIsReproducible() throws IOException, InterruptedException {
     Path rootfs = rootfs("demo", "lib64/libc.so.6");
     FunctionPackage first = FunctionPackage.build(rootfs, List.of("/demo"), dir.resolve("first.zip"));
+    // Zip timestamps have a resolution of a second, so a time leaking into the package shows only across seconds
+    Thread.sleep(1100);
     Files.setLastModifiedTime(rootfs.resolve("demo"), FileTime.from(Instant.now().plusSeconds(60)));
     FunctionPackage second = FunctionPackage.build(rootfs, List.of("/demo"), dir.resolve("second.zip"));
     assertThat(second.sha256()).isEqualTo(first.sha256());
