@@ -9,9 +9,10 @@ import java.util.Map;
 /// deploy have defaults; credentials, keys and the location of the database never do.
 ///
 /// @param database        the name of the database, `mssql` or `pgsql`
-/// @param issuer          the URL the identity provider is reached at, which is the `iss` of its tokens
-/// @param signingKeys     a JWK set with the private keys. The first key signs the tokens, and the public keys of all are
-///                        published, so a new key can be published before it is used.
+/// @param issuer          the URL the identity provider is reached at, which is the `iss` of its tokens. Required to
+///                        serve.
+/// @param signingKeys     a JWK set with the private keys, required to serve. The first key signs the tokens, and the
+///                        public keys of all are published, so a new key can be published before it is used.
 /// @param tokenLifetime   how long an access token is valid
 /// @param audience        the `aud` of the access tokens, if any
 /// @param bootstrapClient a client registered at startup, which can register other clients
@@ -47,12 +48,21 @@ public record Config(
         ),
         env.getOrDefault("DATABASE_SCHEMA", "identity_provider"),
         env.get("DATABASE_ROLE"),
-        issuer(required(env, "ISSUER")),
-        required(env, "SIGNING_KEYS"),
+        env.containsKey("ISSUER") ? issuer(env.get("ISSUER")) : null,
+        env.get("SIGNING_KEYS"),
         Duration.ofSeconds(Long.parseLong(env.getOrDefault("TOKEN_LIFETIME_SECONDS", "300"))),
         env.get("TOKEN_AUDIENCE"),
         bootstrapClient(env)
     );
+  }
+
+  /// Fails unless the configuration has what serving requires, which migration does not
+  public Config requireServing() {
+    if (issuer == null)
+      throw new IllegalArgumentException("Environment variable ISSUER is required");
+    if (signingKeys == null || signingKeys.isBlank())
+      throw new IllegalArgumentException("Environment variable SIGNING_KEYS is required");
+    return this;
   }
 
   private static URI issuer(String value) {

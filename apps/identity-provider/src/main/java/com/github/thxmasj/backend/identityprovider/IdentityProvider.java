@@ -41,10 +41,20 @@ public final class IdentityProvider {
     Config config = Config.fromEnvironment(System.getenv());
     switch (command) {
       case "serve" -> {
+        // Invalid keys fail before connecting to the database
+        Keys keys = keys(config.requireServing(), Clock.systemUTC());
         StateMachine stateMachine = stateMachine(config);
-        if (config.bootstrapClient() != null)
-          bootstrap(stateMachine, config.bootstrapClient());
-        DisposableServer server = serve(stateMachine, keys(config, Clock.systemUTC()), config.port());
+        DisposableServer server;
+        try {
+          if (config.bootstrapClient() != null)
+            bootstrap(stateMachine, config.bootstrapClient());
+          server = serve(stateMachine, keys, config.port());
+        } catch (RuntimeException e) {
+          // The workers of the state machine would keep the process running without serving
+          e.printStackTrace();
+          System.exit(1);
+          return;
+        }
         System.out.println("Listening on port " + server.port() + " after " + Duration.ofNanos(System.nanoTime() - t0).toMillis() + " ms");
         // A container runtime stops the process with SIGTERM, which runs the shutdown hooks
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {

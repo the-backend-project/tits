@@ -53,6 +53,33 @@ jobs:
         working-directory: demo
         run: docker compose logs
 
+  identity-provider:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Build the identity provider native image
+        working-directory: apps/identity-provider
+        run: docker compose build migrate
+      - name: Run it with its database
+        working-directory: apps/identity-provider
+        run: |
+          export SIGNING_KEYS="$(docker run --rm tits-identity-provider generate-key)"
+          docker compose up --detach
+      - name: Check that it issues tokens and registers clients
+        run: |
+          for i in $(seq 1 120); do curl -sf localhost:8080/health && break; sleep 1; done
+          token=$(curl -sf -u admin:A_local_bootstrap_secret_of_32_characters -d grant_type=client_credentials \
+            localhost:8080/token | jq -er .access_token)
+          secret=$(curl -sf -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
+            -d '{"client_id": "ci", "scope": "a b"}' localhost:8080/clients | jq -er .client_secret)
+          curl -sf -u "ci:$secret" -d grant_type=client_credentials -d scope=a localhost:8080/token | jq -e '.scope == "a"'
+          curl -sf localhost:8080/.well-known/jwks.json | jq -e '.keys | length == 1'
+      - name: Show the logs
+        if: always()
+        working-directory: apps/identity-provider
+        run: docker compose logs
+
   build-postgres:
     runs-on: ubuntu-latest
     services:

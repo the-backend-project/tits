@@ -54,12 +54,40 @@ random bits, so a fast hash (SHA-256) is enough: slow hashes only protect secret
 
 ## Running
 
+Requires Docker (or Podman) with Compose. From the `apps/identity-provider` directory:
+
+```shell
+docker compose build migrate
+export SIGNING_KEYS=$(docker run --rm tits-identity-provider generate-key)
+docker compose up
+```
+
+Compose starts a SQL Server database, provisions a database and login for the identity provider, runs the schema
+migration as a one-off process, and then starts the identity provider on port 8080 with a bootstrap client:
+
+```shell
+curl -u admin:A_local_bootstrap_secret_of_32_characters -d grant_type=client_credentials localhost:8080/token
+```
+
+Like the [demo](cloud-native.md), the image holds a native executable built with GraalVM, in an image built from
+`scratch`. It can also be built alone, from the repository root:
+
+```shell
+docker build -f apps/identity-provider/Dockerfile -t tits-identity-provider .
+```
+
+The identity provider's own reachability metadata registers its records, which Jackson reads the components of, and
+the constructors the JSON parser of Nimbus JOSE + JWT creates collections with. Check it as described for the
+[demo](cloud-native.md#reachability-metadata).
+
+### Configuration
+
 The identity provider is configured by environment variables:
 
 | Variable | Description |
 |---|---|
-| `ISSUER` | Required. The URL the identity provider is reached at, which is the `iss` of its tokens, e.g. `https://idp.example.com`. |
-| `SIGNING_KEYS` | Required. A JWK set with private RSA keys with key ids. The first key signs, and the public keys of all are published. To rotate, add the new key last, wait for the services to have fetched it, then move it first, and remove the old key once its tokens have expired. |
+| `ISSUER` | Required to serve. The URL the identity provider is reached at, which is the `iss` of its tokens, e.g. `https://idp.example.com`. |
+| `SIGNING_KEYS` | Required to serve. A JWK set with private RSA keys with key ids. The first key signs, and the public keys of all are published. To rotate, add the new key last, wait for the services to have fetched it, then move it first, and remove the old key once its tokens have expired. |
 | `TOKEN_LIFETIME_SECONDS` | How long the tokens are valid. Default 300. |
 | `TOKEN_AUDIENCE` | The `aud` of the tokens. Default none. |
 | `BOOTSTRAP_CLIENT_ID`, `BOOTSTRAP_CLIENT_SECRET` | A client registered at startup with the scope `client-registration`, so the first clients can be registered. The secret must have at least 32 characters. If the client id is taken, e.g. by an earlier start, the registered client is kept as is. |
@@ -93,4 +121,4 @@ curl -s -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
 
 - Clients can't be changed or removed, and their secrets can't be rotated.
 - Tokens can't be revoked, which keeps their lifetime short.
-- There is no container image yet.
+- The image is only run on SQL Server. On PostgreSQL the identity provider is only tested on the JVM.
