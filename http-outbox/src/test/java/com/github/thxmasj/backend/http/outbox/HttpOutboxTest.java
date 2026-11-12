@@ -24,7 +24,6 @@ import com.github.thxmasj.backend.core.BasicEventType;
 import com.github.thxmasj.backend.core.BasicEventType.Rollback.Data;
 import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.DelaySpecification;
-import com.github.thxmasj.backend.core.EntityId;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.Event;
 import com.github.thxmasj.backend.core.EventLog;
@@ -421,7 +420,7 @@ public class HttpOutboxTest {
         Clock.systemUTC(),
         tuple(new TypedHttpRequest<>(POST, URI.create("http://localhost/test"), Map.of(), null), processEntityId)
     );
-    var log = new EventLog(model.exchange(), new EntityId.UUID(UUID.randomUUID()), List.of(reqDispatchedEvent));
+    var log = new EventLog(model.exchange(), UUID.randomUUID(), List.of(reqDispatchedEvent));
     var initialContext = new InitialChangeContext<Void>(null, null, null, timeoutTransition, AtMostOnce.States.InFlight, 2, log, ZonedDateTime.now(), "corr-1", null, model.machine(), List.of());
     var occ = timeoutTransition.calculate(initialContext).block();
     assertNotNull(occ);
@@ -444,7 +443,7 @@ public class HttpOutboxTest {
 
     UUID triggerEntityId = UUID.randomUUID();
     var triggerEvent = new EventReference(triggerEntityId, 1);
-    var log = new EventLog(model.exchange(), new EntityId.UUID(UUID.randomUUID()), List.of());
+    var log = new EventLog(model.exchange(), UUID.randomUUID(), List.of());
     var initialContext = new InitialChangeContext<>(null, null, triggerEvent, reqDispatchedTransition, Begin, 1, log, ZonedDateTime.now(), "corr-1", HttpOutboxTest.<Void>requestMessage("/test"), model.machine(), List.of());
     var occ = reqDispatchedTransition.calculate(initialContext).block();
     assertNotNull(occ);
@@ -496,7 +495,7 @@ public class HttpOutboxTest {
         Clock.systemUTC(),
         tuple(new TypedHttpRequest<>(POST, URI.create("http://localhost/test"), Map.of(), null), processEntityId)
     );
-    var log = new EventLog(alo, new EntityId.UUID(UUID.randomUUID()), List.of(reqDispatchedEvent));
+    var log = new EventLog(alo, UUID.randomUUID(), List.of(reqDispatchedEvent));
     var responseMessage = new HttpResponseMessage(200, "OK", Map.of(), null);
     var initialContext = new InitialChangeContext<HttpResponseMessage>(null, null, null, responseReceivedTransition, AtLeastOnce.States.InFlight, 2, log, ZonedDateTime.now(), "corr-1", responseMessage, machine, List.of());
     var occ = responseReceivedTransition.calculate(initialContext).block();
@@ -543,7 +542,7 @@ public class HttpOutboxTest {
 
     UUID triggerEntityId = UUID.randomUUID();
     var triggerEvent = new EventReference(triggerEntityId, 1);
-    var log = new EventLog(alo, new EntityId.UUID(UUID.randomUUID()), List.of());
+    var log = new EventLog(alo, UUID.randomUUID(), List.of());
     var initialContext = new InitialChangeContext<>(null, null, triggerEvent, reqDispatchedTransition, Begin, 1, log, ZonedDateTime.now(), "corr-1", HttpOutboxTest.<Void>requestMessage("/test"), machine, List.of());
     var occ = reqDispatchedTransition.calculate(initialContext).block();
     assertNotNull(occ);

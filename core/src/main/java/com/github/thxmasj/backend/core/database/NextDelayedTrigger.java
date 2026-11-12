@@ -2,7 +2,6 @@ package com.github.thxmasj.backend.core.database;
 
 import com.github.thxmasj.backend.core.DelayedTrigger;
 import com.github.thxmasj.backend.core.DelaySpecification;
-import com.github.thxmasj.backend.core.EntityId;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.EventType;
 import java.time.Clock;
@@ -50,7 +49,7 @@ public class NextDelayedTrigger {
           EventType<?, ?> eventType = eventTypeMapper.apply(row.get("Type", UUID.class));
           byte[] rawData = row.get("Data", byte[].class);
           return create(
-                  new EntityId.UUID(row.get("EntityId", UUID.class)),
+                  row.get("EntityId", UUID.class),
                   entityModels.get(row.get("EntityModelId", UUID.class)),
                   row.get("EventNumber", Integer.class),
                   eventType,
@@ -63,7 +62,7 @@ public class NextDelayedTrigger {
   }
 
   private <T> DelayedTrigger<T> create(
-          EntityId entityId,
+          UUID entityId,
           EntityModel model,
           int eventNumber,
           EventType<T, ?> eventType,

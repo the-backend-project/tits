@@ -43,7 +43,7 @@ public class EntitiesByIndexTest {
         Begin, List.of(
             onEvent(CreateOrder).to(OrderStates.Created)
                 .assemble(c -> tuple(c.input(), c.log().entityId()))
-                .trigger(customerReferenced).with(t -> t.t1()).on(Index).identifiedBy(t -> newEntityId(t.t2().value()))
+                .trigger(customerReferenced).with(t -> t.t1()).on(Index).identifiedBy(t -> newEntityId(t.t2()))
                 .output()
         ),
         OrderStates.Created, List.of(
@@ -72,7 +72,7 @@ public class EntitiesByIndexTest {
     assertNotNull(logs1);
     assertEquals(1, logs1.size());
     EventLog orderLog1 = logs1.get(0);
-    assertEquals(orderId, orderLog1.entityId().value());
+    assertEquals(orderId, orderLog1.entityId());
     assertEquals(Order, orderLog1.entityModel());
     assertEquals(1, orderLog1.events().size());
 
@@ -86,7 +86,7 @@ public class EntitiesByIndexTest {
     assertNotNull(logs2);
     assertEquals(1, logs2.size());
     EventLog orderLog2 = logs2.get(0);
-    assertEquals(orderId, orderLog2.entityId().value());
+    assertEquals(orderId, orderLog2.entityId());
     assertEquals(Order, orderLog2.entityModel());
     assertEquals(2, orderLog2.events().size());
 
@@ -100,7 +100,7 @@ public class EntitiesByIndexTest {
     assertEquals(2, logs3.size());
     assertEquals(Order, logs3.get(0).entityModel());
     assertEquals(Order, logs3.get(1).entityModel());
-    List<UUID> returnedIds = logs3.stream().map(l -> (UUID) l.entityId().value()).toList();
+    List<UUID> returnedIds = logs3.stream().map(l -> l.entityId()).toList();
     assertTrue(returnedIds.contains(orderId));
     assertTrue(returnedIds.contains(orderId2));
   }

@@ -3,7 +3,6 @@ package com.github.thxmasj.backend.core.database;
 import static java.util.Collections.unmodifiableList;
 
 import com.github.thxmasj.backend.core.DataType;
-import com.github.thxmasj.backend.core.EntityId;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.Event;
 import com.github.thxmasj.backend.core.EventLog;
@@ -26,7 +25,7 @@ import reactor.core.publisher.Mono;
 public class EntitiesByIndex {
 
   private final DatabaseClient client;
-  private final Map<UUID, BiFunction<EntityId, Row, Event<?>>> eventMappers;
+  private final Map<UUID, BiFunction<UUID, Row, Event<?>>> eventMappers;
   private final Map<UUID, EntityModel> entityModels;
   private final String sql;
 
@@ -62,7 +61,7 @@ public class EntitiesByIndex {
           // Rows of entity models unknown to this state machine are skipped
           if (!entityModels.containsKey(entityModelId))
             return Optional.<ModelEvent>empty();
-          return Optional.of(new ModelEvent(entityId, entityModelId, eventMappers.get(entityModelId).apply(new EntityId.UUID(entityId), row)));
+          return Optional.of(new ModelEvent(entityId, entityModelId, eventMappers.get(entityModelId).apply(entityId, row)));
         })
         .all()
         .flatMap(Mono::justOrEmpty)
@@ -78,7 +77,7 @@ public class EntitiesByIndex {
           for (Entry<UUID, List<Event<?>>> entry : eventsByEntityId.entrySet()) {
             UUID modelId = entityModelIdByEntityId.get(entry.getKey());
             EntityModel entityModel = entityModels.get(modelId);
-            eventLogs.add(new EventLog(entityModel, new EntityId.UUID(entry.getKey()), unmodifiableList(entry.getValue())));
+            eventLogs.add(new EventLog(entityModel, entry.getKey(), unmodifiableList(entry.getValue())));
           }
           return eventLogs;
         });

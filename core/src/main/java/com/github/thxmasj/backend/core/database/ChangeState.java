@@ -4,7 +4,6 @@ import com.github.thxmasj.backend.core.BasicEventType;
 import com.github.thxmasj.backend.core.ConditionalTrigger;
 import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.DelayedEvent;
-import com.github.thxmasj.backend.core.EntityId;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.Event;
 import com.github.thxmasj.backend.core.IdEntityModel;
@@ -35,7 +34,7 @@ public abstract class ChangeState {
   private void bind(Builder spec, ZonedDateTime timestamp, String correlationId, Change change) {
     Event<?> event = change.newEvent();
     if (change.entityId() != null)
-      spec.bind("entityId", change.entityId().value());
+      spec.bind("entityId", change.entityId());
     spec.bind("entityModelId", change.entityModel().id());
     spec.bind("timestamp", timestamp.withZoneSameInstant(clock.getZone()).toLocalDateTime());
     if (event != null) {
@@ -84,7 +83,7 @@ public abstract class ChangeState {
 
     EntityModel entityModel();
     
-    EntityId entityId();
+    UUID entityId();
     
     Event<?> newEvent();
 
@@ -117,8 +116,8 @@ public abstract class ChangeState {
         }
 
         @Override
-        public EntityId entityId() {
-          return new EntityId.UUID(conditionalTrigger.entityId());
+        public UUID entityId() {
+          return conditionalTrigger.entityId();
         }
 
         @Override
@@ -154,8 +153,8 @@ public abstract class ChangeState {
         }
 
         @Override
-        public EntityId entityId() {
-          return new EntityId.UUID(acceptedEvent.event().entityId());
+        public UUID entityId() {
+          return acceptedEvent.event().entityId();
         }
 
         @Override
@@ -181,7 +180,7 @@ public abstract class ChangeState {
         @Override
         public String toString() {
           return entityModel().name() + ":" +
-              entityId().value() + ":ev:[" +
+              entityId() + ":ev:[" +
               newEvent().typeName() + "]:" +
               newEvent().eventNumber() + ":data=" +
               (newEvent().data() != null ? capString(newEvent().getUnmarshalledData().toString()) : "N/A") +
@@ -205,8 +204,8 @@ public abstract class ChangeState {
         }
 
         @Override
-        public EntityId entityId() {
-          return new EntityId.UUID(delayedEvent.entityId());
+        public UUID entityId() {
+          return delayedEvent.entityId();
         }
 
         @Override
@@ -258,7 +257,7 @@ public abstract class ChangeState {
     return pkViolation -> {
       if (pkViolation.tableName().equals("Entity")) {
         try {
-          EntityId entityId = new EntityId.UUID(UUID.fromString(pkViolation.duplicateKey().trim()));
+          UUID entityId = UUID.fromString(pkViolation.duplicateKey().trim());
           return new EventAlreadyExists(
               entityId,
               1,
@@ -269,7 +268,7 @@ public abstract class ChangeState {
         }
       } else if (List.of("Event", "IndexEvent", "IdEvent").contains(pkViolation.tableName())) {
         try {
-          EntityId entityId = new EntityId.UUID(UUID.fromString(pkViolation.duplicateKey().split(",")[0]));
+          UUID entityId = UUID.fromString(pkViolation.duplicateKey().split(",")[0]);
           int eventNumber = Integer.parseInt(pkViolation.duplicateKey().split(",")[1].trim());
           return new EventAlreadyExists(
               entityId,

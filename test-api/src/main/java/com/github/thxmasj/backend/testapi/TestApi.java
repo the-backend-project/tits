@@ -4,7 +4,6 @@ import static java.util.function.Function.identity;
 import static java.util.stream.Collectors.toMap;
 
 import com.github.thxmasj.backend.core.DelayedEvent;
-import com.github.thxmasj.backend.core.EntityId;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.Event;
 import com.github.thxmasj.backend.core.EventLog;
@@ -101,11 +100,11 @@ public class TestApi {
 
   /// The event log of an entity, whose entity model is the one it was created with. Completes empty if there is no such
   /// entity. Id and index entities are not found this way, as they have no entity model of their own stored; use
-  /// [#eventLog(EntityModel, EntityId)] for those.
-  public Mono<EventLog> eventLog(EntityId entityId) {
+  /// [#eventLog(EntityModel, UUID)] for those.
+  public Mono<EventLog> eventLog(UUID entityId) {
     return client.sql("SELECT EntityModelId FROM \"{schema}\".\"Entity\" WHERE EntityId=:entityId".replace("{schema}", schema))
         .name("TestApi.EntityModel")
-        .bind("entityId", entityId.value())
+        .bind("entityId", entityId)
         .map(row -> row.get("EntityModelId", UUID.class))
         .one()
         .flatMap(modelId -> eventLog(entityModel(modelId), entityId));
@@ -113,7 +112,7 @@ public class TestApi {
 
   /// The event log of an entity of an entity model, including id and index entities. Completes empty if the entity has
   /// no events.
-  public Mono<EventLog> eventLog(EntityModel entityModel, EntityId entityId) {
+  public Mono<EventLog> eventLog(EntityModel entityModel, UUID entityId) {
     return eventsByEntityId.execute(entityModel, eventTypes(entityModel), entityId)
         .onErrorResume(UnknownEntity.class, _ -> Mono.empty());
   }
@@ -124,7 +123,7 @@ public class TestApi {
   }
 
   /// The last id of a type of an entity. Completes empty if the entity has no such id.
-  public <T> Mono<T> id(EntityId entityId, EventType<?, T> idType) {
+  public <T> Mono<T> id(UUID entityId, EventType<?, T> idType) {
     return client.sql(
             """
             SELECT Data FROM "{schema}"."IdEvent"
@@ -134,7 +133,7 @@ public class TestApi {
             """.replace("{schema}", schema)
         )
         .name("TestApi.Id")
-        .bind("entityId", entityId.value())
+        .bind("entityId", entityId)
         .bind("type", idType.id())
         .map(row -> idType.outputDataType().unmarshal(row.get("Data", byte[].class)))
         .one();
@@ -164,7 +163,7 @@ public class TestApi {
   /// @param eventNumber the number the event will get
   /// @param attempt the number of times the event has been attempted, which is incremented as an attempt is started
   public record ScheduledEvent(
-      EntityId entityId,
+      UUID entityId,
       EntityModel entityModel,
       int eventNumber,
       EventType<?, ?> type,
@@ -174,7 +173,7 @@ public class TestApi {
 
   /// The event the entity is waiting for. Completes empty if there is none, also if the entity has had another event
   /// since the event was scheduled, as it will then never be triggered.
-  public Mono<ScheduledEvent> delayedTrigger(EntityId entityId) {
+  public Mono<ScheduledEvent> delayedTrigger(UUID entityId) {
     return client.sql(
             """
             SELECT EntityModelId, EventNumber, Type, Deadline, Attempt
@@ -183,7 +182,7 @@ public class TestApi {
             """.replace("{pending}", pending).replace("{schema}", schema)
         )
         .name("TestApi.DelayedTrigger")
-        .bind("entityId", entityId.value())
+        .bind("entityId", entityId)
         .map(row -> new ScheduledEvent(
             entityId,
             entityModel(row.get("EntityModelId", UUID.class)),
@@ -202,18 +201,18 @@ public class TestApi {
   /// @param triggerEventNumber the number of the event that created the trigger
   public record PendingConditionalTrigger(
       UUID id,
-      EntityId entityId,
+      UUID entityId,
       EntityModel entityModel,
       EventType<?, ?> type,
       List<EventType<?, ?>> lastTypes,
       EventType<?, ?> referenceType,
       byte[] indexKey,
-      EntityId triggerEntityId,
+      UUID triggerEntityId,
       int triggerEventNumber
   ) {}
 
   /// The events the entity is waiting for on conditions, in the order they were created
-  public Flux<PendingConditionalTrigger> conditionalTriggers(EntityId entityId) {
+  public Flux<PendingConditionalTrigger> conditionalTriggers(UUID entityId) {
     return client.sql(
             """
             SELECT Id, EntityModelId, Type, LastTypes, ReferenceType, IndexKey, TriggerEntityId, TriggerEventNumber
@@ -223,7 +222,7 @@ public class TestApi {
             """.replace("{schema}", schema)
         )
         .name("TestApi.ConditionalTriggers")
-        .bind("entityId", entityId.value())
+        .bind("entityId", entityId)
         .map(row -> new PendingConditionalTrigger(
             row.get("Id", UUID.class),
             entityId,
@@ -235,7 +234,7 @@ public class TestApi {
                 .toList(),
             eventType(row.get("ReferenceType", UUID.class)),
             row.get("IndexKey", byte[].class),
-            new EntityId.UUID(row.get("TriggerEntityId", UUID.class)),
+            row.get("TriggerEntityId", UUID.class),
             row.get("TriggerEventNumber", Integer.class)
         ))
         .all();
@@ -245,7 +244,7 @@ public class TestApi {
   /// The event is stored as if a transition had accepted it, so the event the entity was waiting for is no longer
   /// triggered, but it triggers no other events and is not validated against the entity's state. For id and index entities the event
   /// is an id or index event, so an id must not be taken by another entity.
-  public <T> Mono<Event<T>> append(EntityModel entityModel, EntityId entityId, EventType<?, T> type, T data) {
+  public <T> Mono<Event<T>> append(EntityModel entityModel, UUID entityId, EventType<?, T> type, T data) {
     String table = switch (entityModel) {
       case IdEntityModel _ -> "IdEvent";
       case IndexEntityModel _ -> "IndexEvent";
@@ -257,17 +256,17 @@ public class TestApi {
                 .replace("{table}", table)
         )
         .name("TestApi.NextEventNumber")
-        .bind("entityId", entityId.value())
+        .bind("entityId", entityId)
         .map(row -> row.get("EventNumber", Integer.class))
         .one()
-        .map(eventNumber -> new Event<>(entityId.value(), eventNumber, type, clock, data))
+        .map(eventNumber -> new Event<>(entityId, eventNumber, type, clock, data))
         .flatMap(event -> changeState.execute(ZonedDateTime.now(clock), UUID.randomUUID().toString(), List.of(change(entityModel, entityId, event)))
             .then(Mono.just(event)));
   }
 
   /// Makes the event the entity is waiting for due now, so that it is triggered without waiting for its deadline.
   /// Completes with whether the entity was waiting for an event.
-  public Mono<Boolean> expireDelayedTrigger(EntityId entityId) {
+  public Mono<Boolean> expireDelayedTrigger(UUID entityId) {
     return client.sql(
             "UPDATE \"{schema}\".\"DelayedTrigger\" SET Deadline=:now WHERE EntityId=:entityId AND {pending}"
                 .replace("{pending}", pending)
@@ -275,7 +274,7 @@ public class TestApi {
         )
         .name("TestApi.ExpireDelayedTrigger")
         .bind("now", LocalDateTime.now(clock))
-        .bind("entityId", entityId.value())
+        .bind("entityId", entityId)
         .update()
         .map(count -> count > 0);
   }
@@ -309,10 +308,10 @@ public class TestApi {
     return eventType;
   }
 
-  private static Change change(EntityModel entityModel, EntityId entityId, Event<?> event) {
+  private static Change change(EntityModel entityModel, UUID entityId, Event<?> event) {
     return new Change() {
       @Override public EntityModel entityModel() {return entityModel;}
-      @Override public EntityId entityId() {return entityId;}
+      @Override public UUID entityId() {return entityId;}
       @Override public Event<?> newEvent() {return event;}
       @Override public DelayedEvent<?> delayedEvent() {return null;}
     };

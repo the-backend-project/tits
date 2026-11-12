@@ -1,7 +1,6 @@
 package com.github.thxmasj.backend.core.test;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.github.thxmasj.backend.core.EntityId;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.Listener;
 import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
@@ -49,7 +48,7 @@ public class Logger implements Listener {
       UUID requestId,
       EntityModel entityModel,
       String queue,
-      EntityId entityId,
+      UUID entityId,
       int eventNumber,
       ZonedDateTime enqueuedAt,
       int attempt,
@@ -63,7 +62,7 @@ public class Logger implements Listener {
       UUID requestId,
       EntityModel entityModel,
       String queue,
-      EntityId entityId,
+      UUID entityId,
       int eventNumber,
       ZonedDateTime enqueuedAt,
       int attempt,
@@ -79,7 +78,7 @@ public class Logger implements Listener {
       UUID requestId,
       EntityModel entityModel,
       String queue,
-      EntityId entityId,
+      UUID entityId,
       int eventNumber,
       ZonedDateTime enqueuedAt,
       int attempt,
@@ -96,7 +95,7 @@ public class Logger implements Listener {
       UUID requestId,
       EntityModel entityModel,
       String queue,
-      EntityId entityId,
+      UUID entityId,
       int eventNumber,
       ZonedDateTime enqueuedAt,
       int attempt,
@@ -111,7 +110,7 @@ public class Logger implements Listener {
       UUID requestId,
       EntityModel entityModel,
       String queue,
-      EntityId entityId,
+      UUID entityId,
       int eventNumber,
       ZonedDateTime enqueuedAt,
       int attempt,

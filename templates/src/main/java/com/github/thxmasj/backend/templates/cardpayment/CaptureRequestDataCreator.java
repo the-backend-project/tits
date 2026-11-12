@@ -1,6 +1,5 @@
 package com.github.thxmasj.backend.templates.cardpayment;
 
-import com.github.thxmasj.backend.core.EntityId;
 import com.github.thxmasj.backend.templates.cardpayment.PaymentEvent.AuthenticationResult;
 import com.github.thxmasj.backend.templates.cardpayment.PaymentEvent.Authorisation;
 import com.github.thxmasj.backend.templates.cardpayment.PaymentEvent.Capture;

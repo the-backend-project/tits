@@ -41,7 +41,6 @@ import static java.util.stream.Collectors.toList;
 import com.github.thxmasj.backend.core.BasicEventType;
 import com.github.thxmasj.backend.core.BasicEventType.Rollback.Data;
 import com.github.thxmasj.backend.core.DataType;
-import com.github.thxmasj.backend.core.EntityId;
 import com.github.thxmasj.backend.core.EntitySelector;
 import com.github.thxmasj.backend.core.EntitySelector.ById;
 import com.github.thxmasj.backend.core.EntitySelector.ByIdFromSession;
@@ -194,7 +193,7 @@ public interface TransitionModels {
                     .identifiedBy(d ->
                         contentRoute.isRollback() ?
                             idEvent(MessageId, d.messageId(), CreateIfNotExists) :
-                            new ById(new EntityId.UUID(UUID.randomUUID()), AlwaysCreate)
+                            new ById(UUID.randomUUID(), AlwaysCreate)
                     )
                     .output(),
                 d -> {
@@ -208,7 +207,7 @@ public interface TransitionModels {
                     messageId = new MessageId(
                         clientId,
                         contentRoute.processEventType().id() + "/" + switch (processSelector) {
-                          case ById s -> s.id().value().toString();
+                          case ById s -> s.id().toString();
                           case ByIdEvent<?> s -> s.id().toString();
                           case ByIdFromSession _ -> UUID.randomUUID().toString(); // TODO: Use id from session for route.processType().
                           // TODO: ByLastIndexed not handled
@@ -286,7 +285,7 @@ public interface TransitionModels {
             onEvent(RejectRequest).to(Rejected)
                 .assembleInput()
                 .trigger(CompleteRequest)
-                .with(d -> tuple(d.t1(), new EventReference(d.t2().value(), 0))) // TODO
+                .with(d -> tuple(d.t1(), new EventReference(d.t2(), 0))) // TODO
                 .on(RequestDispatching)
                 .identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t3()),
@@ -316,14 +315,14 @@ public interface TransitionModels {
             onEvent(AcceptRequest).to(Dispatched)
                 .assemble((input, log) -> tuple(input.t1(), input.t2(), log.entityId()))
                 .output(d -> tuple(d.t1().request(), d.t2())),
-            d -> tuple(d.t1(), new EventReference(d.t2().completed().entityId().value(), d.t2().completed().eventNumber()))
+            d -> tuple(d.t1(), new EventReference(d.t2().completed().entityId(), d.t2().completed().eventNumber()))
         )
         .when(d -> d.t2() instanceof ProcessResult.Pending<?, ?, ?> p && p.exception().entityModel().equals(RequestRouting)).then(
             // TODO: Can immediate reply in router be handled like this?
             onEvent(AcceptRequest).to(Dispatched)
                 .assemble((input, log) -> tuple(input.t1(), input.t2(), log.entityId()))
                 .output(d -> tuple(d.t1().request(), d.t2())),
-            d -> tuple(d.t1(), new EventReference(d.t2().pending().exception().entityId().value(), 0 /* eventNumber not used in transition anyways */))
+            d -> tuple(d.t1(), new EventReference(d.t2().pending().exception().entityId(), 0 /* eventNumber not used in transition anyways */))
         )
         .otherwise(
             // TODO: How to handle unknown process result? ("should never happen")
@@ -341,7 +340,7 @@ public interface TransitionModels {
         .when(d -> d.t2().isRejected()).then(
             onEvent(RejectRequest).to(rejectedState)
                 .assembleInput()
-                .trigger(CompleteRollbackRequest).with(d -> tuple(d.t1(), new EventReference(d.t2().value(), 0))).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                .trigger(CompleteRollbackRequest).with(d -> tuple(d.t1(), new EventReference(d.t2(), 0))).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t3()),
             d -> tuple(d.t2().rejected().exception().getMessage(), d.t2().rejected().exception().entityId(), d.t1().t1().request())
         )

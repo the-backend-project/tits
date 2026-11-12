@@ -14,7 +14,7 @@ public record DispatchContext(UUID processId, String correlationId, ZonedDateTim
 
   /// The context of a request dispatched by the transition of the given context.
   public static DispatchContext of(TransitionContext<?> context) {
-    return new DispatchContext(context.log().entityId().value(), context.correlationId(), context.timestamp());
+    return new DispatchContext(context.log().entityId(), context.correlationId(), context.timestamp());
   }
 
 }

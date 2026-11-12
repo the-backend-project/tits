@@ -68,7 +68,7 @@ public record HttpRequestRoute<T>(
     }
 
     public static <T> BiFunction<HttpRequestMessage, T, Validated<EntitySelector>> newEntity() {
-      return (_, _) -> new Valid<>(new EntitySelector.ById(new EntityId.UUID(UUID.randomUUID()), AlwaysCreate));
+      return (_, _) -> new Valid<>(new EntitySelector.ById(UUID.randomUUID(), AlwaysCreate));
     }
 
     public static <T> BiFunction<HttpRequestMessage, T, Validated<EntitySelector>> parseEntityId(

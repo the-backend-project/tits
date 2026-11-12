@@ -48,7 +48,7 @@ public class Correlation {
     return context.get(RESPONSE_SINK);
   }
 
-  public static Sinks.One<Event<?>> responseSink(ContextView context, EntityId entityId) {
+  public static Sinks.One<Event<?>> responseSink(ContextView context, UUID entityId) {
     return context.getOrEmpty(REQUEST_ID).filter(requestId -> requestId.equals(entityId)).isPresent() ? context.get(RESPONSE_SINK) : null;
   }
 

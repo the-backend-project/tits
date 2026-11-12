@@ -179,10 +179,10 @@ public class StateMachine implements AutoCloseable {
   }
 
   private EventLog emptyEventLog(EntityModel entityModel) {
-    return new EventLog(entityModel, newEntityId(), List.of());
+    return new EventLog(entityModel, UUID.randomUUID(), List.of());
   }
 
-  private EventLog emptyEventLog(EntityModel entityModel, EntityId entityId) {
+  private EventLog emptyEventLog(EntityModel entityModel, UUID entityId) {
     return new EventLog(entityModel, entityId, List.of());
   }
 
@@ -200,7 +200,7 @@ public class StateMachine implements AutoCloseable {
     return storage.nextDelayedTrigger().execute(backoff)
         .doOnNext(d -> System.out.println(ZonedDateTime.now() + ": Next delayed trigger: " + d))
         .zipWhen(delayedTrigger -> storage.eventsByEntityId().execute(delayedTrigger.entityModel(), eventTypesByEntityModel.get(delayedTrigger.entityModel()), delayedTrigger.entityId())
-            .switchIfEmpty(Mono.error(new RuntimeException("Unknown entity " + delayedTrigger.entityId().value() + " for delayed event")))
+            .switchIfEmpty(Mono.error(new RuntimeException("Unknown entity " + delayedTrigger.entityId() + " for delayed event")))
         )
         .flatMap(delayedTriggerAndEventLog -> {
           DelayedTrigger<?> delayedTrigger = delayedTriggerAndEventLog.getT1();
@@ -208,7 +208,7 @@ public class StateMachine implements AutoCloseable {
           if (eventLog.events().getLast().eventNumber() + 1 != delayedTrigger.eventNumber()) {
             System.out.println("Deleting scheduled event: Event number (" + delayedTrigger.eventNumber() + ") != event log's last number (" + eventLog.events().getLast().eventNumber() + ") + 1");
             // Race! The state has already been resolved by another resolver or incoming request. Which is OK!
-            return storage.deleteDelayedTrigger().execute(delayedTrigger.entityId().value(), delayedTrigger.eventNumber()).map(_ -> ResolverStatus.Ok);
+            return storage.deleteDelayedTrigger().execute(delayedTrigger.entityId(), delayedTrigger.eventNumber()).map(_ -> ResolverStatus.Ok);
           }
           System.out.println("Delayed trigger eventNumber: " + delayedTrigger.eventNumber() + ", log's last event number: "
               + eventLog.lastEventNumber());
@@ -240,7 +240,7 @@ public class StateMachine implements AutoCloseable {
 
   public sealed interface ProcessResult<T> permits Accepted, Completed, IdExists, Pending, Rejected, UnknownId {
 
-    record Completed<T>(ProcessResult<?> choiceResult, EntityId entityId, int eventNumber, EntityModel entityModel) implements ProcessResult<T> {
+    record Completed<T>(ProcessResult<?> choiceResult, UUID entityId, int eventNumber, EntityModel entityModel) implements ProcessResult<T> {
       public Completed<T> completed() {return this;}
     }
 
@@ -294,7 +294,7 @@ public class StateMachine implements AutoCloseable {
       }
     }
 
-    static <T> Completed<T> completed(ProcessResult<?> choiceResult, EntityId entityId, int eventNumber, EntityModel entityModel) {
+    static <T> Completed<T> completed(ProcessResult<?> choiceResult, UUID entityId, int eventNumber, EntityModel entityModel) {
       return new Completed<>(choiceResult, entityId, eventNumber, entityModel);
     }
 
@@ -372,7 +372,7 @@ public class StateMachine implements AutoCloseable {
 
   }
 
-  private Mono<EventLog> eventLogByEntityId(EntityModel entityModel, EntityId entityId) {
+  private Mono<EventLog> eventLogByEntityId(EntityModel entityModel, UUID entityId) {
     return storage.eventsByEntityId().execute(entityModel, eventTypesByEntityModel.get(entityModel), entityId);
   }
 
@@ -405,7 +405,7 @@ public class StateMachine implements AutoCloseable {
         .onErrorMap(UnknownEntity.class, e -> new RejectedEvent(eventTrigger.eventSpec().eventType(), e))
         .flatMapMany(log ->
                 onEvent(correlationId, eventTrigger.eventSpec().eventType(), adaptedInput, log, null, List.of(), eventTrigger.triggerType(), eventTrigger.triggerId(), triggerEvent)
-                    .contextWrite(ctx -> ctx.put("RS/" + log.entityId().value(), responseSink))
+                    .contextWrite(ctx -> ctx.put("RS/" + log.entityId(), responseSink))
                     .thenMany(responseSink.asFlux())
                     .retryWhen(RetrySpec.fixedDelay(3, Duration.ofMillis(500))
                         .filter(e -> e instanceof EventAlreadyExists)
@@ -641,7 +641,7 @@ public class StateMachine implements AutoCloseable {
         previous,
         p.stepOutput().inputData(),
         true,
-        new EventReference(p.initialChangeContext().log().entityId().value(), p.initialChangeContext().eventNumber())
+        new EventReference(p.initialChangeContext().log().entityId(), p.initialChangeContext().eventNumber())
     );
   }
 
@@ -715,13 +715,13 @@ public class StateMachine implements AutoCloseable {
     return switch (entitySelector) {
       case EntitySelector.ByIdFromSession _ -> {
         EventLog log = logFromChangeContext(changeContext, entityModel);
-        EntityId id = log.entityId();
+        UUID id = log.entityId();
         log = logFromNestedChanges(id, entityModel, changeContext);
         if (log == null) yield eventLogByEntityId(entityModel, id);
         else yield Mono.just(log);
       }
       case ById s -> {
-        EntityId entityId = s.id();
+        UUID entityId = s.id();
         yield switch (s.creationMode()) {
           case NeverCreate -> Mono.justOrEmpty(logFromNestedChanges(entityId, entityModel, changeContext))
               .switchIfEmpty(storage.eventsByEntityId().execute(entityModel, eventTypesByEntityModel.get(entityModel), entityId));
@@ -787,11 +787,11 @@ public class StateMachine implements AutoCloseable {
   }
 
   /// An id entity or index entity has the same entity id as its entity, so the entity model is matched too
-  private EventLog logFromNestedChanges(EntityId entityId, EntityModel entityModel, ChangeContext<?> changeContext) {
+  private EventLog logFromNestedChanges(UUID entityId, EntityModel entityModel, ChangeContext<?> changeContext) {
     for (var c = changeContext; c != null; c = c.previous()) {
       if (c instanceof OutputChangeContext<?>(TransitionModelBuilder.ChangeContext<?> previous, ProcessResult<?> stepOutput)
           && stepOutput instanceof Accepted<?>(Event<?> event, EntityModel model, _, _)
-          && event.entityId().equals(entityId.value())
+          && event.entityId().equals(entityId)
           && model.equals(entityModel)
           && !(previous instanceof ChoiceChangeContext)) {
         return c.initialChangeContext().log().withNewEvent(event);
@@ -800,7 +800,7 @@ public class StateMachine implements AutoCloseable {
     return null;
   }
 
-  private void checkCircular(ChangeContext<?> tail, EntityModel entityModel, EntityId entityId, InputEvent<?> inputEvent) {
+  private void checkCircular(ChangeContext<?> tail, EntityModel entityModel, UUID entityId, InputEvent<?> inputEvent) {
     for (var c = tail; c != null; c = c.previous()) {
       switch (c) {
         case ChangeContext.OutputChangeContext<?> o
@@ -824,7 +824,7 @@ public class StateMachine implements AutoCloseable {
     if (idExists != null)
       return Mono.just(idExists);
     return Mono.deferContextual(ctx -> {
-          EntityId entityId = switch (eventTrigger.entitySelectors().getFirst().apply(data)) {
+          UUID entityId = switch (eventTrigger.entitySelectors().getFirst().apply(data)) {
             case ByIdFromSession _ -> {
               try {
                 yield logFromChangeContext(tail, eventTrigger.entityModel()).entityId();
@@ -884,14 +884,14 @@ public class StateMachine implements AutoCloseable {
   public static class CircularChange extends RuntimeException {
 
     private final EntityModel entityModel;
-    private final EntityId entityId;
+    private final UUID entityId;
 
-    public CircularChange(InputEvent<?> inputEvent, EntityModel entityModel, EntityId entityId) {
+    public CircularChange(InputEvent<?> inputEvent, EntityModel entityModel, UUID entityId) {
       super(String.format(
           "%s on %s/id=%s is circular",
           inputEvent.eventType().name(),
           entityModel.name(),
-          entityId.value().toString()
+          entityId.toString()
       ));
       this.entityModel = entityModel;
       this.entityId = entityId;
@@ -901,7 +901,7 @@ public class StateMachine implements AutoCloseable {
       return entityModel;
     }
 
-    public EntityId entityId() {
+    public UUID entityId() {
       return entityId;
     }
   }
@@ -920,15 +920,15 @@ public class StateMachine implements AutoCloseable {
     private final Reason reason;
     private final EventType<?, ?> eventType;
     private final EntityModel entityModel;
-    private final EntityId entityId;
+    private final UUID entityId;
     private final State currentState;
 
-    private static String prefixMessage(EventType<?, ?> eventType, EntityModel entityModel, EntityId entityId) {
+    private static String prefixMessage(EventType<?, ?> eventType, EntityModel entityModel, UUID entityId) {
       return String.format(
           "[%s] on [%s]/%s rejected",
           eventType != null ? eventType.name() : "<no event type>",
           entityModel != null ? entityModel.name() : "<no entity model>",
-          entityId != null ? entityId.value() : "<no entity id>"
+          entityId != null ? entityId : "<no entity id>"
       );
     }
 
@@ -949,7 +949,7 @@ public class StateMachine implements AutoCloseable {
     public RejectedEvent(
         EventType<?, ?> eventType,
         EntityModel entityModel,
-        EntityId entityId,
+        UUID entityId,
         State currentState,
         int rollbackTo
     ) {
@@ -991,7 +991,7 @@ public class StateMachine implements AutoCloseable {
       return entityModel;
     }
 
-    public EntityId entityId() {
+    public UUID entityId() {
       return entityId;
     }
   }
@@ -1011,7 +1011,7 @@ public class StateMachine implements AutoCloseable {
         .map(change -> new Listener.Change(
                 new Listener.Change.Entity(
                     change.entityModel().name(),
-                    change.entityId().value()
+                    change.entityId()
                 ),
                 change.newEvent() != null ? new Listener.Change.Event(
                     change.newEvent().eventNumber(),
@@ -1057,9 +1057,9 @@ public class StateMachine implements AutoCloseable {
                               ))
                               .forEach((entityId, changeList) -> {
                                 changeList.sort(comparing(change -> change.newEvent().eventNumber()));
-                                Optional<Many<Event<?>>> responseSink = ctx.getOrEmpty("RS/" + entityId.value());
+                                Optional<Many<Event<?>>> responseSink = ctx.getOrEmpty("RS/" + entityId);
                                 if (responseSink.isPresent()) {
-                                  System.out.println("Found response sink for " + changeList.stream().map(c -> c.entityModel().name() + "/" + c.entityId().value() + "/" + c.newEvent().typeName()).toList());
+                                  System.out.println("Found response sink for " + changeList.stream().map(c -> c.entityModel().name() + "/" + c.entityId() + "/" + c.newEvent().typeName()).toList());
                                   changeList.forEach(change -> responseSink.get().tryEmitNext(change.newEvent()).orThrow());
                                 }
                               });
@@ -1091,7 +1091,7 @@ public class StateMachine implements AutoCloseable {
                 stage1,
                 List.of()
             )
-            .doOnError(e -> System.out.println("onEvent ERROR for " + triggerResult.eventType().name() + " on " + actionTrigger.eventLog().entityModel().name() + ":" + actionTrigger.eventLog().entityId().value() + ": " + e))
+            .doOnError(e -> System.out.println("onEvent ERROR for " + triggerResult.eventType().name() + " on " + actionTrigger.eventLog().entityModel().name() + ":" + actionTrigger.eventLog().entityId() + ": " + e))
             .retryWhen(RetrySpec.fixedDelay(3, Duration.ofMillis(500))
                 .filter(e -> e instanceof EventAlreadyExists)
                 // Avoid the "Thundering Herd" problem
@@ -1104,10 +1104,6 @@ public class StateMachine implements AutoCloseable {
             )
 
         );
-  }
-
-  private EntityId newEntityId() {
-    return new EntityId.UUID(UUID.randomUUID());
   }
 
   public Traverser traverser(EntityModel entityModel) {

@@ -77,7 +77,7 @@ public class TransitionModelBuilder<I, T, O> {
     EventLog log();
     I input();
     default EventReference eventReference() {
-      return new EventReference(log().entityId().value(), log().lastEventNumber() + 1);
+      return new EventReference(log().entityId(), log().lastEventNumber() + 1);
     }
 
   }
@@ -144,7 +144,7 @@ public class TransitionModelBuilder<I, T, O> {
       }
       @Override public I stepOutput() {return input;}
       @Override public String toString() {
-        return "Initial " + log.entityModel().name() + "/" + log.entityId().value() + "/" + eventNumber + "/" + from.name() + "(stage1=" + (stage1 != null) + "): " + transitionModel + " with " + ofNullable(input).map(i -> i.getClass().getSimpleName()).orElse("-");
+        return "Initial " + log.entityModel().name() + "/" + log.entityId() + "/" + eventNumber + "/" + from.name() + "(stage1=" + (stage1 != null) + "): " + transitionModel + " with " + ofNullable(input).map(i -> i.getClass().getSimpleName()).orElse("-");
       }
     }
 
@@ -289,11 +289,11 @@ public class TransitionModelBuilder<I, T, O> {
       @Override public String toString() {
         return "Output:" + switch (stepOutput) {
           case Accepted<?> a -> "Accepted:" + a.entityModel().name() + "/" + a.event().entityId() + "/" + a.event().typeName() + "/" + a.event().eventNumber();
-          case Rejected<?> r -> "Rejected" + (r.isHandled() ? "[Handled]" : "[Unhandled]") + ":" + r.exception().entityModel().name() + "/" + r.exception().entityId().value() + r.eventType().name() + ":" + r.exception().getMessage();
+          case Rejected<?> r -> "Rejected" + (r.isHandled() ? "[Handled]" : "[Unhandled]") + ":" + r.exception().entityModel().name() + "/" + r.exception().entityId() + r.eventType().name() + ":" + r.exception().getMessage();
           case Completed<?> c -> "Completed:" + c.choiceResult();
           case UnknownId<?> u -> "UnknownId:" + u.exception().getMessage() + "/ev=" + u.eventType().name();
-          case IdExists<?> i -> "IdExists:" + i.idEvent().typeName() + "/" + i.log().entityModel().name() + "/" + i.log().entityId().value();
-          case Pending<?, ?, ?> p -> "Pending:" + p.exception().entityModel() + "/" + p.exception().entityId().value() + ":" + p.exception().getMessage();
+          case IdExists<?> i -> "IdExists:" + i.idEvent().typeName() + "/" + i.log().entityModel().name() + "/" + i.log().entityId();
+          case Pending<?, ?, ?> p -> "Pending:" + p.exception().entityModel() + "/" + p.exception().entityId() + ":" + p.exception().getMessage();
         };
       }
 
@@ -323,7 +323,7 @@ public class TransitionModelBuilder<I, T, O> {
         ProcessResult.IdExists<O> stepOutput
     ) implements ChangeContext<ProcessResult<O>> {
       @Override public String toString() {
-        return "IdExists:" + stepOutput.idEvent().typeName() + "/" + stepOutput.log().entityModel().name() + "/" + stepOutput.log().entityId().value();
+        return "IdExists:" + stepOutput.idEvent().typeName() + "/" + stepOutput.log().entityModel().name() + "/" + stepOutput.log().entityId();
       }
     }
 
@@ -345,7 +345,7 @@ public class TransitionModelBuilder<I, T, O> {
             i,
             ProcessResult.accepted(
                 new Event<>(
-                    i.log().entityId().value(),
+                    i.log().entityId(),
                     i.log().lastEventNumber() + 1,
                     BuiltinEventTypes.Status,
                     i.timestamp(),
@@ -428,7 +428,7 @@ public class TransitionModelBuilder<I, T, O> {
               c,
               ProcessResult.accepted(
                   new Event<>(
-                      i.log().entityId().value(),
+                      i.log().entityId(),
                       i.log().lastEventNumber() + 1,
                       eventType,
                       i.timestamp(),
@@ -922,7 +922,7 @@ public class TransitionModelBuilder<I, T, O> {
                         c.stepOutput(),
                         false,
                         new EventReference(
-                            c.initialChangeContext().log().entityId().value(),
+                            c.initialChangeContext().log().entityId(),
                             c.initialChangeContext().eventNumber()
                         )
                     )
@@ -971,7 +971,7 @@ public class TransitionModelBuilder<I, T, O> {
                 c,
                 new DelayedEvent<>(
                     c.initialChangeContext().log().entityModel(),
-                    c.initialChangeContext().log().entityId().value(),
+                    c.initialChangeContext().log().entityId(),
                     eventType,
                     c.initialChangeContext().eventNumber() + 1,
                     dataAdapter.apply(c.stepOutput()),
@@ -999,7 +999,7 @@ public class TransitionModelBuilder<I, T, O> {
                   new ConditionalTrigger<>(
                       UUID.randomUUID(),
                       new EventReference(
-                          c.initialChangeContext().log().entityId().value(),
+                          c.initialChangeContext().log().entityId(),
                           c.initialChangeContext().eventNumber()
                       ),
                       eventTrigger.entityModel(),
@@ -1053,13 +1053,12 @@ public class TransitionModelBuilder<I, T, O> {
 
   private static <T> UUID conditionalEntityId(EventTrigger<T, ?, ?> eventTrigger, ChangeContext<T> c) {
     var selector = eventTrigger.entitySelectors().getFirst().apply(c.stepOutput());
-    if (selector instanceof EntitySelector.ById byId && byId.id() instanceof EntityId.UUID uuid) {
-      return uuid.value();
+    if (selector instanceof EntitySelector.ById byId) {
+      return byId.id();
     }
     if (selector instanceof EntitySelector.ByIdFromSession
-        && c.initialChangeContext().log().entityModel().equals(eventTrigger.entityModel())
-        && c.initialChangeContext().log().entityId() instanceof EntityId.UUID uuid) {
-      return uuid.value();
+        && c.initialChangeContext().log().entityModel().equals(eventTrigger.entityModel())) {
+      return c.initialChangeContext().log().entityId();
     }
     throw new UnsupportedOperationException("Conditional trigger requires the entity to be identified by id or by the session's entity");
   }
@@ -1078,7 +1077,7 @@ public class TransitionModelBuilder<I, T, O> {
             b,
             ProcessResult.accepted(
                 new Event<>(
-                    b.initialChangeContext().log().entityId().value(),
+                    b.initialChangeContext().log().entityId(),
                     b.initialChangeContext().log().lastEventNumber() + 1,
                     modelContext.eventType(),
                     b.initialChangeContext().timestamp(),
@@ -1120,7 +1119,7 @@ public class TransitionModelBuilder<I, T, O> {
             b,
             ProcessResult.accepted(
                 new Event<>(
-                    b.initialChangeContext().log().entityId().value(),
+                    b.initialChangeContext().log().entityId(),
                     b.initialChangeContext().log().lastEventNumber() + 1,
                     modelContext.eventType(),
                     b.initialChangeContext().timestamp()
@@ -1175,7 +1174,7 @@ public class TransitionModelBuilder<I, T, O> {
     }
 
     public Mono<OutputChangeContext<O>> calculate(InitialChangeContext<I> initialChangeContext) {
-      log(modelContext, "calculate [" + eventType().name() + "] on [" + initialChangeContext.log().entityModel().name() + ":" + initialChangeContext.log().entityId().value() + "] (input: " + initialChangeContext.input() + ")");
+      log(modelContext, "calculate [" + eventType().name() + "] on [" + initialChangeContext.log().entityModel().name() + ":" + initialChangeContext.log().entityId() + "] (input: " + initialChangeContext.input() + ")");
       return chain.apply(Mono.just(initialChangeContext));
     }
 

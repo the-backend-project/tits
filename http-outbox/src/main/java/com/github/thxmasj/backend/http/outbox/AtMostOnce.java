@@ -330,7 +330,7 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
                 .trigger(ProcessReferenced)
                 .with(d -> d.t2().entityId()) // process id
                 .on(Index)
-                .identifiedBy(d -> newEntityId(d.t3().value()))
+                .identifiedBy(d -> newEntityId(d.t3()))
 
                 .trigger(shape.forward()).with(d -> toHttpRequest(d.t1().t1(), shape.requestPayloadType()))
                 .trigger(TimeoutExpired).after(_ -> shape.inflightTimeout())
@@ -346,12 +346,12 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
                 .trigger(ProcessReferenced)
                 .with(d -> d.t2().entityId()) // process id
                 .on(Index)
-                .identifiedBy(d -> newEntityId(d.t3().value()))
+                .identifiedBy(d -> newEntityId(d.t3()))
 
                 .trigger(BatchReferenced)
                 .with(d -> d.t1().t4()) // batch id
                 .on(Index)
-                .identifiedBy(d -> entityId(d.t1().t3().value())) // NB: EntityId created above
+                .identifiedBy(d -> entityId(d.t1().t3())) // NB: entity id created above
 
                 .trigger(shape.forward()).with(d -> toHttpRequest(d.t1().t1().t1(), shape.requestPayloadType()))
                 .trigger(TimeoutExpired).after(_ -> shape.inflightTimeout())

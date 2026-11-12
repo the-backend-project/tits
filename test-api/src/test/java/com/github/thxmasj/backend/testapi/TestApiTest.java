@@ -15,7 +15,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.github.thxmasj.backend.core.BasicEventType;
 import com.github.thxmasj.backend.core.DataType;
-import com.github.thxmasj.backend.core.EntityId;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.EntitySelector;
 import com.github.thxmasj.backend.core.Event;
@@ -106,7 +105,7 @@ public class TestApiTest {
         Begin, List.of(
             onEvent(send).to(ShipmentStates.Sent)
                 .assemble(c -> tuple(c.input(), c.log().entityId()))
-                .trigger(ShipmentOfAccount).with(_ -> shipmentAccount).on(ShipmentIndex).identifiedBy(d -> newEntityId(d.t2().value()))
+                .trigger(ShipmentOfAccount).with(_ -> shipmentAccount).on(ShipmentIndex).identifiedBy(d -> newEntityId(d.t2()))
                 .output(d -> d.t1().t1())
         ),
         ShipmentStates.Sent, List.of()
@@ -129,7 +128,7 @@ public class TestApiTest {
               onEvent(CloseWhenSettled).to(AccountStates.Closing)
                   .assemble(c -> c.log().entityId())
                   .trigger(Close)
-                  .when(StatementOfAccount, id -> id.value())
+                  .when(StatementOfAccount, id -> id)
                   .is(Settle)
                   .with(_ -> null)
                   .on(Account)
@@ -144,8 +143,8 @@ public class TestApiTest {
           Begin, List.of(
               onEvent(Issue).to(StatementStates.Issued)
                   .assemble(c -> tuple(c.input(), c.log().entityId()))
-                  .trigger(StatementOfAccount).with(d -> d.t1().account()).on(Index).identifiedBy(d -> newEntityId(d.t2().value()))
-                  .trigger(NumberOfStatement).with(d -> d.t1().t1().number()).on(Index).identifiedBy(d -> entityId(d.t1().t2().value()))
+                  .trigger(StatementOfAccount).with(d -> d.t1().account()).on(Index).identifiedBy(d -> newEntityId(d.t2()))
+                  .trigger(NumberOfStatement).with(d -> d.t1().t1().number()).on(Index).identifiedBy(d -> entityId(d.t1().t2()))
                   .output(d -> d.t1().t1().t1())
           ),
           StatementStates.Issued, List.of(onEvent(Settle).to(StatementStates.Settled).output()),
@@ -162,20 +161,20 @@ public class TestApiTest {
   private static final StateMachine machine = Init.stateMachine(schema, transitions);
   private static final TestApi api = new TestApi(Init.database(), Init.client(), schema, transitions, Clock.systemUTC());
 
-  private static EntityId open(String accountNumber) {
-    return new EntityId.UUID(machine.onEvent(trigger(Open, Account), accountNumber).blockFirst().entityId());
+  private static UUID open(String accountNumber) {
+    return machine.onEvent(trigger(Open, Account), accountNumber).blockFirst().entityId();
   }
 
-  private static EntityId issue(EntityId account, long number) {
-    var issuing = new Issuing(account.value(), new StatementNumber(account.value().toString(), number));
-    return new EntityId.UUID(machine.onEvent(trigger(Issue, Statement), issuing).blockFirst().entityId());
+  private static UUID issue(UUID account, long number) {
+    var issuing = new Issuing(account, new StatementNumber(account.toString(), number));
+    return machine.onEvent(trigger(Issue, Statement), issuing).blockFirst().entityId();
   }
 
   private static List<String> eventNames(EventLog log) {
     return log.events().stream().map(e -> e.eventNumber() + ":" + e.typeName()).toList();
   }
 
-  private static EventLog awaitEvents(EntityId entityId, int count) throws InterruptedException {
+  private static EventLog awaitEvents(UUID entityId, int count) throws InterruptedException {
     long deadline = System.currentTimeMillis() + Duration.ofSeconds(10).toMillis();
     EventLog log = api.eventLog(entityId).block();
     while (log.events().size() < count && System.currentTimeMillis() < deadline) {
@@ -187,7 +186,7 @@ public class TestApiTest {
 
   @Test
   public void eventLogOfEntityHasTheEntityModelItWasCreatedWith() {
-    EntityId account = open("1001");
+    UUID account = open("1001");
 
     EventLog log = api.eventLog(account).block();
 
@@ -198,7 +197,7 @@ public class TestApiTest {
 
   @Test
   public void eventLogOfUnknownEntityIsEmpty() {
-    EntityId unknown = new EntityId.UUID(UUID.randomUUID());
+    UUID unknown = UUID.randomUUID();
 
     assertNull(api.eventLog(unknown).block());
     assertNull(api.eventLog(Account, unknown).block());
@@ -206,14 +205,14 @@ public class TestApiTest {
 
   @Test
   public void eventLogOfIdEntity() {
-    EntityId account = open("1002");
+    UUID account = open("1002");
 
     assertEquals(List.of("1:AccountNumber"), eventNames(api.eventLog(Ids, account).block()));
   }
 
   @Test
   public void entityIsFoundByItsId() {
-    EntityId account = open("1003");
+    UUID account = open("1003");
 
     assertEquals(account, api.eventLogById(AccountNumber, "1003").block().entityId());
     assertNull(api.eventLogById(AccountNumber, "unknown").block());
@@ -221,19 +220,19 @@ public class TestApiTest {
 
   @Test
   public void idOfEntity() {
-    EntityId account = open("1004");
+    UUID account = open("1004");
 
     assertEquals("1004", api.id(account, AccountNumber).block());
-    assertNull(api.id(new EntityId.UUID(UUID.randomUUID()), AccountNumber).block());
+    assertNull(api.id(UUID.randomUUID(), AccountNumber).block());
   }
 
   @Test
   public void entitiesAreFoundByIndex() {
-    EntityId account = open("1005");
-    EntityId statement1 = issue(account, 1);
-    EntityId statement2 = issue(account, 2);
+    UUID account = open("1005");
+    UUID statement1 = issue(account, 1);
+    UUID statement2 = issue(account, 2);
 
-    List<EntityId> statements = api.entitiesByIndex(StatementOfAccount, account.value())
+    List<UUID> statements = api.entitiesByIndex(StatementOfAccount, account)
         .map(EventLog::entityId)
         .collectList()
         .block();
@@ -256,11 +255,11 @@ public class TestApiTest {
 
   @Test
   public void lastEntityOfGroup() {
-    EntityId account = open("1006");
+    UUID account = open("1006");
     issue(account, 1);
-    EntityId last = issue(account, 2);
+    UUID last = issue(account, 2);
 
-    EventLog log = api.lastIndexed(Statement, NumberOfStatement, account.value().toString()).block();
+    EventLog log = api.lastIndexed(Statement, NumberOfStatement, account.toString()).block();
 
     assertEquals(last, log.entityId());
     assertNull(api.lastIndexed(Statement, NumberOfStatement, "no such account").block());
@@ -268,7 +267,7 @@ public class TestApiTest {
 
   @Test
   public void delayedTriggerOfEntity() {
-    EntityId account = open("1007");
+    UUID account = open("1007");
 
     ScheduledEvent scheduled = api.delayedTrigger(account).block();
 
@@ -281,7 +280,7 @@ public class TestApiTest {
 
   @Test
   public void expiredDelayedTriggerIsTriggered() throws InterruptedException {
-    EntityId account = open("1008");
+    UUID account = open("1008");
 
     assertTrue(api.expireDelayedTrigger(account).block());
 
@@ -292,12 +291,12 @@ public class TestApiTest {
 
   @Test
   public void delayedTriggerIsDeletedByNextEvent() throws SQLException {
-    EntityId account = open("1013");
-    machine.onEvent(trigger(CloseWhenSettled, Account, account.value())).blockFirst();
+    UUID account = open("1013");
+    machine.onEvent(trigger(CloseWhenSettled, Account, account)).blockFirst();
 
     try (var connection = Init.dataSource().getConnection();
          var statement = connection.prepareStatement("SELECT COUNT(*) FROM \"" + schema + "\".\"DelayedTrigger\" WHERE EntityId=?")) {
-      statement.setObject(1, account.value());
+      statement.setObject(1, account);
       try (var rs = statement.executeQuery()) {
         rs.next();
         assertEquals(0, rs.getInt(1));
@@ -307,7 +306,7 @@ public class TestApiTest {
 
   @Test
   public void deletedDelayedTriggersAreNotTriggered() {
-    EntityId account = open("1009");
+    UUID account = open("1009");
 
     assertTrue(api.deleteDelayedTriggers().block() >= 1);
 
@@ -316,9 +315,9 @@ public class TestApiTest {
 
   @Test
   public void conditionalTriggersOfEntity() throws InterruptedException {
-    EntityId account = open("1010");
-    EntityId statement = issue(account, 1);
-    machine.onEvent(trigger(CloseWhenSettled, Account, account.value())).blockFirst();
+    UUID account = open("1010");
+    UUID statement = issue(account, 1);
+    machine.onEvent(trigger(CloseWhenSettled, Account, account)).blockFirst();
 
     List<PendingConditionalTrigger> triggers = api.conditionalTriggers(account).collectList().block();
 
@@ -329,7 +328,7 @@ public class TestApiTest {
     assertEquals(account, triggers.getFirst().triggerEntityId());
     assertEquals(2, triggers.getFirst().triggerEventNumber());
 
-    machine.onEvent(trigger(Settle, Statement, statement.value())).blockFirst();
+    machine.onEvent(trigger(Settle, Statement, statement)).blockFirst();
 
     assertEquals(List.of("1:Open", "2:CloseWhenSettled", "3:Close"), eventNames(awaitEvents(account, 3)));
     assertEquals(List.of(), api.conditionalTriggers(account).collectList().block());
@@ -337,7 +336,7 @@ public class TestApiTest {
 
   @Test
   public void appendedEventPutsEntityInState() {
-    EntityId account = open("1011");
+    UUID account = open("1011");
 
     Event<Void> appended = api.append(Account, account, Expire, null).block();
 
@@ -350,7 +349,7 @@ public class TestApiTest {
 
   @Test
   public void appendedEventCreatesEntity() {
-    EntityId account = new EntityId.UUID(UUID.randomUUID());
+    UUID account = UUID.randomUUID();
 
     api.append(Account, account, Open, "1012").block();
     api.append(Ids, account, AccountNumber, "1012").block();
