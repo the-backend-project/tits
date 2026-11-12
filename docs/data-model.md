@@ -121,7 +121,7 @@ is the kind of id and `Data` its marshalled value. Id events are triggered from 
 
 The pair `(Type, Data)` is unique, so an id refers to at most one entity, and an entity is found by its id with a single
 index lookup (`EventsByIdEvent`). If two transitions add the same id concurrently, one of them fails on the unique
-index, and its changes are computed again with the entity that got the id.
+index, and its changes are computed again with the entity that got the id, from the step that added the id.
 
 `Data` is limited to 1684 bytes, leaving room for `Type` in the 1700 bytes SQL Server allows for an index key.
 PostgreSQL has no such limit in the schema, but its B-tree indexes take keys of at most about 2700 bytes.
