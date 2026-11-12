@@ -1,6 +1,5 @@
 package com.github.thxmasj.backend.core.database;
 
-import com.github.thxmasj.backend.core.EntityId;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.EventLog;
 import com.github.thxmasj.backend.core.EventType;
@@ -44,7 +43,7 @@ public class EventsByLastIndexEvent {
         .bind("groupEnd", end(group))
         .bind("position", position)
         .map(row -> {
-          EntityId entityId = new EntityId.UUID(row.get("EntityId", UUID.class));
+          UUID entityId = row.get("EntityId", UUID.class);
           try {
             return eventMapper.apply(entityId, row);
           } catch (MappingFailure e) {
@@ -56,7 +55,7 @@ public class EventsByLastIndexEvent {
         .filter(events -> !events.isEmpty())
         .map(events -> new EventLog(
             entityModel,
-            new EntityId.UUID(events.getFirst().entityId()),
+            events.getFirst().entityId(),
             Collections.unmodifiableList(events)
         ));
   }

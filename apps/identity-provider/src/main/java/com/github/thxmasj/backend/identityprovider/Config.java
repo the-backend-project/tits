@@ -1,6 +1,6 @@
 package com.github.thxmasj.backend.identityprovider;
 
-import com.github.thxmasj.backend.core.database.Client;
+import com.github.thxmasj.backend.core.database.DatabaseClient;
 import java.net.URI;
 import java.time.Duration;
 import java.util.Map;
@@ -19,7 +19,7 @@ import java.util.Map;
 public record Config(
     int port,
     String database,
-    Client.Config databaseConfig,
+    DatabaseClient.Config databaseConfig,
     String schema,
     String role,
     URI issuer,
@@ -36,7 +36,7 @@ public record Config(
     return new Config(
         Integer.parseInt(env.getOrDefault("PORT", "8080")),
         database,
-        new Client.Config(
+        new DatabaseClient.Config(
             required(env, "DATABASE_HOST"),
             Integer.parseInt(env.getOrDefault("DATABASE_PORT", database.equals("pgsql") ? "5432" : "1433")),
             required(env, "DATABASE_NAME"),

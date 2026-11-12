@@ -12,6 +12,7 @@ import java.nio.file.FileSystem;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.BasicFileAttributeView;
 import java.nio.file.attribute.FileTime;
 import java.nio.file.attribute.PosixFilePermission;
 import java.security.DigestInputStream;
@@ -64,7 +65,7 @@ public record FunctionPackage(Path file, String sha256) {
         write(zip, LAUNCHER, launcher(rootfs, command).getBytes(UTF_8), Set.of());
         try (Stream<Path> directories = Files.walk(zip.getPath("/"))) {
           for (Path directory : directories.filter(p -> p.getNameCount() > 0 && Files.isDirectory(p)).toList())
-            Files.setLastModifiedTime(directory, TIMESTAMP);
+            setTimes(directory);
         }
       }
       return new FunctionPackage(file, sha256(file));
@@ -80,7 +81,12 @@ public record FunctionPackage(Path file, String sha256) {
       Files.createDirectories(target.getParent());
     Files.write(target, content);
     Files.setPosixFilePermissions(target, permissions.isEmpty() ? readable() : permissions);
-    Files.setLastModifiedTime(target, TIMESTAMP);
+    setTimes(target);
+  }
+
+  /// The zip file system stamps new entries with the current access and creation time too, so all three are fixed.
+  private static void setTimes(Path path) throws IOException {
+    Files.getFileAttributeView(path, BasicFileAttributeView.class).setTimes(TIMESTAMP, TIMESTAMP, TIMESTAMP);
   }
 
   private static Set<PosixFilePermission> readable() {

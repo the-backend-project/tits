@@ -17,7 +17,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import com.github.thxmasj.backend.core.BasicEventType;
 import com.github.thxmasj.backend.core.BasicEventType.ReadOnly;
 import com.github.thxmasj.backend.core.DataType;
-import com.github.thxmasj.backend.core.EntityId;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.EntitySelector;
 import com.github.thxmasj.backend.core.Event;
@@ -102,7 +101,7 @@ public class IdEventTest {
                   .trigger(AccountNumber).with(Tuple2::t1).on(Ids).identifiedBy(d -> entityId(d.t2(), CreateIfNotExists))
                   .trigger(Alias).with(d -> "alias-" + d.t1().t1()).on(Ids).identifiedBy(d -> entityId(d.t1().t2(), CreateIfNotExists))
                   .output(d -> d.t1().t2().isIdExists() ?
-                      "Duplicate of " + d.t1().t2().idExists().log().entityId().value() :
+                      "Duplicate of " + d.t1().t2().idExists().log().entityId() :
                       d.t1().t1().t1())
           ),
           States.Opened, List.of(onEvent(Touch).toSelf().output())
@@ -111,10 +110,10 @@ public class IdEventTest {
           Begin, List.of(
               onEvent(Issue).to(States.Issued)
                   .assemble(c -> tuple(c.input(), c.log().entityId()))
-                  .trigger(StatementOfAccount).with(Tuple2::t1).on(Index).identifiedBy(d -> newEntityId(d.t2().value()))
+                  .trigger(StatementOfAccount).with(Tuple2::t1).on(Index).identifiedBy(d -> newEntityId(d.t2()))
                   .output(d -> d.t1().t1())
           ),
-          States.Issued, List.of(onEvent(Read).toSelf().assemble(c -> c.log().entityId().value().toString()).output(d -> d))
+          States.Issued, List.of(onEvent(Read).toSelf().assemble(c -> c.log().entityId().toString()).output(d -> d))
       ),
       Ids, Ids.transitions(),
       Index, Index.transitions()
@@ -126,8 +125,8 @@ public class IdEventTest {
     Event<?> opened = machine.onEvent(trigger(Open, Account), "123").blockFirst();
 
     var eventsByEntityId = Init.storage(schema, transitions()).eventsByEntityId();
-    EventLog accountLog = eventsByEntityId.execute(Account, List.of(Open, Touch), new EntityId.UUID(opened.entityId())).block();
-    EventLog idLog = eventsByEntityId.execute(Ids, List.of(AccountNumber, Alias), new EntityId.UUID(opened.entityId())).block();
+    EventLog accountLog = eventsByEntityId.execute(Account, List.of(Open, Touch), opened.entityId()).block();
+    EventLog idLog = eventsByEntityId.execute(Ids, List.of(AccountNumber, Alias), opened.entityId()).block();
 
     assertEquals(List.of("1:Open"), accountLog.events().stream().map(e -> e.eventNumber() + ":" + e.typeName()).toList());
     assertEquals(List.of("1:AccountNumber", "2:Alias"), idLog.events().stream().map(e -> e.eventNumber() + ":" + e.typeName()).toList());
@@ -167,7 +166,7 @@ public class IdEventTest {
     var eventsByEntityId = Init.storage(schema, transitions()).eventsByEntityId();
     assertEquals(
         List.of(),
-        eventsByEntityId.execute(Ids, List.of(AccountNumber, Alias), new EntityId.UUID(second.entityId()))
+        eventsByEntityId.execute(Ids, List.of(AccountNumber, Alias), second.entityId())
             .map(EventLog::events)
             .onErrorReturn(List.of())
             .block()

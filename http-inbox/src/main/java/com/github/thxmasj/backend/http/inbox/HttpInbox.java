@@ -7,7 +7,6 @@ import static com.github.thxmasj.backend.http.inbox.HttpInbox.EntityModels.Reque
 
 import com.github.thxmasj.backend.core.BasicEventType;
 import com.github.thxmasj.backend.core.DataType;
-import com.github.thxmasj.backend.core.EntityId;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.EntitySelector;
 import com.github.thxmasj.backend.core.EntitySelector.ById;
@@ -43,14 +42,14 @@ public interface HttpInbox {
 
   EventTrigger<HttpRequestMessage, HttpRequestMessage, ?> TRIGGER = new EventTrigger<>(
       new EventSpec<>(RouteRequest, Function.identity()),
-      List.of(_ -> new ById(new EntityId.UUID(UUID.randomUUID()), AlwaysCreate)),
+      List.of(_ -> new ById(UUID.randomUUID(), AlwaysCreate)),
       RequestRouting,
       false
   );
-  EventType<Tuple3<String, EntityId, HttpRequestMessage>, HttpRequestMessage> RejectRequest = BasicEventType.of(
+  EventType<Tuple3<String, UUID, HttpRequestMessage>, HttpRequestMessage> RejectRequest = BasicEventType.of(
       "Reject request",
       UUID.fromString("46106429-3c44-45cd-be04-5eb341c8f381"),
-      DataType.tuple(DataType.string(), DataType.json(EntityId.class), HttpDataType.forRequest()),
+      DataType.tuple(DataType.string(), DataType.json(UUID.class), HttpDataType.forRequest()),
       HttpDataType.forRequest()
   );
   EventType<Tuple2<HttpRequestMessage, HttpResponseMessage>, HttpRequestMessage> RejectDuplicateRequest = BasicEventType.of(

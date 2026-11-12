@@ -12,28 +12,20 @@ import java.util.function.Function;
 
 public sealed class EntitySelector permits ById, ByIdFromSession, ByIdEvent, ByLastIndexed {
 
-  public static ById entityId(EntityId entityId) {
+  public static ById entityId(UUID entityId) {
     return new ById(entityId, NeverCreate);
   }
 
-  public static ById entityId(EntityId entityId, CreationMode creationMode) {
+  public static ById entityId(UUID entityId, CreationMode creationMode) {
     return new ById(entityId, creationMode);
   }
 
-  public static ById entityId(UUID entityId) {
-    return new ById(new EntityId.UUID(entityId), NeverCreate);
-  }
-
-  public static ById entityId(UUID entityId, CreationMode creationMode) {
-    return new ById(new EntityId.UUID(entityId), creationMode);
-  }
-
   public static <T> Function<T, ById> newEntityId() {
-    return _ -> new ById(new EntityId.UUID(UUID.randomUUID()), AlwaysCreate);
+    return _ -> new ById(UUID.randomUUID(), AlwaysCreate);
   }
 
   public static ById newEntityId(UUID id) {
-    return new ById(new EntityId.UUID(id), AlwaysCreate);
+    return new ById(id, AlwaysCreate);
   }
 
   public static <T> Function<T, ByIdFromSession> entityIdFromSession() {
@@ -92,14 +84,14 @@ public sealed class EntitySelector permits ById, ByIdFromSession, ByIdEvent, ByL
 
   public static final class ById extends EntitySelector {
 
-    private final EntityId entityId;
+    private final UUID entityId;
 
-    public ById(EntityId entityId, CreationMode creationMode) {
+    public ById(UUID entityId, CreationMode creationMode) {
       super(creationMode, null);
       this.entityId = entityId;
     }
 
-    public EntityId id() {
+    public UUID id() {
       return entityId;
     }
 

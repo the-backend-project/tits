@@ -1,9 +1,10 @@
 package com.github.thxmasj.backend.core;
 
 import java.time.ZonedDateTime;
+import java.util.UUID;
 
 public record DelayedTrigger<T>(
-    EntityId entityId,
+    UUID entityId,
     EntityModel entityModel,
     int eventNumber,
     EventType<T, ?> eventType,

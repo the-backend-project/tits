@@ -3,7 +3,6 @@ package com.github.thxmasj.backend.core.database;
 import static java.util.function.Function.identity;
 import static java.util.stream.Collectors.toMap;
 
-import com.github.thxmasj.backend.core.EntityId;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.Event;
 import com.github.thxmasj.backend.core.EventLog;
@@ -46,7 +45,7 @@ public class EventsByIdEvent {
         .bind("type", type.id())
         .bind("data", id)
         .map(row -> {
-          EntityId entityId = new EntityId.UUID(row.get("EntityId", UUID.class));
+          UUID entityId = row.get("EntityId", UUID.class);
           UUID modelId = row.get("EntityModelId", UUID.class);
           EntityModel model = entityModels.get(modelId);
           if (model == null)
@@ -67,6 +66,6 @@ public class EventsByIdEvent {
         ));
   }
 
-  private record ModelEvent(EntityModel model, EntityId entityId, Event<?> event) {}
+  private record ModelEvent(EntityModel model, UUID entityId, Event<?> event) {}
 
 }

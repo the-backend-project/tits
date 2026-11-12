@@ -160,7 +160,7 @@ public class RollbackTest {
         .expectErrorMatches(t -> t instanceof RejectedEvent r
             && r.reason() == RejectedEvent.Reason.UnknownEntity
             && r.entityModel() == Pacman
-            && r.entityId().value().equals(unknownId))
+            && r.entityId().equals(unknownId))
         .verify();
   }
 

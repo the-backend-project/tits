@@ -518,7 +518,7 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
                     .trigger(ProcessReferenced)
                     .with(d -> d.t2().entityId())
                     .on(Index)
-                    .identifiedBy(d -> newEntityId(d.t3().value()))
+                    .identifiedBy(d -> newEntityId(d.t3()))
 
                     .trigger(shape.forward)
                     .with(d -> toHttpRequest(d.t1().t1(), shape.requestPayloadType))
@@ -538,12 +538,12 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
                     .trigger(ProcessReferenced)
                     .with(d -> d.t2().entityId())
                     .on(Index)
-                    .identifiedBy(d -> newEntityId(d.t3().value()))
+                    .identifiedBy(d -> newEntityId(d.t3()))
 
                     .trigger(BatchReferenced)
                     .with(d -> d.t1().t4())
                     .on(Index)
-                    .identifiedBy(d -> entityId(d.t1().t3().value()))
+                    .identifiedBy(d -> entityId(d.t1().t3()))
 
                     .trigger(shape.forward)
                     .with(d -> toHttpRequest(d.t1().t1().t1(), shape.requestPayloadType))

@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import com.github.thxmasj.backend.core.BasicEventType.Rollback.Data;
 import java.time.Clock;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 public class EventLogTest {
@@ -44,9 +45,9 @@ public class EventLogTest {
   @Test
   public void eventLogPreservesEntityModel() {
     EntityModel model = EntityModel.of("TestModel", randomUUID());
-    EntityId entityId = new EntityId.UUID(randomUUID());
+    UUID entityId = randomUUID();
     List<Event<?>> events = List.of(
-        new Event<>(entityId.value(), 1, new BasicEventType.DataLess("Test1", randomUUID()), Clock.systemUTC())
+        new Event<>(entityId, 1, new BasicEventType.DataLess("Test1", randomUUID()), Clock.systemUTC())
     );
     EventLog log = new EventLog(model, entityId, events);
     assertEquals(model, log.entityModel());

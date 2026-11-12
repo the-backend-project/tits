@@ -77,7 +77,7 @@ public interface HelloWorld {
         Greeting, Map.of(
             Begin, List.of(
                 onEvent(Greet).to(States.Greeted)
-                    .assemble(c -> c.log().entityId().value().toString())
+                    .assemble(c -> c.log().entityId().toString())
                     .trigger(RespondGreeting).with(id -> id).on(RequestDispatching).identifiedBy(entityIdFromSession())
                     .output()
             ),

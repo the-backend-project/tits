@@ -9,11 +9,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.stream.Stream;
 
 public record EventLog(
     EntityModel entityModel,
-    EntityId entityId,
+    UUID entityId,
     List<Event<?>> events
 ) {
 
@@ -155,7 +156,7 @@ public record EventLog(
     );
   }
 
-  public static EventLog empty(EntityId id, EntityModel model) {
+  public static EventLog empty(UUID id, EntityModel model) {
     return new EventLog(model, id, List.of());
   }
 

@@ -10,7 +10,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import com.github.thxmasj.backend.core.BasicEventType;
 import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.DelayedEvent;
-import com.github.thxmasj.backend.core.EntityId;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.Event;
 import com.github.thxmasj.backend.core.EventLog;
@@ -81,7 +80,7 @@ public class StorageTest {
   private static Change change(EntityModel entityModel, Event<?> event) {
     return new Change() {
       @Override public EntityModel entityModel() {return entityModel;}
-      @Override public EntityId entityId() {return new EntityId.UUID(event.entityId());}
+      @Override public UUID entityId() {return event.entityId();}
       @Override public Event<?> newEvent() {return event;}
       @Override public DelayedEvent<?> delayedEvent() {return null;}
     };
@@ -95,7 +94,7 @@ public class StorageTest {
 
     EventLog log = storage.eventsByIdEvent().execute(Name, Name.outputDataType().marshal("Alice")).block();
 
-    assertEquals(new EntityId.UUID(alice), log.entityId());
+    assertEquals(alice, log.entityId());
     assertEquals(Person, log.entityModel());
     assertEquals(List.of("1:Create"), log.events().stream().map(e -> e.eventNumber() + ":" + e.typeName()).toList());
     assertNull(storage.eventsByIdEvent().execute(Name, Name.outputDataType().marshal("Bob")).block());
@@ -119,7 +118,7 @@ public class StorageTest {
 
     assertThrows(IdEventAlreadyExists.class, () -> store(storage, person(bob, "Alice")));
 
-    assertThrows(UnknownEntity.class, () -> storage.eventsByEntityId().execute(Person, List.of(Create), new EntityId.UUID(bob)).block());
+    assertThrows(UnknownEntity.class, () -> storage.eventsByEntityId().execute(Person, List.of(Create), bob).block());
   }
 
   @Test

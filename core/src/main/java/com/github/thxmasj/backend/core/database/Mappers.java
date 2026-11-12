@@ -6,7 +6,6 @@ import static java.util.stream.Collectors.joining;
 import static java.util.stream.Collectors.toMap;
 
 import com.github.thxmasj.backend.core.BuiltinEventTypes;
-import com.github.thxmasj.backend.core.EntityId;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.Event;
 import com.github.thxmasj.backend.core.EventType;
@@ -64,7 +63,7 @@ public class Mappers {
     return idToEventType::get;
   }
 
-  public static BiFunction<EntityId, Row, Event<?>> eventMapper(
+  public static BiFunction<UUID, Row, Event<?>> eventMapper(
       List<EventType<?, ?>> eventTypes,
       Clock clock
   ) {
@@ -80,7 +79,7 @@ public class Mappers {
         ));
       try {
         return new Event<>(
-            entityId.value(),
+            entityId,
             value(row, "EventNumber", Integer.class),
             eventType,
             value(row, "Timestamp", LocalDateTime.class),

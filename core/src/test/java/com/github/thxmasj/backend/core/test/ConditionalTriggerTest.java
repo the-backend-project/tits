@@ -13,7 +13,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.github.thxmasj.backend.core.BasicEventType;
 import com.github.thxmasj.backend.core.DataType;
-import com.github.thxmasj.backend.core.EntityId;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.EventLog;
 import com.github.thxmasj.backend.core.EventType;
@@ -98,7 +97,7 @@ public class ConditionalTriggerTest {
             Begin, List.of(
                 onEvent(CreateOrder).to(OrderStates.Created)
                     .assemble(c -> tuple(c.input(), c.log().entityId()))
-                    .trigger(orderReferenced).with(t -> t.t1()).on(Index).identifiedBy(t -> newEntityId(t.t2().value()))
+                    .trigger(orderReferenced).with(t -> t.t1()).on(Index).identifiedBy(t -> newEntityId(t.t2()))
                     .output()
             ),
             OrderStates.Created, List.of(
@@ -118,7 +117,7 @@ public class ConditionalTriggerTest {
                     .is(ShipOrder)
                     .with(_ -> null)
                     .on(Batch)
-                    .identifiedBy(t -> entityId((UUID) t.t2().value()))
+                    .identifiedBy(t -> entityId((UUID) t.t2()))
                     .output(),
                 onEvent(CloseSessionBatchWhenShipped).to(BatchStates.Waiting)
                     .assemble(c -> c.input())
@@ -150,7 +149,7 @@ public class ConditionalTriggerTest {
     return eventsByEntityId.execute(
         Batch,
         List.of(OpenBatch, CloseBatchWhenShipped, CloseSessionBatchWhenShipped, CloseBatchWhenShippedOrCancelled, CloseBatch),
-        new EntityId.UUID(batchId)
+        batchId
     ).block();
   }
 

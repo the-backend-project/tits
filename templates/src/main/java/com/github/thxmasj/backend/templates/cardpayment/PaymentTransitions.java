@@ -478,7 +478,7 @@ public class PaymentTransitions {
                                   UUID acquirerRequestId = log.one(PaymentEvent.Authorisation).requestId();
                                   return tuple(
                                       new ReversalData(
-                                          log.entityId().value(),
+                                          log.entityId(),
                                           rollbackType == Cancel || rollbackType == RollbackRequest,
                                           rollbackType != Cancel,
                                           paymentData.amount().requested(),
@@ -545,7 +545,7 @@ public class PaymentTransitions {
                                   UUID acquirerRequestId = log.one(Preauthorisation).requestId();
                                   return tuple(
                                       new ReversalData(
-                                          log.entityId().value(),
+                                          log.entityId(),
                                           rollbackType == Cancel || rollbackType == RollbackRequest,
                                           rollbackType != Cancel,
                                           paymentData.t1().amount().requested(),
@@ -834,7 +834,7 @@ public class PaymentTransitions {
                               AcquirerResponse acquirerResponse = log.lastIfExists(RefundApproved).orElse(null);
                               return tuple(
                                   new ReversalData(
-                                      log.entityId().value(),
+                                      log.entityId(),
                                       rollbackType == Cancel || rollbackType == RollbackRequest,
                                       rollbackType != Cancel,
                                       refundData.refund().amount(),

@@ -2,7 +2,6 @@ package com.github.thxmasj.backend.demo;
 
 import static java.util.stream.Collectors.joining;
 
-import com.github.thxmasj.backend.core.EntityId;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.Listener;
 import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
@@ -32,27 +31,27 @@ public class StdoutListener implements Listener {
   }
 
   @Override
-  public void forwardingAttempt(UUID requestId, EntityModel entityModel, String queue, EntityId entityId, int eventNumber, ZonedDateTime enqueuedAt, int attempt, String correlationId) {
+  public void forwardingAttempt(UUID requestId, EntityModel entityModel, String queue, UUID entityId, int eventNumber, ZonedDateTime enqueuedAt, int attempt, String correlationId) {
     log(correlationId, "Forwarding attempt " + attempt + " from " + queue);
   }
 
   @Override
-  public void forwardingCompleted(UUID requestId, EntityModel entityModel, String queue, EntityId entityId, int eventNumber, ZonedDateTime enqueuedAt, int attempt, String correlationId, HttpResponseMessage receipt, String reason) {
+  public void forwardingCompleted(UUID requestId, EntityModel entityModel, String queue, UUID entityId, int eventNumber, ZonedDateTime enqueuedAt, int attempt, String correlationId, HttpResponseMessage receipt, String reason) {
     log(correlationId, "Forwarding from " + queue + " completed: " + reason);
   }
 
   @Override
-  public void forwardingBackedOff(UUID requestId, EntityModel entityModel, String queue, EntityId entityId, int eventNumber, ZonedDateTime enqueuedAt, int attempt, String correlationId, String reason, ZonedDateTime nextAttemptAt, Duration backoff) {
+  public void forwardingBackedOff(UUID requestId, EntityModel entityModel, String queue, UUID entityId, int eventNumber, ZonedDateTime enqueuedAt, int attempt, String correlationId, String reason, ZonedDateTime nextAttemptAt, Duration backoff) {
     log(correlationId, "Forwarding from " + queue + " backed off " + backoff + ": " + reason);
   }
 
   @Override
-  public void forwardingDead(UUID requestId, EntityModel entityModel, String queue, EntityId entityId, int eventNumber, ZonedDateTime enqueuedAt, int attempt, String correlationId, String reason) {
+  public void forwardingDead(UUID requestId, EntityModel entityModel, String queue, UUID entityId, int eventNumber, ZonedDateTime enqueuedAt, int attempt, String correlationId, String reason) {
     log(correlationId, "Forwarding from " + queue + " is dead: " + reason);
   }
 
   @Override
-  public void forwardingDeadByExhaustion(UUID requestId, EntityModel entityModel, String queue, EntityId entityId, int eventNumber, ZonedDateTime enqueuedAt, int attempt, String correlationId, String reason) {
+  public void forwardingDeadByExhaustion(UUID requestId, EntityModel entityModel, String queue, UUID entityId, int eventNumber, ZonedDateTime enqueuedAt, int attempt, String correlationId, String reason) {
     log(correlationId, "Forwarding from " + queue + " is dead by exhaustion: " + reason);
   }
 
