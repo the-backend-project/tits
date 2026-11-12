@@ -23,6 +23,13 @@ The image can also be built alone, from the repository root:
 docker build -f demo/Dockerfile -t tits-demo .
 ```
 
+Native compilation takes a few minutes. For a quicker build of a less optimized image, as in CI, pass options to
+`native-image` through a build argument:
+
+```shell
+docker build -f demo/Dockerfile -t tits-demo --build-arg NATIVE_IMAGE_OPTS=-Ob .
+```
+
 To run the demo in Azure, see [Deploying to Azure Functions](azure-functions.md).
 
 The application without native compilation is an ordinary Maven module. `DemoTest` runs it against the test database

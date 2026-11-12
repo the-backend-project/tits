@@ -19,11 +19,16 @@ RUN --mount=type=cache,target=/root/.m2 \
     mvn -B -q package -pl demo -am -DskipTests -Dmaven.compiler.release=25 \
       -Daether.artifactResolver.postProcessor.trustedChecksums.failIfMissing=true
 
+# NATIVE_IMAGE_OPTS passes extra options to native-image. CI sets it to -Ob (quick build mode), which builds faster
+# but optimizes less, as it only checks that the image runs.
+ARG NATIVE_IMAGE_OPTS=
+
 # --static-nolibc links everything but glibc statically, which works on both amd64 and arm64 (fully static musl
 # builds are only available for amd64). glibc and the dynamic loader are therefore copied into the image below.
 # Native executables run their shutdown hooks on SIGTERM, also when running as PID 1.
 RUN mkdir -p /rootfs \
  && native-image \
+      ${NATIVE_IMAGE_OPTS} \
       --static-nolibc \
       -march=compatibility \
       -o /rootfs/demo \
