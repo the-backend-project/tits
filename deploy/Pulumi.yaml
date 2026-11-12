@@ -21,6 +21,11 @@ config:
     items:
       type: string
     description: Arguments to the image's entry point which run the migrate admin process. Defaults to [migrate].
+  urlEnvironment:
+    type: array
+    items:
+      type: string
+    description: Environment variables set to the URL of the application, e.g. ISSUER. Defaults to none.
   databaseRole:
     type: string
     default: App

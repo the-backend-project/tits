@@ -111,16 +111,18 @@ migration as a one-off process, and then starts the identity provider on port 80
 curl -u admin:A_local_bootstrap_secret_of_32_characters -d grant_type=client_credentials localhost:8080/token
 ```
 
-Like the [demo](cloud-native.md), the image holds a native executable built with GraalVM, in an image built from
+Like the [demo](hello-world.md), the image holds a native executable built with GraalVM, in an image built from
 `scratch`. It can also be built alone, from the repository root:
 
 ```shell
 docker build -f apps/identity-provider/Dockerfile -t tits-identity-provider .
 ```
 
+To run the identity provider in Azure, see [Deploying to Azure Functions](azure-functions.md#deploying-the-identity-provider).
+
 The identity provider's own reachability metadata registers its records, which Jackson reads the components of, and
 the constructors the JSON parser of Nimbus JOSE + JWT creates collections with. Check it as described for the
-[demo](cloud-native.md#reachability-metadata).
+[demo](hello-world.md#reachability-metadata).
 
 ### Configuration
 
@@ -141,7 +143,7 @@ The identity provider is configured by environment variables:
 | `DATABASE_AUTHENTICATION` | How to authenticate to the database. `SqlPassword` (the default) with the user and password of a login. For Azure SQL with Microsoft Entra ID: `ActiveDirectoryServicePrincipal` with the client id of the service principal as `DATABASE_USER` and its client secret as `DATABASE_PASSWORD`, or `ActiveDirectoryManagedIdentity` with the managed identity of the host, without `DATABASE_PASSWORD`, and with the client id of a user-assigned identity as `DATABASE_USER` (unset for the system-assigned identity). Entra ID is for `mssql` only, and on the JVM only: the driver gets its tokens with `com.azure:azure-identity`, which is not in the native image. Add it and `com.azure:azure-core-http-jdk-httpclient` to the classpath, at the versions managed by the parent POM, or build with the Maven profile `entra-id`. |
 | `DATABASE_SCHEMA` | Default `identity_provider`. |
 | `DATABASE_ROLE` | The role given access to the schema. Required by `migrate`. |
-| `DATABASE_TRUST_SERVER_CERTIFICATE`, `DATABASE_POOL_SIZE`, `DATABASE_QUERY_TIMEOUT_SECONDS` | As for the demo. |
+| `DATABASE_TRUST_SERVER_CERTIFICATE`, `DATABASE_POOL_SIZE`, `DATABASE_QUERY_TIMEOUT_SECONDS` | As for the [hello world demo](hello-world.md#configuration). |
 
 Like the demo, the process serves HTTP by default, and has admin commands to run as one-off processes:
 

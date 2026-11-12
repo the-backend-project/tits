@@ -1,4 +1,4 @@
-package com.github.thxmasj.backend.demo;
+package com.github.thxmasj.backend.helloworld;
 
 import static java.util.stream.Collectors.joining;
 

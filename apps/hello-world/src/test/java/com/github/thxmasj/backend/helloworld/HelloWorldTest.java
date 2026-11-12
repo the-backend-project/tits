@@ -1,4 +1,4 @@
-package com.github.thxmasj.backend.demo;
+package com.github.thxmasj.backend.helloworld;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -16,8 +16,8 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import reactor.netty.DisposableServer;
 
-/// Runs the demo against the test database, the way it is deployed: migrate as admin, then serve as an ordinary login.
-public class DemoTest {
+/// Runs the application against the test database, the way it is deployed: migrate as admin, then serve as an ordinary login.
+public class HelloWorldTest {
 
   private static final String schema = UUID.randomUUID().toString();
   private static StateMachine stateMachine;
@@ -25,10 +25,10 @@ public class DemoTest {
 
   @BeforeAll
   public static void setUp() {
-    Demo.migrate(config("sa", "A_Str0ng_Required_Password"));
+    HelloWorld.migrate(config("sa", "A_Str0ng_Required_Password"));
     Config config = config("testlogin", "Please_hide_me!");
-    stateMachine = Demo.stateMachine(config);
-    server = Demo.serve(stateMachine, config.port());
+    stateMachine = HelloWorld.stateMachine(config);
+    server = HelloWorld.serve(stateMachine, config.port());
   }
 
   @AfterAll
