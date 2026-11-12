@@ -77,6 +77,12 @@
         </dependency>
         <dependency>
             <groupId>com.github.thxmasj.backend</groupId>
+            <artifactId>database-pgsql-reactive</artifactId>
+            <version>0.3.0-SNAPSHOT</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.github.thxmasj.backend</groupId>
             <artifactId>http-inbox</artifactId>
             <version>0.3.0-SNAPSHOT</version>
         </dependency>

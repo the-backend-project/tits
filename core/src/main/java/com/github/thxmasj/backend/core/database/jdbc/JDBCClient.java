@@ -4,6 +4,7 @@ import static com.github.thxmasj.backend.core.database.jdbc.PreparedStatementSup
 import static java.util.stream.Collectors.joining;
 
 import com.github.thxmasj.backend.core.database.Client;
+import com.github.thxmasj.backend.core.database.MappingFailure;
 import com.github.thxmasj.backend.core.database.Parameter;
 import com.github.thxmasj.backend.core.database.Row;
 import java.sql.Connection;
@@ -21,6 +22,7 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 
+/// A client of a JDBC data source, which is closed with the client if it is closeable, e.g. a connection pool
 public class JDBCClient implements Client {
 
   private final DataSource dataSource;
@@ -64,6 +66,12 @@ public class JDBCClient implements Client {
         .subscribeOn(scheduler);
   }
 
+  @Override
+  public void close() throws Exception {
+    if (dataSource instanceof AutoCloseable closeable)
+      closeable.close();
+  }
+
   /**
    * Extract the last result set if the result is "complex", i.e. has multiple result sets and/or update counts. This
    * behaviour is similar to the R2DBCClient's behavior.
@@ -93,6 +101,9 @@ public class JDBCClient implements Client {
 
   private Function<? super Throwable, ? extends Throwable> errorMapper(String queryName, String sql, Map<String, Parameter<?>> parameters) {
     return error -> {
+      // Failing to map a row is not a failure of the query
+      if (error instanceof MappingFailure)
+        return error;
       String message = errorMessage(error.getMessage(), queryName, sql, parameters);
       Throwable violation = error instanceof SQLException e ? constraintViolation(e, queryName, message) : null;
       return violation != null ? violation : new RuntimeException(message, error);

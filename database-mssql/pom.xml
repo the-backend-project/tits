@@ -48,6 +48,19 @@
         <skipTests>true</skipTests>
       </properties>
     </profile>
+    <profile>
+      <!-- The tests run on PostgreSQL through R2DBC instead -->
+      <id>pgsql-reactive</id>
+      <activation>
+        <property>
+          <name>database</name>
+          <value>pgsql-reactive</value>
+        </property>
+      </activation>
+      <properties>
+        <skipTests>true</skipTests>
+      </properties>
+    </profile>
   </profiles>
 
   <dependencies>

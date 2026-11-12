@@ -23,17 +23,35 @@ public class PgsqlClient extends JDBCClient {
 
   @Override
   protected Throwable constraintViolation(SQLException error, String queryName, String errorMessage) {
-    if (!(error instanceof PSQLException e && UNIQUE_VIOLATION.equals(e.getSQLState()) && e.getServerErrorMessage() != null))
+    if (!(error instanceof PSQLException e && e.getServerErrorMessage() != null))
       return null;
     ServerErrorMessage serverError = e.getServerErrorMessage();
-    Matcher duplicateKeyMatcher = duplicateKeyPattern.matcher(String.valueOf(serverError.getDetail()));
-    if (serverError.getTable() == null || serverError.getConstraint() == null || !duplicateKeyMatcher.matches())
-      return new DataIntegrityViolation(queryName, null, "N/A", errorMessage, e);
+    return constraintViolation(e.getSQLState(), serverError.getDetail(), serverError.getTable(), serverError.getConstraint(), queryName, errorMessage, e);
+  }
+
+  /// The constraint violation of an error reported by PostgreSQL, or null if it is not a unique violation. It is shared
+  /// with the client of PostgreSQL's R2DBC driver.
+  ///
+  /// @param errorMessage the error's message with the query and its parameters
+  public static Throwable constraintViolation(
+      String sqlState,
+      String detail,
+      String table,
+      String constraint,
+      String queryName,
+      String errorMessage,
+      Throwable error
+  ) {
+    if (!UNIQUE_VIOLATION.equals(sqlState))
+      return null;
+    Matcher duplicateKeyMatcher = duplicateKeyPattern.matcher(String.valueOf(detail));
+    if (table == null || constraint == null || !duplicateKeyMatcher.matches())
+      return new DataIntegrityViolation(queryName, null, "N/A", errorMessage, error);
     // Primary keys are named with a "pk" prefix, see CreateSchema
-    else if (serverError.getConstraint().startsWith("pk"))
-      return new PrimaryKeyConstraintViolation(queryName, null, duplicateKeyMatcher.group(1), serverError.getTable(), serverError.getConstraint(), e);
+    else if (constraint.startsWith("pk"))
+      return new PrimaryKeyConstraintViolation(queryName, null, duplicateKeyMatcher.group(1), table, constraint, error);
     else
-      return new UniqueIndexConstraintViolation(queryName, null, duplicateKeyMatcher.group(1), serverError.getTable(), serverError.getConstraint(), e);
+      return new UniqueIndexConstraintViolation(queryName, null, duplicateKeyMatcher.group(1), table, constraint, error);
   }
 
 }

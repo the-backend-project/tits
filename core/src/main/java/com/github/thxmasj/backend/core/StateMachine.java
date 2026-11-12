@@ -28,6 +28,8 @@ import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext.Pend
 import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext.RejectedChangeContext;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.backend.core.Tuples.Tuple3;
+import com.github.thxmasj.backend.core.database.Client;
+import com.github.thxmasj.backend.core.database.Database;
 import com.github.thxmasj.backend.core.database.EntityGroupNotInitialised;
 import com.github.thxmasj.backend.core.database.EventAlreadyExists;
 import com.github.thxmasj.backend.core.database.IdEventAlreadyExists;
@@ -69,7 +71,7 @@ public class StateMachine implements AutoCloseable {
   private final Clock clock;
   private final Listener listener;
   private final List<Looper<?>> workers = new ArrayList<>();
-  private final DataSource dataSource;
+  private final Client client;
   private final Storage storage;
   private final Map<EntityModel, Traverser> traversers;
   private final Map<EntityModel, List<EventType<?, ?>>> eventTypesByEntityModel;
@@ -96,10 +98,30 @@ public class StateMachine implements AutoCloseable {
     this(delayer, transitions, dataSource, schemaDataSource, schemaName, role, clock, listener, true);
   }
 
+  /// The database is the one behind the data source (see [Database#of(DataSource)])
   public StateMachine(
       Function<List<String>, Mono<Void>> delayer,
       Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions,
       DataSource dataSource,
+      DataSource schemaDataSource,
+      String schemaName,
+      String role,
+      Clock clock,
+      Listener listener,
+      boolean withResolving
+  ) {
+    Database database = Database.of(dataSource);
+    this(delayer, transitions, database, database.client(dataSource), schemaDataSource, schemaName, role, clock, listener, withResolving);
+  }
+
+  /// @param client a client of the database, which is closed with the state machine
+  /// @param schemaDataSource a data source of the database to create the schema with, or null if it is created
+  ///                         elsewhere
+  public StateMachine(
+      Function<List<String>, Mono<Void>> delayer,
+      Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions,
+      Database database,
+      Client client,
       DataSource schemaDataSource,
       String schemaName,
       String role,
@@ -112,13 +134,13 @@ public class StateMachine implements AutoCloseable {
     this.eventTypesByEntityModel = Mappers.eventTypesByEntityModel(transitions);
     this.delayer = delayer != null ? delayer : _ -> Mono.empty();
     if (schemaDataSource != null) {
-      Storage.createSchema(schemaDataSource, schemaName, role)
+      database.createSchema(schemaDataSource, schemaName, role)
           .timeout(Duration.ofSeconds(20), Mono.error(new RuntimeException("Schema creation timed out. Is the database running?")))
           .block();
     }
     this.clock = clock;
-    this.dataSource = dataSource;
-    this.storage = Storage.of(dataSource, transitions, schemaName, clock);
+    this.client = client;
+    this.storage = database.storage(client, transitions, schemaName, clock);
     this.listener = listener;
     if (withResolving) {
       Looper<ResolverStatus> resolverLooper = new Looper<>(
@@ -146,15 +168,14 @@ public class StateMachine implements AutoCloseable {
   }
 
   /// Stops the workers resolving delayed triggers and conditional triggers, waits for their ongoing work to complete, and closes
-  /// the data source if it is closeable, e.g. a connection pool. Requests should be stopped before this is called.
+  /// the client, and with it any connection pool. Requests should be stopped before this is called.
   @Override
   public void close() throws Exception {
     workers.forEach(Looper::stop);
     for (var worker : workers)
       if (!worker.awaitStopped(ofSeconds(30)))
         System.out.println("Gave up waiting for a worker to stop");
-    if (dataSource instanceof AutoCloseable closeable)
-      closeable.close();
+    client.close();
   }
 
   private EventLog emptyEventLog(EntityModel entityModel) {

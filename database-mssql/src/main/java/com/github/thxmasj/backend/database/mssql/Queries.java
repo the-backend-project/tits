@@ -28,9 +28,7 @@ final class Queries {
           INNER JOIN [{schema}].[Entity] e ON e.EntityId = ie.EntityId
         WHERE ie.Type=:type AND ie.Data=:data;
 
-        SELECT @entityId AS EntityId, @entityModelId AS EntityModelId;
-
-        SELECT EventNumber, Type, Timestamp, Data
+        SELECT @entityId AS EntityId, @entityModelId AS EntityModelId, EventNumber, Type, Timestamp, Data
         FROM [{schema}].[Event] WITH (INDEX(pkEvent))
         WHERE EntityId=@entityId
         ORDER BY EventNumber;
@@ -52,9 +50,7 @@ final class Queries {
         ) Indexed
         ORDER BY Data ASC;
 
-        SELECT @entityId AS EntityId;
-
-        SELECT EventNumber, Type, Timestamp, Data
+        SELECT @entityId AS EntityId, EventNumber, Type, Timestamp, Data
         FROM [{schema}].[Event] WITH (INDEX(pkEvent))
         WHERE EntityId=@entityId
         ORDER BY EventNumber;

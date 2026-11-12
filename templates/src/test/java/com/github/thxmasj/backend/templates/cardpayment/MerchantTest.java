@@ -24,12 +24,14 @@ public class MerchantTest {
 //            ,
 //            inboxExchange, inboxExchange.transitions()
         ),
-        dataSource,
+        Init.database(),
+        Init.client(),
         migrationDataSource,
         UUID.randomUUID().toString(),
         "Test",
         Clock.systemUTC(),
-        new Logger("MerchantTest")
+        new Logger("MerchantTest"),
+        true
     );
   }
 
@@ -121,7 +123,6 @@ public class MerchantTest {
 //    }
 //  };
 
-  private static final DataSource dataSource = Init.dataSource();
   private static final DataSource migrationDataSource = Init.migrationDataSource();
 
 

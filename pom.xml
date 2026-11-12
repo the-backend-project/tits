@@ -14,6 +14,7 @@
         <module>core</module>
         <module>database-mssql</module>
         <module>database-pgsql</module>
+        <module>database-pgsql-reactive</module>
         <module>http-inbox</module>
         <module>http-outbox</module>
         <module>test-api</module>
@@ -161,6 +162,16 @@
                 <version>42.7.14</version>
             </dependency>
             <dependency>
+                <groupId>org.postgresql</groupId>
+                <artifactId>r2dbc-postgresql</artifactId>
+                <version>1.1.3.RELEASE</version>
+            </dependency>
+            <dependency>
+                <groupId>io.r2dbc</groupId>
+                <artifactId>r2dbc-pool</artifactId>
+                <version>1.0.2.RELEASE</version>
+            </dependency>
+            <dependency>
                 <groupId>tools.jackson.core</groupId>
                 <artifactId>jackson-databind</artifactId>
                 <version>${jackson.version}</version>
@@ -169,6 +180,17 @@
                 <groupId>io.projectreactor.netty</groupId>
                 <artifactId>reactor-netty</artifactId>
                 <version>1.3.8</version>
+            </dependency>
+            <dependency>
+                <!-- R2DBC's drivers depend on older versions than reactor-netty and reactor-core, see reactor-bom -->
+                <groupId>io.projectreactor.netty</groupId>
+                <artifactId>reactor-netty-core</artifactId>
+                <version>1.3.8</version>
+            </dependency>
+            <dependency>
+                <groupId>io.projectreactor.addons</groupId>
+                <artifactId>reactor-pool</artifactId>
+                <version>1.2.8</version>
             </dependency>
             <dependency>
                 <groupId>com.nimbusds</groupId>

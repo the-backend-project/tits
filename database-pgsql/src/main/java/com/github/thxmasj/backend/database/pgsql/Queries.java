@@ -19,61 +19,43 @@ final class Queries {
         """.replace("{table}", table(schema, eventTable));
   }
 
-  // The entity is selected by both statements, as PostgreSQL has no variables to keep it in. The left join gives a
-  // row of nulls if no entity has the id.
   static String eventsByIdEvent(String schema) {
-    String entity =
-        """
-        SELECT e.EntityId, e.EntityModelId
-        FROM {IdEvent} ie
-          INNER JOIN {Entity} e ON e.EntityId = ie.EntityId
-        WHERE ie.Type=:type AND ie.Data=:data
-        LIMIT 1
-        """;
     return
         """
-        SELECT Found.EntityId, Found.EntityModelId
-        FROM (VALUES (1)) AS One (Value)
-          LEFT JOIN ({entity}) Found ON TRUE;
-
-        SELECT EventNumber, Type, Timestamp, Data
-        FROM {Event}
-        WHERE EntityId=(SELECT EntityId FROM ({entity}) Found)
-        ORDER BY EventNumber;
-        """.replace("{entity}", entity)
-            .replace("{IdEvent}", table(schema, "IdEvent"))
+        SELECT Found.EntityId, Found.EntityModelId, ev.EventNumber, ev.Type, ev.Timestamp, ev.Data
+        FROM (
+          SELECT e.EntityId, e.EntityModelId
+          FROM {IdEvent} ie
+            INNER JOIN {Entity} e ON e.EntityId = ie.EntityId
+          WHERE ie.Type=:type AND ie.Data=:data
+          LIMIT 1
+        ) Found
+          INNER JOIN {Event} ev ON ev.EntityId = Found.EntityId
+        ORDER BY ev.EventNumber;
+        """.replace("{IdEvent}", table(schema, "IdEvent"))
             .replace("{Entity}", table(schema, "Entity"))
             .replace("{Event}", table(schema, "Event"));
   }
 
-  // The entity is selected by both statements, as PostgreSQL has no variables to keep it in. The left join gives a
-  // row of nulls if the group has no index events.
   static String eventsByLastIndexEvent(String schema) {
-    String entity =
-        """
-        SELECT EntityId
-        FROM (
-          SELECT EntityId, Data
-          FROM {IndexEvent}
-          WHERE Type=:type AND Data >= :group AND Data < :groupEnd
-          ORDER BY Data DESC
-          LIMIT :position
-        ) Indexed
-        ORDER BY Data ASC
-        LIMIT 1
-        """;
     return
         """
-        SELECT Found.EntityId
-        FROM (VALUES (1)) AS One (Value)
-          LEFT JOIN ({entity}) Found ON TRUE;
-
-        SELECT EventNumber, Type, Timestamp, Data
-        FROM {Event}
-        WHERE EntityId=(SELECT EntityId FROM ({entity}) Found)
-        ORDER BY EventNumber;
-        """.replace("{entity}", entity)
-            .replace("{IndexEvent}", table(schema, "IndexEvent"))
+        SELECT Found.EntityId, ev.EventNumber, ev.Type, ev.Timestamp, ev.Data
+        FROM (
+          SELECT EntityId
+          FROM (
+            SELECT EntityId, Data
+            FROM {IndexEvent}
+            WHERE Type=:type AND Data >= :group AND Data < :groupEnd
+            ORDER BY Data DESC
+            LIMIT :position
+          ) Indexed
+          ORDER BY Data ASC
+          LIMIT 1
+        ) Found
+          INNER JOIN {Event} ev ON ev.EntityId = Found.EntityId
+        ORDER BY ev.EventNumber;
+        """.replace("{IndexEvent}", table(schema, "IndexEvent"))
             .replace("{Event}", table(schema, "Event"));
   }
 

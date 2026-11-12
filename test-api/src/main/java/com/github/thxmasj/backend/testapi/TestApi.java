@@ -15,9 +15,9 @@ import com.github.thxmasj.backend.core.IndexEntityModel;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.backend.core.database.Client;
+import com.github.thxmasj.backend.core.database.Database;
 import com.github.thxmasj.backend.core.database.Storage;
 import com.github.thxmasj.backend.core.database.UnknownEntity;
-import com.github.thxmasj.backend.core.database.jdbc.JDBCClient;
 import com.github.thxmasj.backend.core.database.ChangeState;
 import com.github.thxmasj.backend.core.database.ChangeState.Change;
 import com.github.thxmasj.backend.core.database.EntitiesByIndex;
@@ -59,6 +59,8 @@ public class TestApi {
   /// Whether a delayed trigger is still pending, i.e. its event number follows the entity's last event
   private final String pending;
 
+  /// The database is the one behind the data source (see [Database#of(DataSource)])
+  ///
   /// @param transitions the transitions of the state machine, which give the entity models and event types
   public TestApi(
       DataSource dataSource,
@@ -66,14 +68,27 @@ public class TestApi {
       Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions,
       Clock clock
   ) {
-    this.client = new JDBCClient(dataSource);
+    Database database = Database.of(dataSource);
+    this(database, database.client(dataSource), schemaName, transitions, clock);
+  }
+
+  /// @param client a client of the database
+  /// @param transitions the transitions of the state machine, which give the entity models and event types
+  public TestApi(
+      Database database,
+      Client client,
+      String schemaName,
+      Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions,
+      Clock clock
+  ) {
+    this.client = client;
     this.schema = schemaName;
     this.clock = clock;
     this.entityModels = transitions.keySet().stream().collect(toMap(EntityModel::id, identity()));
     this.eventTypesByEntityModel = Mappers.eventTypesByEntityModel(transitions);
     List<EventType<?, ?>> eventTypes = Mappers.eventTypes(transitions);
     this.eventTypeMapper = Mappers.eventTypeMapper(eventTypes);
-    Storage storage = Storage.of(dataSource, transitions, schemaName, clock);
+    Storage storage = database.storage(client, transitions, schemaName, clock);
     this.eventsByEntityId = storage.eventsByEntityId();
     this.eventsByIdEvent = storage.eventsByIdEvent();
     this.eventsByLastIndexEvent = storage.eventsByLastIndexEvent();

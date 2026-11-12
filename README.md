@@ -18,13 +18,19 @@ application depends on the one for its database. The `StateMachine` finds it on 
 database behind the `DataSource` it is given. To build a data source, give `DataSourceBuilder` the module's `Database`,
 e.g. `new DataSourceBuilder(new PgsqlDatabase(), config)`. The [demo](demo) runs on SQL Server only.
 
+PostgreSQL can also be used through its reactive R2DBC driver, with [database-pgsql-reactive](database-pgsql-reactive),
+e.g. to compare it with the JDBC driver. A state machine is then given the module's `Database` and a `Client` from its
+`client(config)`, which has a connection pool of its own, instead of a data source. The schema is still created
+through JDBC, with a schema data source from `dataSource(config)`.
+
 ## Building
 
 Requires Java 27 and Maven 3.9 or later.
 
 The tests need a database. They run on SQL Server by default, which can be started with `bin/start-mssql.sh`. To run
-them on PostgreSQL, start it with `bin/start-postgres.sh` and run the build with `-Ddatabase=pgsql -pl '!demo'`. The
-tests of the core module that need a database are run by the database modules, each on its own database.
+them on PostgreSQL, start it with `bin/start-postgres.sh` and run the build with `-Ddatabase=pgsql -pl '!demo'`, or
+with `-Ddatabase=pgsql-reactive -pl '!demo'` for its R2DBC driver. The tests of the core module that need a database
+are run by the database modules, each on its own database.
 
 ### Dependency checksums
 

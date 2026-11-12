@@ -4,6 +4,7 @@ import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.StateMachine;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionModel;
+import com.github.thxmasj.backend.core.database.Client;
 import com.github.thxmasj.backend.core.database.Client.Config;
 import com.github.thxmasj.backend.core.database.Database;
 import com.github.thxmasj.backend.core.database.Storage;
@@ -24,17 +25,29 @@ import reactor.core.publisher.Mono;
 
 public class Init {
 
-  // The tests run on SQL Server by default, and on PostgreSQL with -Ddatabase=pgsql
+  // The tests run on SQL Server by default, and on PostgreSQL with -Ddatabase=pgsql or -Ddatabase=pgsql-reactive
   private static final Database database = Database.named(System.getProperty("database", "mssql"));
-  private static final boolean pgsql = database.name().equals("pgsql");
+  private static final boolean pgsql = database.name().startsWith("pgsql");
   private static final DataSource dataSource = new DataSourceBuilder(database, databaseConfig("testlogin", "Please_hide_me!")).build();
+  // Shared by the state machines of the tests, which do not close them
+  private static final Client client = database.client(databaseConfig("testlogin", "Please_hide_me!"));
   private static final DataSource migrationDataSource = new DataSourceBuilder(database, databaseConfig(
       pgsql ? "postgres" : "sa",
       "A_Str0ng_Required_Password"
   )).build();
 
+  public static Database database() {
+    return database;
+  }
+
+  /// A JDBC data source of the test database, also when the state machines use another driver
   public static DataSource dataSource() {
     return dataSource;
+  }
+
+  /// The client the state machines of the tests use
+  public static Client client() {
+    return client;
   }
 
   public static DataSource migrationDataSource() {
@@ -47,7 +60,7 @@ public class Init {
 
   /// The storage of a schema in the test database
   public static Storage storage(String schemaName, Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions) {
-    return database.storage(dataSource, transitions, schemaName, Clock.systemUTC());
+    return database.storage(client, transitions, schemaName, Clock.systemUTC());
   }
 
   public static StateMachine stateMachine(
@@ -65,12 +78,14 @@ public class Init {
     return new StateMachine(
         _ -> Mono.empty(),
         transitions,
-        dataSource,
+        database,
+        client,
         migrationDataSource,
         schemaName,
         "Test", // role
         clock,
-        new Logger("Test")
+        new Logger("Test"),
+        true
     );
   }
 

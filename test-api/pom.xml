@@ -42,6 +42,12 @@
       <scope>test</scope>
     </dependency>
     <dependency>
+      <groupId>com.github.thxmasj.backend</groupId>
+      <artifactId>database-pgsql-reactive</artifactId>
+      <version>${project.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter</artifactId>
       <scope>test</scope>
