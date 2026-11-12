@@ -10,7 +10,7 @@ import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
 import com.github.thxmasj.backend.core.message.http.HttpRequestMessage.Method;
 import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
 import com.github.thxmasj.backend.http.inbox.HttpInboxListener;
-import com.github.thxmasj.backend.identityprovider.Keys.Principal;
+import com.github.thxmasj.backend.http.inbox.AccessTokenVerifier.AccessToken;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -123,7 +123,7 @@ final class Edge implements HttpInboxListener.Filter {
     String authorization = request.headerValue("Authorization");
     if (authorization == null || !authorization.regionMatches(true, 0, "Bearer ", 0, 7))
       return Mono.just(bearerError(401, null, null));
-    Optional<Principal> principal = keys.verify(authorization.substring(7).trim());
+    Optional<AccessToken> principal = keys.verify(authorization.substring(7).trim());
     if (principal.isEmpty())
       return Mono.just(bearerError(401, "invalid_token", "The access token is invalid or expired"));
     if (!principal.get().scopes().contains(Clients.RegistrationScope))

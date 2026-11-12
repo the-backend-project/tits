@@ -3,7 +3,7 @@
 The `apps/identity-provider` module is an OAuth 2.0 authorization server for the
 [client credentials grant](https://www.rfc-editor.org/rfc/rfc6749#section-4.4), built with the HTTP inbox and the
 state machine. Clients get access tokens to call other services with, and the services verify the tokens with the
-identity provider's public keys.
+identity provider's public keys, e.g. with the HTTP inbox's [`BearerTokenFilter`](architecture.md#access-tokens).
 
 ## Endpoints
 

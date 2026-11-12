@@ -1,11 +1,12 @@
 package com.github.thxmasj.backend.identityprovider;
 
+import com.github.thxmasj.backend.http.inbox.AccessTokenVerifier;
+import com.github.thxmasj.backend.http.inbox.AccessTokenVerifier.AccessToken;
 import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JOSEObjectType;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.crypto.RSASSASigner;
-import com.nimbusds.jose.crypto.RSASSAVerifier;
 import com.nimbusds.jose.jwk.JWK;
 import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.KeyUse;
@@ -18,7 +19,6 @@ import java.text.ParseException;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Date;
-import java.util.List;
 import java.util.Optional;
 
 /// The keys the access tokens are signed with. Access tokens are JWTs as profiled by RFC 9068, signed with RS256.
@@ -31,7 +31,7 @@ final class Keys {
   private final RSAKey signingKey;
   private final URI issuer;
   private final String audience;
-  private final Clock clock;
+  private final AccessTokenVerifier verifier;
 
   Keys(String jwkSet, URI issuer, String audience, Clock clock) {
     try {
@@ -48,7 +48,7 @@ final class Keys {
     this.signingKey = (RSAKey) keys.getKeys().getFirst();
     this.issuer = issuer;
     this.audience = audience;
-    this.clock = clock;
+    this.verifier = new AccessTokenVerifier(keys.toPublicJWKSet().toString(), issuer, null, clock);
   }
 
   /// A JWK set with a new private key, for the `generate-key` command
@@ -93,30 +93,10 @@ final class Keys {
     return jwt.serialize();
   }
 
-  /// The client and scopes of an access token issued by this identity provider, if it is valid. The client is
-  /// identified by the `client_id` claim, as the `sub` claim is the subject of the client if it has one.
-  Optional<Principal> verify(String token) {
-    try {
-      SignedJWT jwt = SignedJWT.parse(token);
-      if (!JWSAlgorithm.RS256.equals(jwt.getHeader().getAlgorithm()) || !accessTokenType.equals(jwt.getHeader().getType()))
-        return Optional.empty();
-      JWK key = keys.getKeyByKeyId(jwt.getHeader().getKeyID());
-      if (!(key instanceof RSAKey rsaKey) || !jwt.verify(new RSASSAVerifier(rsaKey.toRSAPublicKey())))
-        return Optional.empty();
-      JWTClaimsSet claims = jwt.getJWTClaimsSet();
-      if (!issuer.toString().equals(claims.getIssuer())
-          || claims.getExpirationTime() == null
-          || !claims.getExpirationTime().toInstant().isAfter(clock.instant())
-          || claims.getSubject() == null
-          || claims.getStringClaim("client_id") == null)
-        return Optional.empty();
-      String scope = claims.getStringClaim("scope");
-      return Optional.of(new Principal(claims.getStringClaim("client_id"), Scopes.parse(scope != null ? scope : "")));
-    } catch (ParseException | JOSEException e) {
-      return Optional.empty();
-    }
+  /// The claims of an access token issued by this identity provider, if it is valid. The audience is not checked, as
+  /// the identity provider accepts its tokens whatever their audience.
+  Optional<AccessToken> verify(String token) {
+    return verifier.verify(token);
   }
-
-  record Principal(String clientId, List<String> scopes) {}
 
 }

@@ -23,10 +23,10 @@ import com.github.thxmasj.backend.core.Validated;
 import com.github.thxmasj.backend.core.http.HttpDataType;
 import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
 import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
-import com.nimbusds.jwt.SignedJWT;
-import java.text.ParseException;
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 
 public interface HttpInbox {
@@ -145,21 +145,21 @@ public interface HttpInbox {
     return new JsonRequestValidator<>(contentType, validate);
   }
 
-  static Validated<String> authorize(HttpRequestMessage httpRequest) {
-    String v = httpRequest.headerValue("Authorization");
-    if (v == null)
-      return invalid("Authorization header missing");
-    if (!v.startsWith("Bearer "))
-      return invalid("Authorization token is not of type Bearer");
-    String token = v.substring("Bearer ".length());
-    String subject;
-    try {
-      SignedJWT jws = SignedJWT.parse(token);
-      subject = jws.getJWTClaimsSet().getSubject();
-    } catch (ParseException e) {
-      return invalid("Bearer token is invalid");
-    }
-    return valid(subject);
+  /// An authorizer for routes requiring a bearer token, verified by a [BearerTokenFilter] of the listener, with the
+  /// given scopes. The authorized subject is the `sub` of the token.
+  static <T> BiFunction<HttpRequestMessage, T, Validated<String>> bearerToken(String... requiredScopes) {
+    return (request, _) -> {
+      String subject = request.headerValue(BearerTokenFilter.SubjectHeader);
+      if (subject == null)
+        return invalid("Bearer token missing");
+      String scope = request.headerValue(BearerTokenFilter.ScopeHeader);
+      List<String> scopes = scope == null ? List.of() : Arrays.asList(scope.split(" "));
+      for (String requiredScope : requiredScopes) {
+        if (!scopes.contains(requiredScope))
+          return invalid("Bearer token lacks the scope " + requiredScope);
+      }
+      return valid(subject);
+    };
   }
 
   enum EntityModels implements EntityModel {

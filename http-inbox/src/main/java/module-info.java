@@ -3,6 +3,7 @@ module com.github.thxmasj.backend.http.inbox {
   requires transitive reactor.netty.core;
   requires transitive reactor.netty.http;
   requires com.nimbusds.jose.jwt;
+  requires java.net.http;
   requires io.netty.buffer;
   requires io.netty.codec.http;
   requires static jakarta.annotation;
