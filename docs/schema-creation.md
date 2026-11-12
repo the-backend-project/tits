@@ -2,7 +2,8 @@
 
 The state machine creates its [schema](data-model.md) if it does not exist, and verifies it if it does. This is done by
 `Database.createSchema`, implemented by `CreateSchema` in [database-mssql](../database-mssql) and
-[database-pgsql](../database-pgsql), and called either:
+[database-pgsql](../database-pgsql), whose `CreateSchema` the reactive PostgreSQL [modules](databases.md) use too, and
+called either:
 
 * by the `StateMachine` constructor, when it is given a schema data source and a role, or
 * by a separate admin process, such as `demo migrate` in the [cloud native demo](cloud-native.md), in which case the

@@ -80,7 +80,9 @@ final class Queries {
   }
 
   // Postpone the delayed trigger with the earliest passed deadline with an exponential backoff. Concurrent resolvers
-  // skip it while it is locked, and do not find it afterwards as its deadline has not passed.
+  // skip it while it is locked, and do not find it afterwards as its deadline has not passed. The time is cast, as a
+  // driver that leaves the type of a parameter to PostgreSQL, such as the Vert.x client, would get an interval for it
+  // from the addition.
   static String nextDelayedTrigger(String schema) {
     return
         """
@@ -92,12 +94,12 @@ final class Queries {
             EntityId,
             EventNumber,
             Deadline,
-            :now + make_interval(secs => LEAST(
+            CAST(:now AS TIMESTAMP) + make_interval(secs => LEAST(
               :maximumBackoff,
               :minimumBackoff*POWER(:backoffPowerBase, LEAST(Attempt, 50))
             )) AS NextAttemptAt
           FROM {DelayedTrigger}
-          WHERE Deadline < :now
+          WHERE Deadline < CAST(:now AS TIMESTAMP)
           ORDER BY Deadline ASC
           LIMIT 1
           FOR UPDATE SKIP LOCKED

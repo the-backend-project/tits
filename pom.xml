@@ -15,6 +15,7 @@
         <module>database-mssql</module>
         <module>database-pgsql</module>
         <module>database-pgsql-reactive</module>
+        <module>database-pgsql-vertx</module>
         <module>http-inbox</module>
         <module>http-outbox</module>
         <module>test-api</module>
@@ -180,6 +181,30 @@
                 <groupId>io.projectreactor.netty</groupId>
                 <artifactId>reactor-netty</artifactId>
                 <version>1.3.8</version>
+            </dependency>
+            <dependency>
+                <!-- One version of Netty, that of reactor-netty, rather than also the newer one of Vert.x -->
+                <groupId>io.netty</groupId>
+                <artifactId>netty-bom</artifactId>
+                <version>4.2.19.Final</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>io.vertx</groupId>
+                <artifactId>vertx-pg-client</artifactId>
+                <version>5.2.3</version>
+            </dependency>
+            <dependency>
+                <!-- The newer SCRAM authentication of Vert.x, which R2DBC's PostgreSQL driver works with too -->
+                <groupId>com.ongres.scram</groupId>
+                <artifactId>scram-client</artifactId>
+                <version>3.4</version>
+            </dependency>
+            <dependency>
+                <groupId>com.ongres.scram</groupId>
+                <artifactId>scram-common</artifactId>
+                <version>3.4</version>
             </dependency>
             <dependency>
                 <!-- R2DBC's drivers depend on older versions than reactor-netty and reactor-core, see reactor-bom -->

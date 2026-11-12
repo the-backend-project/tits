@@ -7,6 +7,7 @@ import com.github.thxmasj.backend.core.database.Client;
 import com.github.thxmasj.backend.core.database.MappingFailure;
 import com.github.thxmasj.backend.core.database.Parameter;
 import com.github.thxmasj.backend.core.database.Row;
+import com.github.thxmasj.backend.database.pgsql.NumberedStatement;
 import com.github.thxmasj.backend.database.pgsql.PgsqlClient;
 import io.r2dbc.pool.ConnectionPool;
 import io.r2dbc.pool.ConnectionPoolConfiguration;
@@ -19,13 +20,9 @@ import io.r2dbc.spi.Connection;
 import io.r2dbc.spi.Result;
 import io.r2dbc.spi.Statement;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -36,9 +33,6 @@ import reactor.core.publisher.Mono;
 /// end of a line, is run statement by statement in a transaction. The rows of the last statement are given, as by
 /// [com.github.thxmasj.backend.core.database.jdbc.JDBCClient].
 public class PgsqlReactiveClient implements Client {
-
-  private static final Pattern parameterPattern = Pattern.compile(":[a-zA-Z0-9_]+");
-  private static final Pattern statementEnd = Pattern.compile(";[ \\t]*(?:\\n|$)");
 
   private final ConnectionPool pool;
 
@@ -94,7 +88,7 @@ public class PgsqlReactiveClient implements Client {
       Map<String, Parameter<?>> parameters,
       Function<Result, Publisher<T>> extractor
   ) {
-    List<String> statements = statements(sql);
+    List<NumberedStatement> statements = NumberedStatement.of(sql);
     return Flux.usingWhen(
             pool.create(),
             connection -> statements.size() == 1 ?
@@ -120,37 +114,22 @@ public class PgsqlReactiveClient implements Client {
 
   private static <T> Flux<T> results(
       Connection connection,
-      String sql,
+      NumberedStatement sql,
       Map<String, Parameter<?>> parameters,
       Function<Result, Publisher<T>> extractor
   ) {
     return Flux.from(statement(connection, sql, parameters).execute()).concatMap(extractor);
   }
 
-  /// The statements of the SQL, without their terminating semicolons
-  static List<String> statements(String sql) {
-    return Arrays.stream(statementEnd.split(sql)).filter(statement -> !statement.isBlank()).toList();
-  }
-
-  /// The statement with its named parameters, such as ":entityId", replaced by PostgreSQL's numbered ones, such as "$1"
-  private static Statement statement(Connection connection, String sql, Map<String, Parameter<?>> parameters) {
-    List<String> names = new ArrayList<>();
-    String numbered = parameterPattern.matcher(sql).replaceAll(match -> {
-      String name = match.group().substring(1);
-      if (!names.contains(name))
-        names.add(name);
-      return Matcher.quoteReplacement("$" + (names.indexOf(name) + 1));
-    });
+  private static Statement statement(Connection connection, NumberedStatement sql, Map<String, Parameter<?>> parameters) {
+    List<Parameter<?>> values = sql.parameters(parameters);
     //noinspection SqlSourceToSinkFlow
-    Statement statement = connection.createStatement(numbered);
-    for (int i = 0; i < names.size(); i++) {
-      Parameter<?> parameter = parameters.get(names.get(i));
-      if (parameter == null)
-        throw new IllegalStateException("Parameter " + names.get(i) + " not found in " + parameters.keySet());
-      if (parameter.value() == null)
-        statement.bindNull(i, parameter.type());
+    Statement statement = connection.createStatement(sql.sql());
+    for (int i = 0; i < values.size(); i++) {
+      if (values.get(i).value() == null)
+        statement.bindNull(i, values.get(i).type());
       else
-        statement.bind(i, parameter.value());
+        statement.bind(i, values.get(i).value());
     }
     return statement;
   }

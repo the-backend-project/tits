@@ -6,6 +6,7 @@ copyright = "Background photo by <a href=\"https://unsplash.com/@annaval\">Anna 
 extra_css = ["stylesheets/extra.css"]
 nav = [
   { "Overview" = "index.md" },
+  { "Databases" = "databases.md" },
   { "Data model" = "data-model.md" },
   { "Schema creation" = "schema-creation.md" },
   { "Testing" = "testing.md" },
