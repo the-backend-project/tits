@@ -64,8 +64,13 @@ public final class Calculation {
   /// Prepares for calculating the changes again, with an id found to exist when storing them. The steps from the first
   /// trigger of the id on are then executed again, with the id existing as the result of triggering it.
   ///
-  /// @return false if the id is not triggered by a step, in which case calculating again would not change anything
+  /// @return false if calculating again would not change anything, as the id is not triggered by a step, or as it was
+  ///         found to exist before
   boolean recalculateWith(IdExists<?> existing) {
+    // The triggers of an id found to exist result in it existing. So when it is found to exist once more, it is not
+    // recognised by the data it is triggered with, and would be found to exist over and over again.
+    if (existingIds.stream().anyMatch(known -> isSameId(known.idEvent(), existing.idEvent())))
+      return false;
     int trigger = firstTrigger(existing.idEvent());
     if (trigger < 0)
       return false;
@@ -97,8 +102,12 @@ public final class Calculation {
   private static boolean isCalculationOf(Event<?> idEvent, OutputChangeContext<?> output) {
     return output.stepOutput() instanceof Accepted<?> accepted
         && accepted.entityModel() instanceof IdEntityModel
-        && accepted.event().type().id().equals(idEvent.type().id())
-        && Arrays.equals(accepted.event().getMarshalledData(), idEvent.getMarshalledData());
+        && isSameId(accepted.event(), idEvent);
+  }
+
+  private static boolean isSameId(Event<?> idEvent, Event<?> other) {
+    return idEvent.type().id().equals(other.type().id())
+        && Arrays.equals(idEvent.getMarshalledData(), other.getMarshalledData());
   }
 
 }

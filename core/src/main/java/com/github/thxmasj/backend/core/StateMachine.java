@@ -566,7 +566,7 @@ public class StateMachine implements AutoCloseable {
                 .doOnNext(_ -> System.out.println("onEvent " + transitionModel.eventType().name() + ": " + e.getMessage()))
                 .flatMap(log -> initial.calculation().recalculateWith(ProcessResult.idExists(e.idEvent().type(), e.idEvent(), log)) ?
                     calculateAndStore(transitionModel, initial) :
-                    // The id event is not triggered by the transition, so it would be calculated the same again
+                    // The id event would be calculated the same again
                     Mono.error(e)
                 )
         );
