@@ -3,6 +3,7 @@ package com.github.thxmasj.backend.core.test;
 import static com.github.thxmasj.backend.core.EntityModel.Begin;
 import static com.github.thxmasj.backend.core.TransitionModelBuilder.WithEvent.onEvent;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -21,12 +22,20 @@ import com.github.thxmasj.backend.core.database.ChangeState.Change;
 import com.github.thxmasj.backend.core.database.IdEventAlreadyExists;
 import com.github.thxmasj.backend.core.database.Storage;
 import com.github.thxmasj.backend.core.database.UnknownEntity;
+import java.io.PrintWriter;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
+import java.sql.CallableStatement;
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.IntStream;
+import javax.sql.DataSource;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
@@ -124,6 +133,77 @@ public class StorageTest {
 
     assertEquals(5, results.size());
     assertEquals(4, results.stream().filter(result -> result == 0).count());
+  }
+
+  @Test
+  public void existingSchemaIsVerifiedWhileItsCreationIsLocked() throws SQLException {
+    String schema = UUID.randomUUID().toString();
+    Storage.createSchema(Init.migrationDataSource(), schema, "Test").block();
+
+    try (Connection connection = Init.migrationDataSource().getConnection()) {
+      lockCreation(connection, schema);
+
+      // Waiting for the lock would take until the query timeout of 10 seconds
+      assertEquals(0, Storage.createSchema(Init.migrationDataSource(), schema, "Test").block(Duration.ofSeconds(5)));
+    }
+  }
+
+  /// Gets the lock CreateSchema holds while creating the schema, until the connection is closed
+  private static void lockCreation(Connection connection, String schema) throws SQLException {
+    connection.setAutoCommit(false);
+    String sql = Init.pgsql() ?
+        "{call pg_advisory_xact_lock(hashtext(?))}" :
+        "{call sp_getapplock(?, 'Exclusive', 'Session')}";
+    try (CallableStatement lock = connection.prepareCall(sql)) {
+      lock.setString(1, "CreateSchema " + schema);
+      lock.execute();
+    }
+  }
+
+  @Test
+  public void connectionSettingsAreRestoredWhenSchemaIsCreatedAndVerified() throws SQLException {
+    String schema = UUID.randomUUID().toString();
+    try (Connection connection = Init.migrationDataSource().getConnection()) {
+      connection.setAutoCommit(false);
+      connection.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
+      DataSource pool = unresettingPool(connection);
+
+      assertEquals(1, Storage.createSchema(pool, schema, "Test").block());
+      assertFalse(connection.getAutoCommit());
+      assertEquals(Connection.TRANSACTION_REPEATABLE_READ, connection.getTransactionIsolation());
+
+      assertEquals(0, Storage.createSchema(pool, schema, "Test").block());
+      assertFalse(connection.getAutoCommit());
+      assertEquals(Connection.TRANSACTION_REPEATABLE_READ, connection.getTransactionIsolation());
+    }
+  }
+
+  /// A pool of the connection which, like some pools, does not reset its settings when it is returned
+  private static DataSource unresettingPool(Connection connection) {
+    Connection pooled = (Connection) Proxy.newProxyInstance(
+        Connection.class.getClassLoader(),
+        new Class<?>[] {Connection.class},
+        (_, method, args) -> {
+          if (method.getName().equals("close"))
+            return null;
+          try {
+            return method.invoke(connection, args);
+          } catch (InvocationTargetException e) {
+            throw e.getCause();
+          }
+        }
+    );
+    return new DataSource() {
+      @Override public Connection getConnection() {return pooled;}
+      @Override public Connection getConnection(String username, String password) {return pooled;}
+      @Override public PrintWriter getLogWriter() {return null;}
+      @Override public void setLogWriter(PrintWriter out) {}
+      @Override public void setLoginTimeout(int seconds) {}
+      @Override public int getLoginTimeout() {return 0;}
+      @Override public java.util.logging.Logger getParentLogger() {return null;}
+      @Override public <T> T unwrap(Class<T> iface) {return null;}
+      @Override public boolean isWrapperFor(Class<?> iface) {return false;}
+    };
   }
 
 }

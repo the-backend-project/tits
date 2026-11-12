@@ -136,24 +136,21 @@ public class CreateSchema {
 
   /// Creates the schema, or verifies the checksum of the existing one. Completes with 0 if the schema exists.
   ///
-  /// The check and the creation are done holding an application lock on the schema name, so that state machines
-  /// initialising at the same time do not compete for the creation. The creation is done in a transaction.
+  /// An existing schema is verified without a lock. Otherwise the check and the creation are done holding an
+  /// application lock on the schema name, so that state machines initialising at the same time do not compete for the
+  /// creation. The creation is done in a transaction.
   public Mono<Integer> execute(DataSource dataSource) {
     return Mono.fromCallable(() -> {
           try (Connection connection = dataSource.getConnection()) {
-            // The lock is owned by the session, as a procedure call does not begin an implicit transaction
-            applock(connection, "sp_getapplock", "{? = call sp_getapplock(?, 'Exclusive', 'Session')}");
+            // Restored, as a pool may not reset it when the connection is returned
+            boolean autoCommit = connection.getAutoCommit();
             try {
-              connection.setAutoCommit(false);
-              int result = execute(connection);
-              connection.commit();
-              return result;
-            } catch (SQLException | RuntimeException e) {
-              connection.rollback();
-              throw e;
-            } finally {
+              // The check without the lock is not done in a transaction
               connection.setAutoCommit(true);
-              applock(connection, "sp_releaseapplock", "{? = call sp_releaseapplock(?, 'Session')}");
+              Long checksum = unlockedChecksum(connection);
+              return checksum != null ? verified(checksum) : createLocked(connection);
+            } finally {
+              connection.setAutoCommit(autoCommit);
             }
           }
         })
@@ -164,6 +161,34 @@ public class CreateSchema {
           else
             System.out.println("Schema " + schema + " created");
         });
+  }
+
+  /// The checksum of the existing schema, or null if it does not exist or can not be read without the lock. OBJECT_ID
+  /// finds a schema being created by another transaction before it is committed. Reading its checksum then waits for
+  /// the transaction, and fails if it is rolled back, which leaves the decision to the locked check.
+  private Long unlockedChecksum(Connection connection) {
+    try {
+      return existingChecksum(connection);
+    } catch (SQLException e) {
+      return null;
+    }
+  }
+
+  private int createLocked(Connection connection) throws SQLException {
+    // The lock is owned by the session, as a procedure call does not begin an implicit transaction
+    applock(connection, "sp_getapplock", "{? = call sp_getapplock(?, 'Exclusive', 'Session')}");
+    try {
+      connection.setAutoCommit(false);
+      int result = createLockedInTransaction(connection);
+      connection.commit();
+      return result;
+    } catch (SQLException | RuntimeException e) {
+      connection.rollback();
+      throw e;
+    } finally {
+      // Released before the auto-commit mode is restored, so that it is not left on a pooled connection if that fails
+      applock(connection, "sp_releaseapplock", "{? = call sp_releaseapplock(?, 'Session')}");
+    }
   }
 
   /// Gets or releases the application lock on the schema name. Getting it waits until the query times out.
@@ -177,16 +202,20 @@ public class CreateSchema {
     }
   }
 
-  private int execute(Connection connection) throws SQLException {
+  private int createLockedInTransaction(Connection connection) throws SQLException {
+    // Another state machine may have created the schema while this one waited for the lock
     Long checksum = existingChecksum(connection);
-    if (checksum == null) {
-      try (Statement create = connection.createStatement()) {
-        if (!exists(connection, "SELECT SCHEMA_ID(?)", schema))
-          create.executeUpdate("CREATE SCHEMA [" + schema + "]");
-        create.executeUpdate(createSql());
-      }
-      return 1;
+    if (checksum != null)
+      return verified(checksum);
+    try (Statement create = connection.createStatement()) {
+      if (!exists(connection, "SELECT SCHEMA_ID(?)", schema))
+        create.executeUpdate("CREATE SCHEMA [" + schema + "]");
+      create.executeUpdate(createSql());
     }
+    return 1;
+  }
+
+  private int verified(long checksum) {
     if (checksum != checksum())
       throw new RuntimeException("Checksum mismatch on schema " + schema + ". Used following clear text: " + coreSql());
     return 0;

@@ -1,12 +1,8 @@
 # Data model
 
-The state machine stores everything in a single Microsoft SQL Server or PostgreSQL schema, which it creates on startup
-(see `CreateSchema` in [database-mssql](../database-mssql) and [database-pgsql](../database-pgsql)). The tables and
-columns are the same in both, with the corresponding types of each database. The schema is created holding a lock on
-its name (an application lock on SQL Server, an advisory lock on PostgreSQL), so that state machines starting at the
-same time do not compete for the creation. Entities are event sourced: the current
-state of an entity is derived by replaying its events, so the event logs are the source of truth and the other tables
-hold pending work.
+The state machine stores everything in a single database schema, which it creates on startup (see
+[Schema creation](schema-creation.md)). Entities are event sourced: the current state of an entity is derived by
+replaying its events, so the event logs are the source of truth and the other tables hold pending work.
 
 ```mermaid
 erDiagram
@@ -19,74 +15,87 @@ erDiagram
     IndexEvent }o--o{ ConditionalTrigger : "matched by"
 
     Metadata {
-        BIGINT Checksum
+        bigint Checksum
     }
     Entity {
-        UNIQUEIDENTIFIER EntityId PK
-        UNIQUEIDENTIFIER EntityModelId
+        uuid EntityId PK
+        uuid EntityModelId
     }
     Event {
-        UNIQUEIDENTIFIER EntityId PK, FK
-        SMALLINT EventNumber PK
-        UNIQUEIDENTIFIER Type
-        VARBINARY Data
-        DATETIME2 Timestamp
+        uuid EntityId PK, FK
+        smallint EventNumber PK
+        uuid Type
+        bytes Data
+        timestamp Timestamp
     }
     IdEvent {
-        UNIQUEIDENTIFIER EntityId PK, FK
-        SMALLINT EventNumber PK
-        UNIQUEIDENTIFIER Type UK
-        VARBINARY Data UK "the id"
-        DATETIME2 Timestamp
+        uuid EntityId PK, FK
+        smallint EventNumber PK
+        uuid Type UK
+        bytes Data UK "the id"
+        timestamp Timestamp
     }
     IndexEvent {
-        UNIQUEIDENTIFIER EntityId PK, FK
-        SMALLINT EventNumber PK
-        UNIQUEIDENTIFIER Type
-        VARBINARY Data "the index key"
-        DATETIME2 Timestamp
+        uuid EntityId PK, FK
+        smallint EventNumber PK
+        uuid Type
+        bytes Data "the index key"
+        timestamp Timestamp
     }
     DelayedTrigger {
-        UNIQUEIDENTIFIER EntityId FK "unique"
-        UNIQUEIDENTIFIER EntityModelId
-        SMALLINT EventNumber
-        UNIQUEIDENTIFIER Type
-        VARBINARY Data
-        DATETIME2 Deadline
-        VARCHAR CorrelationId
-        INT Attempt
+        uuid EntityId FK "unique"
+        uuid EntityModelId
+        smallint EventNumber
+        uuid Type
+        bytes Data
+        timestamp Deadline
+        varchar CorrelationId
+        int Attempt
     }
     ConditionalTrigger {
-        UNIQUEIDENTIFIER Id PK
-        UNIQUEIDENTIFIER EntityId FK
-        UNIQUEIDENTIFIER EntityModelId
-        UNIQUEIDENTIFIER TriggerEntityId FK
-        INT TriggerEventNumber FK
-        UNIQUEIDENTIFIER Type
-        VARBINARY Data
-        DATETIME2 Timestamp
-        VARCHAR LastTypes
-        UNIQUEIDENTIFIER ReferenceType
-        VARBINARY IndexKey
-        VARCHAR CorrelationId
+        uuid Id PK
+        uuid EntityId FK
+        uuid EntityModelId
+        uuid TriggerEntityId FK
+        int TriggerEventNumber FK
+        uuid Type
+        bytes Data
+        timestamp Timestamp
+        varchar LastTypes
+        uuid ReferenceType
+        bytes IndexKey
+        varchar CorrelationId
     }
 ```
 
-The relationships are logical only; the schema declares no foreign key constraints. All changes caused by a single
-input event (new events, delayed triggers and conditional triggers, possibly on several entities) are written in one transaction.
+The diagram gives the types in general terms; see each table below for the types on each database. The relationships
+are logical only; the schema declares no foreign key constraints. All changes caused by a single input event (new
+events, delayed triggers and conditional triggers, possibly on several entities) are written in one transaction.
 
 ## Tables
+
+The tables and columns are the same on each database, with the types given for each table below. All columns are
+`NOT NULL`, except the `Data` columns of `Event`, `DelayedTrigger` and `ConditionalTrigger`.
 
 ### Metadata
 
 A single row with a checksum of the table definitions. On startup the checksum is compared with that of the running
 code's table definitions, and startup fails if they differ, as the schema is never migrated automatically.
 
+| Column   | SQL Server | PostgreSQL |
+|----------|------------|------------|
+| Checksum | `BIGINT`   | `BIGINT`   |
+
 ### Entity
 
 One row per entity, inserted together with the entity's first event. `EntityModelId` is the id of the entity model the
 entity is an instance of, which determines its states and transitions. Id and index entities (see below) have no row
 here.
+
+| Column        | SQL Server         | PostgreSQL |
+|---------------|--------------------|------------|
+| EntityId      | `UNIQUEIDENTIFIER` | `UUID`     |
+| EntityModelId | `UNIQUEIDENTIFIER` | `UUID`     |
 
 ### Event
 
@@ -95,6 +104,14 @@ The event logs of entities. Each event belongs to an entity and is numbered from
 same state both try to insert the same event number, and only one of them succeeds.
 
 `Type` is the id of the event type, and `Data` is the event's data as marshalled by the event type's data type.
+
+| Column      | SQL Server         | PostgreSQL  |
+|-------------|--------------------|-------------|
+| EntityId    | `UNIQUEIDENTIFIER` | `UUID`      |
+| EventNumber | `SMALLINT`         | `SMALLINT`  |
+| Type        | `UNIQUEIDENTIFIER` | `UUID`      |
+| Data        | `VARBINARY(MAX)`   | `BYTEA`     |
+| Timestamp   | `DATETIME2`        | `TIMESTAMP` |
 
 ### IdEvent
 
@@ -108,6 +125,14 @@ index, and its changes are computed again with the entity that got the id.
 
 `Data` is limited to 1684 bytes, leaving room for `Type` in the 1700 bytes SQL Server allows for an index key.
 PostgreSQL has no such limit in the schema, but its B-tree indexes take keys of at most about 2700 bytes.
+
+| Column      | SQL Server         | PostgreSQL  |
+|-------------|--------------------|-------------|
+| EntityId    | `UNIQUEIDENTIFIER` | `UUID`      |
+| EventNumber | `SMALLINT`         | `SMALLINT`  |
+| Type        | `UNIQUEIDENTIFIER` | `UUID`      |
+| Data        | `VARBINARY(1684)`  | `BYTEA`     |
+| Timestamp   | `DATETIME2`        | `TIMESTAMP` |
 
 ### IndexEvent
 
@@ -124,6 +149,14 @@ belongs to, which may index many entities. The index is used to:
 
 `Data` is limited to 1684 bytes so that it can be indexed together with `Type`.
 
+| Column      | SQL Server         | PostgreSQL  |
+|-------------|--------------------|-------------|
+| EntityId    | `UNIQUEIDENTIFIER` | `UUID`      |
+| EventNumber | `SMALLINT`         | `SMALLINT`  |
+| Type        | `UNIQUEIDENTIFIER` | `UUID`      |
+| Data        | `VARBINARY(1684)`  | `BYTEA`     |
+| Timestamp   | `DATETIME2`        | `TIMESTAMP` |
+
 ### DelayedTrigger
 
 Delayed events, at most one per entity. A row is inserted when a transition schedules an event to happen after a delay.
@@ -134,6 +167,17 @@ A worker polls for rows with a passed `Deadline` (`NextDelayedTrigger`). Before 
 forward using exponential backoff and increments `Attempt`, so that the event is retried if processing fails. Rows whose
 event number no longer follows the entity's last event are deleted instead of fired (`DeleteDelayedTrigger`).
 
+| Column        | SQL Server         | PostgreSQL     |
+|---------------|--------------------|----------------|
+| EntityId      | `UNIQUEIDENTIFIER` | `UUID`         |
+| EntityModelId | `UNIQUEIDENTIFIER` | `UUID`         |
+| EventNumber   | `SMALLINT`         | `SMALLINT`     |
+| Type          | `UNIQUEIDENTIFIER` | `UUID`         |
+| Data          | `VARBINARY(MAX)`   | `BYTEA`        |
+| Deadline      | `DATETIME2(2)`     | `TIMESTAMP(2)` |
+| CorrelationId | `VARCHAR(36)`      | `VARCHAR(36)`  |
+| Attempt       | `INT`              | `INT`          |
+
 ### ConditionalTrigger
 
 Events waiting for a condition on other entities. A row is inserted when a transition triggers an event on the entity
@@ -143,3 +187,18 @@ type ids. `TriggerEntityId` and `TriggerEventNumber` identify the event whose tr
 
 The trigger is fired right away if the condition is already met, and otherwise by a worker polling for triggers whose
 condition is met (`ConditionalTriggers`). The row is deleted in the same transaction as the event it fires is inserted.
+
+| Column             | SQL Server         | PostgreSQL     |
+|--------------------|--------------------|----------------|
+| Id                 | `UNIQUEIDENTIFIER` | `UUID`         |
+| EntityId           | `UNIQUEIDENTIFIER` | `UUID`         |
+| EntityModelId      | `UNIQUEIDENTIFIER` | `UUID`         |
+| TriggerEntityId    | `UNIQUEIDENTIFIER` | `UUID`         |
+| TriggerEventNumber | `INT`              | `INT`          |
+| Type               | `UNIQUEIDENTIFIER` | `UUID`         |
+| Data               | `VARBINARY(MAX)`   | `BYTEA`        |
+| Timestamp          | `DATETIME2`        | `TIMESTAMP`    |
+| LastTypes          | `VARCHAR(370)`     | `VARCHAR(370)` |
+| ReferenceType      | `UNIQUEIDENTIFIER` | `UUID`         |
+| IndexKey           | `VARBINARY(1700)`  | `BYTEA`        |
+| CorrelationId      | `VARCHAR(36)`      | `VARCHAR(36)`  |
