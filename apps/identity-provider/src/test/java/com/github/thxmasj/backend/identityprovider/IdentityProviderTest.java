@@ -222,6 +222,23 @@ public class IdentityProviderTest {
     assertThat(token("legacy", legacySecret, "grant_type=client_credentials").statusCode()).isEqualTo(200);
   }
 
+  /// As when replicas start at the same time: one registers each client, and the others find its client id taken
+  @Test
+  public void whenImportedConcurrentlyThenEachClientIsRegisteredOnce() throws Exception {
+    var clients = ImportedClients.parse(DataType.objectMapper.writeValueAsString(
+        java.util.stream.IntStream.range(0, 5).mapToObj(i -> Map.of("client_id", "concurrent-" + i, "secret_hash", legacyHash)).toList()
+    ), "test");
+    try (var executor = java.util.concurrent.Executors.newFixedThreadPool(4)) {
+      var imports = java.util.stream.IntStream.range(0, 4)
+          .mapToObj(_ -> executor.submit(() -> IdentityProvider.importClients(stateMachine, clients)))
+          .toList();
+      for (var i : imports)
+        i.get();
+    }
+    for (int i = 0; i < 5; i++)
+      assertThat(registration("concurrent-" + i, "a").statusCode()).isEqualTo(409);
+  }
+
   @Test
   public void credentialsAreNotInTheEventLog() throws Exception {
     String secret = register("discreet", "a");
