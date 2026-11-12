@@ -23,10 +23,9 @@ import com.github.thxmasj.backend.core.Validated;
 import com.github.thxmasj.backend.core.http.HttpDataType;
 import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
 import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
-import com.nimbusds.jwt.SignedJWT;
-import java.text.ParseException;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 
 public interface HttpInbox {
@@ -145,21 +144,24 @@ public interface HttpInbox {
     return new JsonRequestValidator<>(contentType, validate);
   }
 
-  static Validated<String> authorize(HttpRequestMessage httpRequest) {
-    String v = httpRequest.headerValue("Authorization");
-    if (v == null)
-      return invalid("Authorization header missing");
-    if (!v.startsWith("Bearer "))
-      return invalid("Authorization token is not of type Bearer");
-    String token = v.substring("Bearer ".length());
-    String subject;
-    try {
-      SignedJWT jws = SignedJWT.parse(token);
-      subject = jws.getJWTClaimsSet().getSubject();
-    } catch (ParseException e) {
-      return invalid("Bearer token is invalid");
-    }
-    return valid(subject);
+  /// An authorizer for routes requiring a bearer token, RFC 6750, verified by the verifier and with the given scopes.
+  /// The authorized subject is the `sub` of the token.
+  static <T> BiFunction<HttpRequestMessage, T, Validated<String>> bearerToken(AccessTokenVerifier verifier, String... requiredScopes) {
+    return (request, _) -> {
+      String authorization = request.headerValue("Authorization");
+      if (authorization == null)
+        return invalid("Authorization header missing");
+      if (!authorization.regionMatches(true, 0, "Bearer ", 0, 7))
+        return invalid("Authorization token is not of type Bearer");
+      var token = verifier.verify(authorization.substring(7).trim());
+      if (token.isEmpty())
+        return invalid("Bearer token is invalid or expired");
+      for (String requiredScope : requiredScopes) {
+        if (!token.get().scopes().contains(requiredScope))
+          return invalid("Bearer token lacks the scope " + requiredScope);
+      }
+      return valid(token.get().subject());
+    };
   }
 
   enum EntityModels implements EntityModel {
