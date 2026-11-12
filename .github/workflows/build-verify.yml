@@ -36,14 +36,44 @@ jobs:
       - name: Build Java artifacts and run any verifications
         run: mvn -B verify --file pom.xml -Daether.artifactResolver.postProcessor.trustedChecksums.failIfMissing=true
 
+  # Finds out which native images the pull request affects. Both apps are built from the same modules, so only changes
+  # to modules they do not depend on (documentation, templates, test-api, deploy) or to the other app skip a build.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      hello-world: ${{ steps.filter.outputs.hello-world }}
+      identity-provider: ${{ steps.filter.outputs.identity-provider }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+      # The checked out commit merges the pull request into main, so its first parent is main.
+      - name: Find the affected native images
+        id: filter
+        run: |
+          files=$(git diff --name-only HEAD^1 HEAD)
+          echo "$files"
+          shared='^(pom\.xml|\.mvn/|\.dockerignore|\.github/workflows/build-verify\.yml|core/|database-[^/]+/|http-inbox/|http-outbox/|diagram/)'
+          for app in hello-world:apps/hello-world/ identity-provider:apps/identity-provider/; do
+            if grep -qE "$shared|^${app#*:}" <<< "$files"; then affected=true; else affected=false; fi
+            echo "${app%%:*}=$affected" | tee -a "$GITHUB_OUTPUT"
+          done
+
+  # The native images are built in quick build mode (-Ob), as these jobs only check that they run.
   hello-world:
+    needs: changes
+    if: needs.changes.outputs.hello-world == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-      - name: Build the hello world native image and run it with its database
+      - name: Build the hello world native image
         working-directory: apps/hello-world
-        run: docker compose up --detach --build
+        run: docker compose build --build-arg NATIVE_IMAGE_OPTS=-Ob migrate
+      - name: Run it with its database
+        working-directory: apps/hello-world
+        run: docker compose up --detach --no-build
       - name: Check that it says hello
         run: |
           for i in $(seq 1 120); do curl -sf localhost:8080/health && break; sleep 1; done
@@ -54,18 +84,20 @@ jobs:
         run: docker compose logs
 
   identity-provider:
+    needs: changes
+    if: needs.changes.outputs.identity-provider == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v7
       - name: Build the identity provider native image
         working-directory: apps/identity-provider
-        run: docker compose build migrate
+        run: docker compose build --build-arg NATIVE_IMAGE_OPTS=-Ob migrate
       - name: Run it with its database
         working-directory: apps/identity-provider
         run: |
           export SIGNING_KEYS="$(docker run --rm tits-identity-provider generate-key)"
-          docker compose up --detach
+          docker compose up --detach --no-build
       - name: Check that it issues tokens and registers clients
         run: |
           for i in $(seq 1 120); do curl -sf localhost:8080/health && break; sleep 1; done
