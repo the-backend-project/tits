@@ -14,7 +14,7 @@ import static com.github.thxmasj.backend.templates.cardpayment.Identifiers.Ids;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.Identifiable;
 import com.github.thxmasj.backend.core.State;
-import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionModel;
+import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.diagram.ERDiagramFormatter;
 import com.github.thxmasj.backend.diagram.PlantUMLFormatter;
 import com.github.thxmasj.backend.http.outbox.HttpOutboxRequest;

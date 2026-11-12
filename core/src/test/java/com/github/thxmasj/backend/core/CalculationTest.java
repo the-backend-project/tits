@@ -12,12 +12,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.IdExists;
 import com.github.thxmasj.backend.core.StateMachine.RejectedEvent;
-import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext;
-import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext.AssembledChangeContext;
-import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext.InitialChangeContext;
-import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext.OutputChangeContext;
-import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext.RejectedChangeContext;
-import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionModel;
+import com.github.thxmasj.backend.core.TransitionStep.AssembleStep;
+import com.github.thxmasj.backend.core.TransitionStep.InputStep;
+import com.github.thxmasj.backend.core.TransitionStep.OutputStep;
+import com.github.thxmasj.backend.core.TransitionStep.RejectedStep;
 import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
@@ -43,7 +41,7 @@ public class CalculationTest {
   static EventType<UUID, UUID> Referenced = IndexEntityModel.referenceEventType("Referenced", UUID.fromString("1c3e5a7b-9d0f-4a2c-8e4b-6c8e0a2d4f97"));
 
   private final Calculation calculation = new Calculation();
-  private final InitialChangeContext<String> order = initial(null, Order);
+  private final InputStep<String> order = initial(null, Order);
   // The steps executed, in order
   private final List<String> executed = new ArrayList<>();
 
@@ -87,18 +85,18 @@ public class CalculationTest {
 
   @Test
   public void stepsBeforeTheTriggerOfAnExistingIdAreNotExecutedAgain() {
-    var assembled = step("Assemble", order, () -> new AssembledChangeContext<>(order, "1"));
+    var assembled = step("Assemble", order, () -> new AssembleStep<>(order, "1"));
     var id = step("Trigger", assembled, () -> initial(assembled, Ids));
     var idOutput = step("Output id", id, () -> output(id, "1"));
-    step("Output", idOutput, () -> new AssembledChangeContext<>(idOutput, "1"));
+    step("Output", idOutput, () -> new AssembleStep<>(idOutput, "1"));
     executed.clear();
 
     assertTrue(calculation.recalculateWith(existing("1")));
 
     assertEquals(1, calculation.existingIds().size());
-    assertSame(assembled, step("Assemble", order, () -> new AssembledChangeContext<>(order, "1")));
-    var idExists = step("Trigger", assembled, () -> new AssembledChangeContext<>(assembled, "Exists"));
-    step("Output", idExists, () -> new AssembledChangeContext<>(idExists, "1"));
+    assertSame(assembled, step("Assemble", order, () -> new AssembleStep<>(order, "1")));
+    var idExists = step("Trigger", assembled, () -> new AssembleStep<>(assembled, "Exists"));
+    step("Output", idExists, () -> new AssembleStep<>(idExists, "1"));
     assertEquals(List.of("Trigger", "Output"), executed);
   }
 
@@ -112,7 +110,7 @@ public class CalculationTest {
 
     assertTrue(calculation.recalculateWith(existing("1")));
 
-    step("Trigger", order, () -> new AssembledChangeContext<>(order, "Exists"));
+    step("Trigger", order, () -> new AssembleStep<>(order, "Exists"));
     assertEquals(List.of("Trigger"), executed);
   }
 
@@ -122,7 +120,7 @@ public class CalculationTest {
     assertSame(failure, assertThrows(IllegalStateException.class, () -> step("Fail", order, () -> {
       throw failure;
     })));
-    var handled = step("Handle", order, () -> new AssembledChangeContext<>(order, "Handled"));
+    var handled = step("Handle", order, () -> new AssembleStep<>(order, "Handled"));
     var id = step("Trigger", handled, () -> initial(handled, Ids));
     step("Output id", id, () -> output(id, "1"));
     executed.clear();
@@ -130,13 +128,13 @@ public class CalculationTest {
     assertTrue(calculation.recalculateWith(existing("1")));
 
     assertSame(failure, assertThrows(IllegalStateException.class, () -> step("Fail", order, () -> "Not failed")));
-    assertSame(handled, step("Handle", order, () -> new AssembledChangeContext<>(order, "Handled")));
+    assertSame(handled, step("Handle", order, () -> new AssembleStep<>(order, "Handled")));
     assertEquals(List.of(), executed);
   }
 
   @Test
   public void allStepsAreExecutedAgainWhenAResultBeforeTheTriggerIsRejected() {
-    var rejected = step("Reject", order, () -> new RejectedChangeContext<>(
+    var rejected = step("Reject", order, () -> new RejectedStep<>(
         order,
         ProcessResult.rejected(Number, new RejectedEvent(Number, order.log(), Begin))
     ));
@@ -146,15 +144,15 @@ public class CalculationTest {
 
     assertTrue(calculation.recalculateWith(existing("1")));
 
-    step("Reject", order, () -> new AssembledChangeContext<>(order, "Rejected again"));
+    step("Reject", order, () -> new AssembleStep<>(order, "Rejected again"));
     assertEquals(List.of("Reject"), executed);
   }
 
   @Test
   public void changesAreNotCalculatedAgainWhenTheIdIsNotOfATrigger() {
-    // The id event is the event itself, calculated from the first change context
-    InitialChangeContext<String> id = initial(null, Ids);
-    var assembled = step("Assemble", id, () -> new AssembledChangeContext<>(id, "1"));
+    // The id event is the event itself, calculated from the first transition step
+    InputStep<String> id = initial(null, Ids);
+    var assembled = step("Assemble", id, () -> new AssembleStep<>(id, "1"));
     step("Output id", assembled, () -> output(id, "1"));
 
     assertFalse(calculation.recalculateWith(existing("1")));
@@ -177,8 +175,8 @@ public class CalculationTest {
 
   @Test
   public void recordedStepsAreNotValidAfterAnotherStepIsTaken() {
-    var assembled = step("Assemble", order, () -> new AssembledChangeContext<>(order, "1"));
-    var reserved = step("Reserve", assembled, () -> new AssembledChangeContext<>(assembled, "Reserved"));
+    var assembled = step("Assemble", order, () -> new AssembleStep<>(order, "1"));
+    var reserved = step("Reserve", assembled, () -> new AssembleStep<>(assembled, "Reserved"));
     var id = step("Trigger", reserved, () -> initial(reserved, Ids));
     step("Output id", id, () -> output(id, "1"));
     assertTrue(calculation.recalculateWith(existing("1")));
@@ -186,8 +184,8 @@ public class CalculationTest {
 
     // Not the context the first step was executed in
     var other = initial(null, Order);
-    step("Assemble other", other, () -> new AssembledChangeContext<>(other, "1"));
-    step("Reserve", assembled, () -> new AssembledChangeContext<>(assembled, "Reserved"));
+    step("Assemble other", other, () -> new AssembleStep<>(other, "1"));
+    step("Reserve", assembled, () -> new AssembleStep<>(assembled, "Reserved"));
 
     assertEquals(List.of("Assemble other", "Reserve"), executed);
   }
@@ -198,15 +196,15 @@ public class CalculationTest {
   }
 
   /// Takes a step of the calculation, which gets the result of the execution if the step is executed
-  private <T> T step(String name, ChangeContext<?> context, Supplier<T> execution) {
+  private <T> T step(String name, TransitionStep<?> context, Supplier<T> execution) {
     return calculation.step(context, () -> {
       executed.add(name);
       return Mono.just(execution.get());
     }).block();
   }
 
-  private InitialChangeContext<String> initial(ChangeContext<?> previous, EntityModel entityModel) {
-    return new InitialChangeContext<>(
+  private InputStep<String> initial(TransitionStep<?> previous, EntityModel entityModel) {
+    return new InputStep<>(
         null,
         previous,
         null,
@@ -223,9 +221,9 @@ public class CalculationTest {
   }
 
   /// The output of the transition of an id event, calculated from the given initial context
-  private static OutputChangeContext<String> output(InitialChangeContext<String> initial, String id) {
-    return new OutputChangeContext<>(
-        new AssembledChangeContext<>(initial, id),
+  private static OutputStep<String> output(InputStep<String> initial, String id) {
+    return new OutputStep<>(
+        new AssembleStep<>(initial, id),
         ProcessResult.accepted(idEvent(id), Ids)
     );
   }

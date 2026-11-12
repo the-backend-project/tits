@@ -3,6 +3,7 @@ package com.github.thxmasj.backend.templates.cardpayment;
 import static com.github.thxmasj.backend.templates.cardpayment.Aggregate.Merchant;
 
 import com.github.thxmasj.backend.core.StateMachine;
+import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.core.test.Init;
 import java.time.Clock;
 import java.util.Map;

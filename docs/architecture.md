@@ -85,6 +85,71 @@ Since side effects only happen after the events causing them are stored, an enti
 If the instance stops before an action completes, a delayed trigger stored with the action, such as the timeout of an
 outbox request, moves the entity on.
 
+## Transition models and steps
+
+`TransitionModelBuilder` builds a `TransitionModel`, one for each transition of an entity model. The builder starts
+with `onEvent(type).to(state)`, and every call after it, such as `assemble`, `trigger` or `when`, adds a step to the
+model. `output()` ends the builder and gives the model.
+
+A transition model calculates the steps of its transition, each from the step before it. A step is a `TransitionStep`,
+which refers to the step before it and has the output of the step, the data the next step is calculated from. The
+chain of steps of a transition starts with an `InputStep` and ends with an `OutputStep`:
+
+| Step                     | Taken by                       | Output                                                                                                                                |
+|--------------------------|--------------------------------|---------------------------------------------------------------------------------------------------------------------------------------|
+| `InputStep`              | The event entering the entity  | The data of the event. It also has the entity's event log, the current state, the timestamp and the `Calculation` it is part of        |
+| `AssembleStep`           | `assemble`                     | The data assembled from the input and the event log                                                                                   |
+| `TriggerStep`            | `trigger(...).on(...)`         | The data together with the `ProcessResult` of the event triggered on the other entity                                                 |
+| `DelayedTriggerStep`     | `trigger(...).after(...)`      | The data of the step before it. The step has the delayed event to store                                                               |
+| `ConditionalTriggerStep` | `trigger(...).when(...)`       | The data of the step before it. The step has the conditional trigger to store                                                         |
+| `ActionStep`             | `trigger(action)`              | The data of the step before it. The step has the action to run after the changes are stored                                           |
+| `ChoiceStep`             | `when(...).then(...)`          | The data of the step before it, after the steps of the chosen transition                                                              |
+| `OutputStep`             | `output`                       | The `ProcessResult` of the transition: the new event if it is accepted                                                                |
+| `RejectedStep`           | A triggered event              | The rejection of the triggered event, e.g. since the entity has no transition on it from its state                                    |
+| `UnknownIdStep`          | A triggered event              | The failure of the triggered event to find its entity                                                                                 |
+| `PendingStep`            | A triggered event              | The triggered event being circular, i.e. on an entity already changed by the calculation                                              |
+| `IdExistsStep`           | A triggered id event           | The id existing, held by another entity (see below)                                                                                   |
+
+An event triggered on another entity continues the chain: the `InputStep` of the triggered transition refers to the
+step triggering it, and its steps follow up to its `OutputStep`, after which the `TriggerStep` of the triggering
+transition goes on with the result. When the calculation is done, the changes to store, i.e. the accepted events, the
+delayed events and the conditional triggers, and the actions to run, are collected by following the chain from its
+last step back to the first.
+
+Every step is taken through the `Calculation` of the event, which records the result of the step. That makes it
+possible to calculate the changes again from a step in the middle of the chain, without executing the steps before it
+again, such as an assembler reading from another system.
+
+## Existing ids
+
+An id event claims an id for an entity, and is unique among the events of its type (see the
+[data model](data-model.md#idevent)). Whether the id is taken can't be known for certain until the changes
+are stored, since another instance can claim it in the meantime. The state machine therefore calculates the changes as
+if the id were free, and stores them. If an id is found to be taken, the database rejects the transaction on the
+unique index, and the state machine
+
+1. reads the event log of the entity holding the id,
+2. tells the `Calculation` that the id exists, and
+3. calculates the changes again, from the step triggering the id.
+
+The steps before the trigger are not executed again, but get the results recorded for them, so the calculation of the
+changes doesn't start over. When the id event is triggered again, its result is an `IdExistsStep`, with the entity
+holding the id, instead of the event being accepted. The `ProcessResult` of the trigger is then `IdExists`, which the
+transition can act on. The [identity provider](identity-provider.md) rejects the registration of a client whose id is
+taken this way:
+
+```java
+onEvent(RequestRegistration).to(States.Accepted)
+    .assemble(c -> tuple(c.input(), UUID.randomUUID()))
+    .trigger(ClientId).with(d -> d.t1().clientId()).on(ClientIds).identifiedBy(d -> entityId(d.t2(), AlwaysCreate))
+    .when(d -> d.t2().isIdExists()).then(rejectRegistration, d -> d.t1().t1())
+    .otherwise(acceptRegistration, d -> d.t1())
+```
+
+If a step before the trigger was rejected, all the steps are executed again, since whether a rejection is handled is
+decided by the steps after it. The changes are not calculated again if the id is not triggered by any step, or if it
+is found to exist even after they were calculated with it existing; the event then fails.
+
 ## HTTP inboxes
 
 An inbox is a set of entity models whose entities are the requests the application receives. Their transitions are

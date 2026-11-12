@@ -17,7 +17,7 @@ import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.State;
-import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionModel;
+import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.http.inbox.HttpInbox.CustomResponse;
 import com.github.thxmasj.backend.http.inbox.HttpRequestRoute;
 import com.github.thxmasj.backend.http.inbox.ResponseEventType;
