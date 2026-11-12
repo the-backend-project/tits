@@ -71,7 +71,7 @@ public interface Tokens {
         TokenRequest, Map.of(
             Begin, List.of(
                 onEvent(RequestToken).to(States.Issued)
-                    .assemble(c -> tuple(c.input(), c.log().entityId().value(), c.timestamp()))
+                    .assemble(c -> tuple(c.input(), c.log().entityId(), c.timestamp()))
                     .trigger(Clients.Get).on(Client).identifiedBy(d -> idEvent(ClientId, d.t1().clientId()))
                     // An unknown client and a wrong secret are refused alike, so the response does not tell which
                     // client ids exist. isRejected() marks a rejected read as handled.

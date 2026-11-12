@@ -69,7 +69,7 @@
     </dependency>
     <dependency>
       <groupId>com.github.thxmasj.backend</groupId>
-      <artifactId>database-pgsql</artifactId>
+      <artifactId>database-pgsql-jdbc</artifactId>
       <version>${project.version}</version>
     </dependency>
     <dependency>
