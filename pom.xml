@@ -162,7 +162,7 @@
                 <!-- For Microsoft Entra ID authentication with mssql-jdbc, at the version the driver is built with -->
                 <groupId>com.azure</groupId>
                 <artifactId>azure-identity</artifactId>
-                <version>1.18.4</version>
+                <version>1.19.0</version>
                 <exclusions>
                     <!-- Built for Netty 4.1, while the one Netty is that of reactor-netty -->
                     <exclusion>
