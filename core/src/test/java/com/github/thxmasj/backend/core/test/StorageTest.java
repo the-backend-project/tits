@@ -21,7 +21,11 @@ import com.github.thxmasj.backend.core.database.ChangeState.Change;
 import com.github.thxmasj.backend.core.database.IdEventAlreadyExists;
 import com.github.thxmasj.backend.core.database.Storage;
 import com.github.thxmasj.backend.core.database.UnknownEntity;
+import java.sql.CallableStatement;
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
@@ -124,6 +128,31 @@ public class StorageTest {
 
     assertEquals(5, results.size());
     assertEquals(4, results.stream().filter(result -> result == 0).count());
+  }
+
+  @Test
+  public void existingSchemaIsVerifiedWhileItsCreationIsLocked() throws SQLException {
+    String schema = UUID.randomUUID().toString();
+    Storage.createSchema(Init.migrationDataSource(), schema, "Test").block();
+
+    try (Connection connection = Init.migrationDataSource().getConnection()) {
+      lockCreation(connection, schema);
+
+      // Waiting for the lock would take until the query timeout of 10 seconds
+      assertEquals(0, Storage.createSchema(Init.migrationDataSource(), schema, "Test").block(Duration.ofSeconds(5)));
+    }
+  }
+
+  /// Gets the lock CreateSchema holds while creating the schema, until the connection is closed
+  private static void lockCreation(Connection connection, String schema) throws SQLException {
+    connection.setAutoCommit(false);
+    String sql = Init.pgsql() ?
+        "{call pg_advisory_xact_lock(hashtext(?))}" :
+        "{call sp_getapplock(?, 'Exclusive', 'Session')}";
+    try (CallableStatement lock = connection.prepareCall(sql)) {
+      lock.setString(1, "CreateSchema " + schema);
+      lock.execute();
+    }
   }
 
 }

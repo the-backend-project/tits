@@ -135,20 +135,15 @@ public class CreateSchema {
 
   /// Creates the schema, or verifies the checksum of the existing one. Completes with 0 if the schema exists.
   ///
-  /// The check and the creation are done in a transaction holding an advisory lock on the schema name, so that state
-  /// machines initialising at the same time do not compete for the creation.
+  /// An existing schema is verified without a lock. Otherwise the check and the creation are done in a transaction
+  /// holding an advisory lock on the schema name, so that state machines initialising at the same time do not compete
+  /// for the creation.
   public Mono<Integer> execute(DataSource dataSource) {
     return Mono.fromCallable(() -> {
           try (Connection connection = dataSource.getConnection()) {
-            connection.setAutoCommit(false);
-            try {
-              int result = execute(connection);
-              connection.commit();
-              return result;
-            } catch (SQLException | RuntimeException e) {
-              connection.rollback();
-              throw e;
-            }
+            // A schema being created by another transaction is not visible until it is committed
+            Long checksum = existingChecksum(connection);
+            return checksum != null ? verified(checksum) : createLocked(connection);
           }
         })
         .subscribeOn(Schedulers.boundedElastic())
@@ -160,27 +155,48 @@ public class CreateSchema {
         });
   }
 
-  private int execute(Connection connection) throws SQLException {
+  private int createLocked(Connection connection) throws SQLException {
+    connection.setAutoCommit(false);
+    try {
+      int result = createLockedInTransaction(connection);
+      connection.commit();
+      return result;
+    } catch (SQLException | RuntimeException e) {
+      connection.rollback();
+      throw e;
+    }
+  }
+
+  private int createLockedInTransaction(Connection connection) throws SQLException {
     try (PreparedStatement lock = connection.prepareStatement("SELECT pg_advisory_xact_lock(hashtext(?))")) {
       lock.setString(1, "CreateSchema " + schema);
       lock.executeQuery().close();
     }
+    // Another state machine may have created the schema while this one waited for the lock
     Long checksum = existingChecksum(connection);
-    if (checksum == null) {
-      try (Statement create = connection.createStatement()) {
-        create.executeUpdate(createSql());
-      }
-      return 1;
+    if (checksum != null)
+      return verified(checksum);
+    try (Statement create = connection.createStatement()) {
+      create.executeUpdate(createSql());
     }
+    return 1;
+  }
+
+  private int verified(long checksum) {
     if (checksum != checksum())
       throw new RuntimeException("Checksum mismatch on schema " + schema + ". Used following clear text: " + coreSql());
     return 0;
   }
 
-  /// The checksum of the existing schema, or null if it does not exist
+  /// The checksum of the existing schema, or null if it does not exist. The table is looked up in pg_tables, which is
+  /// read with the statement's snapshot, rather than with to_regclass. That uses the session's catalog cache, which is
+  /// not refreshed by getting an advisory lock, so it would miss a schema created while this session waited for the
+  /// lock if it had looked the table up before.
   private Long existingChecksum(Connection connection) throws SQLException {
-    try (PreparedStatement exists = connection.prepareStatement("SELECT to_regclass(?) IS NOT NULL")) {
-      exists.setString(1, table(schema, "Metadata"));
+    try (PreparedStatement exists = connection.prepareStatement(
+        "SELECT EXISTS (SELECT FROM pg_catalog.pg_tables WHERE schemaname = ? AND tablename = 'Metadata')"
+    )) {
+      exists.setString(1, schema);
       try (ResultSet rs = exists.executeQuery()) {
         rs.next();
         if (!rs.getBoolean(1))

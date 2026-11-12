@@ -41,6 +41,10 @@ public class Init {
     return migrationDataSource;
   }
 
+  public static boolean pgsql() {
+    return pgsql;
+  }
+
   /// The storage of a schema in the test database
   public static Storage storage(String schemaName, Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions) {
     return database.storage(dataSource, transitions, schemaName, Clock.systemUTC());
