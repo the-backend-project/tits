@@ -74,6 +74,18 @@
     </dependency>
     <dependency>
       <groupId>com.github.thxmasj.backend</groupId>
+      <artifactId>database-pgsql-r2dbc</artifactId>
+      <version>${project.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.github.thxmasj.backend</groupId>
+      <artifactId>database-pgsql-vertx</artifactId>
+      <version>${project.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.github.thxmasj.backend</groupId>
       <artifactId>core</artifactId>
       <version>${project.version}</version>
       <type>test-jar</type>
