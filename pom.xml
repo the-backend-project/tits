@@ -22,6 +22,7 @@
         <module>diagram</module>
         <module>templates</module>
         <module>demo</module>
+        <module>apps/identity-provider</module>
         <module>deploy</module>
     </modules>
 

@@ -16,6 +16,7 @@ nav = [
       { "PSD2 and PSD3 compliance" = "psd2.md" },
     ] },
   ] },
+  { "Identity provider" = "identity-provider.md" },
   { "Cloud native demo" = [
     { "Overview" = "cloud-native.md" },
     { "Deploying to Azure Functions" = "azure-functions.md" },

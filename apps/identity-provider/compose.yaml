@@ -1,0 +1,73 @@
+# Runs the identity provider with its backing database. The signing keys are generated, not committed. From this
+# directory:
+#
+#   docker compose build migrate
+#   export SIGNING_KEYS=$(docker run --rm tits-identity-provider generate-key)
+#   docker compose up
+#
+# and get a token for the bootstrap client:
+#
+#   curl -u admin:A_local_bootstrap_secret_of_32_characters -d grant_type=client_credentials localhost:8080/token
+#
+# The passwords and the bootstrap secret are for local use only.
+
+x-database: &database
+  DATABASE_HOST: database
+  DATABASE_NAME: identity_provider
+  DATABASE_TRUST_SERVER_CERTIFICATE: "true"
+
+services:
+
+  database:
+    # Same image as bin/start-mssql.sh, which also runs on arm64
+    image: mcr.microsoft.com/azure-sql-edge:1.0.7@sha256:1dcc88d2d9e555d0addb0636648d0da033206978d7c5c4da044c904a0f06f58b
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: A_Str0ng_Required_Password
+
+  database-init:
+    # Same image as test/mssql. Only available for amd64, but it runs emulated on arm64 as well.
+    image: mcr.microsoft.com/mssql-tools@sha256:62556500522072535cb3df2bb5965333dded9be47000473e9e0f84118e248642
+    platform: linux/amd64
+    depends_on: [database]
+    volumes:
+      - ./database/init.sql:/init.sql:ro
+    environment:
+      SQLCMDPASSWORD: A_Str0ng_Required_Password
+      IDP_PASSWORD: Idp_Passw0rd
+    entrypoint:
+      - bash
+      - -c
+      - until /opt/mssql-tools/bin/sqlcmd -b -S database -U sa -i /init.sql; do sleep 1; done
+
+  migrate:
+    build:
+      context: ../..
+      dockerfile: apps/identity-provider/Dockerfile
+    image: tits-identity-provider
+    command: migrate
+    depends_on:
+      database-init:
+        condition: service_completed_successfully
+    environment:
+      <<: *database
+      DATABASE_USER: sa
+      DATABASE_PASSWORD: A_Str0ng_Required_Password
+      DATABASE_ROLE: IdentityProvider
+
+  app:
+    image: tits-identity-provider
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "8080:8080"
+    environment:
+      <<: *database
+      DATABASE_USER: idp
+      DATABASE_PASSWORD: Idp_Passw0rd
+      ISSUER: http://localhost:8080
+      # Generated with: docker run --rm tits-identity-provider generate-key
+      SIGNING_KEYS: ${SIGNING_KEYS}
+      BOOTSTRAP_CLIENT_ID: admin
+      BOOTSTRAP_CLIENT_SECRET: A_local_bootstrap_secret_of_32_characters

@@ -7,6 +7,9 @@ to a native executable. See [Cloud native demo](docs/cloud-native.md). The [depl
 application built the same way, to Azure Functions with a serverless Azure SQL database. See
 [Deploying to Azure Functions](docs/azure-functions.md).
 
+The [identity provider](apps/identity-provider) is an OAuth 2.0 authorization server for the client credentials grant,
+built with the HTTP inbox and the state machine. See [Identity provider](docs/identity-provider.md).
+
 The [test-api](test-api) module is an API for tests to look into and manipulate the database of a state machine.
 See [Testing](docs/testing.md).
 

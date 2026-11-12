@@ -1,0 +1,46 @@
+{
+  "reflection": [
+    {
+      "type": "com.github.thxmasj.backend.identityprovider.Clients$Registration",
+      "allDeclaredFields": true,
+      "allDeclaredMethods": true,
+      "allDeclaredConstructors": true
+    },
+    {
+      "type": "com.github.thxmasj.backend.identityprovider.Inbox$Reply",
+      "allDeclaredFields": true,
+      "allDeclaredMethods": true,
+      "allDeclaredConstructors": true
+    },
+    {
+      "type": "com.github.thxmasj.backend.identityprovider.Tokens$IssuedToken",
+      "allDeclaredFields": true,
+      "allDeclaredMethods": true,
+      "allDeclaredConstructors": true
+    },
+    {
+      "type": "com.github.thxmasj.backend.identityprovider.Tokens$Refusal",
+      "allDeclaredFields": true,
+      "allDeclaredMethods": true,
+      "allDeclaredConstructors": true
+    },
+    {
+      "type": "com.github.thxmasj.backend.identityprovider.Tokens$Request",
+      "allDeclaredFields": true,
+      "allDeclaredMethods": true,
+      "allDeclaredConstructors": true
+    },
+    {
+      "type": "java.util.ArrayList",
+      "methods": [{"name": "<init>", "parameterTypes": []}]
+    },
+    {
+      "type": "java.util.HashMap",
+      "methods": [{"name": "<init>", "parameterTypes": []}]
+    },
+    {
+      "type": "java.util.LinkedHashMap",
+      "methods": [{"name": "<init>", "parameterTypes": []}]
+    }
+  ]
+}
