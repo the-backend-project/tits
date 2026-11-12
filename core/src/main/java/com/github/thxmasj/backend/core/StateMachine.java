@@ -55,7 +55,6 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 import javax.sql.DataSource;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -404,7 +403,7 @@ public class StateMachine implements AutoCloseable {
     return eventLog(eventTrigger, input, null)
         .onErrorMap(UnknownEntity.class, e -> new RejectedEvent(eventTrigger.eventSpec().eventType(), e))
         .flatMapMany(log ->
-                onEvent(correlationId, eventTrigger.eventSpec().eventType(), adaptedInput, log, null, List.of(), eventTrigger.triggerType(), eventTrigger.triggerId(), triggerEvent)
+                onEvent(correlationId, eventTrigger.eventSpec().eventType(), adaptedInput, log, null, eventTrigger.triggerType(), eventTrigger.triggerId(), triggerEvent)
                     .contextWrite(ctx -> ctx.put("RS/" + log.entityId(), responseSink))
                     .thenMany(responseSink.asFlux())
                     .retryWhen(RetrySpec.fixedDelay(3, Duration.ofMillis(500))
@@ -427,7 +426,7 @@ public class StateMachine implements AutoCloseable {
       EventLog eventLog,
       ChangeContext<?> requestChangeContext
   ) {
-    return onEvent(correlationId, inputEvent.eventType(), inputEvent.data(), eventLog, requestChangeContext, List.of());
+    return onEvent(correlationId, inputEvent.eventType(), inputEvent.data(), eventLog, requestChangeContext, null, null, null);
   }
 
   private List<Change> changes(@NotNull ChangeContext<?> tail) {
@@ -478,32 +477,10 @@ public class StateMachine implements AutoCloseable {
 
   private <I> Mono<ProcessResult<?>> onEvent(
       String correlationId,
-      InputEvent<I> inputEvent,
-      EventLog eventLog,
-      ChangeContext<?> stage1,
-      List<IdExists<?>> existingIds
-  ) {
-    return onEvent(correlationId, inputEvent.eventType(), inputEvent.data(), eventLog, stage1, existingIds);
-  }
-
-  private <I> Mono<ProcessResult<?>> onEvent(
-      String correlationId,
       EventType<I, ?> eventType,
       I input,
       EventLog eventLog,
       ChangeContext<?> stage1,
-      List<IdExists<?>> existingIds
-  ) {
-    return onEvent(correlationId, eventType, input, eventLog, stage1, existingIds, null, null, null);
-  }
-
-  private <I> Mono<ProcessResult<?>> onEvent(
-      String correlationId,
-      EventType<I, ?> eventType,
-      I input,
-      EventLog eventLog,
-      ChangeContext<?> stage1,
-      List<IdExists<?>> existingIds,
       TriggerType triggerType,
       UUID triggerId,
       @Nullable EventReference triggerEvent
@@ -521,77 +498,77 @@ public class StateMachine implements AutoCloseable {
     if (tuple.t3() != null) {
       System.out.println("onEvent " + eventType.name() + ": Current state: " +  tuple.t3());
     }
-    return tuple.t2().calculate(
-            new InitialChangeContext<>(
-                stage1,
-                null,
-                triggerEvent,
-                tuple.t2(),
-                tuple.t3(),
-                eventLog.lastEventNumber() + 1,
-                tuple.t1(),
-                now,
-                correlationId,
-                input,
-                this,
-                existingIds,
-                triggerType,
-                triggerId
-            )
+    // Deferred, as a retry is a calculation of its own
+    return Mono.defer(() -> calculateAndStore(
+        tuple.t2(),
+        new InitialChangeContext<>(
+            stage1,
+            null,
+            triggerEvent,
+            tuple.t2(),
+            tuple.t3(),
+            eventLog.lastEventNumber() + 1,
+            tuple.t1(),
+            now,
+            correlationId,
+            input,
+            this,
+            new Calculation(),
+            triggerType,
+            triggerId
         )
+    ));
+  }
+
+  /// Calculates the changes of the transition from its initial context and stores them. If an id of the changes is
+  /// found to exist, the changes are calculated again from the first trigger of the id, with the id existing as the
+  /// result of triggering it. The steps before the trigger are not executed again, as the calculation has their results.
+  private <I, O> Mono<ProcessResult<?>> calculateAndStore(TransitionModel<I, O> transitionModel, InitialChangeContext<I> initial) {
+    return transitionModel.calculate(initial)
         .flatMap(this::calculatePendingChanges)
         .flatMap(output -> switch (finalResult(output)) {
-          case Accepted<?> _, Completed<?> _ -> storeChanges(now, correlationId, output)
+          case Accepted<?> _, Completed<?> _ -> storeChanges(initial.timestamp(), initial.correlationId(), output)
               .thenReturn(output.stepOutput());
-          case Rejected<?> r -> tuple.t2().rejectModel() == null ? Mono.error(r.exception()) :
-              tuple.t2().rejectModel().calculate(
+          case Rejected<?> r -> transitionModel.rejectModel() == null ? Mono.error(r.exception()) :
+              transitionModel.rejectModel().calculate(
                   new InitialChangeContext<>(
                       null,
                       null,
                       null,
-                      tuple.t2(),
-                      tuple.t3(),
-                      eventLog.lastEventNumber() + 1,
-                      tuple.t1(),
-                      now,
-                      correlationId,
+                      transitionModel,
+                      initial.from(),
+                      initial.eventNumber(),
+                      initial.log(),
+                      initial.timestamp(),
+                      initial.correlationId(),
                       tuple(
-                          input,
-                          eventLog.entityModel(),
-                          eventType,
+                          initial.input(),
+                          initial.log().entityModel(),
+                          transitionModel.eventType(),
                           r.exception.getMessage()
                       ),
                       this,
-                      List.of()
+                      initial.calculation()
                   )
               )
               .flatMap(rejectChanges -> rejectChanges.stepOutput().isAccepted() ?
-                  storeChanges(now, correlationId, rejectChanges).thenReturn(rejectChanges.stepOutput()) :
+                  storeChanges(initial.timestamp(), initial.correlationId(), rejectChanges).thenReturn(rejectChanges.stepOutput()) :
                   Mono.error(new RuntimeException(
                       "Failed to handle rejected event: " + rejectChanges.stepOutput() + " (original: "
                       + output.stepOutput() + ")"))
               );
           case ProcessResult<?> r -> Mono.error(new RuntimeException("onEvent: " + r));
         })
-        // Calculates the changes again, with the id existing as the result of triggering the id event
         .onErrorResume(
             IdEventAlreadyExists.class,
             e -> storage.eventsByIdEvent().execute(e.idEvent().type(), e.idEvent().getMarshalledData())
                 .switchIfEmpty(Mono.error(e))
-                .flatMap(log -> onEvent(
-                    correlationId,
-                    eventType,
-                    input,
-                    eventLog,
-                    stage1,
-                    Stream.concat(
-                        existingIds.stream(),
-                        Stream.of(ProcessResult.idExists(e.idEvent().type(), e.idEvent(), log))
-                    ).toList(),
-                    triggerType,
-                    triggerId,
-                    triggerEvent
-                ))
+                .doOnNext(_ -> System.out.println("onEvent " + transitionModel.eventType().name() + ": " + e.getMessage()))
+                .flatMap(log -> initial.calculation().recalculateWith(ProcessResult.idExists(e.idEvent().type(), e.idEvent(), log)) ?
+                    calculateAndStore(transitionModel, initial) :
+                    // The id event is not triggered by the transition, so it would be calculated the same again
+                    Mono.error(e)
+                )
         );
   }
 
@@ -600,7 +577,7 @@ public class StateMachine implements AutoCloseable {
     if (!(eventTrigger.entityModel() instanceof IdEntityModel))
       return null;
     EventType<I, O> type = eventTrigger.eventSpec().eventType();
-    return tail.firstInitialChangeContext().existingIds().stream()
+    return tail.initialChangeContext().calculation().existingIds().stream()
         .filter(existing -> existing.idEvent().type().id().equals(type.id())
             && Arrays.equals(existing.idEvent().getMarshalledData(), type.inputDataType().marshal(data)))
         .findFirst()
@@ -820,6 +797,31 @@ public class StateMachine implements AutoCloseable {
       EventReference triggerEvent
   ) {
     I adaptedData = eventTrigger.eventSpec().inputAdapter() != null ? eventTrigger.eventSpec().inputAdapter().apply(data) : null;
+    // The step results in the context the event is calculated from, or in the context of its id existing
+    return tail.initialChangeContext().calculation()
+        .step(tail, () -> triggered(eventTrigger, tail, data, adaptedData, skipCircularCheck, triggerEvent))
+        .flatMap(triggered -> this.<I, O>calculate(triggered));
+  }
+
+  /// The context of the result of a triggered event: the given one, unless it is the initial context of a transition,
+  /// which the event is then calculated from
+  @SuppressWarnings("unchecked")
+  private <I, O> Mono<? extends ChangeContext<ProcessResult<O>>> calculate(ChangeContext<?> triggered) {
+    return triggered instanceof InitialChangeContext<?> initial ?
+        ((TransitionModel<I, O>) initial.transitionModel()).calculate((InitialChangeContext<I>) initial) :
+        Mono.just((ChangeContext<ProcessResult<O>>) triggered);
+  }
+
+  /// The initial context of the transition calculating the triggered event, or the context of its id existing, if it
+  /// is an id event with an id found to exist when storing the changes
+  private <T, I, O> Mono<ChangeContext<?>> triggered(
+      EventTrigger<T, I, O> eventTrigger,
+      ChangeContext<?> tail,
+      T data,
+      I adaptedData,
+      boolean skipCircularCheck,
+      EventReference triggerEvent
+  ) {
     ChangeContext<ProcessResult<O>> idExists = idExists(eventTrigger, tail, adaptedData);
     if (idExists != null)
       return Mono.just(idExists);
@@ -862,21 +864,19 @@ public class StateMachine implements AutoCloseable {
                 // Rethrow the exception on exhaustion so it can be handled downstream
                 .onRetryExhaustedThrow((_, signal) -> signal.failure())
             )
-            .flatMap(tuple -> tuple.t2().calculate(
-                new InitialChangeContext<>(
-                    null,
-                    tail,
-                    triggerEvent,
-                    tuple.t2(),
-                    tuple.t3(),
-                    tuple.t1().lastEventNumber() + 1,
-                    tuple.t1(),
-                    tail.initialChangeContext().timestamp(),
-                    tail.initialChangeContext().correlationId(),
-                    adaptedData,
-                    tail.initialChangeContext().stateMachine(),
-                    List.of()
-                )
+            .map(tuple -> new InitialChangeContext<>(
+                null,
+                tail,
+                triggerEvent,
+                tuple.t2(),
+                tuple.t3(),
+                tuple.t1().lastEventNumber() + 1,
+                tuple.t1(),
+                tail.initialChangeContext().timestamp(),
+                tail.initialChangeContext().correlationId(),
+                adaptedData,
+                tail.initialChangeContext().stateMachine(),
+                tail.initialChangeContext().calculation()
             ))
     );
   }
@@ -1088,8 +1088,7 @@ public class StateMachine implements AutoCloseable {
                 correlationId,
                 triggerResult,
                 actionTrigger.eventLog(),
-                stage1,
-                List.of()
+                stage1
             )
             .doOnError(e -> System.out.println("onEvent ERROR for " + triggerResult.eventType().name() + " on " + actionTrigger.eventLog().entityModel().name() + ":" + actionTrigger.eventLog().entityId() + ": " + e))
             .retryWhen(RetrySpec.fixedDelay(3, Duration.ofMillis(500))

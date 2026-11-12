@@ -1,0 +1,104 @@
+package com.github.thxmasj.backend.core;
+
+import com.github.thxmasj.backend.core.StateMachine.ProcessResult.Accepted;
+import com.github.thxmasj.backend.core.StateMachine.ProcessResult.IdExists;
+import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext;
+import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext.OutputChangeContext;
+import com.github.thxmasj.backend.core.TransitionModelBuilder.ChangeContext.RejectedChangeContext;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+import java.util.function.Supplier;
+import reactor.core.publisher.Mono;
+
+/// The calculation of the changes of an event, by the steps of its transition and of the transitions it triggers. The
+/// result of each step is recorded, such that the changes can be calculated again from the trigger of an id found to
+/// exist when storing them: The steps before the trigger are then not executed again, but get the results recorded for
+/// them, so the change contexts up to the trigger are the same.
+public final class Calculation {
+
+  /// @param context the change context the step was executed in
+  /// @param result  the result of the step, or null if it failed
+  /// @param failure the failure of the step, or null if it has a result
+  private record Step(ChangeContext<?> context, Object result, Throwable failure) {}
+
+  // The steps executed, in order
+  private final List<Step> steps = new ArrayList<>();
+  private final List<IdExists<?>> existingIds = new ArrayList<>();
+  // The number of steps taken by the ongoing calculation. The steps recorded from here on are those of the previous
+  // calculation that are not executed again.
+  private int position;
+
+  /// The result of a step in the given change context, which is the result of executing it, unless the changes are
+  /// calculated again and the step was executed before the trigger they are calculated from. The steps must be taken
+  /// one at a time, i.e. the execution of a step can't take other steps.
+  @SuppressWarnings("unchecked")
+  <T> Mono<T> step(ChangeContext<?> context, Supplier<Mono<T>> execution) {
+    return Mono.defer(() -> {
+      if (position < steps.size()) {
+        Step recorded = steps.get(position);
+        if (recorded.context() == context) {
+          position++;
+          return recorded.failure() != null ? Mono.error(recorded.failure()) : Mono.just((T) recorded.result());
+        }
+        // Not the step that was executed at this point, so no more of the recorded steps are valid
+        steps.subList(position, steps.size()).clear();
+      }
+      return Mono.defer(execution)
+          .doOnNext(result -> record(new Step(context, result, null)))
+          .doOnError(failure -> record(new Step(context, null, failure)));
+    });
+  }
+
+  private void record(Step step) {
+    steps.add(step);
+    position = steps.size();
+  }
+
+  /// The ids found to exist when storing the changes
+  List<IdExists<?>> existingIds() {
+    return Collections.unmodifiableList(existingIds);
+  }
+
+  /// Prepares for calculating the changes again, with an id found to exist when storing them. The steps from the first
+  /// trigger of the id on are then executed again, with the id existing as the result of triggering it.
+  ///
+  /// @return false if the id is not triggered by a step, in which case calculating again would not change anything
+  boolean recalculateWith(IdExists<?> existing) {
+    int trigger = firstTrigger(existing.idEvent());
+    if (trigger < 0)
+      return false;
+    // Whether a rejected result is handled is a state of the result, set by the steps after it. That can't be undone
+    // for the steps to be executed again, so all the steps are executed again if there is one before the trigger.
+    if (steps.subList(0, trigger).stream().anyMatch(step -> step.result() instanceof RejectedChangeContext))
+      trigger = 0;
+    existingIds.add(existing);
+    steps.subList(trigger, steps.size()).clear();
+    position = 0;
+    return true;
+  }
+
+  /// The index of the first step triggering the id event, i.e. the step resulting in the initial change context of the
+  /// transition calculating it, or -1 if there is none
+  private int firstTrigger(Event<?> idEvent) {
+    for (Step step : steps) {
+      if (step.result() instanceof OutputChangeContext<?> output && isCalculationOf(idEvent, output)) {
+        var initial = output.initialChangeContext();
+        for (int i = 0; i < steps.size(); i++) {
+          if (steps.get(i).result() == initial)
+            return i;
+        }
+      }
+    }
+    return -1;
+  }
+
+  private static boolean isCalculationOf(Event<?> idEvent, OutputChangeContext<?> output) {
+    return output.stepOutput() instanceof Accepted<?> accepted
+        && accepted.entityModel() instanceof IdEntityModel
+        && accepted.event().type().id().equals(idEvent.type().id())
+        && Arrays.equals(accepted.event().getMarshalledData(), idEvent.getMarshalledData());
+  }
+
+}
