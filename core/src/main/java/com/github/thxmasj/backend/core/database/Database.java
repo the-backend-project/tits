@@ -4,7 +4,7 @@ import static java.util.stream.Collectors.joining;
 
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.State;
-import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionModel;
+import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.core.database.DatabaseClient.Config;
 import com.github.thxmasj.backend.core.database.jdbc.DataSourceBuilder;
 import java.sql.Connection;

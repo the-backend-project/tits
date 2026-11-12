@@ -20,7 +20,7 @@ import com.github.thxmasj.backend.core.IdEntityModel;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.StateMachine;
 import com.github.thxmasj.backend.core.StateMachine.RejectedEvent;
-import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionModel;
+import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.core.Tuples.Tuple2;
 import com.github.thxmasj.backend.core.database.IdEventAlreadyExists;
 import java.time.Duration;

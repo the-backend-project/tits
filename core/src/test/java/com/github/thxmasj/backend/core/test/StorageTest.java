@@ -16,7 +16,7 @@ import com.github.thxmasj.backend.core.EventLog;
 import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.IdEntityModel;
 import com.github.thxmasj.backend.core.State;
-import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionModel;
+import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.core.database.ChangeState.Change;
 import com.github.thxmasj.backend.core.database.IdEventAlreadyExists;
 import com.github.thxmasj.backend.core.database.Storage;

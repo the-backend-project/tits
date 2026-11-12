@@ -6,7 +6,7 @@ import static com.github.thxmasj.backend.core.test.EventTriggerTest.Entities.Ban
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.StateMachine;
-import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionModel;
+import com.github.thxmasj.backend.core.TransitionModel;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;

@@ -7,7 +7,6 @@ import static com.github.thxmasj.backend.core.Tuples.tuple;
 import static java.util.Collections.unmodifiableList;
 import static java.util.stream.Collectors.joining;
 
-import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionModel;
 import com.github.thxmasj.backend.core.Tuples.Tuple2;
 import java.util.ArrayList;
 import java.util.Arrays;
