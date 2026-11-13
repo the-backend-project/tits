@@ -358,22 +358,11 @@ issuer has added since.
 ## HTTP outboxes
 
 An application has an outbox for each kind of request it sends to other systems, e.g. one for authorisations and one
-for captures. Each outbox is an entity model whose entities are the requests sent, and its state diagram tells how a
-request goes from dispatched to accepted, rejected, retried or rolled back (see
-[AtLeastOnce](images/com.github.thxmasj.backend.http.outbox.AtLeastOnce.svg) and
-[AtMostOnce](images/com.github.thxmasj.backend.http.outbox.AtMostOnce.svg)).
-
-A request's entity is created by a transition of the application, through a dispatcher, so the request is stored before it is sent, and is sent by an
-action after the transaction is committed. The response is fed back as an event, and the outbox request triggers an
-event on the entity which dispatched it. A request without a response times out by a delayed trigger stored when it
-was dispatched.
-
-* `AtLeastOnce` resends the request after a backoff, by delayed triggers, until it gets a response or its attempts
-  run out. The receiver must therefore tolerate duplicates.
-* `AtMostOnce` sends the request once. It can be rolled back, whether it was accepted or its outcome is unknown, e.g.
-  after a timeout, by a rollback request, which is itself an `AtLeastOnce` request.
-
-Requests of both kinds can be sent in batches.
+for captures. Each outbox is an entity model whose entities are the requests sent. A request is stored in the same
+transaction as the change of the application dispatching it, and sent by an action after the transaction is
+committed, as in the transactional outbox pattern. An `AtLeastOnce` outbox resends a request until it is accepted or
+its attempts run out, and an `AtMostOnce` outbox sends it once, and can roll it back. See
+[HTTP outboxes](http-outbox.md) for their delivery semantics and state diagrams.
 
 ## Diagrams
 

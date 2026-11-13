@@ -8,6 +8,7 @@ nav = [
   { "Overview" = "index.md" },
   { "Architecture" = [
     { "Overview" = "architecture.md" },
+    { "HTTP outboxes" = "http-outbox.md" },
     { "Databases" = "databases.md" },
     { "Data model" = "data-model.md" },
     { "Schema creation" = "schema-creation.md" },
