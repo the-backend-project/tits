@@ -30,6 +30,13 @@ public sealed interface Authorization {
     return subject != null ? authorized(subject) : refused(reason);
   }
 
+  /// The subject the request is authorized for
+  ///
+  /// @throws IllegalStateException if the request is refused
+  default String subject() {
+    throw new IllegalStateException("Not authorized: " + refused().reason());
+  }
+
   default boolean isRefused() {
     return this instanceof Refused;
   }

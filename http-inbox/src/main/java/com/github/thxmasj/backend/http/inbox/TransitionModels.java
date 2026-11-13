@@ -56,7 +56,6 @@ import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionContext;
 import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.core.Tuples.Tuple2;
 import com.github.thxmasj.backend.core.Validated;
-import com.github.thxmasj.backend.http.inbox.Authorization.Authorized;
 import com.github.thxmasj.backend.http.inbox.Authorization.Refused;
 import com.github.thxmasj.backend.http.inbox.HttpInbox.CustomResponse;
 import com.github.thxmasj.backend.http.inbox.HttpInbox.MessageId;
@@ -205,7 +204,7 @@ public interface TransitionModels {
                     )
                     .output(),
                 d -> {
-                  String clientId = d.t4() instanceof Authorized a ? a.subject() : "N/A";
+                  String clientId = d.t4() != null ? d.t4().subject() : "N/A";
                   String messageIdValue = d.t3() != null ? d.t3().validValue() : null;
                   EntitySelector processSelector = d.t5() != null ? d.t5().validValue() : null;
                   MessageId messageId = null;
@@ -228,7 +227,7 @@ public interface TransitionModels {
                       d.t1(),
                       d.t2(),
                       messageId,
-                      d.t4() instanceof Authorized a ? a.subject() : null,
+                      d.t4() != null ? d.t4().subject() : null,
                       processSelector
                   );
                 }
