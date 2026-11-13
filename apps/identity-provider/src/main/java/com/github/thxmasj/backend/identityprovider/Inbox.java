@@ -19,6 +19,7 @@ import com.github.thxmasj.backend.core.Validated;
 import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
 import com.github.thxmasj.backend.core.message.http.HttpRequestMessage.Method;
 import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
+import com.github.thxmasj.backend.http.inbox.Authorization;
 import com.github.thxmasj.backend.http.inbox.HttpInbox.CustomResponse;
 import com.github.thxmasj.backend.http.inbox.HttpRequestRoute;
 import com.github.thxmasj.backend.http.inbox.ResponseEventType;
@@ -85,7 +86,7 @@ public interface Inbox {
           Inbox::registration,
           List.of(anyContent(
               null,
-              (m, _) -> Validated.validElse(m.headerValue(RegisteredByHeader), "Unauthenticated"),
+              (m, _) -> Authorization.authorizedElse(m.headerValue(RegisteredByHeader), "Unauthenticated"),
               UUID.fromString("f7a2c6e9-4d15-4b83-9e0a-1c5d8b3f6e24"),
               Clients.RequestRegistration,
               Clients.ClientRegistration,

@@ -186,8 +186,12 @@ var authorizer = HttpInbox.bearerToken(verifier, "payments");
 
 The verifier accepts JWT access tokens as profiled by [RFC 9068](https://www.rfc-editor.org/rfc/rfc9068): of type
 `at+jwt`, signed with RS256 by a key of the issuer, of the issuer, not expired, for the audience if one is given, and
-with the claims `sub` and `client_id`. A request without a valid token, or lacking a scope, is refused with 400, as any
-request failing a route's authorizer. The keys are fetched once, so the verifier must be created again to see keys the
+with the claims `sub` and `client_id`. A refused request is answered as
+[RFC 6750](https://www.rfc-editor.org/rfc/rfc6750#section-3) says, with a `WWW-Authenticate` header: 401 and the
+challenge `Bearer` without a bearer token, 401 and the error `invalid_token` with a token that is invalid or expired,
+and 403 and the error `insufficient_scope` with a token lacking a scope. An authorizer returns an `Authorization`,
+either `Authorized` with the subject or `Refused` with the status code, challenge and reason of the response;
+`Authorization.refused(reason)` refuses with 400. The keys are fetched once, so the verifier must be created again to see keys the
 issuer has added since.
 
 ## HTTP outboxes
