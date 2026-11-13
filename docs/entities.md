@@ -11,9 +11,9 @@ The transitions of an entity model are declared with `TransitionModelBuilder`. A
 type, assembles data from the event and the entity's event log, and can trigger events on other entities:
 
 ```java
-onEvent(Greet).to(States.Greeted)
+onEvent(GreetingRequested).to(States.Greeted)
     .assemble(c -> c.log().entityId().toString())
-    .trigger(RespondGreeting).with(id -> id).on(RequestDispatching).identifiedBy(entityIdFromSession())
+    .trigger(GreetingResponseCreated).with(id -> id).on(RequestDispatching).identifiedBy(entityIdFromSession())
     .output()
 ```
 
@@ -21,6 +21,35 @@ The entity an event is triggered on is selected by an `EntitySelector`: by its e
 has, or as the last one of a group it is indexed in. The ids and index keys of entities are events of their own, of
 id entity models (`IdEntityModel`) and index entity models (`IndexEntityModel`). An id is unique among the ids of its
 type, so an event claiming an id that is taken is rejected.
+
+## Naming event types
+
+An event in an event log is something that has happened, so an event type is named in the past tense: the subject
+the event is about, followed by a past participle, e.g. `Registration accepted`, `Merchant suspended` or
+`Response received`. The name is in sentence case, and the constant holding the event type has the same words in
+upper camel case:
+
+```java
+EventType<Registration, Registration> RegistrationRejected = BasicEventType.of(
+    "Registration rejected",
+    UUID.fromString("1a7e4c9d-2f63-4b05-8e9a-6d3c0b8f1e72"),
+    DataType.json(Registration.class)
+);
+```
+
+The subject keeps an event type apart from the state it leads to, which is a bare participle or adjective, e.g.
+`TokenIssued` leads to `Issued`. A few kinds of event types follow a common pattern:
+
+| Kind                                | Pattern                          | Example                                   |
+|-------------------------------------|----------------------------------|-------------------------------------------|
+| A request, e.g. from the HTTP inbox | `<subject> requested`            | `Token requested`, `Greeting requested`   |
+| A request found to be invalid       | `<problem> detected`             | `Unknown merchant detected`               |
+| An id of an id entity model         | `<id> claimed`                   | `Client id claimed`, `Message id claimed` |
+| A key of an index entity model      | `<subject> referenced`/`indexed` | `Process referenced`, `Batch indexed`     |
+| A read-only event type              | `<subject> looked up`            | `Merchant looked up`, `Status looked up`  |
+
+Event types are identified by their id, not by their name, so an event type can be renamed without migrating the
+events stored.
 
 ## Processing an event
 

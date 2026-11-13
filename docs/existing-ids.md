@@ -17,9 +17,9 @@ transition can act on. The [identity provider](identity-provider.md) rejects the
 taken this way:
 
 ```java
-onEvent(RequestRegistration).to(States.Accepted)
+onEvent(RegistrationRequested).to(States.Accepted)
     .assemble(c -> tuple(c.input(), UUID.randomUUID()))
-    .trigger(ClientId).with(d -> d.t1().clientId()).on(ClientIds).identifiedBy(d -> entityId(d.t2(), AlwaysCreate))
+    .trigger(ClientIdClaimed).with(d -> d.t1().clientId()).on(ClientIds).identifiedBy(d -> entityId(d.t2(), AlwaysCreate))
     .when(d -> d.t2().isIdExists()).then(rejectRegistration, d -> d.t1().t1())
     .otherwise(acceptRegistration, d -> d.t1())
 ```

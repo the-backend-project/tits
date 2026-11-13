@@ -71,14 +71,14 @@ public class TransitionModelBuilder<I, T, O> {
 
   public static TransitionModel<Void, State> statusOn() {
     return new TransitionModel<>(
-        new ModelContext<>(false, null, BuiltinEventTypes.Status, List.of(), List.of(), List.of(), null),
+        new ModelContext<>(false, null, BuiltinEventTypes.StatusLookedUp, List.of(), List.of(), List.of(), null),
         inputStep -> inputStep.flatMap(i -> step(i, () -> Mono.just(new OutputStep<>(
             i,
             ProcessResult.accepted(
                 new Event<>(
                     i.log().entityId(),
                     i.log().lastEventNumber() + 1,
-                    BuiltinEventTypes.Status,
+                    BuiltinEventTypes.StatusLookedUp,
                     i.timestamp(),
                     i.from()
                 ),
@@ -618,7 +618,7 @@ public class TransitionModelBuilder<I, T, O> {
       BiFunction<TransitionContext<Data>, EventType<Data, Data>, Mono<T>> assembler
   ) {
     return new TransitionModelBuilder<>(
-        new ModelContext<>(true /* !! */, null, BuiltinEventTypes.Rollback, List.of(), List.of(), List.of(), null),
+        new ModelContext<>(true /* !! */, null, BuiltinEventTypes.EventsRolledBack, List.of(), List.of(), List.of(), null),
         inputStep -> inputStep.flatMap(
             i -> step(i, () -> {
               // TODO

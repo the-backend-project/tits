@@ -67,7 +67,7 @@ public sealed interface HttpOutboxRequest<RQ> extends com.github.thxmasj.backend
   /// The request accepted event type of any outbox request, agnostic to its input and output data types. Use it where
   /// only the identity of the event type matters, e.g. when stating the last event that satisfies a condition.
   static EventType<?, ?> requestAccepted() {
-    return BasicEventType.of("[request accepted]", RequestAcceptedId, DataType.unknown(), DataType.unknown());
+    return BasicEventType.of("Request accepted", RequestAcceptedId, DataType.unknown(), DataType.unknown());
   }
 
   /// Id of the rollback dispatched event type, shared by all outbox requests that can be rolled back so that a

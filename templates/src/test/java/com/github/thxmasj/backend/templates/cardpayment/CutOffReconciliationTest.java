@@ -13,7 +13,7 @@ import static com.github.thxmasj.backend.http.inbox.TransitionModels.requestDisp
 import static com.github.thxmasj.backend.http.inbox.TransitionModels.requestRoutingTransitions;
 import static com.github.thxmasj.backend.http.outbox.HttpOutboxRequest.Index;
 import static com.github.thxmasj.backend.core.message.http.HttpRequestMessage.Method.POST;
-import static com.github.thxmasj.backend.templates.cardpayment.Identifiers.BatchNumber;
+import static com.github.thxmasj.backend.templates.cardpayment.Identifiers.BatchNumberClaimed;
 import static com.github.thxmasj.backend.templates.cardpayment.PaymentTransitions.OutboxRequestModelIds.ApprovedAuthorisation;
 import static com.github.thxmasj.backend.templates.cardpayment.PaymentTransitions.OutboxRequestModelIds.ApprovedCapture;
 import static com.github.thxmasj.backend.templates.cardpayment.PaymentTransitions.OutboxRequestModelIds.ApprovedPreauthorisation;
@@ -217,7 +217,7 @@ public class CutOffReconciliationTest {
                 null,
                 null,
                 UUID.fromString("c3b0b8a0-6b0f-4a35-9d57-0a5f0f0e0001"),
-                MerchantEvent.Create,
+                MerchantEvent.MerchantCreated,
                 Aggregate.Merchant,
                 (RoutedRequest<byte[]> _) -> merchant,
                 newEntity()
@@ -230,7 +230,7 @@ public class CutOffReconciliationTest {
                 null,
                 null,
                 UUID.fromString("c3b0b8a0-6b0f-4a35-9d57-0a5f0f0e0002"),
-                PaymentEvent.PaymentRequest,
+                PaymentEvent.PaymentRequested,
                 Aggregate.Payment,
                 (RoutedRequest<byte[]> _) -> tuple(authorisation, new byte[0]),
                 newEntity()
@@ -243,10 +243,10 @@ public class CutOffReconciliationTest {
                 null,
                 null,
                 UUID.fromString("c3b0b8a0-6b0f-4a35-9d57-0a5f0f0e0003"),
-                SettlementEvent.CutOffRequest,
+                SettlementEvent.CutOffRequested,
                 Aggregate.Settlement,
                 (RoutedRequest<byte[]> _) -> cutOff,
-                (_, _) -> new Valid<>(idEvent(BatchNumber, new BatchNumber(merchantId, 1)))
+                (_, _) -> new Valid<>(idEvent(BatchNumberClaimed, new BatchNumber(merchantId, 1)))
             ))
         )
     );
@@ -257,7 +257,7 @@ public class CutOffReconciliationTest {
         .forwarder(forwarder())
         .processModel(Aggregate.Payment)
         .contentParser(_ -> valid(new AuthenticationResult("authentication-reference", "provider", "cryptogram")))
-        .onSuccess(PaymentEvent.Authorisation, TypedHttpResponse::payload)
+        .onSuccess(PaymentEvent.AuthorisationRequested, TypedHttpResponse::payload)
         .isAccepted(_ -> true)
         .isRejected(_ -> false)
         .isRejectedByInvalidResponse(_ -> false)

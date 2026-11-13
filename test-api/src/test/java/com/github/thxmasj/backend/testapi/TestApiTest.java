@@ -66,25 +66,25 @@ public class TestApiTest {
     }
   }
 
-  static EventType<String, String> AccountNumber = BasicEventType.of("AccountNumber", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b01"), DataType.string());
-  static IdEntityModel Ids = IdEntityModel.of("Ids", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b02"), AccountNumber);
+  static EventType<String, String> AccountNumberClaimed = BasicEventType.of("Account number claimed", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b01"), DataType.string());
+  static IdEntityModel Ids = IdEntityModel.of("Ids", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b02"), AccountNumberClaimed);
 
-  static EventType<UUID, UUID> StatementOfAccount = IndexEntityModel.referenceEventType("StatementOfAccount", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b03"));
-  static EventType<StatementNumber, StatementNumber> NumberOfStatement = BasicEventType.of("NumberOfStatement", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b04"), new StatementNumberDataType());
-  static IndexEntityModel Index = IndexEntityModel.of("Index", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b05"), StatementOfAccount, NumberOfStatement);
+  static EventType<UUID, UUID> StatementOfAccountReferenced = IndexEntityModel.referenceEventType("Statement of account referenced", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b03"));
+  static EventType<StatementNumber, StatementNumber> NumberOfStatementIndexed = BasicEventType.of("Number of statement indexed", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b04"), new StatementNumberDataType());
+  static IndexEntityModel Index = IndexEntityModel.of("Index", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b05"), StatementOfAccountReferenced, NumberOfStatementIndexed);
 
   static EntityModel Account = EntityModel.of("Account", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b06"));
   static EntityModel Statement = EntityModel.of("Statement", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b07"));
 
-  static EventType<String, String> Open = BasicEventType.of("Open", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b08"), DataType.string());
-  static EventType<Void, Void> Expire = BasicEventType.of("Expire", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b09"));
-  static EventType<Void, Void> CloseWhenSettled = BasicEventType.of("CloseWhenSettled", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b0a"));
-  static EventType<Void, Void> Close = BasicEventType.of("Close", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b0b"));
+  static EventType<String, String> AccountOpened = BasicEventType.of("Account opened", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b08"), DataType.string());
+  static EventType<Void, Void> AccountExpired = BasicEventType.of("Account expired", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b09"));
+  static EventType<Void, Void> AccountCloseRequestedWhenSettled = BasicEventType.of("Account close requested when settled", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b0a"));
+  static EventType<Void, Void> AccountClosed = BasicEventType.of("Account closed", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b0b"));
 
   record Issuing(UUID account, StatementNumber number) {}
 
-  static EventType<Issuing, Issuing> Issue = BasicEventType.of("Issue", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b0c"), DataType.json(Issuing.class));
-  static EventType<Void, Void> Settle = BasicEventType.of("Settle", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b0d"));
+  static EventType<Issuing, Issuing> StatementIssued = BasicEventType.of("Statement issued", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b0c"), DataType.json(Issuing.class));
+  static EventType<Void, Void> StatementSettled = BasicEventType.of("Statement settled", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b0d"));
 
   enum ShipmentStates implements State {Sent}
 
@@ -93,10 +93,10 @@ public class TestApiTest {
   /// Shipments of letters and parcels share the id of their event type, like the outbox requests of different
   /// payloads, but differ in data type
   static UUID SendId = UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b0e");
-  static EventType<String, String> SendLetter = BasicEventType.of("Send", SendId, DataType.string());
-  static EventType<Parcel, Parcel> SendParcel = BasicEventType.of("Send", SendId, DataType.json(Parcel.class));
-  static EventType<UUID, UUID> ShipmentOfAccount = IndexEntityModel.referenceEventType("ShipmentOfAccount", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b0f"));
-  static IndexEntityModel ShipmentIndex = IndexEntityModel.of("ShipmentIndex", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b10"), ShipmentOfAccount);
+  static EventType<String, String> LetterSent = BasicEventType.of("Shipment sent", SendId, DataType.string());
+  static EventType<Parcel, Parcel> ParcelSent = BasicEventType.of("Shipment sent", SendId, DataType.json(Parcel.class));
+  static EventType<UUID, UUID> ShipmentOfAccountReferenced = IndexEntityModel.referenceEventType("Shipment of account referenced", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b0f"));
+  static IndexEntityModel ShipmentIndex = IndexEntityModel.of("ShipmentIndex", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b10"), ShipmentOfAccountReferenced);
   static EntityModel LetterShipment = EntityModel.of("LetterShipment", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b11"));
   static EntityModel ParcelShipment = EntityModel.of("ParcelShipment", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b12"));
 
@@ -105,7 +105,7 @@ public class TestApiTest {
         Begin, List.of(
             onEvent(send).to(ShipmentStates.Sent)
                 .assemble(c -> tuple(c.input(), c.log().entityId()))
-                .trigger(ShipmentOfAccount).with(_ -> shipmentAccount).on(ShipmentIndex).identifiedBy(d -> newEntityId(d.t2()))
+                .trigger(ShipmentOfAccountReferenced).with(_ -> shipmentAccount).on(ShipmentIndex).identifiedBy(d -> newEntityId(d.t2()))
                 .output(d -> d.t1().t1())
         ),
         ShipmentStates.Sent, List.of()
@@ -117,43 +117,43 @@ public class TestApiTest {
   static Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions = Map.of(
       Account, Map.<State, List<TransitionModel<?, ?>>>of(
           Begin, List.of(
-              onEvent(Open).to(AccountStates.Opened)
+              onEvent(AccountOpened).to(AccountStates.Opened)
                   .assemble(c -> tuple(c.input(), c.log().entityId()))
-                  .trigger(AccountNumber).with(Tuple2::t1).on(Ids).identifiedBy(d -> entityId(d.t2(), CreateIfNotExists))
-                  .trigger(Expire).after(_ -> Duration.ofHours(1))
+                  .trigger(AccountNumberClaimed).with(Tuple2::t1).on(Ids).identifiedBy(d -> entityId(d.t2(), CreateIfNotExists))
+                  .trigger(AccountExpired).after(_ -> Duration.ofHours(1))
                   .output(d -> d.t1().t1())
           ),
           AccountStates.Opened, List.of(
-              onEvent(Expire).to(AccountStates.Expired).output(),
-              onEvent(CloseWhenSettled).to(AccountStates.Closing)
+              onEvent(AccountExpired).to(AccountStates.Expired).output(),
+              onEvent(AccountCloseRequestedWhenSettled).to(AccountStates.Closing)
                   .assemble(c -> c.log().entityId())
-                  .trigger(Close)
-                  .when(StatementOfAccount, id -> id)
-                  .is(Settle)
+                  .trigger(AccountClosed)
+                  .when(StatementOfAccountReferenced, id -> id)
+                  .is(StatementSettled)
                   .with(_ -> null)
                   .on(Account)
                   .identifiedBy(EntitySelector::entityId)
                   .output()
           ),
-          AccountStates.Closing, List.of(onEvent(Close).to(AccountStates.Closed).output()),
+          AccountStates.Closing, List.of(onEvent(AccountClosed).to(AccountStates.Closed).output()),
           AccountStates.Closed, List.of(),
           AccountStates.Expired, List.of()
       ),
       Statement, Map.<State, List<TransitionModel<?, ?>>>of(
           Begin, List.of(
-              onEvent(Issue).to(StatementStates.Issued)
+              onEvent(StatementIssued).to(StatementStates.Issued)
                   .assemble(c -> tuple(c.input(), c.log().entityId()))
-                  .trigger(StatementOfAccount).with(d -> d.t1().account()).on(Index).identifiedBy(d -> newEntityId(d.t2()))
-                  .trigger(NumberOfStatement).with(d -> d.t1().t1().number()).on(Index).identifiedBy(d -> entityId(d.t1().t2()))
+                  .trigger(StatementOfAccountReferenced).with(d -> d.t1().account()).on(Index).identifiedBy(d -> newEntityId(d.t2()))
+                  .trigger(NumberOfStatementIndexed).with(d -> d.t1().t1().number()).on(Index).identifiedBy(d -> entityId(d.t1().t2()))
                   .output(d -> d.t1().t1().t1())
           ),
-          StatementStates.Issued, List.of(onEvent(Settle).to(StatementStates.Settled).output()),
+          StatementStates.Issued, List.of(onEvent(StatementSettled).to(StatementStates.Settled).output()),
           StatementStates.Settled, List.of()
       ),
       Ids, Ids.transitions(),
       Index, Index.transitions(),
-      LetterShipment, shipmentTransitions(SendLetter),
-      ParcelShipment, shipmentTransitions(SendParcel),
+      LetterShipment, shipmentTransitions(LetterSent),
+      ParcelShipment, shipmentTransitions(ParcelSent),
       ShipmentIndex, ShipmentIndex.transitions()
   );
 
@@ -162,12 +162,12 @@ public class TestApiTest {
   private static final TestApi api = new TestApi(Init.database(), Init.client(), schema, transitions, Clock.systemUTC());
 
   private static UUID open(String accountNumber) {
-    return machine.onEvent(trigger(Open, Account), accountNumber).blockFirst().entityId();
+    return machine.onEvent(trigger(AccountOpened, Account), accountNumber).blockFirst().entityId();
   }
 
   private static UUID issue(UUID account, long number) {
     var issuing = new Issuing(account, new StatementNumber(account.toString(), number));
-    return machine.onEvent(trigger(Issue, Statement), issuing).blockFirst().entityId();
+    return machine.onEvent(trigger(StatementIssued, Statement), issuing).blockFirst().entityId();
   }
 
   private static List<String> eventNames(EventLog log) {
@@ -191,8 +191,8 @@ public class TestApiTest {
     EventLog log = api.eventLog(account).block();
 
     assertEquals(Account, log.entityModel());
-    assertEquals(List.of("1:Open"), eventNames(log));
-    assertEquals("1001", log.one(Open));
+    assertEquals(List.of("1:Account opened"), eventNames(log));
+    assertEquals("1001", log.one(AccountOpened));
   }
 
   @Test
@@ -207,23 +207,23 @@ public class TestApiTest {
   public void eventLogOfIdEntity() {
     UUID account = open("1002");
 
-    assertEquals(List.of("1:AccountNumber"), eventNames(api.eventLog(Ids, account).block()));
+    assertEquals(List.of("1:Account number claimed"), eventNames(api.eventLog(Ids, account).block()));
   }
 
   @Test
   public void entityIsFoundByItsId() {
     UUID account = open("1003");
 
-    assertEquals(account, api.eventLogById(AccountNumber, "1003").block().entityId());
-    assertNull(api.eventLogById(AccountNumber, "unknown").block());
+    assertEquals(account, api.eventLogById(AccountNumberClaimed, "1003").block().entityId());
+    assertNull(api.eventLogById(AccountNumberClaimed, "unknown").block());
   }
 
   @Test
   public void idOfEntity() {
     UUID account = open("1004");
 
-    assertEquals("1004", api.id(account, AccountNumber).block());
-    assertNull(api.id(UUID.randomUUID(), AccountNumber).block());
+    assertEquals("1004", api.id(account, AccountNumberClaimed).block());
+    assertNull(api.id(UUID.randomUUID(), AccountNumberClaimed).block());
   }
 
   @Test
@@ -232,7 +232,7 @@ public class TestApiTest {
     UUID statement1 = issue(account, 1);
     UUID statement2 = issue(account, 2);
 
-    List<UUID> statements = api.entitiesByIndex(StatementOfAccount, account)
+    List<UUID> statements = api.entitiesByIndex(StatementOfAccountReferenced, account)
         .map(EventLog::entityId)
         .collectList()
         .block();
@@ -243,10 +243,10 @@ public class TestApiTest {
 
   @Test
   public void entitiesByIndexHaveTheEventTypesOfTheirEntityModel() {
-    machine.onEvent(trigger(SendLetter, LetterShipment), "Dear account").blockFirst();
-    machine.onEvent(trigger(SendParcel, ParcelShipment), new Parcel(2)).blockFirst();
+    machine.onEvent(trigger(LetterSent, LetterShipment), "Dear account").blockFirst();
+    machine.onEvent(trigger(ParcelSent, ParcelShipment), new Parcel(2)).blockFirst();
 
-    Map<EntityModel, Object> sent = api.entitiesByIndex(ShipmentOfAccount, shipmentAccount)
+    Map<EntityModel, Object> sent = api.entitiesByIndex(ShipmentOfAccountReferenced, shipmentAccount)
         .collectMap(EventLog::entityModel, log -> (Object) log.events().getFirst().getUnmarshalledData())
         .block();
 
@@ -259,10 +259,10 @@ public class TestApiTest {
     issue(account, 1);
     UUID last = issue(account, 2);
 
-    EventLog log = api.lastIndexed(Statement, NumberOfStatement, account.toString()).block();
+    EventLog log = api.lastIndexed(Statement, NumberOfStatementIndexed, account.toString()).block();
 
     assertEquals(last, log.entityId());
-    assertNull(api.lastIndexed(Statement, NumberOfStatement, "no such account").block());
+    assertNull(api.lastIndexed(Statement, NumberOfStatementIndexed, "no such account").block());
   }
 
   @Test
@@ -272,7 +272,7 @@ public class TestApiTest {
     ScheduledEvent scheduled = api.delayedTrigger(account).block();
 
     assertEquals(Account, scheduled.entityModel());
-    assertEquals(Expire, scheduled.type());
+    assertEquals(AccountExpired, scheduled.type());
     assertEquals(2, scheduled.eventNumber());
     assertEquals(0, scheduled.attempt());
     assertTrue(scheduled.deadline().isAfter(LocalDateTime.now(Clock.systemUTC()).plusMinutes(59)));
@@ -284,7 +284,7 @@ public class TestApiTest {
 
     assertTrue(api.expireDelayedTrigger(account).block());
 
-    assertEquals(List.of("1:Open", "2:Expire"), eventNames(awaitEvents(account, 2)));
+    assertEquals(List.of("1:Account opened", "2:Account expired"), eventNames(awaitEvents(account, 2)));
     assertNull(api.delayedTrigger(account).block());
     assertFalse(api.expireDelayedTrigger(account).block());
   }
@@ -292,7 +292,7 @@ public class TestApiTest {
   @Test
   public void delayedTriggerIsDeletedByNextEvent() throws SQLException {
     UUID account = open("1013");
-    machine.onEvent(trigger(CloseWhenSettled, Account, account)).blockFirst();
+    machine.onEvent(trigger(AccountCloseRequestedWhenSettled, Account, account)).blockFirst();
 
     try (var connection = Init.dataSource().getConnection();
          var statement = connection.prepareStatement("SELECT COUNT(*) FROM \"" + schema + "\".\"DelayedTrigger\" WHERE EntityId=?")) {
@@ -317,20 +317,20 @@ public class TestApiTest {
   public void conditionalTriggersOfEntity() throws InterruptedException {
     UUID account = open("1010");
     UUID statement = issue(account, 1);
-    machine.onEvent(trigger(CloseWhenSettled, Account, account)).blockFirst();
+    machine.onEvent(trigger(AccountCloseRequestedWhenSettled, Account, account)).blockFirst();
 
     List<PendingConditionalTrigger> triggers = api.conditionalTriggers(account).collectList().block();
 
     assertEquals(1, triggers.size());
-    assertEquals(Close, triggers.getFirst().type());
-    assertEquals(List.of(Settle), triggers.getFirst().lastTypes());
-    assertEquals(StatementOfAccount, triggers.getFirst().referenceType());
+    assertEquals(AccountClosed, triggers.getFirst().type());
+    assertEquals(List.of(StatementSettled), triggers.getFirst().lastTypes());
+    assertEquals(StatementOfAccountReferenced, triggers.getFirst().referenceType());
     assertEquals(account, triggers.getFirst().triggerEntityId());
     assertEquals(2, triggers.getFirst().triggerEventNumber());
 
-    machine.onEvent(trigger(Settle, Statement, statement)).blockFirst();
+    machine.onEvent(trigger(StatementSettled, Statement, statement)).blockFirst();
 
-    assertEquals(List.of("1:Open", "2:CloseWhenSettled", "3:Close"), eventNames(awaitEvents(account, 3)));
+    assertEquals(List.of("1:Account opened", "2:Account close requested when settled", "3:Account closed"), eventNames(awaitEvents(account, 3)));
     assertEquals(List.of(), api.conditionalTriggers(account).collectList().block());
   }
 
@@ -338,10 +338,10 @@ public class TestApiTest {
   public void appendedEventPutsEntityInState() {
     UUID account = open("1011");
 
-    Event<Void> appended = api.append(Account, account, Expire, null).block();
+    Event<Void> appended = api.append(Account, account, AccountExpired, null).block();
 
     assertEquals(2, appended.eventNumber());
-    assertEquals(List.of("1:Open", "2:Expire"), eventNames(api.eventLog(account).block()));
+    assertEquals(List.of("1:Account opened", "2:Account expired"), eventNames(api.eventLog(account).block()));
     assertEquals(AccountStates.Expired, machine.onStatus(entityId(account), Account).block());
     // The event the entity was waiting for is cancelled, as if a transition had accepted the appended event
     assertNull(api.delayedTrigger(account).block());
@@ -351,11 +351,11 @@ public class TestApiTest {
   public void appendedEventCreatesEntity() {
     UUID account = UUID.randomUUID();
 
-    api.append(Account, account, Open, "1012").block();
-    api.append(Ids, account, AccountNumber, "1012").block();
+    api.append(Account, account, AccountOpened, "1012").block();
+    api.append(Ids, account, AccountNumberClaimed, "1012").block();
 
-    assertEquals(List.of("1:Open"), eventNames(api.eventLog(account).block()));
-    assertEquals(account, api.eventLogById(AccountNumber, "1012").block().entityId());
+    assertEquals(List.of("1:Account opened"), eventNames(api.eventLog(account).block()));
+    assertEquals(account, api.eventLogById(AccountNumberClaimed, "1012").block().entityId());
   }
 
 }

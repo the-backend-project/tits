@@ -7,7 +7,7 @@ import static com.github.thxmasj.backend.core.TransitionModelBuilder.WithEvent.o
 import static com.github.thxmasj.backend.core.Tuples.tuple;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.EntityModels.RequestDispatching;
 import static com.github.thxmasj.backend.identityprovider.Clients.Client;
-import static com.github.thxmasj.backend.identityprovider.Clients.ClientId;
+import static com.github.thxmasj.backend.identityprovider.Clients.ClientIdClaimed;
 
 import com.github.thxmasj.backend.core.BasicEventType;
 import com.github.thxmasj.backend.core.DataType;
@@ -50,19 +50,19 @@ public interface Tokens {
   /// @param error an error code of RFC 6749 section 5.2
   record Refusal(String clientId, String error, String description) {}
 
-  EventType<Request, Void> RequestToken = BasicEventType.of(
-      "Request token",
+  EventType<Request, Void> TokenRequested = BasicEventType.of(
+      "Token requested",
       UUID.fromString("b6e1d4a9-2c75-4f08-9a3e-7d5b1c8f0e62"),
       DataType.json(Request.class),
       DataType.none()
   );
-  EventType<IssuedToken, IssuedToken> IssueToken = BasicEventType.of(
-      "Issue token",
+  EventType<IssuedToken, IssuedToken> TokenIssued = BasicEventType.of(
+      "Token issued",
       UUID.fromString("2d9a7e3c-5f18-4b64-a0d2-8e6c4b1f9a75"),
       DataType.json(IssuedToken.class)
   );
-  EventType<Refusal, Refusal> RefuseToken = BasicEventType.of(
-      "Refuse token",
+  EventType<Refusal, Refusal> TokenRefused = BasicEventType.of(
+      "Token refused",
       UUID.fromString("6a3f0c8e-1b47-4d92-b5e6-4c7d2a9e8f13"),
       DataType.json(Refusal.class)
   );
@@ -71,9 +71,9 @@ public interface Tokens {
     return Map.of(
         TokenRequest, Map.of(
             Begin, List.of(
-                onEvent(RequestToken).to(States.Issued)
+                onEvent(TokenRequested).to(States.Issued)
                     .assemble(c -> tuple(c.input(), c.log().entityId(), c.timestamp()))
-                    .trigger(Clients.Get).on(Client).identifiedBy(d -> idEvent(ClientId, d.t1().clientId()))
+                    .trigger(Clients.ClientLookedUp).on(Client).identifiedBy(d -> idEvent(ClientIdClaimed, d.t1().clientId()))
                     // An unknown client and a wrong secret are refused alike, so the response does not tell which
                     // client ids exist. isRejected() marks a rejected read as handled.
                     .when(d -> d.t2().isRejected() || !d.t2().isAccepted() || !Secrets.matches(d.t1().t1().secretHash(), registration(d.t2()).secretHash())).then(
@@ -85,9 +85,9 @@ public interface Tokens {
                         d -> new Refusal(d.t1().t1().clientId(), "invalid_scope", "The requested scope exceeds the scope of the client")
                     )
                     .otherwise(
-                        onEvent(IssueToken).to(States.Issued)
+                        onEvent(TokenIssued).to(States.Issued)
                             .assembleInput()
-                            .trigger(Inbox.SendReply).with(d -> Reply.json(200, d)).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                            .trigger(Inbox.ReplyCreated).with(d -> Reply.json(200, d)).on(RequestDispatching).identifiedBy(entityIdFromSession())
                             .output(Tuple2::t1),
                         d -> issue(d.t1(), registration(d.t2()), lifetime)
                     )
@@ -99,9 +99,9 @@ public interface Tokens {
   }
 
   private static TransitionModel<Refusal, Refusal> refuse() {
-    return onEvent(RefuseToken).to(States.Refused)
+    return onEvent(TokenRefused).to(States.Refused)
         .assembleInput()
-        .trigger(Inbox.SendReply).with(Tokens::reply).on(RequestDispatching).identifiedBy(entityIdFromSession())
+        .trigger(Inbox.ReplyCreated).with(Tokens::reply).on(RequestDispatching).identifiedBy(entityIdFromSession())
         .output(Tuple2::t1);
   }
 

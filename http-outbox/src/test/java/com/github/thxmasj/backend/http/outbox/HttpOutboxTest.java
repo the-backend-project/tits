@@ -1,6 +1,6 @@
 package com.github.thxmasj.backend.http.outbox;
 
-import static com.github.thxmasj.backend.core.BuiltinEventTypes.Rollback;
+import static com.github.thxmasj.backend.core.BuiltinEventTypes.EventsRolledBack;
 import static com.github.thxmasj.backend.core.EntityModel.Begin;
 import static com.github.thxmasj.backend.core.EntitySelector.entityId;
 import static com.github.thxmasj.backend.core.EntitySelector.newEntityId;
@@ -10,7 +10,7 @@ import static com.github.thxmasj.backend.core.TransitionModelBuilder.assemble;
 import static com.github.thxmasj.backend.core.Tuples.tuple;
 import static com.github.thxmasj.backend.core.Validated.invalid;
 import static com.github.thxmasj.backend.core.Validated.valid;
-import static com.github.thxmasj.backend.http.outbox.EventTypes.InvalidResponse;
+import static com.github.thxmasj.backend.http.outbox.EventTypes.InvalidResponseReceived;
 import static com.github.thxmasj.backend.http.outbox.EventTypes.ResponseReceived;
 import static com.github.thxmasj.backend.http.outbox.EventTypes.TimeoutExpired;
 import static com.github.thxmasj.backend.http.outbox.HttpOutboxRequest.Index;
@@ -118,9 +118,9 @@ public class HttpOutboxTest {
   public void successfulExchange() {
     var model = ProcessModel.create();
     Init.addOkContext(server, model.path());
-    StepVerifier.create(model.machine().onEvent(trigger(model.doProcess(), model.process())))
-        .assertNext(event -> assertEquals(model.doProcess(), event.type()))
-        .assertNext(event -> assertEquals(model.processed(), event.type()))
+    StepVerifier.create(model.machine().onEvent(trigger(model.processStarted(), model.process())))
+        .assertNext(event -> assertEquals(model.processStarted(), event.type()))
+        .assertNext(event -> assertEquals(model.processSucceeded(), event.type()))
         .thenCancel().verify();
   }
 
@@ -128,9 +128,9 @@ public class HttpOutboxTest {
   public void failedExchange() {
     var model = ProcessModel.create();
     Init.addBadRequestContext(server, model.path());
-    StepVerifier.create(model.machine().onEvent(trigger(model.doProcess(), model.process())))
-        .assertNext(event -> assertEquals(model.doProcess(), event.type()))
-        .assertNext(event -> assertEquals(model.failed(), event.type()))
+    StepVerifier.create(model.machine().onEvent(trigger(model.processStarted(), model.process())))
+        .assertNext(event -> assertEquals(model.processStarted(), event.type()))
+        .assertNext(event -> assertEquals(model.processFailed(), event.type()))
         .thenCancel().verify();
   }
 
@@ -141,13 +141,13 @@ public class HttpOutboxTest {
 
   private Event<?> unknownExchange(ProcessModel model) {
     Init.addInternalServerErrorContext(server, model.path());
-    var events = model.machine().onEvent(trigger(model.doProcess(), model.process()))
+    var events = model.machine().onEvent(trigger(model.processStarted(), model.process()))
         .take(2)
         .collectList()
         .block();
     assertNotNull(events);
-    assertEquals(model.doProcess(), events.get(0).type());
-    assertEquals(model.unknown(), events.get(1).type());
+    assertEquals(model.processStarted(), events.get(0).type());
+    assertEquals(model.outcomeUndetermined(), events.get(1).type());
     return events.get(1);
   }
 
@@ -157,11 +157,11 @@ public class HttpOutboxTest {
     Init.addOkContext(server, model.path() + "/rollback");
     var unknown = unknownExchange(model);
     var rollback = model.machine().onEvent(
-        trigger(Rollback, model.process(), unknown.entityId()),
+        trigger(EventsRolledBack, model.process(), unknown.entityId()),
         new Data(0, "Technical")
     ).blockFirst();
     assertNotNull(rollback);
-    assertEquals(Rollback, rollback.type());
+    assertEquals(EventsRolledBack, rollback.type());
   }
 
   @Test
@@ -169,19 +169,19 @@ public class HttpOutboxTest {
     var model = ProcessModel.create();
     Init.addOkContext(server, model.path());
     Init.addOkContext(server, model.path() + "/rollback");
-    var events = model.machine().onEvent(trigger(model.doProcess(), model.process()))
+    var events = model.machine().onEvent(trigger(model.processStarted(), model.process()))
         .take(2)
         .collectList()
         .block();
     assertNotNull(events);
-    assertEquals(model.doProcess(), events.get(0).type());
-    assertEquals(model.processed(), events.get(1).type());
+    assertEquals(model.processStarted(), events.get(0).type());
+    assertEquals(model.processSucceeded(), events.get(1).type());
     var rollback = model.machine().onEvent(
-        trigger(Rollback, model.process(), events.get(1).entityId()),
+        trigger(EventsRolledBack, model.process(), events.get(1).entityId()),
         new Data(0, "Technical")
     ).blockFirst();
     assertNotNull(rollback);
-    assertEquals(Rollback, rollback.type());
+    assertEquals(EventsRolledBack, rollback.type());
   }
 
   @Test
@@ -299,22 +299,22 @@ public class HttpOutboxTest {
   @Test
   public void successfulExchangeWithRequestAwareContentParser() {
     EntityModel process = EntityModel.of("Process", UUID.randomUUID());
-    EventType<Void, Void> doProcess = BasicEventType.of("Do process", UUID.randomUUID());
-    EventType<String, String> processed = BasicEventType.of("Processed", UUID.randomUUID(), DataType.string(), DataType.string());
-    EventType<Void, Void> failed = BasicEventType.of("Failed", UUID.randomUUID());
+    EventType<Void, Void> processStarted = BasicEventType.of("Process started", UUID.randomUUID());
+    EventType<String, String> processSucceeded = BasicEventType.of("Process succeeded", UUID.randomUUID(), DataType.string(), DataType.string());
+    EventType<Void, Void> processFailed = BasicEventType.of("Process failed", UUID.randomUUID());
     String path = "/" + UUID.randomUUID();
     HttpOutboxRequest<String> exchange = HttpOutboxRequest.atMostOnce()
         .requestPayloadType(DataType.string())
         .responsePayloadType(DataType.string())
         .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
         .processModel(process)
-        .onPeerUnavailable(failed)
-        .onMissingResponse(failed)
-        .onInvalidResponseRejection(failed)
-        .onInvalidResponseUnknown(failed)
+        .onPeerUnavailable(processFailed)
+        .onMissingResponse(processFailed)
+        .onInvalidResponseRejection(processFailed)
+        .onInvalidResponseUnknown(processFailed)
         .contentParser((req, res) -> valid(req.payload() + ":" + res.statusCode()))
-        .onSuccess(processed, TypedHttpResponse::payload)
-        .onFailure(failed)
+        .onSuccess(processSucceeded, TypedHttpResponse::payload)
+        .onFailure(processFailed)
         .isAccepted(r -> r.statusCode() >= 200 && r.statusCode() <= 299)
         .isRejected(r -> r.statusCode() >= 400 && r.statusCode() <= 499)
         .isRejectedByInvalidResponse(r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499)
@@ -322,15 +322,15 @@ public class HttpOutboxTest {
 
     Map<State, List<TransitionModel<?, ?>>> processTransitions = Map.of(
         Begin, List.of(
-            onEvent(doProcess).to(States.WaitingForResponse)
+            onEvent(processStarted).to(States.WaitingForResponse)
                 .trigger(exchange.requestDispatched()).with(_ -> requestMessage(path, "hello")).on(exchange).identifiedBy(newEntityId())
                 .output()
         ),
         States.WaitingForResponse, List.of(
-            onEvent(processed).to(States.Done)
+            onEvent(processSucceeded).to(States.Done)
                 .assembleInput()
                 .output(d -> d),
-            onEvent(failed).to(States.Done)
+            onEvent(processFailed).to(States.Done)
                 .output()
         ),
         States.Done, List.of()
@@ -343,10 +343,10 @@ public class HttpOutboxTest {
     );
 
     Init.addOkContext(server, path);
-    StepVerifier.create(machine.onEvent(trigger(doProcess, process)))
-        .assertNext(event -> assertEquals(doProcess, event.type()))
+    StepVerifier.create(machine.onEvent(trigger(processStarted, process)))
+        .assertNext(event -> assertEquals(processStarted, event.type()))
         .assertNext(event -> {
-          assertEquals(processed, event.type());
+          assertEquals(processSucceeded, event.type());
           assertArrayEquals("hello:200".getBytes(), event.data());
         })
         .thenCancel().verify();
@@ -356,9 +356,9 @@ public class HttpOutboxTest {
   public void successfulExchangeWithoutRollback() {
     var model = ProcessModelWithoutRollback.create();
     Init.addOkContext(server, model.path());
-    StepVerifier.create(model.machine().onEvent(trigger(model.doProcess(), model.process())))
-        .assertNext(event -> assertEquals(model.doProcess(), event.type()))
-        .assertNext(event -> assertEquals(model.processed(), event.type()))
+    StepVerifier.create(model.machine().onEvent(trigger(model.processStarted(), model.process())))
+        .assertNext(event -> assertEquals(model.processStarted(), event.type()))
+        .assertNext(event -> assertEquals(model.processSucceeded(), event.type()))
         .thenCancel().verify();
   }
 
@@ -366,9 +366,9 @@ public class HttpOutboxTest {
   public void failedExchangeWithoutRollback() {
     var model = ProcessModelWithoutRollback.create();
     Init.addBadRequestContext(server, model.path());
-    StepVerifier.create(model.machine().onEvent(trigger(model.doProcess(), model.process())))
-        .assertNext(event -> assertEquals(model.doProcess(), event.type()))
-        .assertNext(event -> assertEquals(model.failed(), event.type()))
+    StepVerifier.create(model.machine().onEvent(trigger(model.processStarted(), model.process())))
+        .assertNext(event -> assertEquals(model.processStarted(), event.type()))
+        .assertNext(event -> assertEquals(model.processFailed(), event.type()))
         .thenCancel().verify();
   }
 
@@ -376,10 +376,10 @@ public class HttpOutboxTest {
   public void defaultInvalidResponseRejection() {
     var model = ProcessModelWithDefaultInvalidResponseRejection.create();
     Init.addBadRequestContext(server, model.path());
-    StepVerifier.create(model.machine().onEvent(trigger(model.doProcess(), model.process())))
-        .assertNext(event -> assertEquals(model.doProcess(), event.type()))
+    StepVerifier.create(model.machine().onEvent(trigger(model.processStarted(), model.process())))
+        .assertNext(event -> assertEquals(model.processStarted(), event.type()))
         .assertNext(event -> {
-          assertEquals(InvalidResponse, event.type());
+          assertEquals(InvalidResponseReceived, event.type());
           assertArrayEquals("Invalid response".getBytes(), event.data());
         })
         .thenCancel().verify();
@@ -389,10 +389,10 @@ public class HttpOutboxTest {
   public void defaultInvalidResponseUnknown() {
     var model = ProcessModelWithDefaultInvalidResponseUnknown.create();
     Init.addBadRequestContext(server, model.path());
-    StepVerifier.create(model.machine().onEvent(trigger(model.doProcess(), model.process())))
-        .assertNext(event -> assertEquals(model.doProcess(), event.type()))
+    StepVerifier.create(model.machine().onEvent(trigger(model.processStarted(), model.process())))
+        .assertNext(event -> assertEquals(model.processStarted(), event.type()))
         .assertNext(event -> {
-          assertEquals(InvalidResponse, event.type());
+          assertEquals(InvalidResponseReceived, event.type());
           assertArrayEquals("Invalid response".getBytes(), event.data());
         })
         .thenCancel().verify();
@@ -409,7 +409,7 @@ public class HttpOutboxTest {
         .orElseThrow();
     assertEquals(1, timeoutTransition.triggers().size());
     var trigger = timeoutTransition.triggers().getFirst();
-    assertEquals(model.missingResponse(), trigger.eventSpec().eventType());
+    assertEquals(model.responseMissed(), trigger.eventSpec().eventType());
     assertEquals(model.process(), trigger.entityModel());
 
     UUID processEntityId = UUID.randomUUID();
@@ -429,7 +429,7 @@ public class HttpOutboxTest {
 
     var triggerContext = (TriggerStep<?, ?>) occ.previous();
     assertNotNull(triggerContext);
-    assertEquals(model.missingResponse(), triggerContext.eventTrigger().eventSpec().eventType());
+    assertEquals(model.responseMissed(), triggerContext.eventTrigger().eventSpec().eventType());
     assertEquals(model.process(), triggerContext.eventTrigger().entityModel());
   }
 
@@ -461,7 +461,7 @@ public class HttpOutboxTest {
   @Test
   public void atLeastOnceSuccessTransitionIdentifiesProcessEntity() {
     EntityModel process = EntityModel.of("Process", UUID.fromString("dda0cc10-3356-4522-8527-ca4f7006c566"));
-    EventType<Void, Void> processed = BasicEventType.of("Processed", UUID.fromString("433d18b2-8429-4615-aeb0-5de2240413ea"));
+    EventType<Void, Void> processSucceeded = BasicEventType.of("Process succeeded", UUID.fromString("433d18b2-8429-4615-aeb0-5de2240413ea"));
     AtLeastOnce<Void> alo = HttpOutboxRequest.atLeastOnce()
         .requestPayloadType(DataType.none())
         .responsePayloadType(DataType.none())
@@ -469,7 +469,7 @@ public class HttpOutboxTest {
         .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
         .processModel(process)
         .contentParser(_ -> valid(null))
-        .onSuccess(processed)
+        .onSuccess(processSucceeded)
         .isAccepted(r -> r.statusCode() == 200)
         .isFailureTransient(_ -> false)
         .isRejectedByInvalidResponse(_ -> false)
@@ -478,7 +478,7 @@ public class HttpOutboxTest {
         .backoffAlgorithm(_ -> Duration.ofSeconds(1))
         .build("ALOExchange", UUID.randomUUID());
 
-    var machine = stateMachine(process, Map.of(Begin, List.of(onEvent(processed).to(States.Done).output())), List.of(alo));
+    var machine = stateMachine(process, Map.of(Begin, List.of(onEvent(processSucceeded).to(States.Done).output())), List.of(alo));
 
     var inFlightTransitions = alo.transitions().get(AtLeastOnce.States.InFlight);
     @SuppressWarnings("unchecked")
@@ -511,7 +511,7 @@ public class HttpOutboxTest {
       }
     }
     assertNotNull(triggerContext);
-    assertEquals(processed, triggerContext.eventTrigger().eventSpec().eventType());
+    assertEquals(processSucceeded, triggerContext.eventTrigger().eventSpec().eventType());
     assertEquals(process, triggerContext.eventTrigger().entityModel());
   }
 
@@ -627,11 +627,11 @@ public class HttpOutboxTest {
 
   record ProcessModel(
       EntityModel process,
-      EventType<Void, UUID> doProcess,
-      EventType<Void, Void> processed,
-      EventType<Void, Void> failed,
-      EventType<Void, Void> missingResponse,
-      EventType<Void, Void> unknown,
+      EventType<Void, UUID> processStarted,
+      EventType<Void, Void> processSucceeded,
+      EventType<Void, Void> processFailed,
+      EventType<Void, Void> responseMissed,
+      EventType<Void, Void> outcomeUndetermined,
       AtMostOnce<Void, Void> exchange,
       StateMachine machine,
       String path
@@ -642,14 +642,14 @@ public class HttpOutboxTest {
 
     static ProcessModel create(Duration inflightTimeout) {
       EntityModel process = EntityModel.of("Process", UUID.fromString("dda0cc10-3356-4522-8527-ca4f7006c566"));
-      EventType<Void, UUID> doProcess = BasicEventType.of(
-          "Do process", UUID.fromString("dbcf351c-b50e-4789-80e9-f52e2be789cd"),
+      EventType<Void, UUID> processStarted = BasicEventType.of(
+          "Process started", UUID.fromString("dbcf351c-b50e-4789-80e9-f52e2be789cd"),
           DataType.none(), DataType.uuid()
       );
-      EventType<Void, Void> processed = BasicEventType.of("Processed", UUID.fromString("433d18b2-8429-4615-aeb0-5de2240413ea"));
-      EventType<Void, Void> failed = BasicEventType.of("Failed", UUID.fromString("0f4b6aea-a9c2-4b33-b315-844a4e32e45b"));
-      EventType<Void, Void> missingResponse = BasicEventType.of("Missing response", UUID.fromString("7cd9c1f1-1ce0-4249-a709-5e11ea2f6404"));
-      EventType<Void, Void> unknown = BasicEventType.of("Unknown", UUID.fromString("46cf31dd-56ed-41cb-b2ca-501930a23e44"));
+      EventType<Void, Void> processSucceeded = BasicEventType.of("Process succeeded", UUID.fromString("433d18b2-8429-4615-aeb0-5de2240413ea"));
+      EventType<Void, Void> processFailed = BasicEventType.of("Process failed", UUID.fromString("0f4b6aea-a9c2-4b33-b315-844a4e32e45b"));
+      EventType<Void, Void> responseMissed = BasicEventType.of("Response missed", UUID.fromString("7cd9c1f1-1ce0-4249-a709-5e11ea2f6404"));
+      EventType<Void, Void> outcomeUndetermined = BasicEventType.of("Outcome undetermined", UUID.fromString("46cf31dd-56ed-41cb-b2ca-501930a23e44"));
       String path = "/" + UUID.randomUUID();
       AtMostOnce<Void, Void> Exchange = HttpOutboxRequest.atMostOnce()
           .requestPayloadType(DataType.none())
@@ -657,13 +657,13 @@ public class HttpOutboxTest {
           .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
           .inflightTimeout(inflightTimeout)
           .processModel(process)
-          .onPeerUnavailable(failed)
-          .onMissingResponse(missingResponse)
-          .onInvalidResponseRejection(failed)
-          .onInvalidResponseUnknown(unknown)
+          .onPeerUnavailable(processFailed)
+          .onMissingResponse(responseMissed)
+          .onInvalidResponseRejection(processFailed)
+          .onInvalidResponseUnknown(outcomeUndetermined)
           .contentParser(message -> message.statusCode() == 200 && message.body() == null ? valid((Void) null) : invalid("Invalid response"))
-          .onSuccess(processed)
-          .onFailure(failed)
+          .onSuccess(processSucceeded)
+          .onFailure(processFailed)
           .isAccepted(r -> r.statusCode() >= 200 && r.statusCode() <= 299)
           .isRejected(r -> r.statusCode() >= 400 && r.statusCode() <= 499)
           .isRejectedByInvalidResponse(r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499)
@@ -704,20 +704,20 @@ public class HttpOutboxTest {
 
       Map<State, List<TransitionModel<?, ?>>> processTransitions = Map.of(
           Begin, List.of(
-              onEvent(doProcess).to(States.WaitingForResponse)
+              onEvent(processStarted).to(States.WaitingForResponse)
                   .assemble(DispatchContext::of)
                   .trigger(dispatcher.requestDispatched()).withReactive(d -> dispatcher.input(d, null)).on(dispatcher.outbox()).identifiedBy(newEntityId())
                   .reversible(
-                      assemble((log, _) -> log.one(doProcess))
+                      assemble((log, _) -> log.one(processStarted))
                           .trigger(dispatcher.rollbackDispatched()).on(dispatcher.outbox()).identifiedBy(d -> entityId(d))
                   )
                   .output(d -> d.t2().accepted().event().entityId())
           ),
           States.WaitingForResponse, List.of(
-              onEvent(processed).to(States.Done).output(),
-              onEvent(failed).to(States.Done).output(),
-              onEvent(missingResponse).to(States.Done).output(),
-              onEvent(unknown).to(States.Done).output()
+              onEvent(processSucceeded).to(States.Done).output(),
+              onEvent(processFailed).to(States.Done).output(),
+              onEvent(responseMissed).to(States.Done).output(),
+              onEvent(outcomeUndetermined).to(States.Done).output()
           ),
           States.Done, List.of()
       );
@@ -727,37 +727,37 @@ public class HttpOutboxTest {
           processTransitions,
           dispatcher.transitions()
       );
-      return new ProcessModel(process, doProcess, processed, failed, missingResponse, unknown, Exchange, machine, path);
+      return new ProcessModel(process, processStarted, processSucceeded, processFailed, responseMissed, outcomeUndetermined, Exchange, machine, path);
     }
 
   }
 
   record ProcessModelWithoutRollback(
       EntityModel process,
-      EventType<Void, Void> doProcess,
-      EventType<Void, Void> processed,
-      EventType<Void, Void> failed,
+      EventType<Void, Void> processStarted,
+      EventType<Void, Void> processSucceeded,
+      EventType<Void, Void> processFailed,
       StateMachine machine,
       String path
   ) {
     static ProcessModelWithoutRollback create() {
       EntityModel process = EntityModel.of("Process", UUID.randomUUID());
-      EventType<Void, Void> doProcess = BasicEventType.of("Do process", UUID.randomUUID());
-      EventType<Void, Void> processed = BasicEventType.of("Processed", UUID.randomUUID());
-      EventType<Void, Void> failed = BasicEventType.of("Failed", UUID.randomUUID());
+      EventType<Void, Void> processStarted = BasicEventType.of("Process started", UUID.randomUUID());
+      EventType<Void, Void> processSucceeded = BasicEventType.of("Process succeeded", UUID.randomUUID());
+      EventType<Void, Void> processFailed = BasicEventType.of("Process failed", UUID.randomUUID());
       String path = "/" + UUID.randomUUID();
       HttpOutboxRequest<Void> Exchange = HttpOutboxRequest.atMostOnce()
           .requestPayloadType(DataType.none())
           .responsePayloadType(DataType.none())
           .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
           .processModel(process)
-          .onPeerUnavailable(failed)
-          .onMissingResponse(failed)
-          .onInvalidResponseRejection(failed)
-          .onInvalidResponseUnknown(failed)
+          .onPeerUnavailable(processFailed)
+          .onMissingResponse(processFailed)
+          .onInvalidResponseRejection(processFailed)
+          .onInvalidResponseUnknown(processFailed)
           .contentParser(_ -> valid(null))
-          .onSuccess(processed)
-          .onFailure(failed)
+          .onSuccess(processSucceeded)
+          .onFailure(processFailed)
           .isAccepted(r -> r.statusCode() >= 200 && r.statusCode() <= 299)
           .isRejected(r -> r.statusCode() >= 400 && r.statusCode() <= 499)
           .isRejectedByInvalidResponse(r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499)
@@ -765,14 +765,14 @@ public class HttpOutboxTest {
 
       Map<State, List<TransitionModel<?, ?>>> processTransitions = Map.of(
           Begin, List.of(
-              onEvent(doProcess).to(States.WaitingForResponse)
+              onEvent(processStarted).to(States.WaitingForResponse)
                   .trigger(Exchange.requestDispatched()).with(_ -> requestMessage(path)).on(Exchange).identifiedBy(newEntityId())
                   .output()
           ),
           States.WaitingForResponse, List.of(
-              onEvent(processed).to(States.Done)
+              onEvent(processSucceeded).to(States.Done)
                   .output(),
-              onEvent(failed).to(States.Done)
+              onEvent(processFailed).to(States.Done)
                   .output()
           )
       );
@@ -782,20 +782,20 @@ public class HttpOutboxTest {
           processTransitions,
           List.of(Exchange)
       );
-      return new ProcessModelWithoutRollback(process, doProcess, processed, failed, machine, path);
+      return new ProcessModelWithoutRollback(process, processStarted, processSucceeded, processFailed, machine, path);
     }
 
   }
 
   record ProcessModelWithDefaultInvalidResponseRejection(
       EntityModel process,
-      EventType<Void, Void> doProcess,
+      EventType<Void, Void> processStarted,
       StateMachine machine,
       String path
   ) {
     static ProcessModelWithDefaultInvalidResponseRejection create() {
       EntityModel process = EntityModel.of("Process", UUID.randomUUID());
-      EventType<Void, Void> doProcess = BasicEventType.of("Do process", UUID.randomUUID());
+      EventType<Void, Void> processStarted = BasicEventType.of("Process started", UUID.randomUUID());
       String path = "/" + UUID.randomUUID();
       HttpOutboxRequest<Void> Exchange = HttpOutboxRequest.atMostOnce()
           .requestPayloadType(DataType.none())
@@ -810,12 +810,12 @@ public class HttpOutboxTest {
 
       Map<State, List<TransitionModel<?, ?>>> processTransitions = Map.of(
           Begin, List.of(
-              onEvent(doProcess).to(States.WaitingForResponse)
+              onEvent(processStarted).to(States.WaitingForResponse)
                   .trigger(Exchange.requestDispatched()).with(_ -> requestMessage(path)).on(Exchange).identifiedBy(newEntityId())
                   .output()
           ),
           States.WaitingForResponse, List.of(
-              onEvent(InvalidResponse).to(States.Done)
+              onEvent(InvalidResponseReceived).to(States.Done)
                   .assembleInput()
                   .output(d -> d)
           ),
@@ -827,20 +827,20 @@ public class HttpOutboxTest {
           processTransitions,
           List.of(Exchange)
       );
-      return new ProcessModelWithDefaultInvalidResponseRejection(process, doProcess, machine, path);
+      return new ProcessModelWithDefaultInvalidResponseRejection(process, processStarted, machine, path);
     }
 
   }
 
   record ProcessModelWithDefaultInvalidResponseUnknown(
       EntityModel process,
-      EventType<Void, Void> doProcess,
+      EventType<Void, Void> processStarted,
       StateMachine machine,
       String path
   ) {
     static ProcessModelWithDefaultInvalidResponseUnknown create() {
       EntityModel process = EntityModel.of("Process", UUID.randomUUID());
-      EventType<Void, Void> doProcess = BasicEventType.of("Do process", UUID.randomUUID());
+      EventType<Void, Void> processStarted = BasicEventType.of("Process started", UUID.randomUUID());
       String path = "/" + UUID.randomUUID();
       HttpOutboxRequest<Void> Exchange = HttpOutboxRequest.atMostOnce()
           .requestPayloadType(DataType.<Void>unknown())
@@ -855,12 +855,12 @@ public class HttpOutboxTest {
 
       Map<State, List<TransitionModel<?, ?>>> processTransitions = Map.of(
           Begin, List.of(
-              onEvent(doProcess).to(States.WaitingForResponse)
+              onEvent(processStarted).to(States.WaitingForResponse)
                   .trigger(Exchange.requestDispatched()).with(_ -> requestMessage(path)).on(Exchange).identifiedBy(newEntityId())
                   .output()
           ),
           States.WaitingForResponse, List.of(
-              onEvent(InvalidResponse).to(States.Done)
+              onEvent(InvalidResponseReceived).to(States.Done)
                   .assembleInput()
                   .output(d -> d)
           ),
@@ -872,7 +872,7 @@ public class HttpOutboxTest {
           processTransitions,
           List.of(Exchange)
       );
-      return new ProcessModelWithDefaultInvalidResponseUnknown(process, doProcess, machine, path);
+      return new ProcessModelWithDefaultInvalidResponseUnknown(process, processStarted, machine, path);
     }
 
   }

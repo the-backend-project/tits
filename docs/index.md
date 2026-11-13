@@ -70,9 +70,9 @@ anything along the way.
 A greeting is created by every `GET /`, and its transition to the `Greeted` state responds with a page saying hello:
 
 ```java
-onEvent(Greet).to(States.Greeted)
+onEvent(GreetingRequested).to(States.Greeted)
     .assemble(c -> c.log().entityId().toString())
-    .trigger(RespondGreeting).with(id -> id).on(RequestDispatching).identifiedBy(entityIdFromSession())
+    .trigger(GreetingResponseCreated).with(id -> id).on(RequestDispatching).identifiedBy(entityIdFromSession())
     .output()
 ```
 

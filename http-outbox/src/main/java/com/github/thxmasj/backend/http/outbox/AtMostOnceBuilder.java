@@ -1,7 +1,7 @@
 package com.github.thxmasj.backend.http.outbox;
 
-import static com.github.thxmasj.backend.http.outbox.EventTypes.InvalidResponse;
-import static com.github.thxmasj.backend.http.outbox.EventTypes.ServiceUnavailable;
+import static com.github.thxmasj.backend.http.outbox.EventTypes.InvalidResponseReceived;
+import static com.github.thxmasj.backend.http.outbox.EventTypes.ServiceFoundUnavailable;
 import static com.github.thxmasj.backend.http.outbox.EventTypes.TimeoutExpired;
 
 import com.github.thxmasj.backend.core.DataType;
@@ -62,7 +62,7 @@ public final class AtMostOnceBuilder {
     OnPeerUnavailableStep<RQ, RS> processModel(EntityModel processModel);
   }
 
-  /// Optional: the peer unavailable callback defaults to ServiceUnavailable.
+  /// Optional: the peer unavailable callback defaults to ServiceFoundUnavailable.
   public interface OnPeerUnavailableStep<RQ, RS> extends OnMissingResponseStep<RQ, RS> {
 
     <S> OnMissingResponseStep<RQ, RS> onPeerUnavailable(EventType<S, ?> eventType, Function<EntityModel, S> dataAdapter);
@@ -82,7 +82,7 @@ public final class AtMostOnceBuilder {
     OnInvalidResponseRejectionStep<RQ, RS> onMissingResponse(EventType<Void, ?> eventType);
   }
 
-  /// Optional: the invalid response rejection callback defaults to InvalidResponse.
+  /// Optional: the invalid response rejection callback defaults to InvalidResponseReceived.
   public interface OnInvalidResponseRejectionStep<RQ, RS> extends OnInvalidResponseUnknownStep<RQ, RS> {
 
     <S> OnInvalidResponseUnknownStep<RQ, RS> onInvalidResponseRejection(
@@ -93,7 +93,7 @@ public final class AtMostOnceBuilder {
     OnInvalidResponseUnknownStep<RQ, RS> onInvalidResponseRejection(EventType<Void, ?> eventType);
   }
 
-  /// Optional: the invalid response unknown callback defaults to InvalidResponse.
+  /// Optional: the invalid response unknown callback defaults to InvalidResponseReceived.
   public interface OnInvalidResponseUnknownStep<RQ, RS> extends ContentParserStep<RQ, RS> {
 
     <S> ContentParserStep<RQ, RS> onInvalidResponseUnknown(
@@ -214,10 +214,10 @@ public final class AtMostOnceBuilder {
     private HttpClient forwarder;
     private Duration inflightTimeout = Duration.ofSeconds(10);
     private EntityModel processModel;
-    private Callback<EntityModel, ?> onPeerUnavailable = new Callback<>(ServiceUnavailable, _ -> null);
+    private Callback<EntityModel, ?> onPeerUnavailable = new Callback<>(ServiceFoundUnavailable, _ -> null);
     private Callback<EntityModel, ?> onMissingResponse = new Callback<>(TimeoutExpired, _ -> null);
-    private Callback<Tuple2<HttpResponseMessage, String>, ?> onInvalidResponseRejection = new Callback<>(InvalidResponse, Tuple2::t2);
-    private Callback<Tuple2<HttpResponseMessage, String>, ?> onInvalidResponseUnknown = new Callback<>(InvalidResponse, Tuple2::t2);
+    private Callback<Tuple2<HttpResponseMessage, String>, ?> onInvalidResponseRejection = new Callback<>(InvalidResponseReceived, Tuple2::t2);
+    private Callback<Tuple2<HttpResponseMessage, String>, ?> onInvalidResponseUnknown = new Callback<>(InvalidResponseReceived, Tuple2::t2);
 
     private WithPayloadTypes(
         DataType<RQ> requestPayloadType,

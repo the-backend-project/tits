@@ -47,40 +47,40 @@ public class ConditionalTriggerTest {
       orderReferenced
   );
 
-  static EventType<UUID, UUID> CreateOrder = BasicEventType.of(
-      "CreateOrder",
+  static EventType<UUID, UUID> OrderCreated = BasicEventType.of(
+      "Order created",
       UUID.fromString("c1a8a3e0-0f0b-4b0e-9b0e-2f6d1f1c2b05"),
       DataType.uuid()
   );
-  static EventType<Void, Void> ShipOrder = BasicEventType.of(
-      "ShipOrder",
+  static EventType<Void, Void> OrderShipped = BasicEventType.of(
+      "Order shipped",
       UUID.fromString("c1a8a3e0-0f0b-4b0e-9b0e-2f6d1f1c2b06")
   );
-  static EventType<Void, Void> CancelOrder = BasicEventType.of(
-      "CancelOrder",
+  static EventType<Void, Void> OrderCancelled = BasicEventType.of(
+      "Order cancelled",
       UUID.fromString("c1a8a3e0-0f0b-4b0e-9b0e-2f6d1f1c2b0b")
   );
-  static EventType<UUID, UUID> CloseBatchWhenShippedOrCancelled = BasicEventType.of(
-      "CloseBatchWhenShippedOrCancelled",
+  static EventType<UUID, UUID> BatchCloseRequestedWhenShippedOrCancelled = BasicEventType.of(
+      "Batch close requested when shipped or cancelled",
       UUID.fromString("c1a8a3e0-0f0b-4b0e-9b0e-2f6d1f1c2b0c"),
       DataType.uuid()
   );
-  static EventType<Void, Void> OpenBatch = BasicEventType.of(
-      "OpenBatch",
+  static EventType<Void, Void> BatchOpened = BasicEventType.of(
+      "Batch opened",
       UUID.fromString("c1a8a3e0-0f0b-4b0e-9b0e-2f6d1f1c2b07")
   );
-  static EventType<UUID, UUID> CloseBatchWhenShipped = BasicEventType.of(
-      "CloseBatchWhenShipped",
+  static EventType<UUID, UUID> BatchCloseRequestedWhenShipped = BasicEventType.of(
+      "Batch close requested when shipped",
       UUID.fromString("c1a8a3e0-0f0b-4b0e-9b0e-2f6d1f1c2b08"),
       DataType.uuid()
   );
-  static EventType<UUID, UUID> CloseSessionBatchWhenShipped = BasicEventType.of(
-      "CloseSessionBatchWhenShipped",
+  static EventType<UUID, UUID> SessionBatchCloseRequestedWhenShipped = BasicEventType.of(
+      "Session batch close requested when shipped",
       UUID.fromString("c1a8a3e0-0f0b-4b0e-9b0e-2f6d1f1c2b0a"),
       DataType.uuid()
   );
-  static EventType<Void, Void> CloseBatch = BasicEventType.of(
-      "CloseBatch",
+  static EventType<Void, Void> BatchClosed = BasicEventType.of(
+      "Batch closed",
       UUID.fromString("c1a8a3e0-0f0b-4b0e-9b0e-2f6d1f1c2b09")
   );
 
@@ -95,50 +95,50 @@ public class ConditionalTriggerTest {
     return Map.of(
         Order, Map.<State, List<TransitionModel<?, ?>>>of(
             Begin, List.of(
-                onEvent(CreateOrder).to(OrderStates.Created)
+                onEvent(OrderCreated).to(OrderStates.Created)
                     .assemble(c -> tuple(c.input(), c.log().entityId()))
                     .trigger(orderReferenced).with(t -> t.t1()).on(Index).identifiedBy(t -> newEntityId(t.t2()))
                     .output()
             ),
             OrderStates.Created, List.of(
-                onEvent(ShipOrder).to(OrderStates.Shipped).output(),
-                onEvent(CancelOrder).to(OrderStates.Cancelled).output()
+                onEvent(OrderShipped).to(OrderStates.Shipped).output(),
+                onEvent(OrderCancelled).to(OrderStates.Cancelled).output()
             ),
             OrderStates.Shipped, List.of(),
             OrderStates.Cancelled, List.of()
         ),
         Batch, Map.<State, List<TransitionModel<?, ?>>>of(
-            Begin, List.of(onEvent(OpenBatch).to(BatchStates.Open).output()),
+            Begin, List.of(onEvent(BatchOpened).to(BatchStates.Open).output()),
             BatchStates.Open, List.of(
-                onEvent(CloseBatchWhenShipped).to(BatchStates.Waiting)
+                onEvent(BatchCloseRequestedWhenShipped).to(BatchStates.Waiting)
                     .assemble(c -> tuple(c.input(), c.log().entityId()))
-                    .trigger(CloseBatch)
+                    .trigger(BatchClosed)
                     .when(orderReferenced, t -> t.t1())
-                    .is(ShipOrder)
+                    .is(OrderShipped)
                     .with(_ -> null)
                     .on(Batch)
                     .identifiedBy(t -> entityId((UUID) t.t2()))
                     .output(),
-                onEvent(CloseSessionBatchWhenShipped).to(BatchStates.Waiting)
+                onEvent(SessionBatchCloseRequestedWhenShipped).to(BatchStates.Waiting)
                     .assemble(c -> c.input())
-                    .trigger(CloseBatch)
+                    .trigger(BatchClosed)
                     .when(orderReferenced, t -> t)
-                    .is(ShipOrder)
+                    .is(OrderShipped)
                     .with(_ -> null)
                     .on(Batch)
                     .identifiedBy(entityIdFromSession())
                     .output(),
-                onEvent(CloseBatchWhenShippedOrCancelled).to(BatchStates.Waiting)
+                onEvent(BatchCloseRequestedWhenShippedOrCancelled).to(BatchStates.Waiting)
                     .assemble(c -> c.input())
-                    .trigger(CloseBatch)
+                    .trigger(BatchClosed)
                     .when(orderReferenced, t -> t)
-                    .is(ShipOrder, CancelOrder)
+                    .is(OrderShipped, OrderCancelled)
                     .with(_ -> null)
                     .on(Batch)
                     .identifiedBy(entityIdFromSession())
                     .output()
             ),
-            BatchStates.Waiting, List.of(onEvent(CloseBatch).to(BatchStates.Closed).output()),
+            BatchStates.Waiting, List.of(onEvent(BatchClosed).to(BatchStates.Closed).output()),
             BatchStates.Closed, List.of()
         ),
         Index, Index.transitions()
@@ -148,7 +148,7 @@ public class ConditionalTriggerTest {
   private EventLog batchLog(UUID batchId) {
     return eventsByEntityId.execute(
         Batch,
-        List.of(OpenBatch, CloseBatchWhenShipped, CloseSessionBatchWhenShipped, CloseBatchWhenShippedOrCancelled, CloseBatch),
+        List.of(BatchOpened, BatchCloseRequestedWhenShipped, SessionBatchCloseRequestedWhenShipped, BatchCloseRequestedWhenShippedOrCancelled, BatchClosed),
         batchId
     ).block();
   }
@@ -166,30 +166,30 @@ public class ConditionalTriggerTest {
   public void waitingEventFiresWhenAllReferencedEntitiesAreInState() throws Exception {
     var machine = stateMachine(UUID.randomUUID().toString());
     UUID key = UUID.randomUUID();
-    var order1 = machine.onEvent(trigger(CreateOrder, Order), key).blockFirst();
-    var order2 = machine.onEvent(trigger(CreateOrder, Order), key).blockFirst();
+    var order1 = machine.onEvent(trigger(OrderCreated, Order), key).blockFirst();
+    var order2 = machine.onEvent(trigger(OrderCreated, Order), key).blockFirst();
     assertNotNull(order1);
     assertNotNull(order2);
-    var batch = machine.onEvent(trigger(OpenBatch, Batch)).blockFirst();
+    var batch = machine.onEvent(trigger(BatchOpened, Batch)).blockFirst();
     assertNotNull(batch);
     UUID batchId = batch.entityId();
 
     // Condition not met: no order is shipped, so the close event must wait
-    machine.onEvent(trigger(CloseBatchWhenShipped, Batch, batchId), key).blockFirst();
+    machine.onEvent(trigger(BatchCloseRequestedWhenShipped, Batch, batchId), key).blockFirst();
     Thread.sleep(2500);
     assertEquals(2, batchEventCount(machine, batchId));
 
     // Condition still not met: only one of two orders is shipped
-    machine.onEvent(trigger(ShipOrder, Order, order1.entityId())).blockFirst();
+    machine.onEvent(trigger(OrderShipped, Order, order1.entityId())).blockFirst();
     Thread.sleep(2500);
     assertEquals(2, batchEventCount(machine, batchId));
 
     // Condition met: the waiting event fires within about a second
-    machine.onEvent(trigger(ShipOrder, Order, order2.entityId())).blockFirst();
+    machine.onEvent(trigger(OrderShipped, Order, order2.entityId())).blockFirst();
     awaitBatchEvents(machine, batchId, 3);
     var log = batchLog(batchId);
     assertEquals(3, log.events().size());
-    assertEquals(CloseBatch.name(), log.events().getLast().typeName());
+    assertEquals(BatchClosed.name(), log.events().getLast().typeName());
 
     // The row was deleted with the fired event's change, so it is not fired again
     Thread.sleep(2500);
@@ -200,23 +200,23 @@ public class ConditionalTriggerTest {
   public void sessionIdentifiedTargetWaitsAndFiresWhenConditionIsMet() throws Exception {
     var machine = stateMachine(UUID.randomUUID().toString());
     UUID key = UUID.randomUUID();
-    var order = machine.onEvent(trigger(CreateOrder, Order), key).blockFirst();
+    var order = machine.onEvent(trigger(OrderCreated, Order), key).blockFirst();
     assertNotNull(order);
-    var batch = machine.onEvent(trigger(OpenBatch, Batch)).blockFirst();
+    var batch = machine.onEvent(trigger(BatchOpened, Batch)).blockFirst();
     assertNotNull(batch);
     UUID batchId = batch.entityId();
 
     // Condition not met: the order is not shipped, so the close event waits
-    machine.onEvent(trigger(CloseSessionBatchWhenShipped, Batch, batchId), key).blockFirst();
+    machine.onEvent(trigger(SessionBatchCloseRequestedWhenShipped, Batch, batchId), key).blockFirst();
     Thread.sleep(2500);
     assertEquals(2, batchEventCount(machine, batchId));
 
     // Condition met: the event fires on the session's own entity
-    machine.onEvent(trigger(ShipOrder, Order, order.entityId())).blockFirst();
+    machine.onEvent(trigger(OrderShipped, Order, order.entityId())).blockFirst();
     awaitBatchEvents(machine, batchId, 3);
     var log = batchLog(batchId);
     assertEquals(3, log.events().size());
-    assertEquals(CloseBatch.name(), log.events().getLast().typeName());
+    assertEquals(BatchClosed.name(), log.events().getLast().typeName());
 
     // Not fired again
     Thread.sleep(2500);
@@ -227,40 +227,40 @@ public class ConditionalTriggerTest {
   public void waitingEventFiresWhenAllReferencedEntitiesAreInOneOfTheStates() throws Exception {
     var machine = stateMachine(UUID.randomUUID().toString());
     UUID key = UUID.randomUUID();
-    var order1 = machine.onEvent(trigger(CreateOrder, Order), key).blockFirst();
-    var order2 = machine.onEvent(trigger(CreateOrder, Order), key).blockFirst();
+    var order1 = machine.onEvent(trigger(OrderCreated, Order), key).blockFirst();
+    var order2 = machine.onEvent(trigger(OrderCreated, Order), key).blockFirst();
     assertNotNull(order1);
     assertNotNull(order2);
-    var batch = machine.onEvent(trigger(OpenBatch, Batch)).blockFirst();
+    var batch = machine.onEvent(trigger(BatchOpened, Batch)).blockFirst();
     assertNotNull(batch);
     UUID batchId = batch.entityId();
 
     // Condition not met: one order is cancelled, the other is neither shipped nor cancelled
-    machine.onEvent(trigger(CancelOrder, Order, order1.entityId())).blockFirst();
-    machine.onEvent(trigger(CloseBatchWhenShippedOrCancelled, Batch, batchId), key).blockFirst();
+    machine.onEvent(trigger(OrderCancelled, Order, order1.entityId())).blockFirst();
+    machine.onEvent(trigger(BatchCloseRequestedWhenShippedOrCancelled, Batch, batchId), key).blockFirst();
     Thread.sleep(2500);
     assertEquals(2, batchEventCount(machine, batchId));
 
     // Condition met: one order is cancelled and the other is shipped
-    machine.onEvent(trigger(ShipOrder, Order, order2.entityId())).blockFirst();
+    machine.onEvent(trigger(OrderShipped, Order, order2.entityId())).blockFirst();
     awaitBatchEvents(machine, batchId, 3);
     var log = batchLog(batchId);
     assertEquals(3, log.events().size());
-    assertEquals(CloseBatch.name(), log.events().getLast().typeName());
+    assertEquals(BatchClosed.name(), log.events().getLast().typeName());
   }
 
   @Test
   public void sessionIdentifiedTargetFiresWhenConditionIsAlreadyMet() throws Exception {
     var machine = stateMachine(UUID.randomUUID().toString());
     UUID key = UUID.randomUUID();
-    var order = machine.onEvent(trigger(CreateOrder, Order), key).blockFirst();
+    var order = machine.onEvent(trigger(OrderCreated, Order), key).blockFirst();
     assertNotNull(order);
-    machine.onEvent(trigger(ShipOrder, Order, order.entityId())).blockFirst();
-    var batch = machine.onEvent(trigger(OpenBatch, Batch)).blockFirst();
+    machine.onEvent(trigger(OrderShipped, Order, order.entityId())).blockFirst();
+    var batch = machine.onEvent(trigger(BatchOpened, Batch)).blockFirst();
     assertNotNull(batch);
     UUID batchId = batch.entityId();
 
-    machine.onEvent(trigger(CloseSessionBatchWhenShipped, Batch, batchId), key).blockFirst();
+    machine.onEvent(trigger(SessionBatchCloseRequestedWhenShipped, Batch, batchId), key).blockFirst();
 
     awaitBatchEvents(machine, batchId, 3);
     assertTrue(batchEventCount(machine, batchId) >= 3);
@@ -270,14 +270,14 @@ public class ConditionalTriggerTest {
   public void eventFiresWhenConditionIsAlreadyMet() throws Exception {
     var machine = stateMachine(UUID.randomUUID().toString());
     UUID key = UUID.randomUUID();
-    var order = machine.onEvent(trigger(CreateOrder, Order), key).blockFirst();
+    var order = machine.onEvent(trigger(OrderCreated, Order), key).blockFirst();
     assertNotNull(order);
-    machine.onEvent(trigger(ShipOrder, Order, order.entityId())).blockFirst();
-    var batch = machine.onEvent(trigger(OpenBatch, Batch)).blockFirst();
+    machine.onEvent(trigger(OrderShipped, Order, order.entityId())).blockFirst();
+    var batch = machine.onEvent(trigger(BatchOpened, Batch)).blockFirst();
     assertNotNull(batch);
     UUID batchId = batch.entityId();
 
-    machine.onEvent(trigger(CloseBatchWhenShipped, Batch, batchId), key).blockFirst();
+    machine.onEvent(trigger(BatchCloseRequestedWhenShipped, Batch, batchId), key).blockFirst();
 
     awaitBatchEvents(machine, batchId, 3);
     assertTrue(batchEventCount(machine, batchId) >= 3);

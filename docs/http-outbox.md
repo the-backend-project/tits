@@ -165,13 +165,13 @@ Every outcome has a callback, an event triggered on the entity of the process wh
 
 | Outcome                                    | Decided by                            | State      | Callback                   | Default             |
 |--------------------------------------------|---------------------------------------|------------|----------------------------|---------------------|
-| Connection failed                          |                                       | `Failed`   | `onPeerUnavailable`        | `ServiceUnavailable` |
+| Connection failed                          |                                       | `Failed`   | `onPeerUnavailable`        | `ServiceFoundUnavailable` |
 | Connection dropped, or the timeout expired |                                       | `Unknown`  | `onMissingResponse`        | `TimeoutExpired`    |
 | A valid response, accepted                 | `isAccepted`                          | `Accepted` | `onSuccess`                | None                |
 | A valid response, rejected                 | `isRejected`                          | `Failed`   | `onFailure`                | None                |
 | A valid response, neither                  |                                       | `Unknown`  | `onValidResponseUnknown`   | None                |
-| An invalid response, rejected              | `isRejectedByInvalidResponse`         | `Failed`   | `onInvalidResponseRejection` | `InvalidResponse` |
-| An invalid response, not a rejection       |                                       | `Unknown`  | `onInvalidResponseUnknown` | `InvalidResponse`   |
+| An invalid response, rejected              | `isRejectedByInvalidResponse`         | `Failed`   | `onInvalidResponseRejection` | `InvalidResponseReceived` |
+| An invalid response, not a rejection       |                                       | `Unknown`  | `onInvalidResponseUnknown` | `InvalidResponseReceived`   |
 
 ### Rollback
 

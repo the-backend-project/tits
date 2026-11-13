@@ -11,9 +11,9 @@ import java.util.UUID;
 
 public interface EventTypes {
 
-  EventType<Void, Void> ServiceUnavailable = of("ServiceUnavailable", UUID.fromString("f91e560f-ba7b-4e14-976a-82e592a627f5"));
+  EventType<Void, Void> ServiceFoundUnavailable = of("Service found unavailable", UUID.fromString("f91e560f-ba7b-4e14-976a-82e592a627f5"));
   EventType<String, String>
-      InvalidResponse = of("InvalidResponse", UUID.fromString("450679ab-bc60-46cb-bb97-d171c34c2750"), DataType.string());
+      InvalidResponseReceived = of("Invalid response received", UUID.fromString("450679ab-bc60-46cb-bb97-d171c34c2750"), DataType.string());
 
   EventType<HttpResponseMessage, Void> ResponseReceived = BasicEventType.of(
       "Response received",
