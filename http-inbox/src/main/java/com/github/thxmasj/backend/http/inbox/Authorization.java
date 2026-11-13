@@ -29,4 +29,17 @@ public sealed interface Authorization {
   static Authorization authorizedElse(@Nullable String subject, String reason) {
     return subject != null ? authorized(subject) : refused(reason);
   }
+
+  default boolean isRefused() {
+    return this instanceof Refused;
+  }
+
+  /// The refusal, if the request is refused
+  ///
+  /// @throws IllegalStateException if the request is authorized
+  default Refused refused() {
+    if (this instanceof Refused refused)
+      return refused;
+    throw new IllegalStateException("Not refused");
+  }
 }

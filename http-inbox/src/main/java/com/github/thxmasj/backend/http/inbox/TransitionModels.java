@@ -180,12 +180,12 @@ public interface TransitionModels {
                     .output(),
                 d -> "Unable to parse message id: " + d.t3().invalidReason()
             )
-            .when(d -> d.t4() instanceof Refused).then(
+            .when(d -> d.t4() != null && d.t4().isRefused()).then(
                 onEvent(RejectAsUnauthorized).to(Rejected)
                     .assembleInput()
                     .trigger(RespondRefused).with(d -> d).on(RequestRouting).identifiedBy(entityIdFromSession())
                     .output(),
-                d -> (Refused) d.t4()
+                d -> d.t4().refused()
             )
             .when(d -> d.t5() != null && d.t5().isInvalid()).then(
                 onEvent(RejectAsUnroutable).to(Rejected)
