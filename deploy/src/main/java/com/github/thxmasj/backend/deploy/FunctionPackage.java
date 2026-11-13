@@ -95,6 +95,7 @@ public record FunctionPackage(Path file, String sha256) {
   }
 
   /// Every request is proxied to the custom handler as is, at the same path, and without requiring a function key.
+  /// Without `enableProxyingHttpRequest`, the host would send the handler its own invocation requests instead.
   static String hostJson() {
     return """
         {
@@ -109,8 +110,8 @@ public record FunctionPackage(Path file, String sha256) {
               "defaultExecutablePath": "/bin/sh",
               "arguments": ["%s"]
             },
+            "enableProxyingHttpRequest": true,
             "http": {
-              "enableProxying": true,
               "defaultAuthorizationLevel": "anonymous",
               "routes": [{"route": "{*route}"}]
             }

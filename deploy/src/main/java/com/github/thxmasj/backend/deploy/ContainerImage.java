@@ -4,9 +4,9 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Stream;
 
@@ -18,9 +18,18 @@ public record ContainerImage(String id, String platform, List<String> command) {
   public static final String PLATFORM = "linux/amd64";
 
   public static ContainerImage inspect(String reference) {
+    // An image may lack Entrypoint or Cmd altogether, which index gives as nothing rather than failing on, as
+    // .Config.Cmd does with some Docker engines
     String format = "{{.Id}}\n{{.Os}}/{{.Architecture}}\n"
-        + "{{range .Config.Entrypoint}}{{println .}}{{end}}{{range .Config.Cmd}}{{println .}}{{end}}";
-    List<String> lines = docker("image", "inspect", "--format", format, reference).lines().toList();
+        + "{{range index .Config \"Entrypoint\"}}{{println .}}{{end}}{{range index .Config \"Cmd\"}}{{println .}}{{end}}";
+    return parse(reference, docker("image", "inspect", "--format", format, reference));
+  }
+
+  /// @param output the id, the platform, and each argument of the command on a line of its own, followed by the line
+  ///     break Docker adds
+  static ContainerImage parse(String reference, String output) {
+    String withoutLastLineBreak = output.endsWith("\n") ? output.substring(0, output.length() - 1) : output;
+    List<String> lines = withoutLastLineBreak.lines().toList();
     ContainerImage image = new ContainerImage(lines.get(0), lines.get(1), lines.subList(2, lines.size()));
     if (!image.platform().equals(PLATFORM))
       throw new IllegalArgumentException("Image " + reference + " is for " + image.platform() + ", not " + PLATFORM
@@ -47,13 +56,20 @@ public record ContainerImage(String id, String platform, List<String> command) {
     }
   }
 
-  private static void deleteRecursively(Path directory) throws IOException {
-    if (!Files.exists(directory))
+  /// Deletes a directory extracted from an image, whose directories may be read-only, as `lib64` is in some images
+  static void deleteRecursively(Path directory) throws IOException {
+    if (!Files.exists(directory, LinkOption.NOFOLLOW_LINKS))
       return;
+    List<Path> paths;
     try (Stream<Path> walk = Files.walk(directory)) {
-      for (Path path : walk.sorted(Comparator.reverseOrder()).toList())
-        Files.delete(path);
+      paths = walk.toList();
     }
+    // A file can only be deleted from a writable directory
+    for (Path path : paths)
+      if (Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS) && !path.toFile().setWritable(true, true))
+        throw new IOException("Failed to make " + path + " writable");
+    for (Path path : paths.reversed())
+      Files.delete(path);
   }
 
   private static String docker(String... arguments) {

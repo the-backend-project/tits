@@ -15,23 +15,27 @@ config:
     description: Local container image of the application, built for linux/amd64
   name:
     type: string
+    default: ""
     description: Name of the application, used to name its resources. Defaults to the stack name.
   migrateArgs:
     type: array
     items:
       type: string
-    description: Arguments to the image's entry point which run the migrate admin process. Defaults to [migrate].
+    default: [migrate]
+    description: Arguments to the image's entry point which run the migrate admin process
   urlEnvironment:
     type: array
     items:
       type: string
-    description: Environment variables set to the URL of the application, e.g. ISSUER. Defaults to none.
+    default: []
+    description: Environment variables set to the URL of the application, e.g. ISSUER
   databaseRole:
     type: string
     default: App
     description: Role given access to the schema by the migrate admin process, and to the application's user
   databaseSchema:
     type: string
+    default: ""
     description: Schema holding the state machine's tables. Defaults to the application's default.
   databaseCollation:
     type: string
@@ -63,4 +67,5 @@ config:
     description: Maximum number of instances the function app scales out to
   deployerIp:
     type: string
+    default: ""
     description: Public IP address of the deploying machine, let through the database firewall. Looked up by default.
