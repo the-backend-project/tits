@@ -1,8 +1,7 @@
 # HTTP inboxes
 
-An inbox is a set of entity models whose entities are the requests the application receives. Their transitions are
-given to the state machine along with those of the application, and the inbox is drawn in the same kind of state
-diagram (see the [state diagrams](#state-diagrams)).
+An inbox is a set of entity models whose entities are the requests the application receives, drawn in the same kind
+of state diagram as those of the application (see the [state diagrams](#state-diagrams)).
 
 The `HttpInboxListener` receives HTTP requests with reactor-netty and passes them to the entity models of the inbox.
 A `RequestRouting` entity is created for every request, and matches it against the routes of the application. A route

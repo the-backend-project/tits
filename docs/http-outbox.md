@@ -254,8 +254,8 @@ onEvent(Authorise).to(Authorising)
 A process rolling the request back triggers `rollbackDispatched()` of the dispatcher on the entity of the request,
 e.g. by the entity id it got back when it was dispatched.
 
-The transitions of the outbox, and of its rollback models, are given to the `StateMachine` along with those of the
-application, from the dispatcher:
+The dispatcher has the transitions of the outbox, and of its rollback models, to register along with those of the
+application:
 
 ```java
 transitions.putAll(authorisations.transitions());
