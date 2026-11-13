@@ -23,7 +23,7 @@ it is received for or sent by, and the transaction server doesn't treat a reques
 order.
 
 Everything is reactive, built on [Reactor](https://projectreactor.io), and no state is kept in memory between
-requests, so any number of instances can serve the same database.
+requests, so any number of instances can serve the same database. See [scaling](scaling.md).
 
 ```mermaid
 flowchart LR
