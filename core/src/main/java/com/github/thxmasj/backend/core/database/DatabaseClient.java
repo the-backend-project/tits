@@ -1,6 +1,7 @@
 package com.github.thxmasj.backend.core.database;
 
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -39,17 +40,92 @@ public interface DatabaseClient extends AutoCloseable {
       Authentication authentication
   ) {
 
-    /// How to authenticate to the database. Microsoft Entra ID is for SQL Server (Azure SQL) only, and needs
-    /// azure-identity at runtime.
+    /// How to authenticate to the database. Microsoft Entra ID is for SQL Server (Azure SQL) only.
     public enum Authentication {
       /// With the user and password of a database login or user
       SqlPassword,
       /// As the Microsoft Entra ID service principal with the client id of the user and the client secret of the
-      /// password
+      /// password. Needs azure-identity at runtime, which the native images of the apps are built without.
       ActiveDirectoryServicePrincipal,
       /// As the managed identity of the host, the user-assigned one with the client id of the user if given, without
-      /// a password
-      ActiveDirectoryManagedIdentity
+      /// a password. The tokens are fetched from the managed identity endpoint of Azure App Service and Functions, or
+      /// else from the Instance Metadata Service, so this works in a native image too.
+      ActiveDirectoryManagedIdentity,
+      /// With a Microsoft Entra ID access token for Azure SQL in the password, without a user, e.g. that of
+      /// `az account get-access-token --resource https://database.windows.net/`. The token is not renewed, so this is
+      /// for short-lived processes like migration.
+      ActiveDirectoryAccessToken
+    }
+
+    /// Reads the configuration from the `DATABASE_*` environment variables, as the apps do:
+    ///
+    /// - `DATABASE_HOST`, `DATABASE_PORT` and `DATABASE_NAME`: where the database is, by default on the port of the
+    ///   `database`, `mssql` or `pgsql`
+    /// - `DATABASE_AUTHENTICATION`: one of [Authentication], by default [Authentication#SqlPassword]
+    /// - `DATABASE_USER` and `DATABASE_PASSWORD`: those of a SQL login, or the client id and secret of an Entra ID
+    ///   service principal, or the user is the optional client id of a managed identity, which has no password
+    /// - `DATABASE_ACCESS_TOKEN`: the access token of [Authentication#ActiveDirectoryAccessToken], which has no user
+    ///   and password
+    /// - `DATABASE_TRUST_SERVER_CERTIFICATE`, `DATABASE_POOL_SIZE` and `DATABASE_QUERY_TIMEOUT_SECONDS`
+    public static Config fromEnvironment(Map<String, String> env, String database) {
+      Authentication authentication = authentication(env);
+      if (database.equals("pgsql") && authentication != Authentication.SqlPassword)
+        throw new IllegalArgumentException("Environment variable DATABASE_AUTHENTICATION must be " + Authentication.SqlPassword + " for pgsql");
+      if (authentication != Authentication.ActiveDirectoryAccessToken && optional(env, "DATABASE_ACCESS_TOKEN") != null)
+        throw new IllegalArgumentException("Environment variable DATABASE_ACCESS_TOKEN must not be set with DATABASE_AUTHENTICATION " + authentication);
+      String user = switch (authentication) {
+        case SqlPassword, ActiveDirectoryServicePrincipal -> required(env, "DATABASE_USER");
+        case ActiveDirectoryManagedIdentity -> optional(env, "DATABASE_USER");
+        case ActiveDirectoryAccessToken -> absent(env, "DATABASE_USER", authentication);
+      };
+      String password = switch (authentication) {
+        case SqlPassword, ActiveDirectoryServicePrincipal -> required(env, "DATABASE_PASSWORD");
+        case ActiveDirectoryManagedIdentity -> absent(env, "DATABASE_PASSWORD", authentication);
+        case ActiveDirectoryAccessToken -> {
+          absent(env, "DATABASE_PASSWORD", authentication);
+          yield required(env, "DATABASE_ACCESS_TOKEN");
+        }
+      };
+      return new Config(
+          required(env, "DATABASE_HOST"),
+          Integer.parseInt(env.getOrDefault("DATABASE_PORT", database.equals("pgsql") ? "5432" : "1433")),
+          required(env, "DATABASE_NAME"),
+          user,
+          password,
+          Boolean.parseBoolean(env.getOrDefault("DATABASE_TRUST_SERVER_CERTIFICATE", "false")),
+          Integer.parseInt(env.getOrDefault("DATABASE_POOL_SIZE", "10")),
+          Duration.ofSeconds(Long.parseLong(env.getOrDefault("DATABASE_QUERY_TIMEOUT_SECONDS", "10"))),
+          authentication
+      );
+    }
+
+    private static Authentication authentication(Map<String, String> env) {
+      String value = optional(env, "DATABASE_AUTHENTICATION");
+      if (value == null)
+        return Authentication.SqlPassword;
+      try {
+        return Authentication.valueOf(value);
+      } catch (IllegalArgumentException e) {
+        throw new IllegalArgumentException("Environment variable DATABASE_AUTHENTICATION must be one of " + Arrays.toString(Authentication.values()));
+      }
+    }
+
+    private static String optional(Map<String, String> env, String name) {
+      String value = env.get(name);
+      return value == null || value.isBlank() ? null : value;
+    }
+
+    private static String required(Map<String, String> env, String name) {
+      String value = optional(env, name);
+      if (value == null)
+        throw new IllegalArgumentException("Environment variable " + name + " is required");
+      return value;
+    }
+
+    private static String absent(Map<String, String> env, String name, Authentication authentication) {
+      if (optional(env, name) != null)
+        throw new IllegalArgumentException("Environment variable " + name + " must not be set with DATABASE_AUTHENTICATION " + authentication);
+      return null;
     }
 
     /// Authenticates with the user and password

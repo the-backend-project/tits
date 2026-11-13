@@ -54,8 +54,9 @@
 
   <profiles>
     <profile>
-      <!-- Microsoft Entra ID authentication to Azure SQL, see DATABASE_AUTHENTICATION. Only for the JVM, as the native
-           image does not build with azure-identity. -->
+      <!-- Microsoft Entra ID authentication to Azure SQL as a service principal, see DATABASE_AUTHENTICATION. For the
+           JVM: the native image builds with azure-identity only with the packages org.slf4j and com.fasterxml.jackson
+           initialized at build time, and its token fetching is untested there. Managed identities need neither. -->
       <id>entra-id</id>
       <dependencies>
         <dependency>

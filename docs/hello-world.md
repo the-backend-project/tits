@@ -73,13 +73,32 @@ service providers, such as SLF4J providers, and for native transports of other a
 | `DATABASE_HOST` | | SQL Server host |
 | `DATABASE_PORT` | `1433` | SQL Server port |
 | `DATABASE_NAME` | | Database name |
-| `DATABASE_USER` | | Login |
-| `DATABASE_PASSWORD` | | Password of the login |
+| `DATABASE_AUTHENTICATION` | `SqlPassword` | How to log in, see below |
+| `DATABASE_USER` | | Login, or as below |
+| `DATABASE_PASSWORD` | | Password of the login, or as below |
+| `DATABASE_ACCESS_TOKEN` | | Access token, with `ActiveDirectoryAccessToken` only |
 | `DATABASE_TRUST_SERVER_CERTIFICATE` | `false` | Whether to skip validation of the server certificate. For local use only. |
 | `DATABASE_POOL_SIZE` | `10` | Maximum number of database connections |
 | `DATABASE_QUERY_TIMEOUT_SECONDS` | `10` | Query timeout |
 | `DATABASE_SCHEMA` | `hello_world` | Schema holding the state machine's tables |
 | `DATABASE_ROLE` | | Role to grant access to the schema. Required by `migrate` only. |
+
+`DATABASE_AUTHENTICATION` is one of:
+
+- `SqlPassword`: with the login and password in `DATABASE_USER` and `DATABASE_PASSWORD`.
+- `ActiveDirectoryManagedIdentity`: as the managed identity of the Azure host, with Microsoft Entra ID. `DATABASE_USER`
+  is the client id of a user-assigned identity, or unset for the system-assigned one, and there is no
+  `DATABASE_PASSWORD`. The tokens are fetched from the managed identity endpoint of App Service and Functions, or else
+  from the Instance Metadata Service.
+- `ActiveDirectoryAccessToken`: with a Microsoft Entra access token for Azure SQL in `DATABASE_ACCESS_TOKEN`, e.g.
+  from `az account get-access-token --resource https://database.windows.net/`, and no user and password. The token is
+  not renewed, so this is for admin processes like `migrate`.
+- `ActiveDirectoryServicePrincipal`: as a Microsoft Entra service principal, with its client id in `DATABASE_USER` and
+  its client secret in `DATABASE_PASSWORD`. The driver gets the tokens with `com.azure:azure-identity`, which is not
+  in the native image, so this works on the JVM only, with it and `com.azure:azure-core-http-jdk-httpclient` on the
+  class path at the versions managed by the parent POM.
+
+The modes with Microsoft Entra ID are for Azure SQL only.
 
 `GET /health` responds `200 OK` as long as the process is able to serve HTTP. It does not involve the database.
 
