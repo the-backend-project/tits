@@ -107,6 +107,10 @@ docker compose up --build
 
     Event logs as the source of truth, and the few tables holding the work still to be done.
 
+-   :material-send:{ .lg } **[HTTP outboxes](http-outbox.md)**
+
+    Requests to other systems, sent at least once or at most once by the transactional outbox pattern.
+
 -   :material-test-tube:{ .lg } **[Testing](testing.md)**
 
     A test API to look into the entities and force their states, without depending on the tables.
