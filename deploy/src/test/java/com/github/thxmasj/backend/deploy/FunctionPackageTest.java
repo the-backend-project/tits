@@ -29,7 +29,7 @@ public class FunctionPackageTest {
     try (FileSystem zip = open(functionPackage.file())) {
       assertThat(Files.readString(zip.getPath(FunctionPackage.LAUNCHER))).endsWith(
           "exec './lib64/ld-linux-x86-64.so.2' --library-path \"$PWD/lib64\" './demo'\n");
-      assertThat(Files.readString(zip.getPath("host.json"))).contains("\"enableProxying\": true");
+      assertThat(Files.readString(zip.getPath("host.json"))).contains("\"enableProxyingHttpRequest\": true");
       assertThat(permissions(zip, "demo")).isEqualTo("rwxr-xr-x");
       assertThat(permissions(zip, "lib64/ld-linux-x86-64.so.2")).isEqualTo("rwxr-xr-x");
     }
