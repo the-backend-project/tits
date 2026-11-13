@@ -3,7 +3,8 @@
 An application built with the server is a set of entity models, each a finite state machine, given to a
 `StateMachine`. The state machine stores the entities as event logs in a database.
 
-The application receives requests through HTTP inboxes and sends requests to other systems through HTTP outboxes.
+The application receives requests through HTTP inboxes and sends requests to other systems through
+[HTTP outboxes](http-outbox.md).
 They are state machines with entities too, given to the `StateMachine` along with the entity models of the
 application. Every request received or sent is an entity with a state and an event log of its own. It is stored in the
 same database and the same transactions as the entities of the application it belongs to. The state machine doesn't
@@ -31,7 +32,7 @@ flowchart LR
 | core                                                                  | The state machine, the builder of transition models, and the interface of the databases        |
 | [database-mssql, database-pgsql-*](databases.md)                      | The SQL of a database and the driver it is reached through, one module per database and driver |
 | http-inbox                                                            | Inboxes: entity models receiving HTTP requests and routing them to the entities of an application |
-| http-outbox                                                           | Outboxes: entity models sending HTTP requests at least once or at most once                    |
+| [http-outbox](http-outbox.md)                                         | Outboxes: entity models sending HTTP requests at least once or at most once                    |
 | [test-api](testing.md)                                                | An API for tests to look into and manipulate the database of a state machine                   |
 | diagram                                                               | State diagrams and ER diagrams of a state machine's model                                      |
 | [templates](cardpayments.md)                                          | Ready-made entity models of a domain, such as card payments                                    |
@@ -354,15 +355,6 @@ and 403 and the error `insufficient_scope` with a token lacking a scope. An auth
 either `Authorized` with the subject or `Refused` with the status code, challenge and reason of the response;
 `Authorization.refused(reason)` refuses with 400. The keys are fetched once, so the verifier must be created again to see keys the
 issuer has added since.
-
-## HTTP outboxes
-
-An application has an outbox for each kind of request it sends to other systems, e.g. one for authorisations and one
-for captures. Each outbox is an entity model whose entities are the requests sent. A request is stored in the same
-transaction as the change of the application dispatching it, and sent by an action after the transaction is
-committed, as in the transactional outbox pattern. An `AtLeastOnce` outbox resends a request until it is accepted or
-its attempts run out, and an `AtMostOnce` outbox sends it once, and can roll it back. See
-[HTTP outboxes](http-outbox.md) for their delivery semantics and state diagrams.
 
 ## Diagrams
 
