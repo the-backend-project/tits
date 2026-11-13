@@ -34,6 +34,7 @@ import com.github.thxmasj.backend.core.test.Init;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.StateMachine;
 import com.github.thxmasj.backend.core.TransitionStep;
+import com.github.thxmasj.backend.core.TransitionStep.DelayedTriggerStep;
 import com.github.thxmasj.backend.core.TransitionStep.InputStep;
 import com.github.thxmasj.backend.core.TransitionStep.TriggerStep;
 import com.github.thxmasj.backend.core.TransitionModel;
@@ -554,6 +555,62 @@ public class HttpOutboxTest {
     assertNotNull(outputData);
     assertNotNull(outputData.t1());
     assertEquals(triggerEntityId, outputData.t2());
+  }
+
+  @Test
+  public void atLeastOnceRedispatchedRequestHasInflightTimeout() {
+    EntityModel process = EntityModel.of("Process", UUID.fromString("dda0cc10-3356-4522-8527-ca4f7006c566"));
+    Duration inflightTimeout = Duration.ofSeconds(7);
+    AtLeastOnce<Void> alo = HttpOutboxRequest.atLeastOnce()
+        .requestPayloadType(DataType.none())
+        .responsePayloadType(DataType.none())
+        .repeatMessageCreator((_, o) -> o)
+        .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
+        .inflightTimeout(inflightTimeout)
+        .processModel(process)
+        .contentParser(_ -> valid(null))
+        .isAccepted(r -> r.statusCode() == 200)
+        .isFailureTransient(_ -> true)
+        .isRejectedByInvalidResponse(_ -> false)
+        .isFailureByInvalidResponseTransient(_ -> false)
+        .isAttemptAvailable(_ -> true)
+        .backoffAlgorithm(_ -> Duration.ofSeconds(1))
+        .build("ALOExchange", UUID.randomUUID());
+
+    var machine = stateMachine(process, Map.of(Begin, List.of()), List.of(alo));
+
+    @SuppressWarnings("unchecked")
+    TransitionModel<Void, TypedHttpRequest<Void>> redispatchedTransition = (TransitionModel<Void, TypedHttpRequest<Void>>) alo.transitions().get(AtLeastOnce.States.Compensating).getFirst();
+
+    @SuppressWarnings("unchecked")
+    EventType<TypedHttpRequest<Void>, Tuple2<TypedHttpRequest<Void>, UUID>> reqDispatchedType = (EventType<TypedHttpRequest<Void>, Tuple2<TypedHttpRequest<Void>, UUID>>) (Object) alo.requestDispatched();
+    var reqDispatchedEvent = new Event<>(
+        UUID.randomUUID(),
+        1,
+        reqDispatchedType,
+        Clock.systemUTC(),
+        tuple(new TypedHttpRequest<>(POST, URI.create("http://localhost/test"), Map.of(), null), UUID.randomUUID())
+    );
+    UUID requestId = UUID.randomUUID();
+    var log = new EventLog(alo, requestId, List.of(reqDispatchedEvent));
+    var now = ZonedDateTime.now();
+    var initialContext = new InputStep<Void>(null, null, null, redispatchedTransition, AtLeastOnce.States.Compensating, 4, log, now, "corr-1", null, machine, new Calculation());
+    var occ = redispatchedTransition.calculate(initialContext).block();
+    assertNotNull(occ);
+
+    DelayedTriggerStep<?, ?> delayedTriggerStep = null;
+    for (TransitionStep<?> c = occ; c != null; c = c.previous()) {
+      if (c instanceof DelayedTriggerStep<?, ?> dc) {
+        delayedTriggerStep = dc;
+        break;
+      }
+    }
+    assertNotNull(delayedTriggerStep);
+    var timeout = delayedTriggerStep.delayedEvent();
+    assertEquals(TimeoutExpired, timeout.type());
+    assertEquals(requestId, timeout.entityId());
+    assertEquals(5, timeout.eventNumber());
+    assertEquals(now.plus(inflightTimeout), timeout.after());
   }
 
   @Test

@@ -100,7 +100,8 @@ The response is parsed by the content parser of the outbox, and the predicates o
 A retry asks `isAttemptAvailable` with a `RetryContext` of when the request was dispatched, the time now and the number
 of the attempt. If an attempt is available, `backoffAlgorithm` gives the delay until the request is sent again, by a
 delayed trigger; otherwise the request is `Dead`. The repeated request is the original one, or what the
-`repeatMessageCreator` makes of it, e.g. with a new timestamp.
+`repeatMessageCreator` makes of it, e.g. with a new timestamp. Like the first attempt, every repeated attempt has the
+inflight timeout.
 
 The diagram generated from the model shows every event, including the intermediate ones of the choices above:
 

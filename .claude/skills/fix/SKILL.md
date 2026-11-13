@@ -1,6 +1,6 @@
 ---
 name: fix
-description: Start work on a GitHub issue. Use when the user says "Fix #N" (or invokes /fix N) — assigns the issue, moves it to In Progress on the project board, and creates a fresh branch off origin/main.
+description: Start work on a GitHub issue. Use when the user says "Fix #N" (or invokes /fix N) — assigns the issue, moves it to In Progress on the project board, creates a fresh branch off origin/main, and syncs it with main before pushing.
 argument-hint: <issue-number>
 ---
 
@@ -43,3 +43,15 @@ org project 1 ("The Backend").
 
 6. **Start working** on the issue. Briefly tell the user the branch name and your
    plan, then proceed.
+
+7. **Sync with main before every push.** Before pushing the branch, whether to open
+   the PR or to update it, bring in what has landed on main since:
+
+   ```sh
+   git fetch origin
+   git rebase origin/main   # branch not pushed yet
+   git merge origin/main    # branch already pushed: no force push
+   ```
+
+   If main moved, resolve any conflicts and run the tests of the affected modules
+   again before pushing. Then push and open the PR with `gh pr create`.
