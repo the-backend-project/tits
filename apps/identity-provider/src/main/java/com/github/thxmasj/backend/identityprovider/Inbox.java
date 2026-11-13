@@ -61,8 +61,8 @@ public interface Inbox {
 
   }
 
-  ResponseEventType<Reply> SendReply = new ResponseEventType<>(
-      "Reply",
+  ResponseEventType<Reply> ReplyCreated = new ResponseEventType<>(
+      "Reply created",
       UUID.fromString("9e5b3d1f-7a28-4c64-8f0b-2d6e9a4c1b57"),
       DataType.json(Reply.class)
   );
@@ -75,7 +75,7 @@ public interface Inbox {
               null,
               null,
               UUID.fromString("d1c8f5a2-3e97-4b06-a4d1-5f2b8e7c9a63"),
-              Tokens.RequestToken,
+              Tokens.TokenRequested,
               Tokens.TokenRequest,
               r -> r.body(),
               newEntity()
@@ -88,7 +88,7 @@ public interface Inbox {
               null,
               (m, _) -> Authorization.authorizedElse(m.headerValue(RegisteredByHeader), "Unauthenticated"),
               UUID.fromString("f7a2c6e9-4d15-4b83-9e0a-1c5d8b3f6e24"),
-              Clients.RequestRegistration,
+              Clients.RegistrationRequested,
               Clients.ClientRegistration,
               r -> r.body(),
               newEntity()
@@ -98,7 +98,7 @@ public interface Inbox {
 
   List<CustomResponse<?>> customResponses = List.of(
       new CustomResponse<>(
-          SendReply,
+          ReplyCreated,
           c -> new HttpResponseMessage(
               c.input().status(),
               reasonPhrase(c.input().status()),

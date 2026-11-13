@@ -20,15 +20,15 @@ public class TransitionStreamTest {
   }
   enum States implements State {Off, On}
   static EventType<Void, Void>
-      Toggle = BasicEventType.of("Toggle", UUID.fromString("46b0211e-f583-49b3-a6e7-8d13742e0260")),
-      SwitchOn = BasicEventType.of("SwitchOn", UUID.fromString("5e9a8a9d-6a21-41cf-82dc-857fe1e4c4e0")),
-      SwitchOff = BasicEventType.of("SwitchOff", UUID.fromString("8e1483c8-b649-43b8-b352-5094a94c0dad"))
+      LampToggled = BasicEventType.of("Lamp toggled", UUID.fromString("46b0211e-f583-49b3-a6e7-8d13742e0260")),
+      LampSwitchedOn = BasicEventType.of("Lamp switched on", UUID.fromString("5e9a8a9d-6a21-41cf-82dc-857fe1e4c4e0")),
+      LampSwitchedOff = BasicEventType.of("Lamp switched off", UUID.fromString("8e1483c8-b649-43b8-b352-5094a94c0dad"))
           ;
 
   @Test
   public void test() {
-    onEvent(SwitchOn).to(On)
-        .trigger(SwitchOn).on(Lamp).identifiedBy(_ -> entityId(UUID.randomUUID()))
+    onEvent(LampSwitchedOn).to(On)
+        .trigger(LampSwitchedOn).on(Lamp).identifiedBy(_ -> entityId(UUID.randomUUID()))
         .output()
     ;
   }

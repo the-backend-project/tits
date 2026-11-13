@@ -99,7 +99,7 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
     // Intermediate
     EventType<TypedHttpResponse<RS>, TypedHttpResponse<RS>> validResponse() {
       return BasicEventType.of(
-          "[valid response]",
+          "Valid response received",
           UUID.fromString("c9fcf4d6-95f8-418f-aa6b-c3d987d3a3c3"),
           HttpDataType.forResponse(responsePayloadType),
           HttpDataType.forResponse(responsePayloadType)
@@ -108,7 +108,7 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
     // Intermediate
     EventType<Tuple2<HttpResponseMessage, String>, Tuple2<HttpResponseMessage, String>> invalidResponse() {
       return BasicEventType.of(
-          "[invalid response]",
+          "Invalid response received",
           UUID.fromString("3bd020c3-caf8-4a9b-a10c-d818f98a6de7"),
           DataType.tuple(HttpDataType.forResponse(), DataType.string()),
           DataType.tuple(HttpDataType.forResponse(), DataType.string())
@@ -117,7 +117,7 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
     // Leaf
     EventType<TypedHttpResponse<RS>, TypedHttpResponse<RS>> requestAccepted() {
       return BasicEventType.of(
-          "[request accepted]",
+          "Request accepted",
           RequestAcceptedId,
           HttpDataType.forResponse(responsePayloadType),
           HttpDataType.forResponse(responsePayloadType)
@@ -126,7 +126,7 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
     // Leaf
     EventType<TypedHttpResponse<RS>, TypedHttpResponse<RS>> validResponseAndRejected() {
       return BasicEventType.of(
-          "[request rejected]",
+          "Request rejected",
           UUID.fromString("5362567f-792e-4f8a-81d6-3b201d44d3f0"),
           HttpDataType.forResponse(responsePayloadType),
           HttpDataType.forResponse(responsePayloadType)
@@ -135,7 +135,7 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
     // Leaf
     EventType<TypedHttpResponse<RS>, TypedHttpResponse<RS>> validResponseAndUnknown() {
       return BasicEventType.of(
-          "[valid response, unknown status]",
+          "Valid response received with unknown status",
           UUID.fromString("0059d0cc-e7ec-4f84-beb0-1870d00937d2"),
           HttpDataType.forResponse(responsePayloadType),
           HttpDataType.forResponse(responsePayloadType)
@@ -144,7 +144,7 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
     // Leaf
     EventType<Tuple2<HttpResponseMessage, String>, HttpResponseMessage> invalidResponseAndRejected() {
       return BasicEventType.of(
-          "[request rejected]",
+          "Request rejected",
           UUID.fromString("402f9bf4-855c-4383-ac54-3375f9d156d1"),
           DataType.tuple(HttpDataType.forResponse(), DataType.string()),
           HttpDataType.forResponse()
@@ -153,7 +153,7 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
     // Leaf
     EventType<Tuple2<HttpResponseMessage, String>, HttpResponseMessage> invalidResponseAndUnknown() {
       return BasicEventType.of(
-          "[invalid response, unknown status]",
+          "Invalid response received with unknown status",
           UUID.fromString("ecfb2c9d-178b-4c3e-b09e-c580e09b01b4"),
           DataType.tuple(HttpDataType.forResponse(), DataType.string()),
           HttpDataType.forResponse()

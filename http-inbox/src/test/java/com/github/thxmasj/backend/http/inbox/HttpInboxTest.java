@@ -1,6 +1,6 @@
 package com.github.thxmasj.backend.http.inbox;
 
-import static com.github.thxmasj.backend.core.BuiltinEventTypes.Rollback;
+import static com.github.thxmasj.backend.core.BuiltinEventTypes.EventsRolledBack;
 import static com.github.thxmasj.backend.core.EntityModel.Begin;
 import static com.github.thxmasj.backend.core.EntitySelector.entityId;
 import static com.github.thxmasj.backend.core.EntitySelector.entityIdFromSession;
@@ -10,8 +10,8 @@ import static com.github.thxmasj.backend.core.TransitionModelBuilder.assemble;
 import static com.github.thxmasj.backend.core.Tuples.tuple;
 import static com.github.thxmasj.backend.core.Validated.invalid;
 import static com.github.thxmasj.backend.core.Validated.valid;
-import static com.github.thxmasj.backend.http.inbox.HttpInbox.CompleteFailedRequest;
-import static com.github.thxmasj.backend.http.inbox.HttpInbox.CompleteRequest;
+import static com.github.thxmasj.backend.http.inbox.HttpInbox.FailedRequestCompleted;
+import static com.github.thxmasj.backend.http.inbox.HttpInbox.RequestCompleted;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.EntityModels.RequestDispatching;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.EntityModels.RequestRouting;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.TRIGGER;
@@ -111,21 +111,21 @@ public class HttpInboxTest {
   private static Map<State, List<TransitionModel<?, ?>>> lampTransitions() {
     return Map.of(
         Begin, List.of(
-            onEvent(InternalProcessing).to(On)
+            onEvent(InternalProcessingRequested).to(On)
                 .assemble(TransitionContext::eventReference)
                 .trigger(Process0Outbox.requestDispatched()).with(_ -> requestMessage("/process/0")).on(Process0Outbox).identifiedBy(newEntityId())
                 //.trigger(new ProcessRequest(0)).with(_ -> null).to(DeviceListener).guaranteed()
-                .trigger(CompleteRequest).with(d -> tuple("Light is on! " + random.nextLong(), d.t1())).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                .trigger(RequestCompleted).with(d -> tuple("Light is on! " + random.nextLong(), d.t1())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(),
-            onEvent(ComplexInternalProcessing).to(Processing)
+            onEvent(ComplexInternalProcessingRequested).to(Processing)
                 .assemble(d -> d)
-                .trigger(ComplexInternalProcessingDone).on(Lamp).identifiedBy(entityIdFromSession())
+                .trigger(ComplexInternalProcessingCompleted).on(Lamp).identifiedBy(entityIdFromSession())
                 .output(),
-            onEvent(ExternalProcessing).to(Processing)
+            onEvent(ExternalProcessingRequested).to(Processing)
                 .assembleInput()
                 .trigger(Process0Outbox.requestDispatched()).with(_ -> requestMessage("/process/0")).on(Process0Outbox).identifiedBy(newEntityId())
                 .output(),
-            onEvent(LongExternalProcessing).to(Processing)
+            onEvent(LongExternalProcessingRequested).to(Processing)
                 .assembleInput()
                 .trigger(Process3Outbox.requestDispatched()).with(_ -> requestMessage("/process/3000")).on(Process3Outbox).identifiedBy(newEntityId())
                 .reversible(
@@ -135,40 +135,40 @@ public class HttpInboxTest {
                         .trigger(Process0Outbox.requestDispatched()).with(_ -> requestMessage("/process/0")).on(Process0Outbox).identifiedBy(newEntityId())
                 )
                 .output(),
-            onEvent(SubsystemUnavailableProcessing).to(Unreachable)
+            onEvent(SubsystemUnavailableProcessingRequested).to(Unreachable)
                 .assemble(TransitionContext::eventReference)
-                .trigger(CompleteFailedRequest).with(d -> tuple("Subsystem unavailable", d)).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                .trigger(FailedRequestCompleted).with(d -> tuple("Subsystem unavailable", d)).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(),
-            onEvent(SwitchOn).to(On).output()
+            onEvent(LampSwitchedOn).to(On).output()
         ),
         On, List.of(
-            onEvent(InternalProcessing).to(Off).assembleInput().output(d -> d),
-            onEvent(SwitchOff).to(Off).output(),
-            onEvent(Cancel).toSelf()
+            onEvent(InternalProcessingRequested).to(Off).assembleInput().output(d -> d),
+            onEvent(LampSwitchedOff).to(Off).output(),
+            onEvent(ProcessingCancelled).toSelf()
                 .assemble(c -> tuple(c.input(), c.eventReference()))
-                .trigger(CompleteRequest).with(d -> tuple("Cancelled", d.t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                .trigger(RequestCompleted).with(d -> tuple("Cancelled", d.t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t1()),
-            onEvent(ZeroProcessing).toSelf()
+            onEvent(ZeroProcessingRequested).toSelf()
                 .assemble(c -> tuple(c.input(), c.eventReference()))
-                .trigger(CompleteRequest).with(d -> tuple("Complete", d.t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                .trigger(RequestCompleted).with(d -> tuple("Complete", d.t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t1())
         ),
         Off, List.of(
-            onEvent(InternalProcessing).to(On)
+            onEvent(InternalProcessingRequested).to(On)
                 .assemble(TransitionContext::eventReference)
                 .trigger(Process0Outbox.requestDispatched()).with(_ -> requestMessage("/process/0")).on(Process0Outbox).identifiedBy(newEntityId())
                 //.trigger(new ProcessRequest(0)).with(_ -> null).to(DeviceListener).guaranteed()
-                .trigger(CompleteRequest).with(d -> tuple("Light is on! " + random.nextLong(), d.t1())).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                .trigger(RequestCompleted).with(d -> tuple("Light is on! " + random.nextLong(), d.t1())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(),
-            onEvent(ComplexInternalProcessing).to(Processing)
+            onEvent(ComplexInternalProcessingRequested).to(Processing)
                 .assemble(d -> d)
-                .trigger(ComplexInternalProcessingDone).on(Lamp).identifiedBy(entityIdFromSession())
+                .trigger(ComplexInternalProcessingCompleted).on(Lamp).identifiedBy(entityIdFromSession())
                 .output(),
-            onEvent(ExternalProcessing).to(Processing)
+            onEvent(ExternalProcessingRequested).to(Processing)
                 .assembleInput()
                 .trigger(Process0Outbox.requestDispatched()).with(_ -> requestMessage("/process/0")).on(Process0Outbox).identifiedBy(newEntityId())
                 .output(),
-            onEvent(LongExternalProcessing).to(Processing)
+            onEvent(LongExternalProcessingRequested).to(Processing)
                 .assembleInput()
                 .trigger(Process3Outbox.requestDispatched()).with(_ -> requestMessage("/process/3000")).on(Process3Outbox).identifiedBy(newEntityId())
                 .reversible(
@@ -178,21 +178,21 @@ public class HttpInboxTest {
                         .trigger(Process0Outbox.requestDispatched()).with(_ -> requestMessage("/process/0")).on(Process0Outbox).identifiedBy(newEntityId())
                 )
                 .output(),
-            onEvent(SwitchOn).to(On).output()
+            onEvent(LampSwitchedOn).to(On).output()
         ),
         Processing, List.of(
-            onEvent(Rollback).toSelf().assembleInput().output(d -> d),
-            onEvent(ComplexInternalProcessingDone).to(On)
+            onEvent(EventsRolledBack).toSelf().assembleInput().output(d -> d),
+            onEvent(ComplexInternalProcessingCompleted).to(On)
                 .assemble(TransitionContext::eventReference)
-                .trigger(CompleteRequest).with(d -> tuple("Phew! Light is switched on! " + random.nextLong(), d)).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                .trigger(RequestCompleted).with(d -> tuple("Phew! Light is switched on! " + random.nextLong(), d)).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(),
-            onEvent(ExternalProcessingDone).to(On)
+            onEvent(ExternalProcessingCompleted).to(On)
                 .assemble(TransitionContext::eventReference)
-                .trigger(CompleteRequest).with(d -> tuple("Light is externally switched on! " + random.nextLong(), d)).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                .trigger(RequestCompleted).with(d -> tuple("Light is externally switched on! " + random.nextLong(), d)).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output()
         ),
         Unreachable, List.of(
-            onEvent(EventThatIsAlwaysRejected).toSelf().output()
+            onEvent(AlwaysRejectedEventSubmitted).toSelf().output()
         )
     );
   }
@@ -202,53 +202,53 @@ public class HttpInboxTest {
   public record Zero(String value) {}
 
   static EventType<Zero, Zero>
-      ZeroProcessing = BasicEventType.of(
-      "ZeroProcessing",
+      ZeroProcessingRequested = BasicEventType.of(
+      "Zero processing requested",
       UUID.fromString("aa70041a-a68f-4bcd-831f-5029eb329a05"),
       DataType.json(Zero.class)
   );
   static EventType<Void, Void>
-      EventThatIsAlwaysRejected = BasicEventType.of(
-      "EventThatIsAlwaysRejected",
+      AlwaysRejectedEventSubmitted = BasicEventType.of(
+      "Always rejected event submitted",
       UUID.fromString("bd98a725-ac60-4db4-b7db-ce08a295ffca")
   ),
-      InternalProcessing = BasicEventType.of(
-          "InternalProcessing",
+      InternalProcessingRequested = BasicEventType.of(
+          "Internal processing requested",
           UUID.fromString("5909336e-cc75-4c58-902f-fb68f08b0caa")
       ),
-      ComplexInternalProcessing = BasicEventType.of(
-          "ComplexInternalProcessing",
+      ComplexInternalProcessingRequested = BasicEventType.of(
+          "Complex internal processing requested",
           UUID.fromString("16c1792d-9fb7-4f91-b55b-b59e2b00bad8")
       ),
-      ComplexInternalProcessingDone = BasicEventType.of(
-          "ComplexInternalProcessingDone",
+      ComplexInternalProcessingCompleted = BasicEventType.of(
+          "Complex internal processing completed",
           UUID.fromString("88c87c85-7778-4171-bc75-702f9e60b00e")
       ),
-      SubsystemUnavailableProcessing = BasicEventType.of(
-          "SubsystemUnavailableProcessing",
+      SubsystemUnavailableProcessingRequested = BasicEventType.of(
+          "Subsystem unavailable processing requested",
           UUID.fromString("af7756d1-0566-42d8-907b-70443bc7d879")
       );
-  static EventType<Void, Void> ExternalProcessingDone = BasicEventType.of(
-      "ExternalProcessingDone",
+  static EventType<Void, Void> ExternalProcessingCompleted = BasicEventType.of(
+      "External processing completed",
       UUID.fromString("464fca06-f872-4e38-a167-5550f5247310"),
       DataType.none()
   );
   static EventType<BasicEventType.Rollback.Data, BasicEventType.Rollback.Data>
-      Cancel = new BasicEventType.Cancel("Cancel", UUID.fromString("d94c29c8-f113-4dee-921f-1a8e58f916f4"));
+      ProcessingCancelled = new BasicEventType.Cancel("Processing cancelled", UUID.fromString("d94c29c8-f113-4dee-921f-1a8e58f916f4"));
   static EventType<String, String>
-      ExternalProcessing = BasicEventType.of(
-      "ExternalProcessing",
+      ExternalProcessingRequested = BasicEventType.of(
+      "External processing requested",
       UUID.fromString("12a97e70-58cc-46a8-aed9-f867cfc7375f"),
       DataType.string()
   ),
-      LongExternalProcessing = BasicEventType.of(
-          "LongExternalProcessing",
+      LongExternalProcessingRequested = BasicEventType.of(
+          "Long external processing requested",
           UUID.fromString("6ebcbbec-5bbc-4c05-96fd-41ad0bbc097a"),
           DataType.string()
       );
   static EventType<Void, Void>
-      SwitchOn = BasicEventType.of("SwitchOn", UUID.fromString("5e9a8a9d-6a21-41cf-82dc-857fe1e4c4e0")),
-      SwitchOff = BasicEventType.of("SwitchOff", UUID.fromString("8e1483c8-b649-43b8-b352-5094a94c0dad"));
+      LampSwitchedOn = BasicEventType.of("Lamp switched on", UUID.fromString("5e9a8a9d-6a21-41cf-82dc-857fe1e4c4e0")),
+      LampSwitchedOff = BasicEventType.of("Lamp switched off", UUID.fromString("8e1483c8-b649-43b8-b352-5094a94c0dad"));
 
   static AccessTokenVerifier verifier = verifier();
 
@@ -256,52 +256,52 @@ public class HttpInboxTest {
       new HttpRequestRoute<>(
           m -> m.requestLine().matches("PUT .*/protected/.*"),
           m -> valid(m.body()),
-          List.of(anyContent(null, HttpInbox.bearerToken(verifier, "payments"), UUID.fromString("0b6f3c1e-8a4d-4f27-9c5e-2d7a1b3e6f84"), InternalProcessing, Lamp, (RoutedRequest<byte[]> _) -> null, newEntity()))
+          List.of(anyContent(null, HttpInbox.bearerToken(verifier, "payments"), UUID.fromString("0b6f3c1e-8a4d-4f27-9c5e-2d7a1b3e6f84"), InternalProcessingRequested, Lamp, (RoutedRequest<byte[]> _) -> null, newEntity()))
       ),
       new HttpRequestRoute<>(
           m -> m.requestLine().matches("PUT .*/zero/.*"),
           m -> valid(m.body()),
-          List.of(anyContent(null, null, UUID.fromString("7e2c5175-a65d-4795-a285-b0d75e704f5a"), ZeroProcessing, Lamp, (RoutedRequest<byte[]> _) -> new Zero("Hey!"), parseEntityId("PUT .*/zero/(.*)", 1)))
+          List.of(anyContent(null, null, UUID.fromString("7e2c5175-a65d-4795-a285-b0d75e704f5a"), ZeroProcessingRequested, Lamp, (RoutedRequest<byte[]> _) -> new Zero("Hey!"), parseEntityId("PUT .*/zero/(.*)", 1)))
       ),
       new HttpRequestRoute<>(
           m -> m.requestLine().matches("PUT .*/internal/.*"),
           m -> valid(m.body()),
-          List.of(anyContent(parseMessageId("PUT .*/internal/(.*)", 1), null, UUID.fromString("3afa1f14-d4e3-49c4-b6ad-05a733f0b22d"), InternalProcessing, Lamp, (RoutedRequest<byte[]> _) -> null, newEntity()))
+          List.of(anyContent(parseMessageId("PUT .*/internal/(.*)", 1), null, UUID.fromString("3afa1f14-d4e3-49c4-b6ad-05a733f0b22d"), InternalProcessingRequested, Lamp, (RoutedRequest<byte[]> _) -> null, newEntity()))
       ),
       new HttpRequestRoute<>(
           m -> m.requestLine().matches("PUT .*/handledunknown/.*"),
           m -> valid(m.body()),
-          List.of(anyContent(null, null, UUID.fromString("b411fd45-6c87-43aa-a511-df930d654ec7"), InternalProcessing, Lamp, (RoutedRequest<byte[]> _) -> null, (_, _) -> new Valid<>(entityId(UUID.randomUUID())))) // Unknown id
+          List.of(anyContent(null, null, UUID.fromString("b411fd45-6c87-43aa-a511-df930d654ec7"), InternalProcessingRequested, Lamp, (RoutedRequest<byte[]> _) -> null, (_, _) -> new Valid<>(entityId(UUID.randomUUID())))) // Unknown id
       ),
       new HttpRequestRoute<>(
           m -> m.requestLine().matches("PUT .*/handledreject/.*"),
           m -> valid(m.body()),
-          List.of(anyContent(null, null, UUID.fromString("00f910e2-8c22-4403-835d-15e112ac3080"), EventThatIsAlwaysRejected, Lamp, (RoutedRequest<byte[]> _) -> null, newEntity()))
+          List.of(anyContent(null, null, UUID.fromString("00f910e2-8c22-4403-835d-15e112ac3080"), AlwaysRejectedEventSubmitted, Lamp, (RoutedRequest<byte[]> _) -> null, newEntity()))
       ),
       new HttpRequestRoute<>(
           m -> m.requestLine().matches("PUT .*/unavailable/.*"),
           m -> valid(m.body()),
-          List.of(anyContent(parseMessageId("PUT .*/unavailable/(.*)", 1), null, UUID.fromString("29d91ea2-3011-47d5-8e68-51e593a5fe3d"), SubsystemUnavailableProcessing, Lamp, (RoutedRequest<byte[]> _) -> null, newEntity()))
+          List.of(anyContent(parseMessageId("PUT .*/unavailable/(.*)", 1), null, UUID.fromString("29d91ea2-3011-47d5-8e68-51e593a5fe3d"), SubsystemUnavailableProcessingRequested, Lamp, (RoutedRequest<byte[]> _) -> null, newEntity()))
       ),
       new HttpRequestRoute<>(
           m -> m.requestLine().matches("PUT .*/complexinternal/.*"),
           m -> valid(m.body()),
-          List.of(anyContent(parseMessageId("PUT .*/complexinternal/(.*)", 1), null, UUID.fromString("84164954-ad85-4b44-9de6-079bf4805df7"), ComplexInternalProcessing, Lamp, (RoutedRequest<byte[]> _) -> null, newEntity()))
+          List.of(anyContent(parseMessageId("PUT .*/complexinternal/(.*)", 1), null, UUID.fromString("84164954-ad85-4b44-9de6-079bf4805df7"), ComplexInternalProcessingRequested, Lamp, (RoutedRequest<byte[]> _) -> null, newEntity()))
       ),
       new HttpRequestRoute<>(
           m -> m.requestLine().matches("PUT .*/external/.*"),
           m -> valid(m.body()),
-          List.of(anyContent(parseMessageId("PUT .*/external/(.*)", 1), null, UUID.fromString("415cfd95-6feb-4106-8d47-fcf41ddcb3d1"), ExternalProcessing, Lamp, (RoutedRequest<byte[]> _) -> null, newEntity()))
+          List.of(anyContent(parseMessageId("PUT .*/external/(.*)", 1), null, UUID.fromString("415cfd95-6feb-4106-8d47-fcf41ddcb3d1"), ExternalProcessingRequested, Lamp, (RoutedRequest<byte[]> _) -> null, newEntity()))
       ),
       new HttpRequestRoute<>(
           m -> m.requestLine().matches("PUT .*/long-external/.*"),
           m -> valid(m.body()),
-          List.of(anyContent(null, null, UUID.fromString("721fedb2-e715-4c4d-a8fb-e2cdb16f86e5"), LongExternalProcessing, Lamp, (RoutedRequest<byte[]> _) -> null, newEntity()))
+          List.of(anyContent(null, null, UUID.fromString("721fedb2-e715-4c4d-a8fb-e2cdb16f86e5"), LongExternalProcessingRequested, Lamp, (RoutedRequest<byte[]> _) -> null, newEntity()))
       ),
       new HttpRequestRoute<>(
           m -> m.requestLine().matches("PUT .*/rejected/.*"),
           m -> valid(m.body()),
-          List.of(anyContent(parseMessageId("PUT .*/rejected/(.*)", 1), null, UUID.fromString("e58f3910-0b01-4f8b-bbf3-c7fde4980197"), EventThatIsAlwaysRejected, Lamp, (RoutedRequest<byte[]> _) -> null, newEntity()))
+          List.of(anyContent(parseMessageId("PUT .*/rejected/(.*)", 1), null, UUID.fromString("e58f3910-0b01-4f8b-bbf3-c7fde4980197"), AlwaysRejectedEventSubmitted, Lamp, (RoutedRequest<byte[]> _) -> null, newEntity()))
       ),
       new HttpRequestRoute<>(
           m -> m.requestLine().matches("DELETE .*/internal/.*"),
@@ -310,7 +310,7 @@ public class HttpInboxTest {
               null,
               null,
               UUID.fromString("f5ef4720-c6bc-4686-be8b-85eeb0fdc372"),
-              Rollback,
+              EventsRolledBack,
               Lamp,
               _ -> new Data(0, "Cancel"),
               parseEntityId("DELETE .*/internal/(.*)", 1)
@@ -323,7 +323,7 @@ public class HttpInboxTest {
               parseMessageId("DELETE .*/lamps/messages/(.*)", 1),
               null,
               UUID.fromString("56829b3a-78ce-40e4-9006-a6c4d3b6dc23"),
-              Rollback,
+              EventsRolledBack,
               Lamp,
               _ -> null,
               null
@@ -377,13 +377,13 @@ public class HttpInboxTest {
         .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
         .inflightTimeout(Duration.ofSeconds(10))
         .processModel(Lamp)
-        .onPeerUnavailable(ExternalProcessingDone)
-        .onMissingResponse(ExternalProcessingDone)
-        .onInvalidResponseRejection(ExternalProcessingDone)
-        .onInvalidResponseUnknown(ExternalProcessingDone)
+        .onPeerUnavailable(ExternalProcessingCompleted)
+        .onMissingResponse(ExternalProcessingCompleted)
+        .onInvalidResponseRejection(ExternalProcessingCompleted)
+        .onInvalidResponseUnknown(ExternalProcessingCompleted)
         .contentParser(message -> message.body() == null ? valid(null) : invalid("Expected empty body"))
-        .onSuccess(ExternalProcessingDone)
-        .onFailure(ExternalProcessingDone)
+        .onSuccess(ExternalProcessingCompleted)
+        .onFailure(ExternalProcessingCompleted)
         .isAccepted(r -> r.statusCode() >= 200 && r.statusCode() <= 299)
         .isRejected(r -> r.statusCode() >= 400 && r.statusCode() <= 499)
         .isRejectedByInvalidResponse(r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499)
@@ -411,7 +411,7 @@ public class HttpInboxTest {
         .inflightTimeout(Duration.ofSeconds(10))
         .processModel(Lamp)
         .contentParser(_ -> valid(null))
-        .onSuccess(ExternalProcessingDone)
+        .onSuccess(ExternalProcessingCompleted)
         .isAccepted(r -> r.statusCode() >= 200 && r.statusCode() <= 299)
         .isFailureTransient(r -> r.statusCode() >= 500 && r.statusCode() <= 599)
         .isRejectedByInvalidResponse(r -> r.t1().statusCode() >= 400 && r.t1().statusCode() <= 499)
@@ -610,7 +610,7 @@ public class HttpInboxTest {
     HttpResponseMessage response = HttpMessageParser.parseResponse(responseEvent.data());
     assertEquals(422, response.statusCode());
     ProblemDetail pd = ProblemDetail.parse(response.body());
-    assertThat(pd.detail()).matches("\\[EventThatIsAlwaysRejected] on \\[Lamp]/.{36} rejected for state \\[Begin].*");
+    assertThat(pd.detail()).matches("\\[Always rejected event submitted] on \\[Lamp]/.{36} rejected for state \\[Begin].*");
     assertEquals(422, pd.status());
   }
 

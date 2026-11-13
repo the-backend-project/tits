@@ -28,41 +28,41 @@ class ERDiagramFormatterTest {
 
   enum States implements State {Moving, Stopped}
 
-  static final EventType<Void, Void> Start = BasicEventType.of("Start", UUID.randomUUID());
-  static final EventType<Void, Void> Stop = BasicEventType.of("Stop", UUID.randomUUID());
-  static final EventType<Void, Void> Increase = BasicEventType.of("Increase", UUID.randomUUID());
-  static final EventType<Void, Void> Decrease = BasicEventType.of("Decrease", UUID.randomUUID());
-  static final EventType<String, String> Name = BasicEventType.of("Name", UUID.randomUUID(), DataType.string());
+  static final EventType<Void, Void> CarStarted = BasicEventType.of("Car started", UUID.randomUUID());
+  static final EventType<Void, Void> CarStopped = BasicEventType.of("Car stopped", UUID.randomUUID());
+  static final EventType<Void, Void> SpeedIncreased = BasicEventType.of("Speed increased", UUID.randomUUID());
+  static final EventType<Void, Void> SpeedDecreased = BasicEventType.of("Speed decreased", UUID.randomUUID());
+  static final EventType<String, String> NameClaimed = BasicEventType.of("Name claimed", UUID.randomUUID(), DataType.string());
 
   static final EntityModel Car = EntityModel.of("Car", UUID.randomUUID());
   static final EntityModel Speed = EntityModel.of("Speed", UUID.randomUUID());
   static final EntityModel Engine = EntityModel.of("Engine", UUID.randomUUID());
-  static final IdEntityModel Ids = IdEntityModel.of("Ids", UUID.randomUUID(), Name);
+  static final IdEntityModel Ids = IdEntityModel.of("Ids", UUID.randomUUID(), NameClaimed);
 
   static Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> model() {
     return Map.of(
         Car, Map.of(
             Begin, List.of(
-                onEvent(Start).to(States.Moving)
-                    .trigger(Increase).on(Speed).identifiedBy(newEntityId())
+                onEvent(CarStarted).to(States.Moving)
+                    .trigger(SpeedIncreased).on(Speed).identifiedBy(newEntityId())
                     .reversible(
                         assemble((_, _) -> UUID.randomUUID())
-                            .trigger(Decrease).on(Speed).identifiedBy(EntitySelector::entityId)
+                            .trigger(SpeedDecreased).on(Speed).identifiedBy(EntitySelector::entityId)
                     )
                     .output()
             ),
             States.Moving, List.of(
-                onEvent(Stop).to(States.Stopped)
-                    .trigger(Decrease).on(Speed).identifiedBy(newEntityId())
-                    .trigger(Stop).on(Engine).identifiedBy(newEntityId())
+                onEvent(CarStopped).to(States.Stopped)
+                    .trigger(SpeedDecreased).on(Speed).identifiedBy(newEntityId())
+                    .trigger(CarStopped).on(Engine).identifiedBy(newEntityId())
                     .output()
             ),
             States.Stopped, List.of()
         ),
         Speed, Map.of(
             Begin, List.of(
-                onEvent(Increase).toSelf().output(),
-                onEvent(Decrease).toSelf().output()
+                onEvent(SpeedIncreased).toSelf().output(),
+                onEvent(SpeedDecreased).toSelf().output()
             )
         ),
         Ids, Ids.transitions()
@@ -75,19 +75,19 @@ class ERDiagramFormatterTest {
     assertThat(diagram).contains(
         """
         entity "Car" as E1 {
-          {field} Start
-          {field} Stop
+          {field} Car started
+          {field} Car stopped
         }
         """,
         """
         entity "Ids" as E3 <<id>> {
-          {field} Name : string → string
+          {field} Name claimed : string → string
         }
         """,
         """
         entity "Speed" as E4 {
-          {field} Increase
-          {field} Decrease
+          {field} Speed increased
+          {field} Speed decreased
         }
         """
     );
@@ -98,7 +98,7 @@ class ERDiagramFormatterTest {
     assertThat(new ERDiagramFormatter("Test", model()).format()).contains(
         """
         entity "Engine" as E2 {
-          {field} Stop
+          {field} Car stopped
         }
         """
     );
@@ -108,8 +108,8 @@ class ERDiagramFormatterTest {
   void triggersRelateEntities() {
     String diagram = new ERDiagramFormatter("Test", model()).format();
     assertThat(diagram).contains(
-        "E1 --> E4 : Start ↪ Increase\\n<color:#7a0000>Start ↪ Decrease</color>\\nStop ↪ Decrease\n",
-        "E1 --> E2 : Stop ↪ Stop\n"
+        "E1 --> E4 : Car started ↪ Speed increased\\n<color:#7a0000>Car started ↪ Speed decreased</color>\\nCar stopped ↪ Speed decreased\n",
+        "E1 --> E2 : Car stopped ↪ Car stopped\n"
     );
     assertThat(diagram).doesNotContain("E3 -->", "E4 -->");
   }
@@ -122,7 +122,7 @@ class ERDiagramFormatterTest {
         "entity \"Engine\" as E2 {\n}\n",
         "entity \"Ids\" as E3 <<id>> {\n}\n",
         "entity \"Speed\" as E4 {\n}\n",
-        "E1 --> E2 : Stop ↪ Stop\n"
+        "E1 --> E2 : Car stopped ↪ Car stopped\n"
     );
     assertThat(diagram).doesNotContain("{field}");
   }

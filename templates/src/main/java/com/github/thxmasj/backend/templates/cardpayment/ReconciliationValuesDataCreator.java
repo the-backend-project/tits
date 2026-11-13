@@ -1,8 +1,8 @@
 package com.github.thxmasj.backend.templates.cardpayment;
 
-import static com.github.thxmasj.backend.templates.cardpayment.SettlementEvent.MerchantCredit;
+import static com.github.thxmasj.backend.templates.cardpayment.SettlementEvent.MerchantCredited;
 import static com.github.thxmasj.backend.templates.cardpayment.SettlementEvent.MerchantCreditReversed;
-import static com.github.thxmasj.backend.templates.cardpayment.SettlementEvent.MerchantDebit;
+import static com.github.thxmasj.backend.templates.cardpayment.SettlementEvent.MerchantDebited;
 import static com.github.thxmasj.backend.templates.cardpayment.SettlementEvent.MerchantDebitReversed;
 
 import com.github.thxmasj.backend.core.EventLog;
@@ -12,10 +12,10 @@ public class ReconciliationValuesDataCreator {
 
   public static ReconciliationValues reconciliationValues(EventLog log) {
     return new ReconciliationValues(
-        log.all(MerchantDebit).stream().mapToLong(Long::longValue).sum(),
-        (long) log.all(MerchantDebit).size(),
-        log.all(MerchantCredit).stream().mapToLong(Long::longValue).sum(),
-        (long) log.all(MerchantCredit).size(),
+        log.all(MerchantDebited).stream().mapToLong(Long::longValue).sum(),
+        (long) log.all(MerchantDebited).size(),
+        log.all(MerchantCredited).stream().mapToLong(Long::longValue).sum(),
+        (long) log.all(MerchantCredited).size(),
         log.all(MerchantCreditReversed)
             .stream()
             .mapToLong(Long::longValue)

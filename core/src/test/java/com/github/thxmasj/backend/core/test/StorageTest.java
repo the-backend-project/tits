@@ -46,14 +46,14 @@ public class StorageTest {
 
   enum States implements State {Created}
 
-  static EventType<Void, Void> Create = BasicEventType.of("Create", UUID.fromString("5a4bd3b2-5d0e-4a8e-9a61-2f3b1d6e0c01"));
-  static EventType<String, String> Name = BasicEventType.of("Name", UUID.fromString("5a4bd3b2-5d0e-4a8e-9a61-2f3b1d6e0c02"), DataType.string());
+  static EventType<Void, Void> PersonCreated = BasicEventType.of("Person created", UUID.fromString("5a4bd3b2-5d0e-4a8e-9a61-2f3b1d6e0c01"));
+  static EventType<String, String> NameClaimed = BasicEventType.of("Name claimed", UUID.fromString("5a4bd3b2-5d0e-4a8e-9a61-2f3b1d6e0c02"), DataType.string());
 
   static EntityModel Person = EntityModel.of("Person", UUID.fromString("5a4bd3b2-5d0e-4a8e-9a61-2f3b1d6e0c03"));
-  static IdEntityModel Names = IdEntityModel.of("Names", UUID.fromString("5a4bd3b2-5d0e-4a8e-9a61-2f3b1d6e0c04"), Name);
+  static IdEntityModel Names = IdEntityModel.of("Names", UUID.fromString("5a4bd3b2-5d0e-4a8e-9a61-2f3b1d6e0c04"), NameClaimed);
 
   private static final Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions = Map.of(
-      Person, Map.of(Begin, List.of(onEvent(Create).to(States.Created).output())),
+      Person, Map.of(Begin, List.of(onEvent(PersonCreated).to(States.Created).output())),
       Names, Names.transitions()
   );
 
@@ -72,8 +72,8 @@ public class StorageTest {
   /// A person with a name, i.e. its first event and its name's id event
   private static Change[] person(UUID entityId, String name) {
     return new Change[] {
-        change(Person, new Event<>(entityId, 1, Create, clock)),
-        change(Names, new Event<>(entityId, 1, Name, clock, name))
+        change(Person, new Event<>(entityId, 1, PersonCreated, clock)),
+        change(Names, new Event<>(entityId, 1, NameClaimed, clock, name))
     };
   }
 
@@ -92,12 +92,12 @@ public class StorageTest {
     UUID alice = UUID.randomUUID();
     store(storage, person(alice, "Alice"));
 
-    EventLog log = storage.eventsByIdEvent().execute(Name, Name.outputDataType().marshal("Alice")).block();
+    EventLog log = storage.eventsByIdEvent().execute(NameClaimed, NameClaimed.outputDataType().marshal("Alice")).block();
 
     assertEquals(alice, log.entityId());
     assertEquals(Person, log.entityModel());
-    assertEquals(List.of("1:Create"), log.events().stream().map(e -> e.eventNumber() + ":" + e.typeName()).toList());
-    assertNull(storage.eventsByIdEvent().execute(Name, Name.outputDataType().marshal("Bob")).block());
+    assertEquals(List.of("1:Person created"), log.events().stream().map(e -> e.eventNumber() + ":" + e.typeName()).toList());
+    assertNull(storage.eventsByIdEvent().execute(NameClaimed, NameClaimed.outputDataType().marshal("Bob")).block());
   }
 
   @Test
@@ -118,7 +118,7 @@ public class StorageTest {
 
     assertThrows(IdEventAlreadyExists.class, () -> store(storage, person(bob, "Alice")));
 
-    assertThrows(UnknownEntity.class, () -> storage.eventsByEntityId().execute(Person, List.of(Create), bob).block());
+    assertThrows(UnknownEntity.class, () -> storage.eventsByEntityId().execute(Person, List.of(PersonCreated), bob).block());
   }
 
   @Test

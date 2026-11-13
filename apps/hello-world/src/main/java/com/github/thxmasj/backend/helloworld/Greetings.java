@@ -36,10 +36,10 @@ public interface Greetings {
     Greeted
   }
 
-  EventType<Void, Void> Greet = BasicEventType.of("Greet", UUID.fromString("0b7f8f43-37a3-4f26-9a5c-6f3ad6f1c2a4"));
+  EventType<Void, Void> GreetingRequested = BasicEventType.of("Greeting requested", UUID.fromString("0b7f8f43-37a3-4f26-9a5c-6f3ad6f1c2a4"));
 
-  ResponseEventType<String> RespondGreeting = new ResponseEventType<>(
-      "Respond greeting",
+  ResponseEventType<String> GreetingResponseCreated = new ResponseEventType<>(
+      "Greeting response created",
       UUID.fromString("d2c9b8f1-6a0e-4a43-8f8e-1c0f6e3b7a52"),
       DataType.string()
   );
@@ -52,7 +52,7 @@ public interface Greetings {
               null,
               null,
               UUID.fromString("5e3d4a8c-0f2b-4c6e-b1d7-9a8f7e6d5c4b"),
-              Greet,
+              GreetingRequested,
               Greeting,
               _ -> null,
               newEntity()
@@ -62,7 +62,7 @@ public interface Greetings {
 
   List<CustomResponse<?>> customResponses = List.of(
       new CustomResponse<>(
-          RespondGreeting,
+          GreetingResponseCreated,
           c -> new HttpResponseMessage(
               200,
               "OK",
@@ -76,9 +76,9 @@ public interface Greetings {
     return Map.of(
         Greeting, Map.of(
             Begin, List.of(
-                onEvent(Greet).to(States.Greeted)
+                onEvent(GreetingRequested).to(States.Greeted)
                     .assemble(c -> c.log().entityId().toString())
-                    .trigger(RespondGreeting).with(id -> id).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                    .trigger(GreetingResponseCreated).with(id -> id).on(RequestDispatching).identifiedBy(entityIdFromSession())
                     .output()
             ),
             States.Greeted, List.of()

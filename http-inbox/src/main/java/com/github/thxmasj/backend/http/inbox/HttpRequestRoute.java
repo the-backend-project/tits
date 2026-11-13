@@ -37,7 +37,7 @@ public record HttpRequestRoute<T>(
 
     public EventType<RoutedRequest<T>, Void> dispatchingEventType() {
       return BasicEventType.of(
-          "Dispatch: " + processEventType.name(),
+          "Request dispatched: " + processEventType.name(),
           dispatchingEventTypeId,
           DataType.unknown(),
           DataType.none()

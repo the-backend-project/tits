@@ -73,12 +73,12 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
     }
 
     long attempts(EventLog log) {
-      return log.count(attemptsAvailable()) + 1;
+      return log.count(retryScheduled()) + 1;
     }
 
-    EventType<RetryContext, Void> attemptsAvailable() {
+    EventType<RetryContext, Void> retryScheduled() {
       return BasicEventType.of(
-          "Attempts available",
+          "Retry scheduled",
           UUID.fromString("e6d6331f-5891-4d97-b699-ffe0dcf9d6cb"),
           DataType.json(RetryContext.class),
           DataType.none()
@@ -131,7 +131,7 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
     // Intermediate
     EventType<TypedHttpResponse<RS>, TypedHttpResponse<RS>> validResponse() {
       return BasicEventType.of(
-          "[valid response]",
+          "Valid response received",
           UUID.fromString("c9fcf4d6-95f8-418f-aa6b-c3d987d3a3c3"),
           DataType.unknown(),
           DataType.unknown()
@@ -140,7 +140,7 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
 
     EventType<TypedHttpResponse<RS>, TypedHttpResponse<RS>> requestReceivedAndRejected() {
       return BasicEventType.of(
-          "[request rejected]",
+          "Request rejected",
           UUID.fromString("5362567f-792e-4f8a-81d6-3b201d44d3f0"),
           DataType.unknown(),
           HttpDataType.forResponse(responsePayloadType)
@@ -149,7 +149,7 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
 
     EventType<Void, TypedHttpResponse<RS>> requestReceivedAndRejectedTransiently() {
       return BasicEventType.of(
-          "[request rejected transiently]",
+          "Request rejected transiently",
           UUID.fromString("bcdf93f4-657d-4b26-b165-74279a5ea477"),
           DataType.unknown(),
           HttpDataType.forResponse(responsePayloadType)
@@ -158,7 +158,7 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
 
     EventType<TypedHttpResponse<RS>, TypedHttpResponse<RS>> requestReceivedAndRejectedPermanently() {
       return BasicEventType.of(
-          "[request rejected permanently]",
+          "Request rejected permanently",
           UUID.fromString("94b1169f-8e09-45d5-bdff-cae9b146db30"),
           DataType.unknown(),
           HttpDataType.forResponse(responsePayloadType)
@@ -167,7 +167,7 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
 
     EventType<Tuple2<HttpResponseMessage, String>, HttpResponseMessage> invalidResponseAndRejectedPermanently() {
       return BasicEventType.of(
-          "[invalid response, request rejected permanently]",
+          "Invalid response received, request rejected permanently",
           UUID.fromString("94eca92d-a229-4aa9-bc02-48260fa1bbf0"),
           DataType.unknown(),
           HttpDataType.forResponse()
@@ -177,7 +177,7 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
     // Leaf
     EventType<TypedHttpResponse<RS>, TypedHttpResponse<RS>> requestAccepted() {
       return BasicEventType.of(
-          "[request accepted]",
+          "Request accepted",
           RequestAcceptedId,
           HttpDataType.forResponse(responsePayloadType),
           HttpDataType.forResponse(responsePayloadType)
@@ -211,7 +211,7 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
   }
 
   public boolean scheduledRedispatch(EventLog log) {
-    return log.exists(shape.attemptsAvailable());
+    return log.exists(shape.retryScheduled());
   }
 
   public TypedHttpRequest<RQ> redispatchedRequest(EventLog log) {
@@ -297,26 +297,26 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
   ) {
     // Intermediate
     EventType<Tuple2<HttpResponseMessage, String>, Tuple2<HttpResponseMessage, String>> invalidResponse = BasicEventType.of(
-        "[invalid response]",
+        "Invalid response received",
         UUID.fromString("3bd020c3-caf8-4a9b-a10c-d818f98a6de7"),
         DataType.unknown()
     );
     // Intermediate
     EventType<Tuple2<HttpResponseMessage, String>, HttpResponseMessage> invalidResponseAndRejected = BasicEventType.of(
-        "[invalid response, request rejected]",
+        "Invalid response received, request rejected",
         UUID.fromString("402f9bf4-855c-4383-ac54-3375f9d156d1"),
         DataType.unknown(),
         HttpDataType.forResponse()
     );
     EventType<Void, HttpResponseMessage> invalidResponseAndRejectedTransiently = BasicEventType.of(
-        "[invalid response, request rejected transiently]",
+        "Invalid response received, request rejected transiently",
         UUID.fromString("9f121370-4b8d-4a08-a7ef-30555c1e1f48"),
         DataType.unknown(),
         HttpDataType.forResponse()
     );
     // Leaf
     EventType<Void, HttpResponseMessage> invalidResponseAndUnknown = BasicEventType.of(
-        "[invalid response, unknown status]",
+        "Invalid response received with unknown status",
         UUID.fromString("ecfb2c9d-178b-4c3e-b09e-c580e09b01b4"),
         DataType.unknown(),
         HttpDataType.forResponse()
@@ -327,7 +327,7 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
                 .assemble(shape.retry())
                 .when(shape.isAttemptAvailable)
                 .then(
-                    onEvent(shape.attemptsAvailable()).to(Compensating)
+                    onEvent(shape.retryScheduled()).to(Compensating)
                         .assembleInput()
                         .trigger(shape.requestRedispatched()).after(shape.backoffAlgorithm)
                         .output(),
@@ -338,7 +338,7 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
                 .assemble(shape.retry())
                 .when(shape.isAttemptAvailable)
                 .then(
-                    onEvent(shape.attemptsAvailable()).to(Compensating)
+                    onEvent(shape.retryScheduled()).to(Compensating)
                         .assembleInput()
                         .trigger(shape.requestRedispatched()).after(shape.backoffAlgorithm)
                         .output(),
@@ -349,7 +349,7 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
                 .assemble(shape.retry())
                 .when(shape.isAttemptAvailable())
                 .then(
-                    onEvent(shape.attemptsAvailable()).to(Compensating)
+                    onEvent(shape.retryScheduled()).to(Compensating)
                         .assembleInput()
                         .trigger(shape.requestRedispatched()).after(shape.backoffAlgorithm)
                         .output(),
@@ -388,7 +388,7 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
                                         .assemble(shape.retry())
                                         .when(shape.isAttemptAvailable())
                                         .then(
-                                            onEvent(shape.attemptsAvailable()).to(Compensating)
+                                            onEvent(shape.retryScheduled()).to(Compensating)
                                                 .assembleInput()
                                                 .trigger(shape.requestRedispatched()).after(shape.backoffAlgorithm)
                                                 .output(),
@@ -408,7 +408,7 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
                                 .assemble(shape.retry())
                                 .when(shape.isAttemptAvailable())
                                 .then(
-                                    onEvent(shape.attemptsAvailable()).to(Compensating)
+                                    onEvent(shape.retryScheduled()).to(Compensating)
                                         .assembleInput()
                                         .trigger(shape.requestRedispatched()).after(shape.backoffAlgorithm())
                                         .output(),
@@ -470,7 +470,7 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
                 .assemble(shape.retry())
                 .when(shape.isAttemptAvailable())
                 .then(
-                    onEvent(shape.attemptsAvailable()).to(Compensating)
+                    onEvent(shape.retryScheduled()).to(Compensating)
                         .assembleInput()
                         .trigger(shape.requestRedispatched()).after(shape.backoffAlgorithm())
                         .output(),

@@ -27,18 +27,18 @@ import reactor.core.publisher.Mono;
 
 public class CalculationTest {
 
-  static EventType<String, String> Number = BasicEventType.of("Number", UUID.fromString("0d2f4a6c-8e9b-4b1d-a3f5-7c9e1b3d5f17"), DataType.string());
-  static IdEntityModel Ids = IdEntityModel.of("Ids", UUID.fromString("f5a7c9e1-3b4d-4d6f-8a0c-2e4f6a8c0e29"), Number);
+  static EventType<String, String> NumberClaimed = BasicEventType.of("Number claimed", UUID.fromString("0d2f4a6c-8e9b-4b1d-a3f5-7c9e1b3d5f17"), DataType.string());
+  static IdEntityModel Ids = IdEntityModel.of("Ids", UUID.fromString("f5a7c9e1-3b4d-4d6f-8a0c-2e4f6a8c0e29"), NumberClaimed);
   static EntityModel Order = EntityModel.of("Order", UUID.fromString("a1c3e5f7-9b0d-4f2a-8c4e-6a8c0e2b4d3b"));
 
   enum States implements State { Placed, Rejected }
 
-  static EventType<String, String> Place = BasicEventType.of("Place", UUID.fromString("5c7e9a1b-3d4f-4b6c-8e0a-2c4e6a8c0e4d"), DataType.string());
-  static EventType<String, String> Accept = BasicEventType.of("Accept", UUID.fromString("b9d1f3a5-7c8e-4d0f-a2b4-6d8f0a2c4e5f"), DataType.string());
-  static EventType<String, String> Reject = BasicEventType.of("Reject", UUID.fromString("3e5a7c9d-1f2b-4a4c-8e6f-0b2d4f6a8c61"), DataType.string());
-  static EventType<String, String> Remind = BasicEventType.of("Remind", UUID.fromString("d7f9b1c3-5e6a-4c8d-9a0b-2e4a6c8e0a73"), DataType.string());
-  static EventType<String, String> Ship = BasicEventType.of("Ship", UUID.fromString("7a9c1e3f-5b6d-4e8a-b0c2-4a6c8e0b2d85"), DataType.string());
-  static EventType<UUID, UUID> Referenced = IndexEntityModel.referenceEventType("Referenced", UUID.fromString("1c3e5a7b-9d0f-4a2c-8e4b-6c8e0a2d4f97"));
+  static EventType<String, String> OrderPlaced = BasicEventType.of("Order placed", UUID.fromString("5c7e9a1b-3d4f-4b6c-8e0a-2c4e6a8c0e4d"), DataType.string());
+  static EventType<String, String> OrderAccepted = BasicEventType.of("Order accepted", UUID.fromString("b9d1f3a5-7c8e-4d0f-a2b4-6d8f0a2c4e5f"), DataType.string());
+  static EventType<String, String> OrderRejected = BasicEventType.of("Order rejected", UUID.fromString("3e5a7c9d-1f2b-4a4c-8e6f-0b2d4f6a8c61"), DataType.string());
+  static EventType<String, String> ReminderSent = BasicEventType.of("Reminder sent", UUID.fromString("d7f9b1c3-5e6a-4c8d-9a0b-2e4a6c8e0a73"), DataType.string());
+  static EventType<String, String> OrderShipped = BasicEventType.of("Order shipped", UUID.fromString("7a9c1e3f-5b6d-4e8a-b0c2-4a6c8e0b2d85"), DataType.string());
+  static EventType<UUID, UUID> OrderReferenced = IndexEntityModel.referenceEventType("Order referenced", UUID.fromString("1c3e5a7b-9d0f-4a2c-8e4b-6c8e0a2d4f97"));
 
   private final Calculation calculation = new Calculation();
   private final InputStep<String> order = initial(null, Order);
@@ -51,15 +51,15 @@ public class CalculationTest {
       @Override public String name() {return "Notify";}
       @Override public Mono<InputEvent<?>> execute(String data) {return Mono.empty();}
     };
-    TransitionModel<String, String> transition = onEvent(Place).to(States.Placed)
+    TransitionModel<String, String> transition = onEvent(OrderPlaced).to(States.Placed)
         .assembleReactive(c -> Mono.fromSupplier(() -> executed("Assemble", c.input())))
-        .trigger(Remind).with(d -> executed("Delayed data", d)).after(d -> executed("Delay", Duration.ofHours(1)))
+        .trigger(ReminderSent).with(d -> executed("Delayed data", d)).after(d -> executed("Delay", Duration.ofHours(1)))
         .trigger(notify).with(d -> executed("Action data", d))
-        .trigger(Ship).when(Referenced, d -> executed("Index key", UUID.randomUUID())).is(Accept)
+        .trigger(OrderShipped).when(OrderReferenced, d -> executed("Index key", UUID.randomUUID())).is(OrderAccepted)
             .with(d -> executed("Conditional data", d)).on(Order).identifiedBy(entityIdFromSession())
-        .when(d -> executed("Reject?", false)).then(onEvent(Reject).to(States.Rejected).assembleInput().output(d -> d))
+        .when(d -> executed("Reject?", false)).then(onEvent(OrderRejected).to(States.Rejected).assembleInput().output(d -> d))
         .when(d -> executed("Accept?", true)).then(
-            onEvent(Accept).to(States.Placed)
+            onEvent(OrderAccepted).to(States.Placed)
                 .assemble(c -> executed("Assemble accepted", c.input()))
                 .output(d -> executed("Output accepted", d)),
             d -> executed("Accepted data", d)
@@ -136,7 +136,7 @@ public class CalculationTest {
   public void allStepsAreExecutedAgainWhenAResultBeforeTheTriggerIsRejected() {
     var rejected = step("Reject", order, () -> new RejectedStep<>(
         order,
-        ProcessResult.rejected(Number, new RejectedEvent(Number, order.log(), Begin))
+        ProcessResult.rejected(NumberClaimed, new RejectedEvent(NumberClaimed, order.log(), Begin))
     ));
     var id = step("Trigger", rejected, () -> initial(rejected, Ids));
     step("Output id", id, () -> output(id, "1"));
@@ -229,11 +229,11 @@ public class CalculationTest {
   }
 
   private static IdExists<String> existing(String id) {
-    return ProcessResult.idExists(Number, idEvent(id), EventLog.empty(UUID.randomUUID(), Order));
+    return ProcessResult.idExists(NumberClaimed, idEvent(id), EventLog.empty(UUID.randomUUID(), Order));
   }
 
   private static Event<String> idEvent(String id) {
-    return new Event<>(UUID.randomUUID(), 1, Number, ZonedDateTime.now(), id);
+    return new Event<>(UUID.randomUUID(), 1, NumberClaimed, ZonedDateTime.now(), id);
   }
 
 }

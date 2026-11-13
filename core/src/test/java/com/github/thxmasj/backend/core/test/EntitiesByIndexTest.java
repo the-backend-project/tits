@@ -34,20 +34,20 @@ public class EntitiesByIndexTest {
   static EventType<UUID, UUID> customerReferenced = IndexEntityModel.referenceEventType("Customer referenced", UUID.fromString("56e950a0-369a-4bf9-b126-e5c762fdb6bc"));
   static IndexEntityModel Index = IndexEntityModel.of("Index", UUID.fromString("6a0eb254-8e11-4f96-b4fe-c93d8b4e7232"), customerReferenced);
 
-  static EventType<UUID, UUID> CreateOrder = BasicEventType.of("CreateOrder", UUID.fromString("38d58c97-6a1e-450f-a399-52e185859dc1"), DataType.uuid());
-  static EventType<Void, Void> ShipOrder = BasicEventType.of("ShipOrder", UUID.fromString("617fb006-eb86-455b-bf98-0c6efea8cba3"));
+  static EventType<UUID, UUID> OrderCreated = BasicEventType.of("Order created", UUID.fromString("38d58c97-6a1e-450f-a399-52e185859dc1"), DataType.uuid());
+  static EventType<Void, Void> OrderShipped = BasicEventType.of("Order shipped", UUID.fromString("617fb006-eb86-455b-bf98-0c6efea8cba3"));
 
   @Test
   public void testEntitiesByIndexResolvesCorrectEntityModelAndHandlesMultipleEvents() {
     Map<State, List<TransitionModel<?, ?>>> orderTransitions = Map.of(
         Begin, List.of(
-            onEvent(CreateOrder).to(OrderStates.Created)
+            onEvent(OrderCreated).to(OrderStates.Created)
                 .assemble(c -> tuple(c.input(), c.log().entityId()))
                 .trigger(customerReferenced).with(t -> t.t1()).on(Index).identifiedBy(t -> newEntityId(t.t2()))
                 .output()
         ),
         OrderStates.Created, List.of(
-            onEvent(ShipOrder).to(OrderStates.Shipped).output()
+            onEvent(OrderShipped).to(OrderStates.Shipped).output()
         ),
         OrderStates.Shipped, List.of()
     );
@@ -63,7 +63,7 @@ public class EntitiesByIndexTest {
     UUID customerId = UUID.randomUUID();
 
     // 1. Create first order for customer
-    var event1 = machine.onEvent(trigger(CreateOrder, Order), customerId).blockFirst();
+    var event1 = machine.onEvent(trigger(OrderCreated, Order), customerId).blockFirst();
     assertNotNull(event1);
     UUID orderId = event1.entityId();
 
@@ -77,7 +77,7 @@ public class EntitiesByIndexTest {
     assertEquals(1, orderLog1.events().size());
 
     // 2. Perform second transition on the same entity (eventNumber == 2)
-    var event2 = machine.onEvent(trigger(ShipOrder, Order, orderId)).blockFirst();
+    var event2 = machine.onEvent(trigger(OrderShipped, Order, orderId)).blockFirst();
     assertNotNull(event2);
     assertEquals(2, event2.eventNumber());
 
@@ -91,7 +91,7 @@ public class EntitiesByIndexTest {
     assertEquals(2, orderLog2.events().size());
 
     // 3. Create a second order for the same customer
-    var event3 = machine.onEvent(trigger(CreateOrder, Order), customerId).blockFirst();
+    var event3 = machine.onEvent(trigger(OrderCreated, Order), customerId).blockFirst();
     assertNotNull(event3);
     UUID orderId2 = event3.entityId();
 
