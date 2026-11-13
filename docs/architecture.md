@@ -3,7 +3,7 @@
 An application built with the server is a set of entity models, each a finite state machine, given to a
 `StateMachine`. The state machine stores the entities as event logs in a database.
 
-The application receives requests through HTTP inboxes and sends requests to other systems through
+The application receives requests through [HTTP inboxes](http-inbox.md) and sends requests to other systems through
 [HTTP outboxes](http-outbox.md).
 They are state machines with entities too, given to the `StateMachine` along with the entity models of the
 application. Every request received or sent is an entity with a state and an event log of its own. It is stored in the
@@ -31,7 +31,7 @@ flowchart LR
 |-----------------------------------------------------------------------|------------------------------------------------------------------------------------------------|
 | core                                                                  | The state machine, the builder of transition models, and the interface of the databases        |
 | [database-mssql, database-pgsql-*](databases.md)                      | The SQL of a database and the driver it is reached through, one module per database and driver |
-| http-inbox                                                            | Inboxes: entity models receiving HTTP requests and routing them to the entities of an application |
+| [http-inbox](http-inbox.md)                                           | Inboxes: entity models receiving HTTP requests and routing them to the entities of an application |
 | [http-outbox](http-outbox.md)                                         | Outboxes: entity models sending HTTP requests at least once or at most once                    |
 | [test-api](testing.md)                                                | An API for tests to look into and manipulate the database of a state machine                   |
 | diagram                                                               | State diagrams and ER diagrams of a state machine's model                                      |
@@ -311,50 +311,6 @@ onEvent(RequestRegistration).to(States.Accepted)
 If a step before the trigger was rejected, all the steps are executed again, since whether a rejection is handled is
 decided by the steps after it. The changes are not calculated again if the id is not triggered by any step, or if it
 is found to exist even after they were calculated with it existing; the event then fails.
-
-## HTTP inboxes
-
-An inbox is a set of entity models whose entities are the requests the application receives. Their transitions are
-given to the state machine along with those of the application, and the inbox is drawn in the same kind of state
-diagram (see [RequestRouting](images/com.github.thxmasj.backend.http.inbox.RequestRouting.svg) and
-[RequestDispatching](images/com.github.thxmasj.backend.http.inbox.RequestDispatching.svg)).
-
-The `HttpInboxListener` receives HTTP requests with reactor-netty and passes them to the entity models of the inbox.
-A `RequestRouting` entity is created for every request, and matches it against the routes of the application. A route
-validates the request, and gives the event type and entity it triggers. A `RequestDispatching` entity is created for
-every routed request, which triggers the event on the application's entity and waits for it to respond. The response
-is an event on the `RequestDispatching` entity, of a `ResponseEventType`, which the listener sends to the client.
-
-Requests carrying a message id are deduplicated through the `MessageIds` id entity model: a retried request gets the
-response of the first one, without triggering anything again. Filters on the listener can authenticate, log or rewrite
-requests before they reach the inbox.
-
-### Access tokens
-
-Routes requiring an access token, e.g. one issued by the [identity provider](identity-provider.md), take
-`HttpInbox.bearerToken(verifier, scopes...)` as their authorizer, which authorizes the `sub` of the bearer token if the
-verifier finds it valid and it has the scopes. The `AccessTokenVerifier` is given the keys of the issuer, its issuer
-URI and optionally the audience the tokens must have:
-
-```java
-var verifier = AccessTokenVerifier.fetchingKeys(
-    URI.create("https://idp.example.com/.well-known/jwks.json"),
-    URI.create("https://idp.example.com"),
-    "payments-api",
-    Clock.systemUTC()
-);
-var authorizer = HttpInbox.bearerToken(verifier, "payments");
-```
-
-The verifier accepts JWT access tokens as profiled by [RFC 9068](https://www.rfc-editor.org/rfc/rfc9068): of type
-`at+jwt`, signed with RS256 by a key of the issuer, of the issuer, not expired, for the audience if one is given, and
-with the claims `sub` and `client_id`. A refused request is answered as
-[RFC 6750](https://www.rfc-editor.org/rfc/rfc6750#section-3) says, with a `WWW-Authenticate` header: 401 and the
-challenge `Bearer` without a bearer token, 401 and the error `invalid_token` with a token that is invalid or expired,
-and 403 and the error `insufficient_scope` with a token lacking a scope. An authorizer returns an `Authorization`,
-either `Authorized` with the subject or `Refused` with the status code, challenge and reason of the response;
-`Authorization.refused(reason)` refuses with 400. The keys are fetched once, so the verifier must be created again to see keys the
-issuer has added since.
 
 ## Diagrams
 

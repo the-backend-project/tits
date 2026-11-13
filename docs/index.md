@@ -107,6 +107,10 @@ docker compose up --build
 
     Event logs as the source of truth, and the few tables holding the work still to be done.
 
+-   :material-inbox-arrow-down:{ .lg } **[HTTP inboxes](http-inbox.md)**
+
+    Requests from clients, routed to the entities of an application, deduplicated and authorised by access tokens.
+
 -   :material-send:{ .lg } **[HTTP outboxes](http-outbox.md)**
 
     Requests to other systems, sent at least once or at most once by the transactional outbox pattern.
