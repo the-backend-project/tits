@@ -26,7 +26,7 @@ public record HttpRequestRoute<T>(
       Predicate<T> predicate,
       String predicateName,
       BiFunction<HttpRequestMessage, T, Validated<String>> messageIdParser,
-      BiFunction<HttpRequestMessage, T, Validated<String>> authorizer,
+      BiFunction<HttpRequestMessage, T, Authorization> authorizer,
       UUID dispatchingEventTypeId,
       EventType<U, ?> processEventType,
       EntityModel processType,
@@ -133,7 +133,7 @@ public record HttpRequestRoute<T>(
 
     public static <T, U> ContentRoute<T, U> anyContent(
         BiFunction<HttpRequestMessage, T, Validated<String>> messageIdParser,
-        BiFunction<HttpRequestMessage, T, Validated<String>> authorizer,
+        BiFunction<HttpRequestMessage, T, Authorization> authorizer,
         UUID dispatchingEventTypeId,
         EventType<U, ?> processEventType,
         EntityModel processType,

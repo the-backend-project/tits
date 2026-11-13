@@ -63,9 +63,13 @@ import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
 import com.github.thxmasj.backend.core.message.http.HttpRequestMessage.Method;
 import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
 import com.github.thxmasj.backend.core.message.http.TypedHttpRequest;
+import com.nimbusds.jose.JOSEException;
+import com.nimbusds.jose.jwk.JWKSet;
+import com.nimbusds.jose.jwk.gen.RSAKeyGenerator;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.URI;
+import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -246,7 +250,14 @@ public class HttpInboxTest {
       SwitchOn = BasicEventType.of("SwitchOn", UUID.fromString("5e9a8a9d-6a21-41cf-82dc-857fe1e4c4e0")),
       SwitchOff = BasicEventType.of("SwitchOff", UUID.fromString("8e1483c8-b649-43b8-b352-5094a94c0dad"));
 
+  static AccessTokenVerifier verifier = verifier();
+
   static List<HttpRequestRoute<?>> routes = List.of(
+      new HttpRequestRoute<>(
+          m -> m.requestLine().matches("PUT .*/protected/.*"),
+          m -> valid(m.body()),
+          List.of(anyContent(null, HttpInbox.bearerToken(verifier, "payments"), UUID.fromString("0b6f3c1e-8a4d-4f27-9c5e-2d7a1b3e6f84"), InternalProcessing, Lamp, (RoutedRequest<byte[]> _) -> null, newEntity()))
+      ),
       new HttpRequestRoute<>(
           m -> m.requestLine().matches("PUT .*/zero/.*"),
           m -> valid(m.body()),
@@ -622,6 +633,31 @@ public class HttpInboxTest {
   }
 
   @Test
+  public void whenNoBearerTokenThenUnauthorizedWithChallenge() throws IOException {
+    Event<?> responseEvent = onRequest(PUT, URI.create("/protected/" + UUID.randomUUID()), "Hello!".getBytes());
+    HttpResponseMessage response = HttpMessageParser.parseResponse(responseEvent.data());
+    assertEquals(401, response.statusCode());
+    assertEquals("Bearer", response.headerValue("WWW-Authenticate"));
+    assertEquals("Authorization header missing", ProblemDetail.parse(response.body()).detail());
+  }
+
+  @Test
+  public void whenInvalidBearerTokenThenUnauthorizedWithInvalidToken() throws IOException {
+    Event<?> responseEvent = onRequest(TRIGGER, new HttpRequestMessage(
+        PUT,
+        URI.create("/protected/" + UUID.randomUUID()),
+        Map.of("Authorization", "Bearer not-a-token"),
+        "Hello!".getBytes()
+    ));
+    HttpResponseMessage response = HttpMessageParser.parseResponse(responseEvent.data());
+    assertEquals(401, response.statusCode());
+    assertEquals(
+        "Bearer error=\"invalid_token\", error_description=\"Bearer token is invalid or expired\"",
+        response.headerValue("WWW-Authenticate")
+    );
+  }
+
+  @Test
   public void whenUnknownIdThenBadRequest() throws IOException {
     String messageId = UUID.randomUUID().toString();
     Event<?> responseEvent = onRequest(PUT, URI.create("/handledunknown/" + messageId), "Hello!".getBytes());
@@ -722,6 +758,19 @@ public class HttpInboxTest {
 
   private Event<?> onInternalRequest(String messageId, InternalProcess body) {
     return onRequest(PUT, URI.create("/internal/" + messageId), asJson(body));
+  }
+
+  private static AccessTokenVerifier verifier() {
+    try {
+      return new AccessTokenVerifier(
+          new JWKSet(new RSAKeyGenerator(2048).keyID("test").generate()).toPublicJWKSet().toString(),
+          URI.create("https://idp.example.com"),
+          null,
+          Clock.systemUTC()
+      );
+    } catch (JOSEException e) {
+      throw new IllegalStateException(e);
+    }
   }
 
   private <T> byte[] asJson(T value) {

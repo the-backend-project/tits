@@ -21,11 +21,13 @@ import static com.github.thxmasj.backend.http.inbox.HttpInbox.EntityModels.Reque
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.EntityModels.RequestRouting;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.MessageId;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.MessageIds;
+import static com.github.thxmasj.backend.http.inbox.HttpInbox.RejectAsUnauthorized;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.RejectAsUnroutable;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.RejectDuplicateRequest;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.RejectRequest;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.Respond;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.RespondBadRequest;
+import static com.github.thxmasj.backend.http.inbox.HttpInbox.RespondRefused;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.RollbackMessageId;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.RouteRequest;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.States.Completed;
@@ -54,6 +56,8 @@ import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionContext;
 import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.core.Tuples.Tuple2;
 import com.github.thxmasj.backend.core.Validated;
+import com.github.thxmasj.backend.http.inbox.Authorization.Authorized;
+import com.github.thxmasj.backend.http.inbox.Authorization.Refused;
 import com.github.thxmasj.backend.http.inbox.HttpInbox.CustomResponse;
 import com.github.thxmasj.backend.http.inbox.HttpInbox.MessageId;
 import com.github.thxmasj.backend.http.inbox.HttpInbox.RouteId;
@@ -69,6 +73,7 @@ import com.github.thxmasj.backend.core.message.http.UnprocessableEntity;
 import jakarta.annotation.Nullable;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -99,7 +104,10 @@ public interface TransitionModels {
         Rejected, List.of(
             onEvent(RespondBadRequest).to(Completed)
                 .assemble(c -> c)
-                .output(d -> badRequest(d.input(), d.correlationId(), d.timestamp()))
+                .output(d -> badRequest(d.input(), d.correlationId(), d.timestamp())),
+            onEvent(RespondRefused).to(Completed)
+                .assemble(c -> c)
+                .output(d -> refused(d.input(), d.correlationId(), d.timestamp()))
         ),
         Completed, List.of()
     );
@@ -172,12 +180,12 @@ public interface TransitionModels {
                     .output(),
                 d -> "Unable to parse message id: " + d.t3().invalidReason()
             )
-            .when(d -> d.t4() != null && d.t4().isInvalid()).then(
-                onEvent(RejectAsUnroutable).to(Rejected)
+            .when(d -> d.t4() instanceof Refused).then(
+                onEvent(RejectAsUnauthorized).to(Rejected)
                     .assembleInput()
-                    .trigger(RespondBadRequest).with(d -> d).on(RequestRouting).identifiedBy(entityIdFromSession())
+                    .trigger(RespondRefused).with(d -> d).on(RequestRouting).identifiedBy(entityIdFromSession())
                     .output(),
-                d -> d.t4().invalidReason()
+                d -> (Refused) d.t4()
             )
             .when(d -> d.t5() != null && d.t5().isInvalid()).then(
                 onEvent(RejectAsUnroutable).to(Rejected)
@@ -197,7 +205,7 @@ public interface TransitionModels {
                     )
                     .output(),
                 d -> {
-                  String clientId = d.t4() != null ? d.t4().validValue() : "N/A";
+                  String clientId = d.t4() instanceof Authorized a ? a.subject() : "N/A";
                   String messageIdValue = d.t3() != null ? d.t3().validValue() : null;
                   EntitySelector processSelector = d.t5() != null ? d.t5().validValue() : null;
                   MessageId messageId = null;
@@ -220,7 +228,7 @@ public interface TransitionModels {
                       d.t1(),
                       d.t2(),
                       messageId,
-                      d.t4() != null ? d.t4().validValue() : null,
+                      d.t4() instanceof Authorized a ? a.subject() : null,
                       processSelector
                   );
                 }
@@ -508,6 +516,26 @@ public interface TransitionModels {
       ZonedDateTime timestamp
   ) {
     return createResponseMessage(new BadRequest(), null, correlationId, timestamp, detail);
+  }
+
+  private static HttpResponseMessage refused(Refused refused, String correlationId, ZonedDateTime timestamp) {
+    String reasonPhrase = switch (refused.statusCode()) {
+      case 400 -> "Bad Request";
+      case 401 -> "Unauthorized";
+      case 403 -> "Forbidden";
+      default -> "Refused";
+    };
+    var creator = new HttpResponseCreator(refused.statusCode(), reasonPhrase) {
+      @Override
+      protected Map<String, String> headers(String correlationId, String data) {
+        if (refused.challenge() == null)
+          return super.headers(correlationId, data);
+        var headers = new HashMap<>(super.headers(correlationId, data));
+        headers.put("WWW-Authenticate", refused.challenge());
+        return headers;
+      }
+    };
+    return createResponseMessage(creator, null, correlationId, timestamp, refused.reason());
   }
 
   private static HttpResponseMessage unprocessableEntity(
