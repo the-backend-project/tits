@@ -9,6 +9,8 @@ on:
 
 jobs:
   build:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     services:
       mssql:
@@ -36,11 +38,13 @@ jobs:
       - name: Build Java artifacts and run any verifications
         run: mvn -B verify --file pom.xml -Daether.artifactResolver.postProcessor.trustedChecksums.failIfMissing=true
 
-  # Finds out which native images the pull request affects. Both apps are built from the same modules, so only changes
-  # to modules they do not depend on (documentation, templates, test-api, deploy) or to the other app skip a build.
+  # Finds out which jobs the pull request affects. Changes to documentation only (docs/, Markdown files, the Zensical
+  # configuration) skip the Maven builds. Both apps are built from the same modules, so only changes to modules they do
+  # not depend on (documentation, templates, test-api, deploy) or to the other app skip a native image build.
   changes:
     runs-on: ubuntu-latest
     outputs:
+      code: ${{ steps.filter.outputs.code }}
       hello-world: ${{ steps.filter.outputs.hello-world }}
       identity-provider: ${{ steps.filter.outputs.identity-provider }}
     steps:
@@ -54,6 +58,8 @@ jobs:
         run: |
           files=$(git diff --name-only HEAD^1 HEAD)
           echo "$files"
+          if grep -qvE '^(docs/|zensical\.toml$)|\.md$' <<< "$files"; then code=true; else code=false; fi
+          echo "code=$code" | tee -a "$GITHUB_OUTPUT"
           shared='^(pom\.xml|\.mvn/|\.dockerignore|\.github/workflows/build-verify\.yml|core/|database-[^/]+/|http-inbox/|http-outbox/|diagram/)'
           for app in hello-world:apps/hello-world/ identity-provider:apps/identity-provider/; do
             if grep -qE "$shared|^${app#*:}" <<< "$files"; then affected=true; else affected=false; fi
@@ -113,6 +119,8 @@ jobs:
         run: docker compose logs
 
   build-postgres:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -144,6 +152,8 @@ jobs:
         run: mvn -B verify --file pom.xml -pl '!apps/hello-world' -Ddatabase=pgsql-jdbc -Daether.artifactResolver.postProcessor.trustedChecksums.failIfMissing=true
 
   build-postgres-r2dbc:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -175,6 +185,8 @@ jobs:
         run: mvn -B verify --file pom.xml -pl '!apps/hello-world' -Ddatabase=pgsql-r2dbc -Daether.artifactResolver.postProcessor.trustedChecksums.failIfMissing=true
 
   build-postgres-vertx:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     services:
       postgres:
