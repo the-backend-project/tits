@@ -93,8 +93,8 @@ An event type has two type parameters, `EventType<I, O>`, and so does the transi
 `TransitionModel<I, O>`:
 
 * **`I`, the input**, is the data an event of the type is triggered with: by `with(...)` of the transition triggering
-  it, by a route of an inbox, or by a delayed or conditional trigger, which stores it until the trigger fires. The
-  transition calculates its event from it.
+  it, by the caller of `StateMachine.onEvent`, or by a delayed or conditional trigger, which stores it until the
+  trigger fires. The transition calculates its event from it.
 * **`O`, the output**, is the data of the event the transition stores in the entity's event log. `output(f)` calculates
   it from the data of the last step, and `output()` stores the event without data. The output is also what a
   transition triggering the event gets back.
@@ -156,31 +156,76 @@ An event triggered on another entity continues the chain into the transition of 
 transition. Its steps follow up to its `OutputStep`, whose `ProcessResult<O1>` the `TriggerStep` pairs with the data
 it had before the trigger, and the chain goes on in the triggering transition.
 
-The [hello world demo](hello-world.md) triggers the response to a request on the `RequestDispatching` entity of the
-inbox. `Greet` has neither input nor output, and the response, `RespondGreeting`, takes the greeting's id as input and
-has the HTTP response as output:
+An order reserving the items of an order line from their stock shows how the data goes from one entity to the
+other. `Place` takes the order line as input and stores it as output, and `Reserve` takes the quantity to reserve as
+input and stores the quantity left in stock as output:
 
 ```java
-onEvent(Greet).to(States.Greeted)
-    .assemble(c -> c.log().entityId().toString())
-    .trigger(RespondGreeting).with(id -> id).on(RequestDispatching).identifiedBy(entityIdFromSession())
-    .output()
+record OrderLine(UUID item, int quantity) {}
+record Reservation(int quantity) {}
+record Remaining(int quantity) {}
+
+EventType<OrderLine, OrderLine> Place = BasicEventType.of("Place", placeId, DataType.json(OrderLine.class));
+EventType<Reservation, Remaining> Reserve = BasicEventType.of(
+    "Reserve",
+    reserveId,
+    DataType.json(Reservation.class),
+    DataType.json(Remaining.class)
+);
+```
+
+The transition of the order triggers `Reserve` on the stock of the item, and the transition of the stock calculates
+the quantity left from its event log:
+
+```java
+onEvent(Place).to(OrderStates.Placed)
+    .assembleInput()
+    .trigger(Reserve).with(line -> new Reservation(line.quantity())).on(Stock).identifiedBy(line -> entityId(line.item()))
+    .output(d -> d.t1())
+
+onEvent(Reserve).toSelf()
+    .assemble((reservation, log) -> new Remaining(remaining(log) - reservation.quantity()))
+    .output(remaining -> remaining)
 ```
 
 ```mermaid
 flowchart TB
-    subgraph greeting ["Greeting: Greet, EventType#lt;Void, Void#gt;"]
+    subgraph order ["Order: Place, EventType#lt;OrderLine, OrderLine#gt;"]
         direction LR
-        g1["InputStep<br>Void"] -- "assemble" --> g2["AssembleStep<br>String"]
-        g3["TriggerStep<br>(String, ProcessResult#lt;HTTP response#gt;)"] -- "output()" --> g4["OutputStep<br>Accepted Greet, no data"]
+        o1["InputStep<br>OrderLine"] -- "assembleInput()" --> o2["AssembleStep<br>OrderLine"]
+        o3["TriggerStep<br>(OrderLine, ProcessResult#lt;Remaining#gt;)"] -- "output(f)" --> o4["OutputStep<br>Accepted Place, with OrderLine"]
     end
-    subgraph dispatching ["RequestDispatching: RespondGreeting, EventType#lt;String, HTTP response#gt;"]
+    subgraph stock ["Stock: Reserve, EventType#lt;Reservation, Remaining#gt;"]
         direction LR
-        d1["InputStep<br>String"] --> d2["..."] --> d3["OutputStep<br>Accepted RespondGreeting"]
+        s1["InputStep<br>Reservation"] -- "assemble" --> s2["AssembleStep<br>Remaining"]
+        s2 -- "output(f)" --> s3["OutputStep<br>Accepted Reserve, with Remaining"]
     end
-    g2 -- "with(id -> id)" --> d1
-    d3 --> g3
+    o2 -- "trigger(Reserve)" --> s1
+    s3 --> o3
 ```
+
+Every step refers to the one before it, `previous`, so the steps of both transitions are stacked in one chain, with
+the steps of the triggered transition nested between the step triggering it and the `TriggerStep`. Below, the first
+step is on top, every step refers to the one above it, and the result of the calculation is the step at the bottom:
+
+<div class="step-stack">
+  <div class="step-stack-title">Order: Place</div>
+  <div class="step"><code>Input</code><span>OrderLine</span></div>
+  <div class="step"><code>Assemble</code><span>OrderLine</span></div>
+  <div class="step-stack">
+    <div class="step-stack-title">Stock: Reserve</div>
+    <div class="step"><code>Input</code><span>Reservation</span></div>
+    <div class="step"><code>Assemble</code><span>Remaining</span></div>
+    <div class="step"><code>Output</code><span>ProcessResult&lt;Remaining&gt;</span></div>
+  </div>
+  <div class="step"><code>Trigger</code><span>(OrderLine, ProcessResult&lt;Remaining&gt;)</span></div>
+  <div class="step"><code>Output</code><span>ProcessResult&lt;OrderLine&gt;</span></div>
+</div>
+
+The `TriggerStep` also refers to the step before the trigger, `outer`, here the `AssembleStep` of `Place`, whose
+output it pairs with the result of the triggered event. A step finds the `InputStep` of its own transition, with the
+event log and the timestamp, by skipping over the nested transitions, from their `OutputStep` back to their
+`InputStep`.
 
 A triggered event isn't always accepted. Instead of an `OutputStep`, the triggered transition can then end with one
 of these, whose `ProcessResult` the triggering transition can act on, e.g. with `when(...)`:
@@ -229,8 +274,8 @@ flowchart LR
 ### Collecting the changes
 
 When the calculation is done, the changes to store, i.e. the accepted events, the delayed events and the conditional
-triggers, and the actions to run, are collected by following the chain back from its last step to its first, since
-every step refers to the one before it.
+triggers, and the actions to run, are collected by following the chain back from its last step to its first. In the
+order above, that gives the `Place` and `Reserve` events.
 
 Every step is taken through the `Calculation` of the event, which records the result of the step. That makes it
 possible to calculate the changes again from a step in the middle of the chain, without executing the steps before it
