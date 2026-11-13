@@ -21,15 +21,30 @@
       <plugin>
         <!-- Runs the tests of the core module that need a database, on SQL Server -->
         <artifactId>maven-surefire-plugin</artifactId>
-        <configuration>
-          <dependenciesToScan>com.github.thxmasj.backend:core:test-jar:tests</dependenciesToScan>
-          <!-- The other tests of the core module are in packages of its named module, which are not found on the class path -->
-          <includes>com/github/thxmasj/backend/core/test/**</includes>
-          <groups>database</groups>
-          <systemPropertyVariables>
-            <database>mssql</database>
-          </systemPropertyVariables>
-        </configuration>
+        <executions>
+          <execution>
+            <id>default-test</id>
+            <configuration>
+              <dependenciesToScan>com.github.thxmasj.backend:core:test-jar:tests</dependenciesToScan>
+              <!-- The other tests of the core module are in packages of its named module, which are not found on the class path -->
+              <includes>com/github/thxmasj/backend/core/test/**</includes>
+              <groups>database</groups>
+              <systemPropertyVariables>
+                <database>mssql</database>
+              </systemPropertyVariables>
+            </configuration>
+          </execution>
+          <execution>
+            <!-- The tests of this module, which need no database -->
+            <id>module-test</id>
+            <goals>
+              <goal>test</goal>
+            </goals>
+            <configuration>
+              <includes>com/github/thxmasj/backend/database/mssql/**</includes>
+            </configuration>
+          </execution>
+        </executions>
       </plugin>
     </plugins>
   </build>

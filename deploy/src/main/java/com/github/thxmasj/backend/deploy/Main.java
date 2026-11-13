@@ -44,6 +44,7 @@ public final class Main {
             config.getBoolean("databaseUseFreeLimit").orElse(false),
             config.getInteger("instanceMemory").orElse(512),
             config.getInteger("maximumInstanceCount").orElse(10),
+            DatabaseAdministrator.azureCli(),
             config.get("deployerIp").orElseGet(Main::publicIp),
             Path.of("target", "azure", ctx.stackName())
         ),
