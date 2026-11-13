@@ -87,34 +87,150 @@ outbox request, moves the entity on.
 
 ## Transition models and steps
 
-`TransitionModelBuilder` builds a `TransitionModel`, one for each transition of an entity model. The builder starts
-with `onEvent(type).to(state)`, and every call after it, such as `assemble`, `trigger` or `when`, adds a step to the
-model. `output()` ends the builder and gives the model.
+### Input and output of an event type
 
-A transition model calculates the steps of its transition, each from the step before it. A step is a `TransitionStep`,
-which refers to the step before it and has the output of the step, the data the next step is calculated from. The
-chain of steps of a transition starts with an `InputStep` and ends with an `OutputStep`:
+An event type has two type parameters, `EventType<I, O>`, and so does the transition model of a transition on it,
+`TransitionModel<I, O>`:
 
-| Step                     | Taken by                       | Output                                                                                                                                |
-|--------------------------|--------------------------------|---------------------------------------------------------------------------------------------------------------------------------------|
-| `InputStep`              | The event entering the entity  | The data of the event. It also has the entity's event log, the current state, the timestamp and the `Calculation` it is part of        |
-| `AssembleStep`           | `assemble`                     | The data assembled from the input and the event log                                                                                   |
-| `TriggerStep`            | `trigger(...).on(...)`         | The data together with the `ProcessResult` of the event triggered on the other entity                                                 |
-| `DelayedTriggerStep`     | `trigger(...).after(...)`      | The data of the step before it. The step has the delayed event to store                                                               |
-| `ConditionalTriggerStep` | `trigger(...).when(...)`       | The data of the step before it. The step has the conditional trigger to store                                                         |
-| `ActionStep`             | `trigger(action)`              | The data of the step before it. The step has the action to run after the changes are stored                                           |
-| `ChoiceStep`             | `when(...).then(...)`          | The data of the step before it, after the steps of the chosen transition                                                              |
-| `OutputStep`             | `output`                       | The `ProcessResult` of the transition: the new event if it is accepted                                                                |
-| `RejectedStep`           | A triggered event              | The rejection of the triggered event, e.g. since the entity has no transition on it from its state                                    |
-| `UnknownIdStep`          | A triggered event              | The failure of the triggered event to find its entity                                                                                 |
-| `PendingStep`            | A triggered event              | The triggered event being circular, i.e. on an entity already changed by the calculation                                              |
-| `IdExistsStep`           | A triggered id event           | The id existing, held by another entity (see below)                                                                                   |
+* **`I`, the input**, is the data an event of the type is triggered with: by `with(...)` of the transition triggering
+  it, by a route of an inbox, or by a delayed or conditional trigger, which stores it until the trigger fires. The
+  transition calculates its event from it.
+* **`O`, the output**, is the data of the event the transition stores in the entity's event log. `output(f)` calculates
+  it from the data of the last step, and `output()` stores the event without data. The output is also what a
+  transition triggering the event gets back.
 
-An event triggered on another entity continues the chain: the `InputStep` of the triggered transition refers to the
-step triggering it, and its steps follow up to its `OutputStep`, after which the `TriggerStep` of the triggering
-transition goes on with the result. When the calculation is done, the changes to store, i.e. the accepted events, the
-delayed events and the conditional triggers, and the actions to run, are collected by following the chain from its
-last step back to the first.
+`BasicEventType.of(name, id, dataType)` gives an event type whose input and output are the same, and
+`BasicEventType.of(name, id)` one with neither (`Void`). The [identity provider](identity-provider.md) has event types
+of all kinds:
+
+| Event type            | `I`                    | `O`            |
+|-----------------------|------------------------|----------------|
+| `Register`            | `Registration`         | `Registration` |
+| `RequestRegistration` | `Registration`         | `Void`         |
+| `AcceptRegistration`  | `(Registration, UUID)` | `Registration` |
+| `ClientId`            | `String`               | `String`       |
+
+### Steps
+
+`TransitionModelBuilder` builds the transition model. It starts with `onEvent(type).to(state)`, every call after it,
+such as `assemble`, `trigger` or `when`, adds a step, and `output()` ends it with the model.
+
+When an event enters an entity, the model calculates the steps of the transition one by one, each from the one before
+it. A step is a `TransitionStep<T>`, where `T` is its output: the data the next step is calculated from. The chain
+starts with an `InputStep`, whose output is the input `I`, and ends with an `OutputStep`, whose output is the result of
+the transition, a `ProcessResult<O>` with the new event if it is accepted. The steps in between turn one into the
+other:
+
+```mermaid
+flowchart LR
+    in(["Input I"]) --> input
+    subgraph model ["TransitionModel#lt;I, O#gt;"]
+        direction LR
+        input["InputStep<br>I"] -- "assemble" --> assemble["AssembleStep<br>T"]
+        assemble -- "trigger(...).on(...)" --> trigger["TriggerStep<br>(T, ProcessResult#lt;O1#gt;)"]
+        trigger -- "output(f)" --> output["OutputStep<br>ProcessResult#lt;O#gt;"]
+    end
+    log[("Event log")] -.-> input
+    output --> event(["Event with O"])
+    event --> log
+```
+
+The input step also has what the other steps need besides the data: the entity's event log, its current state, the
+timestamp, and the `Calculation` the step is part of. The output of each step is:
+
+| Step                     | Added by                      | Output                                                                                        |
+|--------------------------|-------------------------------|-----------------------------------------------------------------------------------------------|
+| `InputStep`              | The event entering the entity | The input `I`                                                                                 |
+| `AssembleStep`           | `assemble`                    | What the assembler makes of the input and the event log                                       |
+| `TriggerStep`            | `trigger(...).on(...)`        | The output of the step before it, paired with the `ProcessResult<O1>` of the event triggered  |
+| `DelayedTriggerStep`     | `trigger(...).after(...)`     | The output of the step before it. The step has the delayed event to store                     |
+| `ConditionalTriggerStep` | `trigger(...).when(...)`      | The output of the step before it. The step has the conditional trigger to store               |
+| `ActionStep`             | `trigger(action)`             | The output of the step before it. The step has the action to run after the changes are stored |
+| `ChoiceStep`             | `when(...).then(...)`         | The output of the step before it, after the steps of the chosen transition                    |
+| `OutputStep`             | `output`                      | The `ProcessResult<O>` of the transition                                                      |
+
+### Triggering an event on another entity
+
+An event triggered on another entity continues the chain into the transition of that entity. The data of the trigger,
+`with(...)`, is the input `I1` of the triggered event type, and becomes the output of the `InputStep` of the triggered
+transition. Its steps follow up to its `OutputStep`, whose `ProcessResult<O1>` the `TriggerStep` pairs with the data
+it had before the trigger, and the chain goes on in the triggering transition.
+
+The [hello world demo](hello-world.md) triggers the response to a request on the `RequestDispatching` entity of the
+inbox. `Greet` has neither input nor output, and the response, `RespondGreeting`, takes the greeting's id as input and
+has the HTTP response as output:
+
+```java
+onEvent(Greet).to(States.Greeted)
+    .assemble(c -> c.log().entityId().toString())
+    .trigger(RespondGreeting).with(id -> id).on(RequestDispatching).identifiedBy(entityIdFromSession())
+    .output()
+```
+
+```mermaid
+flowchart TB
+    subgraph greeting ["Greeting: Greet, EventType#lt;Void, Void#gt;"]
+        direction LR
+        g1["InputStep<br>Void"] -- "assemble" --> g2["AssembleStep<br>String"]
+        g3["TriggerStep<br>(String, ProcessResult#lt;HTTP response#gt;)"] -- "output()" --> g4["OutputStep<br>Accepted Greet, no data"]
+    end
+    subgraph dispatching ["RequestDispatching: RespondGreeting, EventType#lt;String, HTTP response#gt;"]
+        direction LR
+        d1["InputStep<br>String"] --> d2["..."] --> d3["OutputStep<br>Accepted RespondGreeting"]
+    end
+    g2 -- "with(id -> id)" --> d1
+    d3 --> g3
+```
+
+A triggered event isn't always accepted. Instead of an `OutputStep`, the triggered transition can then end with one
+of these, whose `ProcessResult` the triggering transition can act on, e.g. with `when(...)`:
+
+| Step            | When                                                                                |
+|-----------------|-------------------------------------------------------------------------------------|
+| `RejectedStep`  | The event is rejected, e.g. since the entity has no transition on it from its state |
+| `UnknownIdStep` | The entity of the event is not found                                                |
+| `PendingStep`   | The event is circular, i.e. on an entity already changed by the calculation         |
+| `IdExistsStep`  | The id of an id event is held by another entity (see [existing ids](#existing-ids)) |
+
+### Choosing a transition
+
+`when(predicate).then(model, f)` chooses another transition of the same entity, if the predicate holds for the
+output of the step before it. `f` gives the input of the chosen transition's event type, and the steps of the chosen
+transition follow, in the chain, up to its `OutputStep`. `otherwise(model, f)` ends the transition with the
+transition chosen if no other one was. The event of the chosen transition is then the event stored; the output of the
+transition itself is a `Completed` result referring to it.
+
+The identity provider registers a client by `RequestRegistration`, whose output is `Void`, and the event stored is
+either `RejectRegistration` or `AcceptRegistration`, depending on whether the client id is taken:
+
+```mermaid
+flowchart LR
+    in(["Registration"]) --> i1
+    subgraph request ["RequestRegistration, EventType#lt;Registration, Void#gt;"]
+        direction LR
+        i1["InputStep<br>Registration"] -- "assemble" --> a1["AssembleStep<br>(Registration, UUID)"]
+        a1 -- "trigger(ClientId)" --> t1["TriggerStep<br>((Registration, UUID), ProcessResult#lt;String#gt;)"]
+        o1["OutputStep<br>Completed"]
+    end
+    subgraph reject ["RejectRegistration, EventType#lt;Registration, Registration#gt;"]
+        direction LR
+        r1["InputStep<br>Registration"] --> r2["..."] --> r3["OutputStep<br>Accepted, with Registration"]
+    end
+    subgraph accept ["AcceptRegistration, EventType#lt;(Registration, UUID), Registration#gt;"]
+        direction LR
+        c1["InputStep<br>(Registration, UUID)"] --> c2["..."] --> c3["OutputStep<br>Accepted, with Registration"]
+    end
+    t1 -- "when(id exists)" --> r1
+    t1 -- "otherwise" --> c1
+    r3 -- "ChoiceStep" --> o1
+    c3 -- "ChoiceStep" --> o1
+```
+
+### Collecting the changes
+
+When the calculation is done, the changes to store, i.e. the accepted events, the delayed events and the conditional
+triggers, and the actions to run, are collected by following the chain back from its last step to its first, since
+every step refers to the one before it.
 
 Every step is taken through the `Calculation` of the event, which records the result of the step. That makes it
 possible to calculate the changes again from a step in the middle of the chain, without executing the steps before it
