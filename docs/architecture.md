@@ -1,8 +1,8 @@
 # Architecture
 
-An application built with the server uses [entity models](entities.md) to handle events. Each entity model defines a
-finite state machine: the states its entities can be in, and the transitions between them on types of events. The
-events of an entity are stored in its event log in a database, and its current state is the state its events lead to.
+The transaction server uses [entity models](entities.md) to handle events. Each entity model defines a finite state
+machine: the states its entities can be in, and the transitions between them on types of events. The events of an
+entity are stored in its event log in a database, and its current state is the state its events lead to.
 
 An event is processed by a [transition](transition-models.md) of its entity, from the entity's current state. A
 transition can trigger events on other entities, whose transitions are taken nested in it, and these can trigger
