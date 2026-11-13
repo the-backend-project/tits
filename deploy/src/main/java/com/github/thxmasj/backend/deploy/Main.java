@@ -13,6 +13,7 @@ import java.net.http.HttpResponse;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /// The Pulumi program deploying an application to Azure Functions, configured by the stack configuration described
 /// in `Pulumi.yaml`.
@@ -27,7 +28,7 @@ public final class Main {
   private static void stack(Context ctx) {
     Config config = ctx.config();
     var app = new FunctionsApp(
-        config.get("name").orElse(ctx.stackName()),
+        optional(config, "name").orElse(ctx.stackName()),
         new FunctionsAppArgs(
             config.require("image"),
             config.getObject("migrateArgs", TypeShape.list(String.class)).orElse(List.of("migrate")),
@@ -36,7 +37,7 @@ public final class Main {
                 .applyValue(e -> e.orElse(Map.of())),
             config.getObject("urlEnvironment", TypeShape.list(String.class)).orElse(List.of()),
             config.get("databaseRole").orElse("App"),
-            config.get("databaseSchema").orElse(null),
+            optional(config, "databaseSchema").orElse(null),
             config.get("databaseCollation").orElse("Norwegian_100_CS_AS_SC_UTF8"),
             config.getDouble("databaseMinCapacity").orElse(0.5),
             config.getInteger("databaseMaxCapacity").orElse(1),
@@ -44,7 +45,8 @@ public final class Main {
             config.getBoolean("databaseUseFreeLimit").orElse(false),
             config.getInteger("instanceMemory").orElse(512),
             config.getInteger("maximumInstanceCount").orElse(10),
-            config.get("deployerIp").orElseGet(Main::publicIp),
+            DatabaseAdministrator.azureCli(),
+            optional(config, "deployerIp").orElseGet(Main::publicIp),
             Path.of("target", "azure", ctx.stackName())
         ),
         ComponentResourceOptions.Empty
@@ -54,6 +56,12 @@ public final class Main {
     ctx.export("functionAppName", app.functionAppName());
     ctx.export("databaseServer", app.databaseServer());
     ctx.export("databaseName", app.databaseName());
+  }
+
+  /// A setting which is computed when not set. `Pulumi.yaml` declares it with the default `""`, as a setting without a
+  /// default is required.
+  private static Optional<String> optional(Config config, String key) {
+    return config.get(key).filter(value -> !value.isBlank());
   }
 
   private static String publicIp() {

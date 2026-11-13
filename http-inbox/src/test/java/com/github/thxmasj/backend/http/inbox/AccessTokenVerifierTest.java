@@ -3,10 +3,11 @@ package com.github.thxmasj.backend.http.inbox;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.github.thxmasj.backend.core.Validated;
 import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
 import com.github.thxmasj.backend.core.message.http.HttpRequestMessage.Method;
 import com.github.thxmasj.backend.http.inbox.AccessTokenVerifier.AccessToken;
+import com.github.thxmasj.backend.http.inbox.Authorization.Authorized;
+import com.github.thxmasj.backend.http.inbox.Authorization.Refused;
 import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JOSEObjectType;
 import com.nimbusds.jose.JWSAlgorithm;
@@ -117,33 +118,40 @@ public class AccessTokenVerifierTest {
   @Test
   public void whenAuthorizingValidTokenThenSubjectIsAuthorized() {
     assertThat(authorize(Map.of("Authorization", "Bearer " + token(key, c -> c)), "payments", "refunds"))
-        .isEqualTo(Validated.valid("https://wallet.example.com"));
+        .isEqualTo(new Authorized("https://wallet.example.com"));
     assertThat(authorize(Map.of("authorization", "bearer " + token(key, c -> c))))
-        .isEqualTo(Validated.valid("https://wallet.example.com"));
+        .isEqualTo(new Authorized("https://wallet.example.com"));
   }
 
   @Test
-  public void whenAuthorizingTokenWithoutRequiredScopeThenInvalid() {
-    assertThat(authorize(Map.of("Authorization", "Bearer " + token(key, c -> c)), "payments", "admin").invalidReason())
-        .isEqualTo("Bearer token lacks the scope admin");
+  public void whenAuthorizingTokenWithoutRequiredScopeThenForbiddenWithInsufficientScope() {
+    assertThat(authorize(Map.of("Authorization", "Bearer " + token(key, c -> c)), "payments", "admin"))
+        .isEqualTo(new Refused(
+            403,
+            "Bearer error=\"insufficient_scope\", error_description=\"Bearer token lacks the scope admin\", scope=\"payments admin\"",
+            "Bearer token lacks the scope admin"
+        ));
   }
 
   @Test
-  public void whenAuthorizingInvalidTokenThenInvalid() {
-    assertThat(authorize(Map.of("Authorization", "Bearer " + token(otherKey, c -> c))).invalidReason())
-        .isEqualTo("Bearer token is invalid or expired");
-    assertThat(authorize(Map.of("Authorization", "Bearer " + token(key, c -> c.expirationTime(Date.from(now))))).invalidReason())
-        .isEqualTo("Bearer token is invalid or expired");
+  public void whenAuthorizingInvalidTokenThenUnauthorizedWithInvalidToken() {
+    var refused = new Refused(
+        401,
+        "Bearer error=\"invalid_token\", error_description=\"Bearer token is invalid or expired\"",
+        "Bearer token is invalid or expired"
+    );
+    assertThat(authorize(Map.of("Authorization", "Bearer " + token(otherKey, c -> c)))).isEqualTo(refused);
+    assertThat(authorize(Map.of("Authorization", "Bearer " + token(key, c -> c.expirationTime(Date.from(now)))))).isEqualTo(refused);
   }
 
   @Test
-  public void whenAuthorizingWithoutBearerTokenThenInvalid() {
-    assertThat(authorize(Map.of()).invalidReason()).isEqualTo("Authorization header missing");
-    assertThat(authorize(Map.of("Authorization", "Basic d2FsbGV0OnNlY3JldA==")).invalidReason())
-        .isEqualTo("Authorization token is not of type Bearer");
+  public void whenAuthorizingWithoutBearerTokenThenUnauthorizedWithoutError() {
+    assertThat(authorize(Map.of())).isEqualTo(new Refused(401, "Bearer", "Authorization header missing"));
+    assertThat(authorize(Map.of("Authorization", "Basic d2FsbGV0OnNlY3JldA==")))
+        .isEqualTo(new Refused(401, "Bearer", "Authorization token is not of type Bearer"));
   }
 
-  private Validated<String> authorize(Map<String, String> headers, String... requiredScopes) {
+  private Authorization authorize(Map<String, String> headers, String... requiredScopes) {
     return HttpInbox.<Void>bearerToken(verifier, requiredScopes)
         .apply(new HttpRequestMessage(Method.POST, URI.create("/payments"), headers, null), null);
   }

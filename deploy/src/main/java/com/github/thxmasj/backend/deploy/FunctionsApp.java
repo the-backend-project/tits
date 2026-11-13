@@ -9,6 +9,8 @@ import com.pulumi.azurenative.authorization.AuthorizationFunctions;
 import com.pulumi.azurenative.authorization.RoleAssignment;
 import com.pulumi.azurenative.authorization.RoleAssignmentArgs;
 import com.pulumi.azurenative.authorization.enums.PrincipalType;
+import com.pulumi.azurenative.managedidentity.UserAssignedIdentity;
+import com.pulumi.azurenative.managedidentity.UserAssignedIdentityArgs;
 import com.pulumi.azurenative.operationalinsights.Workspace;
 import com.pulumi.azurenative.operationalinsights.WorkspaceArgs;
 import com.pulumi.azurenative.operationalinsights.enums.WorkspaceSkuNameEnum;
@@ -21,8 +23,10 @@ import com.pulumi.azurenative.sql.FirewallRule;
 import com.pulumi.azurenative.sql.FirewallRuleArgs;
 import com.pulumi.azurenative.sql.Server;
 import com.pulumi.azurenative.sql.ServerArgs;
+import com.pulumi.azurenative.sql.enums.AdministratorType;
 import com.pulumi.azurenative.sql.enums.FreeLimitExhaustionBehavior;
 import com.pulumi.azurenative.sql.enums.MinimalTlsVersion;
+import com.pulumi.azurenative.sql.inputs.ServerExternalAdministratorArgs;
 import com.pulumi.azurenative.sql.inputs.SkuArgs;
 import com.pulumi.azurenative.storage.BlobContainer;
 import com.pulumi.azurenative.storage.BlobContainerArgs;
@@ -52,8 +56,6 @@ import com.pulumi.azurenative.web.inputs.SkuDescriptionArgs;
 import com.pulumi.command.local.Command;
 import com.pulumi.command.local.CommandArgs;
 import com.pulumi.core.Output;
-import com.pulumi.random.RandomPassword;
-import com.pulumi.random.RandomPasswordArgs;
 import com.pulumi.random.RandomString;
 import com.pulumi.random.RandomStringArgs;
 import com.pulumi.resources.ComponentResource;
@@ -76,18 +78,23 @@ import java.util.stream.Stream;
 /// handler, see [FunctionPackage]. Deploying runs these steps on the deploying machine, which therefore needs the
 /// Docker CLI, the Azure CLI, and access to the database:
 ///
-/// 1. [ProvisionDatabase] creates the application's database user and role, with the server administrator's
-///    credentials.
-/// 2. The image runs the migrate admin process, with the server administrator's credentials.
+/// 1. [ProvisionDatabase] creates the application's database user and role.
+/// 2. The image runs the migrate admin process.
 /// 3. The Azure CLI deploys the package to the function app.
 ///
 /// Each step runs again when its inputs change, for example the image for the last two steps.
+///
+/// The database server allows Microsoft Entra authentication only. Its administrator is the principal the Azure CLI is
+/// logged in as, see [FunctionsAppArgs#databaseAdministrator()], and the first two steps log in with its access token.
+/// The application logs in as a user-assigned managed identity of the function app, which has a user in the database.
 public class FunctionsApp extends ComponentResource {
 
   /// Storage Blob Data Owner, which the Functions host needs on its storage account
   private static final String STORAGE_BLOB_DATA_OWNER = "b7e6dc6d-f1e8-4753-8033-0f276bb0955b";
-  private static final String DATABASE_ADMIN_USER = "titsadmin";
   private static final String DATABASE_USER = "app";
+  /// Gets an access token for Azure SQL for the principal the Azure CLI is logged in as
+  private static final String DATABASE_ACCESS_TOKEN = "DATABASE_ACCESS_TOKEN=$(az account get-access-token"
+      + " --resource https://database.windows.net/ --query accessToken --output tsv) && export DATABASE_ACCESS_TOKEN && ";
 
   private final Output<String> url;
   private final Output<String> resourceGroupName;
@@ -123,13 +130,24 @@ public class FunctionsApp extends ComponentResource {
 
     // Database
 
-    var adminPassword = password(name + "-db-admin");
-    var appPassword = password(name + "-db-app");
+    // The identity the application logs in to the database as. It is user-assigned, rather than the function app's
+    // system-assigned identity, as its client id is needed to create its database user.
+    var identity = new UserAssignedIdentity(name, UserAssignedIdentityArgs.builder()
+        .resourceGroupName(group.name())
+        .build(), child());
+    DatabaseAdministrator administrator = args.databaseAdministrator();
     var server = new Server(name, ServerArgs.builder()
         .resourceGroupName(group.name())
         .version("12.0")
-        .administratorLogin(DATABASE_ADMIN_USER)
-        .administratorLoginPassword(adminPassword.result())
+        .administrators(AuthorizationFunctions.getClientConfig().applyValue(c ->
+            ServerExternalAdministratorArgs.builder()
+                .administratorType(AdministratorType.ActiveDirectory)
+                .azureADOnlyAuthentication(true)
+                .login(administrator.login())
+                .principalType(administrator.principalType())
+                .sid(c.objectId())
+                .tenantId(c.tenantId())
+                .build()))
         .minimalTlsVersion(MinimalTlsVersion._1_2)
         .build(), child());
     var databaseArgs = DatabaseArgs.builder()
@@ -171,28 +189,26 @@ public class FunctionsApp extends ComponentResource {
     args.urlEnvironment().forEach(key -> databaseEnvironment.put(key, Output.format("https://%s", appHostName)));
 
     var provision = new Command(name + "-provision-database", CommandArgs.builder()
-        .create(shell(List.of(javaExecutable(), "-cp", classPath(), ProvisionDatabase.class.getName())))
+        .create(DATABASE_ACCESS_TOKEN + shell(List.of(javaExecutable(), "-cp", classPath(), ProvisionDatabase.class.getName())))
         .environment(environment(Map.of(
             "DATABASE_HOST", server.fullyQualifiedDomainName(),
             "DATABASE_NAME", database.name(),
-            "DATABASE_ADMIN_USER", Output.of(DATABASE_ADMIN_USER),
-            "DATABASE_ADMIN_PASSWORD", adminPassword.result(),
             "DATABASE_USER", Output.of(DATABASE_USER),
-            "DATABASE_PASSWORD", appPassword.result(),
+            "DATABASE_CLIENT_ID", identity.clientId(),
             "DATABASE_ROLE", Output.of(args.databaseRole())
         )))
         .build(), child(database, allowDeployer));
 
     Map<String, Output<String>> migrateEnvironment = new LinkedHashMap<>(databaseEnvironment);
-    migrateEnvironment.put("DATABASE_USER", Output.of(DATABASE_ADMIN_USER));
-    migrateEnvironment.put("DATABASE_PASSWORD", adminPassword.result());
+    migrateEnvironment.put("DATABASE_AUTHENTICATION", Output.of("ActiveDirectoryAccessToken"));
     migrateEnvironment.put("DATABASE_ROLE", Output.of(args.databaseRole()));
     List<String> migrate = new ArrayList<>(List.of("docker", "run", "--rm", "--platform", ContainerImage.PLATFORM));
     migrateEnvironment.keySet().forEach(key -> migrate.addAll(List.of("--env", key)));
+    migrate.addAll(List.of("--env", "DATABASE_ACCESS_TOKEN"));
     migrate.add(image.id());
     migrate.addAll(args.migrateArgs());
     var migration = new Command(name + "-migrate", CommandArgs.builder()
-        .create(shell(migrate))
+        .create(DATABASE_ACCESS_TOKEN + shell(migrate))
         .environment(environment(migrateEnvironment))
         .build(), child(provision));
 
@@ -235,8 +251,8 @@ public class FunctionsApp extends ComponentResource {
     settings.add(setting("AzureWebJobsStorage__accountName", storage.name()));
     settings.add(setting("APPLICATIONINSIGHTS_CONNECTION_STRING", insights.connectionString()));
     databaseEnvironment.forEach((key, value) -> settings.add(setting(key, value)));
-    settings.add(setting("DATABASE_USER", Output.of(DATABASE_USER)));
-    settings.add(setting("DATABASE_PASSWORD", appPassword.result()));
+    settings.add(setting("DATABASE_AUTHENTICATION", Output.of("ActiveDirectoryManagedIdentity")));
+    settings.add(setting("DATABASE_USER", identity.clientId()));
 
     Output<List<NameValuePairArgs>> secretSettings = args.secretEnvironment().applyValue(e -> e.entrySet().stream()
         .map(s -> NameValuePairArgs.builder().name(s.getKey()).value(s.getValue()).build())
@@ -248,7 +264,11 @@ public class FunctionsApp extends ComponentResource {
         .kind("functionapp,linux")
         .serverFarmId(plan.id())
         .httpsOnly(true)
-        .identity(ManagedServiceIdentityArgs.builder().type(ManagedServiceIdentityType.SystemAssigned).build())
+        // The system-assigned identity accesses the storage account, and the user-assigned one the database
+        .identity(ManagedServiceIdentityArgs.builder()
+            .type(ManagedServiceIdentityType.SystemAssigned_UserAssigned)
+            .userAssignedIdentities(identity.id().applyValue(List::of))
+            .build())
         .siteConfig(Output.tuple(Output.all(settings), secretSettings).applyValue(s -> SiteConfigArgs.builder()
             .appSettings(Stream.concat(s.t1.stream(), s.t2.stream()).toList())
             .minTlsVersion("1.2")
@@ -328,16 +348,6 @@ public class FunctionsApp extends ComponentResource {
 
   private CustomResourceOptions child(Resource... dependencies) {
     return CustomResourceOptions.builder().parent(this).dependsOn(dependencies).build();
-  }
-
-  private RandomPassword password(String name) {
-    return new RandomPassword(name, RandomPasswordArgs.builder()
-        .length(32)
-        .special(false)
-        .minLower(1)
-        .minUpper(1)
-        .minNumeric(1)
-        .build(), child());
   }
 
   private static Output<NameValuePairArgs> setting(String name, Output<String> value) {

@@ -1,8 +1,6 @@
 package com.github.thxmasj.backend.http.inbox;
 
 import static com.github.thxmasj.backend.core.EntitySelector.CreationMode.AlwaysCreate;
-import static com.github.thxmasj.backend.core.Validated.invalid;
-import static com.github.thxmasj.backend.core.Validated.valid;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.EntityModels.RequestRouting;
 
 import com.github.thxmasj.backend.core.BasicEventType;
@@ -23,6 +21,7 @@ import com.github.thxmasj.backend.core.Validated;
 import com.github.thxmasj.backend.core.http.HttpDataType;
 import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
 import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
+import com.github.thxmasj.backend.http.inbox.Authorization.Refused;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.BiFunction;
@@ -106,6 +105,18 @@ public interface HttpInbox {
       DataType.string(),
       DataType.none()
   );
+  EventType<Refused, Void> RejectAsUnauthorized = BasicEventType.of(
+      "RejectAsUnauthorized",
+      UUID.fromString("3a204b0b-2740-4b61-bdfa-4149c819be04"),
+      DataType.json(Refused.class),
+      DataType.none()
+  );
+  EventType<Refused, HttpResponseMessage> RespondRefused = BasicEventType.of(
+      "RespondRefused",
+      UUID.fromString("4cdff19a-ab84-4888-88e6-de7c4bed5907"),
+      DataType.json(Refused.class),
+      HttpDataType.forResponse()
+  );
   EventType<HttpResponseMessage, HttpResponseMessage> Respond = BasicEventType.of(
       "Respond",
       UUID.fromString("2387a6a5-a483-428d-839f-26b5fe485247"),
@@ -145,23 +156,38 @@ public interface HttpInbox {
   }
 
   /// An authorizer for routes requiring a bearer token, RFC 6750, verified by the verifier and with the given scopes.
-  /// The authorized subject is the `sub` of the token.
-  static <T> BiFunction<HttpRequestMessage, T, Validated<String>> bearerToken(AccessTokenVerifier verifier, String... requiredScopes) {
+  /// The authorized subject is the `sub` of the token. A request is refused as section 3 of RFC 6750 says: with 401
+  /// and the challenge `Bearer` if it has no bearer token, with 401 and the error `invalid_token` if the token is
+  /// invalid or expired, and with 403 and the error `insufficient_scope` if the token lacks one of the scopes.
+  static <T> BiFunction<HttpRequestMessage, T, Authorization> bearerToken(AccessTokenVerifier verifier, String... requiredScopes) {
     return (request, _) -> {
       String authorization = request.headerValue("Authorization");
       if (authorization == null)
-        return invalid("Authorization header missing");
+        return new Refused(401, "Bearer", "Authorization header missing");
       if (!authorization.regionMatches(true, 0, "Bearer ", 0, 7))
-        return invalid("Authorization token is not of type Bearer");
+        return new Refused(401, "Bearer", "Authorization token is not of type Bearer");
       var token = verifier.verify(authorization.substring(7).trim());
       if (token.isEmpty())
-        return invalid("Bearer token is invalid or expired");
+        return bearerError(401, "invalid_token", "Bearer token is invalid or expired", "");
       for (String requiredScope : requiredScopes) {
         if (!token.get().scopes().contains(requiredScope))
-          return invalid("Bearer token lacks the scope " + requiredScope);
+          return bearerError(
+              403,
+              "insufficient_scope",
+              "Bearer token lacks the scope " + requiredScope,
+              ", scope=\"" + String.join(" ", requiredScopes) + "\""
+          );
       }
-      return valid(token.get().subject());
+      return Authorization.authorized(token.get().subject());
     };
+  }
+
+  private static Refused bearerError(int statusCode, String error, String description, String parameters) {
+    return new Refused(
+        statusCode,
+        "Bearer error=\"" + error + "\", error_description=\"" + description + "\"" + parameters,
+        description
+    );
   }
 
   enum EntityModels implements EntityModel {

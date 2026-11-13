@@ -424,6 +424,7 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
             onEvent(shape.requestRedispatched()).to(InFlight)
                 .assemble(c -> shape.repeatMessageCreator().apply(c, shape.dispatched(c.log()).t1()))
                 .trigger(shape.forward()).with(d -> toHttpRequest(d, shape.requestPayloadType()))
+                .trigger(TimeoutExpired).after(_ -> shape.inflightTimeout())
                 .output(d -> d)
         ),
         Intermediate, List.of(),

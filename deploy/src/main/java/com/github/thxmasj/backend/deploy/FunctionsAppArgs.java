@@ -25,6 +25,8 @@ import java.util.Map;
 ///     pausing the database for the rest of the month when the free limit is used up
 /// @param instanceMemory memory in MB of each instance of the function app: 512, 2048 or 4096
 /// @param maximumInstanceCount maximum number of instances the function app scales out to
+/// @param databaseAdministrator the Microsoft Entra administrator of the database server, which must be the principal
+///     the Azure CLI and Pulumi are logged in as, as the deployment logs in to the database with its access token
 /// @param deployerIp public IP address of the machine running the deployment, which is allowed through the database
 ///     firewall to provision the database and run the migrate admin process
 /// @param workDirectory directory where the deployment package is built
@@ -43,6 +45,7 @@ public record FunctionsAppArgs(
     boolean databaseUseFreeLimit,
     int instanceMemory,
     int maximumInstanceCount,
+    DatabaseAdministrator databaseAdministrator,
     String deployerIp,
     Path workDirectory
 ) {}
