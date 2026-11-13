@@ -152,3 +152,49 @@ body {
 [data-md-color-scheme="slate"] .md-typeset .md-button:not(.md-button--primary):not(:hover) {
   color: #a3b06a;
 }
+
+/* A stack of the steps of a transition, the first step on top, with the steps of a triggered transition nested */
+
+.md-typeset .step-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  max-width: 26rem;
+  margin: 1em auto;
+  padding: 0.3rem 0.4rem 0.4rem;
+  border: 1px solid #4b5320;
+  border-radius: 0.3rem;
+}
+
+.md-typeset .step-stack .step-stack {
+  margin: 0.1rem 0 0.1rem 1.2rem;
+  border-style: dashed;
+}
+
+.md-typeset .step-stack-title {
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: var(--md-primary-fg-color--dark);
+}
+
+[data-md-color-scheme="slate"] .md-typeset .step-stack-title {
+  color: #a3b06a;
+}
+
+.md-typeset .step {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.1rem 0.5rem;
+  font-size: 0.65rem;
+  color: #000000;
+  background-color: #9bb08a;
+  border: 1px solid #4b5320;
+  border-radius: 0.2rem;
+}
+
+.md-typeset .step code {
+  padding: 0;
+  color: inherit;
+  background: transparent;
+}
