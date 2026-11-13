@@ -1,7 +1,8 @@
 # Architecture
 
-An application built with the server uses [entity models](entities.md) to handle events. Each entity model is a
-finite state machine, and its entities are stored as event logs in a database.
+An application built with the server uses [entity models](entities.md) to handle events. Each entity model defines a
+finite state machine through which the events of its entities are processed, and the entities are stored as event logs
+in a database.
 
 The application receives requests through [HTTP inboxes](http-inbox.md) and sends requests to other systems through
 [HTTP outboxes](http-outbox.md). They are entity models too, and every request received or sent is an entity with a
