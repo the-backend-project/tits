@@ -25,20 +25,6 @@ flowchart LR
     sm <--> db[(Database)]
 ```
 
-## Pages
-
-| Page                                        | About                                                                                  |
-|---------------------------------------------|----------------------------------------------------------------------------------------|
-| [Entities and events](entities.md)          | Entity models, entities and their event logs, and how an event is processed            |
-| [Transition models](transition-models.md)   | The steps of a transition, and how data flows from one entity to another               |
-| [Existing ids](existing-ids.md)             | How an id found to be taken is handled, by calculating the changes again               |
-| [HTTP inboxes](http-inbox.md)               | Receiving requests, routing them to entities, and authorising them by access tokens    |
-| [HTTP outboxes](http-outbox.md)             | Sending requests at least once or at most once, by the transactional outbox pattern    |
-| [Databases](databases.md)                   | The databases and drivers supported                                                    |
-| [Data model](data-model.md)                 | The tables of the event logs and of the work still to be done                          |
-| [Schema creation](schema-creation.md)       | Creating the database schema of a state machine                                        |
-| [Testing](testing.md)                       | The test API                                                                           |
-
 ## Modules
 
 | Module                                                                | Contains                                                                                       |
