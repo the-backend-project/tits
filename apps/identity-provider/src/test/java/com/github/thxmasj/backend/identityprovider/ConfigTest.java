@@ -148,7 +148,7 @@ public class ConfigTest {
   public void whenEntraIdThenMssqlDataSourceUsesIt() {
     var config = Config.fromEnvironment(env("DATABASE_AUTHENTICATION", "ActiveDirectoryManagedIdentity", "DATABASE_USER", "client-id")).databaseConfig();
     var dataSource = (com.microsoft.sqlserver.jdbc.SQLServerDataSource) new com.github.thxmasj.backend.database.mssql.MssqlDatabase().dataSource(config);
-    // The tokens are fetched by the application rather than by the driver, which needs azure-identity for that
+    // The tokens are fetched by the application rather than by the driver, which would need azure-identity for that
     assertThat(dataSource.getAuthentication()).isEqualTo("NotSpecified");
     assertThat(dataSource.getUser()).isNull();
     assertThat(dataSource.getAccessTokenCallback()).isNotNull();

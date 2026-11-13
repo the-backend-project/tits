@@ -45,7 +45,7 @@ public interface DatabaseClient extends AutoCloseable {
       /// With the user and password of a database login or user
       SqlPassword,
       /// As the Microsoft Entra ID service principal with the client id of the user and the client secret of the
-      /// password. Needs azure-identity at runtime, so not in a native image.
+      /// password. Needs azure-identity at runtime, which the native images of the apps are built without.
       ActiveDirectoryServicePrincipal,
       /// As the managed identity of the host, the user-assigned one with the client id of the user if given, without
       /// a password. The tokens are fetched from the managed identity endpoint of Azure App Service and Functions, or

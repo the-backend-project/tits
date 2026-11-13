@@ -64,7 +64,7 @@ public class MssqlDatabase implements Database {
         if (config.password() != null)
           throw new IllegalArgumentException("Authentication " + config.authentication() + " takes no password");
         // The client id of a user-assigned managed identity, or none for the system-assigned one. The tokens are
-        // fetched here rather than by the driver, which needs azure-identity for that.
+        // fetched here rather than by the driver, which would need azure-identity for that.
         ds.setAccessTokenCallback(new ManagedIdentityTokens(config.user()));
       }
       case ActiveDirectoryAccessToken -> {

@@ -19,10 +19,11 @@ import tools.jackson.databind.json.JsonMapper;
 
 /// Access tokens of the managed identity of the host, for logging in to Azure SQL with Microsoft Entra ID.
 ///
-/// The driver fetches these itself with azure-identity, which does not work in a native image, so they are fetched
-/// here instead: from the endpoint which Azure App Service and Azure Functions give in `IDENTITY_ENDPOINT` and
-/// `IDENTITY_HEADER`, or else from the Instance Metadata Service of virtual machines and containers. A token is reused
-/// until shortly before it expires.
+/// The driver can fetch these itself with azure-identity, but that brings in MSAL and Jackson 2, and builds into a
+/// native image only with SLF4J and Jackson 2 initialized at build time. They are fetched here instead: from the
+/// endpoint which Azure App Service and Azure Functions give in `IDENTITY_ENDPOINT` and `IDENTITY_HEADER`, or else
+/// from the Instance Metadata Service of virtual machines and containers. A token is reused until shortly before it
+/// expires.
 ///
 /// @see <a href="https://learn.microsoft.com/azure/app-service/overview-managed-identity#rest-endpoint-reference">App Service</a>
 /// @see <a href="https://learn.microsoft.com/entra/identity/managed-identities-azure-resources/how-to-use-vm-token#get-a-token-using-http">Instance Metadata Service</a>
