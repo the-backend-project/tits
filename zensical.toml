@@ -8,6 +8,7 @@ nav = [
   { "Overview" = "index.md" },
   { "Architecture" = [
     { "Overview" = "architecture.md" },
+    { "Modules" = "modules.md" },
     { "Entities and events" = "entities.md" },
     { "Transition models" = "transition-models.md" },
     { "Existing ids" = "existing-ids.md" },
@@ -17,6 +18,7 @@ nav = [
     { "Data model" = "data-model.md" },
     { "Schema creation" = "schema-creation.md" },
     { "Testing" = "testing.md" },
+    { "Diagrams" = "diagrams.md" },
   ] },
   { "Templates" = [
     { "Card payments" = [
