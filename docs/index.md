@@ -115,6 +115,10 @@ docker compose up --build
 
     Requests to other systems, sent at least once or at most once by the transactional outbox pattern.
 
+-   :material-bell-alert:{ .lg } **[Monitoring](monitoring.md)**
+
+    Events with a severity, written for the platform to collect and raise alerts on.
+
 -   :material-test-tube:{ .lg } **[Testing](testing.md)**
 
     A test API to look into the entities and force their states, without depending on the tables.

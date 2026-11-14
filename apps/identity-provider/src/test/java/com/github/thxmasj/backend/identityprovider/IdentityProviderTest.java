@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 
 import com.github.thxmasj.backend.core.DataType;
+import com.github.thxmasj.backend.core.EntityModel;
+import com.github.thxmasj.backend.core.Severity;
 import com.github.thxmasj.backend.core.StateMachine;
 import com.github.thxmasj.backend.core.http.AccessTokenSupplier;
 import com.github.thxmasj.backend.core.http.NettyHttpClient;
@@ -287,6 +289,18 @@ public class IdentityProviderTest {
   @Test
   public void whenClientIsUnknownThenInvalidClient() throws Exception {
     assertInvalidClient(token("unknown", adminSecret, "grant_type=client_credentials"));
+  }
+
+  /// Many refused token requests may be an attempt to guess a secret, so each one is a warning for monitoring
+  @Test
+  public void whenTokenIsRefusedThenItsEventIsAWarning() {
+    var refusals = Tokens.transitions(tokenLifetime).get(Tokens.TokenRequest).get(EntityModel.Begin).stream()
+        .flatMap(transition -> transition.filters().stream())
+        .map(filter -> filter.alternative().model())
+        .filter(chosen -> chosen.eventType().equals(Tokens.TokenRefused))
+        .toList();
+
+    assertThat(refusals).isNotEmpty().allSatisfy(refusal -> assertThat(refusal.severity()).isEqualTo(Severity.Warning));
   }
 
   @Test

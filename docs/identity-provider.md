@@ -62,6 +62,9 @@ Every registration and token request is an entity of its own, so the event log i
 which clients and which tokens were issued to whom, without the event log of a client growing with its tokens. A token
 request reads its client with a read-only event.
 
+A refused token request is an event of [severity](monitoring.md#severity) `Warning`, so attempts to guess a secret
+show up in the monitoring.
+
 ## Credentials
 
 The HTTP inbox stores the requests and responses in the event log. Credentials are kept out of it by a filter of the

@@ -4,6 +4,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Objects.requireNonNull;
 import static java.util.stream.Collectors.joining;
 
+import com.github.thxmasj.backend.core.Debug;
 import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
 import com.github.thxmasj.backend.core.message.http.HttpRequestMessage.Method;
 import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
@@ -115,7 +116,7 @@ public class AccessTokenSupplier implements Supplier<String>, AutoCloseable {
   }
 
   private void onError(Throwable throwable) {
-    System.out.println("AccessTokenSupplier.onError: URL " + url + ": " + throwable.getMessage());
+    Debug.log("AccessTokenSupplier.onError: URL " + url + ": " + throwable.getMessage());
     scheduleFetch(Duration.ofSeconds(5));
   }
 

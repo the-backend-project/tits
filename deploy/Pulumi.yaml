@@ -65,6 +65,16 @@ config:
     type: integer
     default: 10
     description: Maximum number of instances the function app scales out to
+  alertEmails:
+    type: array
+    items:
+      type: string
+    default: []
+    description: Email addresses notified of the alerts on events of severity warning, error and critical
+  alertFrequency:
+    type: integer
+    default: 15
+    description: Minutes between the evaluations of the alerts on events, e.g. 1, 5, 10 or 15, or 0 for no alerts
   deployerIp:
     type: string
     default: ""

@@ -96,10 +96,22 @@ public record FunctionPackage(Path file, String sha256) {
 
   /// Every request is proxied to the custom handler as is, at the same path, and without requiring a function key.
   /// Without `enableProxyingHttpRequest`, the host would send the handler its own invocation requests instead.
+  ///
+  /// The host logs every line the custom handler writes to stdout as a trace in Application Insights. By default it
+  /// samples the telemetry of an instance sending more than 20 items a second, which does not take many requests.
+  /// Traces are excluded from the sampling, as it would drop the lines of the events which are to raise alerts (see
+  /// [EventAlert]) along with the other lines.
   static String hostJson() {
     return """
         {
           "version": "2.0",
+          "logging": {
+            "applicationInsights": {
+              "samplingSettings": {
+                "excludedTypes": "Trace"
+              }
+            }
+          },
           "extensions": {
             "http": {
               "routePrefix": ""

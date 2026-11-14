@@ -50,6 +50,7 @@ import com.github.thxmasj.backend.core.EntitySelector.ByIdEvent;
 import com.github.thxmasj.backend.core.EventReference;
 import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.GuardedTransition;
+import com.github.thxmasj.backend.core.Severity;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionContext;
@@ -407,7 +408,8 @@ public interface TransitionModels {
                     .assemble(c -> tuple(createResponseMessage(new BadRequest(), c.input().t2(), c.correlationId(), c.timestamp(), c.input().t1()), c.input().t2()))
                     .trigger(ResponseCreated).with(d -> d.t1()).on(RequestRouting).identifiedBy(entityIdFromSession())
                     .output(Tuple2::t1),
-                onEvent(FailedRequestCompleted).to(Completed)
+                // The response is 500 Internal Server Error
+                onEvent(FailedRequestCompleted).to(Completed).severity(Severity.Error)
                     .assemble(c -> tuple(createResponseMessage(new InternalServerError(), c.input().t2(), c.correlationId(), c.timestamp(), c.input().t1()), c.input().t2()))
                     .trigger(ResponseCreated).with(d -> d.t1()).on(RequestRouting).identifiedBy(entityIdFromSession())
                     .output(Tuple2::t1)

@@ -47,6 +47,7 @@ import com.github.thxmasj.backend.core.EventTrigger;
 import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.test.Init;
 import com.github.thxmasj.backend.diagram.PlantUMLFormatter;
+import com.github.thxmasj.backend.core.Severity;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.StateMachine;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionContext;
@@ -630,6 +631,16 @@ public class HttpInboxTest {
     HttpResponseMessage response = HttpMessageParser.parseResponse(responseEvent.data());
     assertEquals(500, response.statusCode());
     assertEquals("Subsystem unavailable", ProblemDetail.parse(response.body()).detail());
+  }
+
+  /// A response of 500 is an error for monitoring
+  @Test
+  public void failedRequestIsCompletedWithSeverityError() {
+    TransitionModel<?, ?> completion = requestDispatchingTransitions(routes, List.of()).get(HttpInbox.States.Dispatched).stream()
+        .filter(transition -> transition.eventType() == FailedRequestCompleted)
+        .findFirst()
+        .orElseThrow();
+    assertEquals(Severity.Error, completion.severity());
   }
 
   @Test

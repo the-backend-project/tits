@@ -45,6 +45,8 @@ public final class Main {
             config.getBoolean("databaseUseFreeLimit").orElse(false),
             config.getInteger("instanceMemory").orElse(512),
             config.getInteger("maximumInstanceCount").orElse(10),
+            config.getObject("alertEmails", TypeShape.list(String.class)).orElse(List.of()),
+            config.getInteger("alertFrequency").orElse(15),
             DatabaseAdministrator.azureCli(),
             optional(config, "deployerIp").orElseGet(Main::publicIp),
             Path.of("target", "azure", ctx.stackName())

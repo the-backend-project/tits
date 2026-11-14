@@ -85,6 +85,9 @@ stateDiagram-v2
 | `Accepted`     | The receiver accepted the request. The process is told by the success callback, if there is one   |
 | `Dead`         | The receiver rejected the request permanently, or the attempts ran out                             |
 
+Nothing tells the process of a request which is `Dead`. The events leading there have the
+[severity](monitoring.md#severity) `Error`, so monitoring does.
+
 The response is parsed by the content parser of the outbox, and the predicates of the outbox decide the outcome:
 
 | Outcome of an attempt                       | Decided by                            | Next                                     |
@@ -172,6 +175,10 @@ Every outcome has a callback, an event triggered on the entity of the process wh
 | A valid response, neither                  |                                       | `Unknown`  | `onValidResponseUnknown`   | None                |
 | An invalid response, rejected              | `isRejectedByInvalidResponse`         | `Failed`   | `onInvalidResponseRejection` | `InvalidResponseReceived` |
 | An invalid response, not a rejection       |                                       | `Unknown`  | `onInvalidResponseUnknown` | `InvalidResponseReceived`   |
+
+The events of an `AtMostOnce` request have no [severity](monitoring.md#severity) of their own. The process is told of
+the outcomes by the callbacks, and its transitions on them declare the severity which fits, e.g. a warning for an
+authorisation whose outcome is unknown.
 
 ### Rollback
 

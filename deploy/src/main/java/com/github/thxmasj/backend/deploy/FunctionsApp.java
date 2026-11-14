@@ -87,6 +87,9 @@ import java.util.stream.Stream;
 /// The database server allows Microsoft Entra authentication only. Its administrator is the principal the Azure CLI is
 /// logged in as, see [FunctionsAppArgs#databaseAdministrator()], and the first two steps log in with its access token.
 /// The application logs in as a user-assigned managed identity of the function app, which has a user in the database.
+///
+/// What the application writes to stdout is collected by Application Insights, and the events it writes for
+/// monitoring raise alerts in Azure Monitor by their severity, see [EventAlert].
 public class FunctionsApp extends ComponentResource {
 
   /// Storage Blob Data Owner, which the Functions host needs on its storage account
@@ -240,6 +243,8 @@ public class FunctionsApp extends ComponentResource {
         .applicationType(ApplicationType.Web)
         .workspaceResourceId(workspace.id())
         .build(), child());
+    if (args.alertFrequency() > 0)
+      EventAlert.createAll(name, group.name(), insights.id(), args.alertEmails(), args.alertFrequency(), child());
     var plan = new AppServicePlan(name, AppServicePlanArgs.builder()
         .resourceGroupName(group.name())
         .kind("functionapp")

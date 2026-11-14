@@ -26,7 +26,9 @@ of all kinds:
 ## Steps
 
 `TransitionModelBuilder` builds the transition model. It starts with `onEvent(type).to(state)`, every call after it,
-such as `assemble`, `trigger` or `when`, adds a step, and `output()` ends it with the model.
+such as `assemble`, `trigger` or `when`, adds a step, and `output()` ends it with the model. `severity(...)` right
+after the state is not a step: it declares how much attention the event calls for when it is
+[monitored](monitoring.md#severity).
 
 When an event enters an entity, the model calculates the steps of the transition one by one, each from the one before
 it. A step is a `TransitionStep<T>`, where `T` is its output: the data the next step is calculated from. The chain
@@ -212,6 +214,8 @@ transitions they can choose. That has these consequences:
   state and the two transitions. Give the transitions their own event types, or share one `TransitionModel` between
   the choices. Reverse models are compared by identity, so transitions with a reverse model are only alike if they
   share it.
+* **The severity is the one of the chosen transition.** The [severity](monitoring.md#severity) declared on the
+  choosing transition is that of its own event, which is not stored when it chooses another transition.
 * **Data the choosing transition calculates is kept only through the chosen transition.** The output of the choosing
   transition is never stored, so anything it assembles, e.g. from another system, has to be passed on to the chosen
   transition, by `f`, and be in that transition's output to be read from the log later.

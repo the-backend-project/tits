@@ -19,6 +19,7 @@ import com.github.thxmasj.backend.core.BasicEventType;
 import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.EventLog;
 import com.github.thxmasj.backend.core.EventType;
+import com.github.thxmasj.backend.core.Severity;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionContext;
 import com.github.thxmasj.backend.core.TransitionModel;
@@ -333,7 +334,7 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
                         .output(),
                     d -> d
                 )
-                .otherwise(onEvent(shape.attemptsExhausted()).to(Dead).output(), _ -> null),
+                .otherwise(attemptsExhaustedTransition(shape), _ -> null),
             onEvent(ConnectionDropped).to(Intermediate)
                 .assemble(shape.retry())
                 .when(shape.isAttemptAvailable)
@@ -344,7 +345,7 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
                         .output(),
                     d -> d
                 )
-                .otherwise(onEvent(shape.attemptsExhausted()).to(Dead).output(), _ -> null),
+                .otherwise(attemptsExhaustedTransition(shape), _ -> null),
             onEvent(TimeoutExpired).to(Intermediate)
                 .assemble(shape.retry())
                 .when(shape.isAttemptAvailable())
@@ -355,7 +356,7 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
                         .output(),
                     d -> d
                 )
-                .otherwise(onEvent(shape.attemptsExhausted()).to(Dead).output(), _ -> null),
+                .otherwise(attemptsExhaustedTransition(shape), _ -> null),
             onEvent(ResponseReceived).to(Intermediate)
                 .assemble(c -> tuple(
                     c.input(),
@@ -394,11 +395,12 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
                                                 .output(),
                                             d -> d
                                         )
-                                        .otherwise(onEvent(shape.attemptsExhausted()).to(Dead).output(), _ -> null),
+                                        .otherwise(attemptsExhaustedTransition(shape), _ -> null),
                                     _ -> null
                                 )
                                 .otherwise(
                                     onEvent(shape.invalidResponseAndRejectedPermanently()).to(Dead)
+                                        .severity(Severity.Error)
                                         .assembleInput()
                                         .output(d -> d.t1())
                                 )
@@ -414,7 +416,7 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
                                         .output(),
                                     d -> d
                                 )
-                                .otherwise(onEvent(shape.attemptsExhausted()).to(Dead).output(), _ -> null),
+                                .otherwise(attemptsExhaustedTransition(shape), _ -> null),
                             _ -> null
                         ),
                     d -> tuple(d.t1(), d.t2().invalidReason())
@@ -431,6 +433,11 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
         Dead, List.of(),
         Accepted, List.of()
     );
+  }
+
+  /// The request is given up, as no attempt is available
+  private TransitionModel<Void, Void> attemptsExhaustedTransition(Shape<RQ, ?, ?> shape) {
+    return onEvent(shape.attemptsExhausted()).to(Dead).severity(Severity.Error).output();
   }
 
   private <RS, S> TransitionModel<TypedHttpResponse<RS>, TypedHttpResponse<RS>> validResponseTransition(
@@ -476,11 +483,11 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
                         .output(),
                     d -> d
                 )
-                .otherwise(onEvent(shape.attemptsExhausted()).to(Dead).output(), _ -> null),
+                .otherwise(attemptsExhaustedTransition(shape), _ -> null),
             _ -> null
         )
         .otherwise(
-            onEvent(shape.requestReceivedAndRejectedPermanently()).to(Dead)
+            onEvent(shape.requestReceivedAndRejectedPermanently()).to(Dead).severity(Severity.Error)
                 .assembleInput()
                 .output(d -> d)
         );
@@ -567,6 +574,7 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
     InFlight,
     Accepted,
     Compensating,
+    /// The request is given up, so the events leading here are of severity [Severity#Error]
     Dead
   }
 
