@@ -201,15 +201,17 @@ transitions they can choose. That has these consequences:
   but that state is never used, since its event is never stored. A rejected registration ends in `States.Rejected`, the
   state of `RegistrationRejected`. A chosen transition with `toSelf()` stays in the state the choosing transition
   started from.
-* **The path to a stored event must be unique.** From any state, an event type in the log has to lead to a single
-  transition, whether it is a transition from that state or one chosen, at any depth, by a transition from that state.
-  If two transitions from a state, or two branches of one choice, choose different transitions on the same event type,
-  e.g. two `RegistrationRejected` transitions going to different states, or a transition from the state chooses a
-  transition on an event type that another transition from the state is on directly, the log doesn't tell which path
-  was taken. The first transition found is used, and the entity may end up in the wrong state. Give the transitions their own event types instead.
 * **Rolling back uses the chosen transition.** The reverse model of a stored event is found in the same way, so it is
   the reverse model of the chosen transition that rolls the event back, not the one of the transition making the
   choice.
+* **The path to a stored event must be unambiguous.** From any state, an event type can be on more than one
+  transition, from that state or chosen, at any depth, by a transition from that state, and the first one found is
+  used. That is only safe if the log doesn't need to tell them apart, i.e. if they have the same target state and the
+  same reverse model. Otherwise, e.g. with two `RegistrationRejected` transitions going to different states, the
+  state machine rejects the model when it is created, with an `IllegalArgumentException` naming the event type, the
+  state and the two transitions. Give the transitions their own event types, or share one `TransitionModel` between
+  the choices. Reverse models are compared by identity, so transitions with a reverse model are only alike if they
+  share it.
 * **Data the choosing transition calculates is kept only through the chosen transition.** The output of the choosing
   transition is never stored, so anything it assembles, e.g. from another system, has to be passed on to the chosen
   transition, by `f`, and be in that transition's output to be read from the log later.
