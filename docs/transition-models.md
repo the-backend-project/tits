@@ -186,11 +186,11 @@ flowchart LR
 
 ### The events stored for a choice
 
-Only the event of the chosen transition is stored in the entity's event log. The event of the transition making the
-choice is not, and neither is its input. The log of a client has `RegistrationAccepted` or `RegistrationRejected`, but
-never `RegistrationRequested`. A chosen transition can make a choice too, and then the event stored is the one of the
-last transition chosen. The changes of the steps before the choice are still stored, e.g. the `ClientIdClaimed` event
-triggered on another entity above.
+Only the event of the chosen transition is stored in the entity's event log, not the one of the transition making the
+choice. The log of a client has `RegistrationAccepted` or `RegistrationRejected`, but never `RegistrationRequested`. A
+chosen transition can make a choice too, and then the event stored is the one of the last transition chosen. The
+changes of the steps before the choice are still stored, e.g. the `ClientIdClaimed` event triggered on another entity
+above.
 
 The current state of an entity is not stored either. It is found again from the log each time, by following the
 transitions of the stored events from `Begin`. A stored event may be the result of a choice, so for each state, the
@@ -206,14 +206,13 @@ transitions they can choose. That has these consequences:
   If two transitions from a state, or two branches of one choice, choose different transitions on the same event type,
   e.g. two `RegistrationRejected` transitions going to different states, or a transition from the state chooses a
   transition on an event type that another transition from the state is on directly, the log doesn't tell which path
-  was taken. The first transition found is used, and the entity may end up
-  in the wrong state. Give the transitions their own event types instead.
+  was taken. The first transition found is used, and the entity may end up in the wrong state. Give the transitions their own event types instead.
 * **Rolling back uses the chosen transition.** The reverse model of a stored event is found in the same way, so it is
   the reverse model of the chosen transition that rolls the event back, not the one of the transition making the
   choice.
-* **What the outcome needs later must be in its output.** The input of the choosing event is lost when the choice is
-  made, so data to read from the log later has to be in the output of the chosen transition, as the `Registration` in
-  `RegistrationAccepted` above.
+* **Data the choosing transition calculates is kept only through the chosen transition.** The output of the choosing
+  transition is never stored, so anything it assembles, e.g. from another system, has to be passed on to the chosen
+  transition, by `f`, and be in that transition's output to be read from the log later.
 
 ## Collecting the changes
 
