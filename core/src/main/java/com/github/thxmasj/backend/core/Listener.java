@@ -6,6 +6,8 @@ import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.UUID;
 
+/// Is told what a state machine does. A listener implements the methods it is interested in; the others do nothing.
+/// [JsonLinesListener] is a listener for monitoring.
 public interface Listener {
 
     record Change(
@@ -25,15 +27,29 @@ public interface Listener {
 
         private final int number;
         private final String type;
+        private final Severity severity;
+        private final ZonedDateTime timestamp;
 
         public Event(int number, String type) {
+          this(number, type, Severity.Info, null);
+        }
+
+        public Event(int number, String type, Severity severity, ZonedDateTime timestamp) {
           this.number = number;
           this.type = type;
+          this.severity = severity;
+          this.timestamp = timestamp;
         }
 
         public int number() {return number;}
 
         public String type() {return type;}
+
+        /// The severity declared on the transition which accepted the event
+        public Severity severity() {return severity;}
+
+        /// The time of the event, or null for a delayed event, which is yet to happen
+        public ZonedDateTime timestamp() {return timestamp;}
 
       }
 
@@ -49,14 +65,17 @@ public interface Listener {
       }
     }
 
-    void changeAccepted(
+    /// The changes of an event are stored. A change is an accepted event, a delayed event, which is a
+    /// [Change.DelayedEvent], or a conditional trigger, which has no event. The changes are given in the order they
+    /// were calculated.
+    default void changeAccepted(
         String correlationId,
         List<Change> changes
-    );
+    ) {}
 
-  void processNextDelayedTriggerFailed(Throwable t);
+  default void processNextDelayedTriggerFailed(Throwable t) {}
 
-  void forwardingAttempt(
+  default void forwardingAttempt(
       UUID requestId,
       EntityModel entityModel,
       String queue,
@@ -65,9 +84,9 @@ public interface Listener {
       ZonedDateTime enqueuedAt,
       int attempt,
       String correlationId
-  );
+  ) {}
 
-  void forwardingCompleted(
+  default void forwardingCompleted(
       UUID requestId,
       EntityModel entityModel,
       String queue,
@@ -78,9 +97,9 @@ public interface Listener {
       String correlationId,
       HttpResponseMessage receipt,
       String reason
-  );
+  ) {}
 
-  void forwardingBackedOff(
+  default void forwardingBackedOff(
       UUID requestId,
       EntityModel entityModel,
       String queue,
@@ -92,9 +111,9 @@ public interface Listener {
       String reason,
       ZonedDateTime nextAttemptAt,
       Duration backoff
-  );
+  ) {}
 
-  void forwardingDead(
+  default void forwardingDead(
       UUID requestId,
       EntityModel entityModel,
       String queue,
@@ -104,9 +123,9 @@ public interface Listener {
       int attempt,
       String correlationId,
       String reason
-  );
+  ) {}
 
-  void forwardingDeadByExhaustion(
+  default void forwardingDeadByExhaustion(
       UUID requestId,
       EntityModel entityModel,
       String queue,
@@ -116,11 +135,11 @@ public interface Listener {
       int attempt,
       String correlationId,
       String reason
-  );
+  ) {}
 
-  void forwardingDeadlock(String queue);
+  default void forwardingDeadlock(String queue) {}
 
-  void forwardingError(String queue, Throwable error);
+  default void forwardingError(String queue, Throwable error) {}
 
-  void forwardingEmptyQueue(String queue);
+  default void forwardingEmptyQueue(String queue) {}
 }

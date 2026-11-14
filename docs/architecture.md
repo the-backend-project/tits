@@ -25,6 +25,10 @@ order.
 Everything is reactive, built on [Reactor](https://projectreactor.io), and no state is kept in memory between
 requests, so any number of instances can serve the same database. See [scaling](scaling.md).
 
+The events are also what an application is [monitored](monitoring.md) by. A transition declares how much attention
+its event calls for, and the events are written for the platform the application runs on to collect and raise alerts
+on.
+
 ```mermaid
 flowchart LR
     client([Clients]) -- HTTP --> inbox

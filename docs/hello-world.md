@@ -62,7 +62,7 @@ service providers, such as SLF4J providers, and for native transports of other a
 | VIII. Concurrency | Scale out by running more processes against the same database. |
 | IX. Disposability | The native executable is listening after a few tens of milliseconds. On `SIGTERM` it stops accepting requests and lets those in flight complete, then stops the state machine's workers once their ongoing work completes, and closes the database connection pool. |
 | X. Dev/prod parity | Locally, Compose runs the same image against the same kind of database as other environments. |
-| XI. Logs | Logs are written unbuffered to stdout, one line per event. |
+| XI. Logs | The events of the state machine are written unbuffered to stdout, as a line of JSON each, for the execution environment to collect and raise alerts on (see [monitoring](monitoring.md)). |
 | XII. Admin processes | The schema is created by `hello-world migrate`, run as a one-off process from the same image with the same configuration, but with credentials allowed to create the schema. |
 
 ### Configuration
@@ -146,11 +146,11 @@ work around.
 
 ### Logs
 
-- **Unconditional debug output.** The libraries write to `System.out` directly in about 30 places, for example every
-  state transition and every change stored. This output can not be turned off or leveled, and is mixed with the
-  application's own log stream.
-- **The `Listener` interface has no default methods.** Every application must implement all eleven methods to get
-  structured events, even those it is not interested in.
+- **Unconditional debug output.** The libraries write debug output to stdout in about 30 places, for example every
+  state transition and every change stored, with the requests in full. This output can not be turned off or leveled,
+  and is mixed with the application's own log stream and the [events written for monitoring](monitoring.md#the-lines).
+  A request to the demo writes about 70 lines, of which 6 are its events, and a platform collecting the lines charges
+  for them all.
 
 ### HTTP
 

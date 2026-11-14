@@ -13,6 +13,9 @@ Requests carrying a message id are deduplicated through the `MessageIds` id enti
 response of the first one, without triggering anything again. Filters on the listener can authenticate, log or rewrite
 requests before they reach the inbox.
 
+A response of 500 Internal Server Error, which the application triggers with `FailedRequestCompleted`, is an event of
+[severity](monitoring.md#severity) `Error`.
+
 ## Access tokens
 
 Routes requiring an access token, e.g. one issued by the [identity provider](identity-provider.md), take

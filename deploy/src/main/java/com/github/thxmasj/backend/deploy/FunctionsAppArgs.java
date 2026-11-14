@@ -25,6 +25,11 @@ import java.util.Map;
 ///     pausing the database for the rest of the month when the free limit is used up
 /// @param instanceMemory memory in MB of each instance of the function app: 512, 2048 or 4096
 /// @param maximumInstanceCount maximum number of instances the function app scales out to
+/// @param alertEmails email addresses notified of the alerts on the events the application writes for monitoring
+///     (see [EventAlert]). With none, the alerts are seen in Azure Monitor only.
+/// @param alertFrequency minutes between the evaluations of the alerts, which is also the period each evaluation
+///     looks at, or 0 for no alerts. Azure Monitor accepts e.g. 1, 5, 10 and 15, and charges more for the frequent
+///     ones.
 /// @param databaseAdministrator the Microsoft Entra administrator of the database server, which must be the principal
 ///     the Azure CLI and Pulumi are logged in as, as the deployment logs in to the database with its access token
 /// @param deployerIp public IP address of the machine running the deployment, which is allowed through the database
@@ -45,6 +50,8 @@ public record FunctionsAppArgs(
     boolean databaseUseFreeLimit,
     int instanceMemory,
     int maximumInstanceCount,
+    List<String> alertEmails,
+    int alertFrequency,
     DatabaseAdministrator databaseAdministrator,
     String deployerIp,
     Path workDirectory

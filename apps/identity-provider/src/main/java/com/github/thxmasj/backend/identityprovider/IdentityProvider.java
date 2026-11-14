@@ -4,6 +4,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.stream.Collectors.toMap;
 
 import com.github.thxmasj.backend.core.DataType;
+import com.github.thxmasj.backend.core.JsonLinesListener;
 import com.github.thxmasj.backend.core.StateMachine;
 import com.github.thxmasj.backend.core.database.Database;
 import com.github.thxmasj.backend.core.database.jdbc.DataSourceBuilder;
@@ -114,7 +115,8 @@ public final class IdentityProvider {
         config.schema(),
         null,
         Clock.systemUTC(),
-        null
+        // Writes the events to stdout for monitoring, e.g. the refused token requests as warnings
+        new JsonLinesListener()
     );
   }
 

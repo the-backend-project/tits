@@ -84,6 +84,12 @@ jobs:
         run: |
           for i in $(seq 1 120); do curl -sf localhost:8080/health && break; sleep 1; done
           curl -sf localhost:8080/ | grep 'Hello, world!'
+      # jq fails if no line is the event
+      - name: Check that it writes its events for monitoring
+        working-directory: apps/hello-world
+        run: |
+          docker compose logs --no-log-prefix app \
+            | jq -Rce 'fromjson? | objects | select(.eventType == "Greeting requested" and .severity == "INFO")'
       - name: Show the logs
         if: always()
         working-directory: apps/hello-world
@@ -113,6 +119,13 @@ jobs:
             -d '{"client_id": "ci", "scope": "a b"}' localhost:8080/clients | jq -er .client_secret)
           curl -sf -u "ci:$secret" -d grant_type=client_credentials -d scope=a localhost:8080/token | jq -e '.scope == "a"'
           curl -sf localhost:8080/.well-known/jwks.json | jq -e '.keys | length == 1'
+      # jq fails if no line is the event
+      - name: Check that it warns of a refused token request
+        working-directory: apps/identity-provider
+        run: |
+          curl -s -u ci:wrong -d grant_type=client_credentials localhost:8080/token | jq -e '.error == "invalid_client"'
+          docker compose logs --no-log-prefix app \
+            | jq -Rce 'fromjson? | objects | select(.eventType == "Token refused" and .severity == "WARNING")'
       - name: Show the logs
         if: always()
         working-directory: apps/identity-provider

@@ -31,6 +31,7 @@ import com.github.thxmasj.backend.core.EventLog;
 import com.github.thxmasj.backend.core.EventReference;
 import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.test.Init;
+import com.github.thxmasj.backend.core.Severity;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.StateMachine;
 import com.github.thxmasj.backend.core.TransitionStep;
@@ -56,6 +57,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
@@ -623,6 +625,58 @@ public class HttpOutboxTest {
         .orElseThrow();
     assertEquals(1, timeoutTransition.triggers().size());
     assertEquals(TimeoutExpired, timeoutTransition.triggers().getFirst().eventSpec().eventType());
+  }
+
+  /// A request which is given up is an error for monitoring, and nothing else of an AtLeastOnce request is
+  @Test
+  public void atLeastOnceEventsLeadingToDeadAreErrors() {
+    AtLeastOnce<Void> alo = HttpOutboxRequest.atLeastOnce()
+        .requestPayloadType(DataType.none())
+        .responsePayloadType(DataType.none())
+        .repeatMessageCreator((_, o) -> o)
+        .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
+        .inflightTimeout(Duration.ofSeconds(7))
+        .processModel(EntityModel.of("Process", UUID.randomUUID()))
+        .contentParser(_ -> valid(null))
+        .isAccepted(r -> r.statusCode() == 200)
+        .isFailureTransient(_ -> true)
+        .isRejectedByInvalidResponse(_ -> false)
+        .isFailureByInvalidResponseTransient(_ -> false)
+        .isAttemptAvailable(_ -> true)
+        .backoffAlgorithm(_ -> Duration.ofSeconds(1))
+        .build("ALOExchange", UUID.randomUUID());
+
+    List<TransitionModel<?, ?>> accepting = alo.transitions().values().stream()
+        .flatMap(List::stream)
+        .flatMap(HttpOutboxTest::accepting)
+        .toList();
+
+    assertEquals(
+        List.of(
+            "Attempts exhausted",
+            "Invalid response received, request rejected permanently",
+            "Request rejected permanently"
+        ),
+        accepting.stream()
+            .filter(t -> t.toState() == AtLeastOnce.States.Dead)
+            .map(t -> t.eventType().name())
+            .distinct()
+            .sorted()
+            .toList()
+    );
+    for (TransitionModel<?, ?> transition : accepting)
+      assertEquals(
+          transition.toState() == AtLeastOnce.States.Dead ? Severity.Error : Severity.Info,
+          transition.severity(),
+          transition.toString()
+      );
+  }
+
+  /// The transitions accepting the events of a transition: itself, or the ones it chooses between
+  private static Stream<TransitionModel<?, ?>> accepting(TransitionModel<?, ?> transition) {
+    return transition.filters().isEmpty() ?
+        Stream.of(transition) :
+        transition.filters().stream().flatMap(filter -> accepting(filter.alternative().model()));
   }
 
   record ProcessModel(

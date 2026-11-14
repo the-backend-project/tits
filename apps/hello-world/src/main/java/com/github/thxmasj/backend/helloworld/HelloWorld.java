@@ -1,5 +1,6 @@
 package com.github.thxmasj.backend.helloworld;
 
+import com.github.thxmasj.backend.core.JsonLinesListener;
 import com.github.thxmasj.backend.core.StateMachine;
 import com.github.thxmasj.backend.core.database.Database;
 import com.github.thxmasj.backend.core.database.jdbc.DataSourceBuilder;
@@ -78,7 +79,9 @@ public final class HelloWorld {
         config.schema(),
         null,
         Clock.systemUTC(),
-        new StdoutListener()
+        // Writes the events to stdout, one line per event, and leaves routing and storage of the stream to the
+        // execution environment (12-factor XI)
+        new JsonLinesListener()
     );
   }
 

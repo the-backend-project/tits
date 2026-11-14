@@ -94,7 +94,7 @@ public class Traverser {
     if (availableTransitions == null) throw new IllegalStateException("No available transitions for current state " + currentState.name() + " on " + eventLog.entityModel().name());
     var t = findTransitionForTriggeredEvent(eventType, availableTransitions);
     if (t != null && eventType == BuiltinEventTypes.EventsRolledBack)
-      System.out.println("Using custom rollback transition for entity " + eventLog.entityModel().name() + ": " + t + "\nAll transitions:\n" + transitions.values().stream().flatMap(List::stream).map(Object::toString).collect(joining("\n")));
+      Debug.log("Using custom rollback transition for entity " + eventLog.entityModel().name() + ": " + t + "\nAll transitions:\n" + transitions.values().stream().flatMap(List::stream).map(Object::toString).collect(joining("\n")));
     if (t == null && eventType == BuiltinEventTypes.EventsRolledBack && eventType instanceof BasicEventType.Rollback rollback)
       t = rollbackOn(rollback);
     else if (t == null && eventType == BuiltinEventTypes.StatusLookedUp)

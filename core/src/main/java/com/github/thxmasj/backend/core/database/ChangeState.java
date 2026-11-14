@@ -7,6 +7,7 @@ import com.github.thxmasj.backend.core.DelayedEvent;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.Event;
 import com.github.thxmasj.backend.core.IdEntityModel;
+import com.github.thxmasj.backend.core.Severity;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult;
 import com.github.thxmasj.backend.core.TriggerType;
 import com.github.thxmasj.backend.core.database.DatabaseClient.PrimaryKeyConstraintViolation;
@@ -93,6 +94,11 @@ public abstract class ChangeState {
       return null;
     }
 
+    /// The severity of this change's new event, for the listener of the state machine. It is not stored.
+    default Severity severity() {
+      return Severity.Info;
+    }
+
     /**
      * The type of the stored trigger that caused this change's new event, if any.
      */
@@ -160,6 +166,11 @@ public abstract class ChangeState {
         @Override
         public Event<?> newEvent() {
           return acceptedEvent.event();
+        }
+
+        @Override
+        public Severity severity() {
+          return acceptedEvent.severity();
         }
 
         @Override

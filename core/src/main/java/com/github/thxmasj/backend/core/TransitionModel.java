@@ -78,6 +78,12 @@ public class TransitionModel<I, O> {
     return modelContext.to();
   }
 
+  /// The severity of the event the transition accepts, as declared with
+  /// [TransitionModelBuilder.WithToState#severity(Severity)]
+  public Severity severity() {
+    return modelContext.severity();
+  }
+
   @SafeVarargs
   public static Map<State, List<TransitionModel<?, ?>>> mergeModels(
       Map<State, List<TransitionModel<?, ?>>> ...lists

@@ -17,6 +17,9 @@ All resources are created in a resource group of their own:
   package, which the app accesses with its system-assigned managed identity.
 - A user-assigned managed identity, which the application logs in to the database as.
 - Application Insights with a Log Analytics workspace, which collects what the application writes to stdout.
+- Alert rules in Azure Monitor on the events the application writes for [monitoring](monitoring.md#on-azure), one for
+  each of the severities warning, error and critical, and an action group which sends the alerts by email, if there
+  are addresses to send them to.
 
 Deploying then runs three steps on the deploying machine:
 
@@ -164,6 +167,8 @@ Another application is deployed the same way, as long as it follows the conventi
   when it is `ActiveDirectoryAccessToken`, see the [configuration of the demo](hello-world.md#configuration).
 - Running the entry point with the arguments in `migrateArgs` creates or verifies the schema, granting access to the
   role in `DATABASE_ROLE`, and exits.
+- It writes its events to stdout with `JsonLinesListener`, which is what the alerts count (see
+  [monitoring](monitoring.md)).
 
 Other environment variables are set with `environment`, secret ones with `secretEnvironment`, and those which are to
 hold the URL of the application with `urlEnvironment`. Use one stack per application and environment, and pick a
@@ -255,9 +260,12 @@ could use `ManagedIdentityTokens` for another resource. The `deploy` module only
 | `databaseUseFreeLimit` | `false` | Whether to use the [free Azure SQL Database offer](https://learn.microsoft.com/azure/azure-sql/database/free-offer), of which a subscription has one. The database pauses for the rest of the month when the free limit is used up. |
 | `instanceMemory` | `512` | Memory in MB of each instance of the function app: 512, 2048 or 4096 |
 | `maximumInstanceCount` | `10` | Maximum number of instances the function app scales out to |
+| `alertEmails` | `[]` | Email addresses notified of the [alerts](monitoring.md#alerts) on events of severity warning, error and critical. With none, the alerts are seen in Azure Monitor only. |
+| `alertFrequency` | `15` | Minutes between the evaluations of the alerts, e.g. 1, 5, 10 or 15, or `0` for no alerts. The frequent ones [cost](monitoring.md#costs) more. |
 | `deployerIp` | Looked up | Public IP address of the deploying machine, let through the database firewall |
 
-Structured values are set with `--path`, for example `pulumi config set --path 'environment.DATABASE_POOL_SIZE' 5`.
+Structured values are set with `--path`, for example `pulumi config set --path 'environment.DATABASE_POOL_SIZE' 5`
+and `pulumi config set --path 'alertEmails[0]' operations@example.com`.
 
 ## Troubleshooting
 
@@ -276,6 +284,8 @@ az monitor app-insights query \
 - `Exception while executing function: Functions.http-handler1` comes with the inner exception in the `details` of
   the exception, e.g. the status the application answered the host with.
 - Failed logins to the database appear in the application's lines as exceptions of the SQL Server driver.
+- The events of the application are among its lines, as JSON. See [finding the events](monitoring.md#finding-the-events).
+  Every line is collected, as the deployment excludes traces from the sampling of the Functions host.
 
 ## Limitations
 

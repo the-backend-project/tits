@@ -13,6 +13,7 @@ import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.IdEntityModel;
 import com.github.thxmasj.backend.core.IndexEntityModel;
+import com.github.thxmasj.backend.core.Severity;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.TransitionModel;
 import java.io.BufferedWriter;
@@ -157,7 +158,7 @@ public class PlantUMLFormatter {
 
   private static String detailHtml(String detail) {
     String html = detail
-        .replace("<&share>", "\u21aa ").replace("<&bolt>", "\u26a1 ")
+        .replace("<&share>", "\u21aa ").replace("<&bolt>", "\u26a1 ").replace("<&warning>", "\u26a0 ")
         .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     return html.contains("&lt;color:red&gt;")
         ? "<span style=\"color:#7a0000\">" + html.replace("&lt;color:red&gt;", "") + "</span>"
@@ -338,6 +339,7 @@ public class PlantUMLFormatter {
         stateId(targetState),
         Stream.of(
             String.format("%s", eventType.name()),
+            transition.severity() != Severity.Info ? "<&warning>" + transition.severity() : "",
             eventType.inputDataType().equals(DataType.none()) && eventType.outputDataType().equals(DataType.none()) ? "" : "f: " + eventType.inputDataType().name() + " → " + eventType.outputDataType().name(),
             transition.triggers().stream().map(t -> "<&share>" + t.eventSpec().eventType().name() + "@" + ofNullable(t.entityModel()).map(m -> m.name()).orElse("???")).collect(joining("\\n")),
             transition.actions().stream().map(a -> "<&bolt>" + a.name()).collect(joining("\\n")),

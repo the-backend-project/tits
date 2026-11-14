@@ -45,6 +45,7 @@ import static com.github.thxmasj.backend.templates.cardpayment.SettlementEvent.S
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.EventLog;
 import com.github.thxmasj.backend.core.Identifiable;
+import com.github.thxmasj.backend.core.Severity;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.core.Tuples.Tuple2;
@@ -195,12 +196,12 @@ public class SettlementTransitions {
                     Tuple4::t4
                 )
                 .otherwise(
-                    onEvent(ImbalanceDetected).to(Error)
+                    onEvent(ImbalanceDetected).to(Error).severity(Severity.Error)
                         .assembleInput()
                         .output(d -> d),
                     d -> new OutOfBalance(d.t2(), d.t3())
                 ),
-            onEvent(SettlementTimedOut).to(Error).output()
+            onEvent(SettlementTimedOut).to(Error).severity(Severity.Error).output()
         ),
         Reconciled, List.of(),
         Error, List.of(

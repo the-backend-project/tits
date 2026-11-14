@@ -1,6 +1,7 @@
 package com.github.thxmasj.backend.core;
 
 import static java.util.Collections.unmodifiableList;
+import static java.util.Objects.requireNonNull;
 
 import com.github.thxmasj.backend.core.BasicEventType.Rollback.Data;
 import com.github.thxmasj.backend.core.EventTrigger.EventCondition;
@@ -37,6 +38,7 @@ import reactor.core.publisher.Mono;
 
 public class TransitionModelBuilder<I, T, O> {
 
+  /// @param severity the severity of the event the transition accepts
   public record ModelContext<I, O>(
       boolean reversal,
       State to,
@@ -44,7 +46,8 @@ public class TransitionModelBuilder<I, T, O> {
       List<EventTrigger<?, ?, ?>> triggers,
       List<Action<?>> actions,
       List<Filter<?, ?, ?>> filters,
-      TransitionModel<Data, Data> reverseModel
+      TransitionModel<Data, Data> reverseModel,
+      Severity severity
   ) {
 
     public String description() {
@@ -71,7 +74,9 @@ public class TransitionModelBuilder<I, T, O> {
 
   public static TransitionModel<Void, State> statusOn() {
     return new TransitionModel<>(
-        new ModelContext<>(false, null, BuiltinEventTypes.StatusLookedUp, List.of(), List.of(), List.of(), null),
+        new ModelContext<>(
+            false, null, BuiltinEventTypes.StatusLookedUp, List.of(), List.of(), List.of(), null, Severity.Info
+        ),
         inputStep -> inputStep.flatMap(i -> step(i, () -> Mono.just(new OutputStep<>(
             i,
             ProcessResult.accepted(
@@ -83,6 +88,7 @@ public class TransitionModelBuilder<I, T, O> {
                     i.from()
                 ),
                 i.log().entityModel(),
+                Severity.Info,
                 i.triggerType(),
                 i.triggerId()
             )
@@ -92,7 +98,7 @@ public class TransitionModelBuilder<I, T, O> {
 
   public static TransitionModel<Data, Data> rollbackOn(EventType<Data, Data> eventType) {
     return new TransitionModel<>(
-        new ModelContext<>(false, null, eventType, List.of(), List.of(), List.of(), null),
+        new ModelContext<>(false, null, eventType, List.of(), List.of(), List.of(), null, Severity.Info),
         inputStep -> inputStep.flatMap(i -> {
           int rollbackTo = i.stepOutput().toNumber();
           int actualRollbackTo = rollbackTo;
@@ -167,6 +173,7 @@ public class TransitionModelBuilder<I, T, O> {
                       i.stepOutput()
                   ),
                   i.log().entityModel(),
+                  Severity.Info,
                   i.triggerType(),
                   i.triggerId()
               )
@@ -185,7 +192,9 @@ public class TransitionModelBuilder<I, T, O> {
     }
 
     public WithToState<I, O> to(State toState) {
-      return new WithToState<>(new ModelContext<>(false, toState, eventType, List.of(), List.of(), List.of(), null));
+      return new WithToState<>(
+          new ModelContext<>(false, toState, eventType, List.of(), List.of(), List.of(), null, Severity.Info)
+      );
     }
 
     public WithToState<I, O> toSelf() {
@@ -200,6 +209,22 @@ public class TransitionModelBuilder<I, T, O> {
 
     public WithToState(ModelContext<I, O> modelContext) {
       this.modelContext = modelContext;
+    }
+
+    /// Declares the severity of the event the transition accepts, for monitoring. It is [Severity#Info] unless
+    /// declared. A transition which chooses another one accepts the event of the chosen transition, with the
+    /// severity declared on that one.
+    public WithToState<I, O> severity(Severity severity) {
+      return new WithToState<>(new ModelContext<>(
+          modelContext.reversal,
+          modelContext.to,
+          modelContext.eventType,
+          modelContext.triggers,
+          modelContext.actions,
+          modelContext.filters,
+          modelContext.reverseModel,
+          requireNonNull(severity, "severity is null")
+      ));
     }
 
     public <T> TransitionModelBuilder<I, T, O> assemble(BiFunction<I, EventLog, T> assembler) {
@@ -446,7 +471,8 @@ public class TransitionModelBuilder<I, T, O> {
           this.builder.modelContext.triggers,
           join(this.builder.modelContext.actions, action),
           this.builder.modelContext.filters,
-          this.builder.modelContext.reverseModel
+          this.builder.modelContext.reverseModel,
+          this.builder.modelContext.severity
       );
       return new TransitionModelBuilder<>(
           modelContext,
@@ -556,7 +582,8 @@ public class TransitionModelBuilder<I, T, O> {
           this.builder.modelContext.triggers,
           this.builder.modelContext.actions,
           join(this.builder.modelContext.filters, filter),
-          this.builder.modelContext.reverseModel
+          this.builder.modelContext.reverseModel,
+          this.builder.modelContext.severity
       );
       return new TransitionModelBuilder<>(
           modelContext,
@@ -618,7 +645,9 @@ public class TransitionModelBuilder<I, T, O> {
       BiFunction<TransitionContext<Data>, EventType<Data, Data>, Mono<T>> assembler
   ) {
     return new TransitionModelBuilder<>(
-        new ModelContext<>(true /* !! */, null, BuiltinEventTypes.EventsRolledBack, List.of(), List.of(), List.of(), null),
+        new ModelContext<>(
+            true /* !! */, null, BuiltinEventTypes.EventsRolledBack, List.of(), List.of(), List.of(), null, Severity.Info
+        ),
         inputStep -> inputStep.flatMap(
             i -> step(i, () -> {
               // TODO
@@ -643,7 +672,8 @@ public class TransitionModelBuilder<I, T, O> {
             modelContext.triggers,
             modelContext.actions,
             modelContext.filters,
-            reverseModel.complete()
+            reverseModel.complete(),
+            modelContext.severity
         ),
         builderFunction
     );
@@ -697,7 +727,8 @@ public class TransitionModelBuilder<I, T, O> {
             eventTriggers,
             modelContext.actions,
             modelContext.filters,
-            modelContext.reverseModel
+            modelContext.reverseModel,
+            modelContext.severity
         ),
         builderFunction.andThen(f)
     );
@@ -762,7 +793,8 @@ public class TransitionModelBuilder<I, T, O> {
             eventTriggers,
             modelContext.actions,
             modelContext.filters,
-            modelContext.reverseModel
+            modelContext.reverseModel,
+            modelContext.severity
         ),
         builderFunction.andThen(f)
     );
@@ -827,6 +859,7 @@ public class TransitionModelBuilder<I, T, O> {
                     f.apply(b.stepOutput())
                 ),
                 b.inputStep().log().entityModel(),
+                modelContext.severity(),
                 b.inputStep().triggerType(),
                 b.inputStep().triggerId()
             )
@@ -868,6 +901,7 @@ public class TransitionModelBuilder<I, T, O> {
                     b.inputStep().timestamp()
                 ),
                 b.inputStep().log().entityModel(),
+                modelContext.severity(),
                 b.inputStep().triggerType(),
                 b.inputStep().triggerId()
             )
@@ -883,7 +917,7 @@ public class TransitionModelBuilder<I, T, O> {
   }
 
   static void log(ModelContext<?, ?> modelContext, String text) {
-    System.out.println(ZonedDateTime.now() + ": " + modelContext.description() + ": " + text);
+    Debug.log(ZonedDateTime.now() + ": " + modelContext.description() + ": " + text);
   }
 
 }

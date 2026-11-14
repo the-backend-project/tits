@@ -132,7 +132,7 @@ public class StateMachine implements AutoCloseable {
       Listener listener,
       boolean withResolving
   ) {
-    System.out.println("Supported entity models:\n" + transitions.keySet().stream().map(EntityModel::name).collect(joining("\n")));
+    Debug.log("Supported entity models:\n" + transitions.keySet().stream().map(EntityModel::name).collect(joining("\n")));
     this.traversers = transitions.entrySet().stream().collect(toMap(Entry::getKey, e -> new Traverser(e.getValue())));
     this.eventTypesByEntityModel = Mappers.eventTypesByEntityModel(transitions);
     this.delayer = delayer != null ? delayer : _ -> Mono.empty();
@@ -167,7 +167,7 @@ public class StateMachine implements AutoCloseable {
       conditionalTriggerLooper.loop();
       workers.add(conditionalTriggerLooper);
     }
-    System.out.println("Initialized " + getClass().getName() + " on database schema " + schemaName);
+    Debug.log("Initialized " + getClass().getName() + " on database schema " + schemaName);
   }
 
   /// Stops the workers resolving delayed triggers and conditional triggers, waits for their ongoing work to complete, and closes
@@ -177,7 +177,7 @@ public class StateMachine implements AutoCloseable {
     workers.forEach(Looper::stop);
     for (var worker : workers)
       if (!worker.awaitStopped(ofSeconds(30)))
-        System.out.println("Gave up waiting for a worker to stop");
+        Debug.log("Gave up waiting for a worker to stop");
     client.close();
   }
 
@@ -201,7 +201,7 @@ public class StateMachine implements AutoCloseable {
   public Mono<ResolverStatus> resolveState() {
     var backoff = new DelaySpecification(ofSeconds(10), ofMinutes(10), ofHours(5), 1.5);
     return storage.nextDelayedTrigger().execute(backoff)
-        .doOnNext(d -> System.out.println(ZonedDateTime.now() + ": Next delayed trigger: " + d))
+        .doOnNext(d -> Debug.log(ZonedDateTime.now() + ": Next delayed trigger: " + d))
         .zipWhen(delayedTrigger -> storage.eventsByEntityId().execute(delayedTrigger.entityModel(), eventTypesByEntityModel.get(delayedTrigger.entityModel()), delayedTrigger.entityId())
             .switchIfEmpty(Mono.error(new RuntimeException("Unknown entity " + delayedTrigger.entityId() + " for delayed event")))
         )
@@ -209,18 +209,18 @@ public class StateMachine implements AutoCloseable {
           DelayedTrigger<?> delayedTrigger = delayedTriggerAndEventLog.getT1();
           EventLog eventLog = delayedTriggerAndEventLog.getT2();
           if (eventLog.events().getLast().eventNumber() + 1 != delayedTrigger.eventNumber()) {
-            System.out.println("Deleting scheduled event: Event number (" + delayedTrigger.eventNumber() + ") != event log's last number (" + eventLog.events().getLast().eventNumber() + ") + 1");
+            Debug.log("Deleting scheduled event: Event number (" + delayedTrigger.eventNumber() + ") != event log's last number (" + eventLog.events().getLast().eventNumber() + ") + 1");
             // Race! The state has already been resolved by another resolver or incoming request. Which is OK!
             return storage.deleteDelayedTrigger().execute(delayedTrigger.entityId(), delayedTrigger.eventNumber()).map(_ -> ResolverStatus.Ok);
           }
-          System.out.println("Delayed trigger eventNumber: " + delayedTrigger.eventNumber() + ", log's last event number: "
+          Debug.log("Delayed trigger eventNumber: " + delayedTrigger.eventNumber() + ", log's last event number: "
               + eventLog.lastEventNumber());
           var currentState = traversers.get(delayedTrigger.entityModel()).currentState(eventLog);
           if (currentState == null)
             return Mono.error(new RuntimeException(
                 "Invalid event log: " + eventLog.events().stream().map(Event::typeName).collect(joining(","))));
           InputEvent<?> event = inputEvent(delayedTrigger);
-          System.out.println("resolveState with: " + event);
+          Debug.log("resolveState with: " + event);
           return onEvent(
               delayedTrigger.correlationId(),
               event,
@@ -248,17 +248,18 @@ public class StateMachine implements AutoCloseable {
     }
 
     /**
+     * @param severity    the severity declared on the transition which accepted the event
      * @param triggerType optional type of the stored trigger that caused the event
      * @param triggerId   id of the stored trigger that caused the event, present if and only if triggerType is
      */
-    record Accepted<T>(Event<T> event, EntityModel entityModel, TriggerType triggerType, UUID triggerId) implements ProcessResult<T> {
+    record Accepted<T>(Event<T> event, EntityModel entityModel, Severity severity, TriggerType triggerType, UUID triggerId) implements ProcessResult<T> {
       public Accepted<T> accepted() {return this;}
     }
 
     record Rejected<T>(EventType<?, T> eventType, RejectedEvent exception, AtomicBoolean handled) implements ProcessResult<T> {
 
       public Accepted<T> accepted() {
-        System.out.println("accepted() called on ProcessResult.Rejected");
+        Debug.log("accepted() called on ProcessResult.Rejected");
         throw exception;
       }
 
@@ -310,11 +311,17 @@ public class StateMachine implements AutoCloseable {
     }
 
     static <T> Accepted<T> accepted(Event<T> event, EntityModel entityModel) {
-      return new Accepted<>(event, entityModel, null, null);
+      return new Accepted<>(event, entityModel, Severity.Info, null, null);
     }
 
-    static <T> Accepted<T> accepted(Event<T> event, EntityModel entityModel, TriggerType triggerType, UUID triggerId) {
-      return new Accepted<>(event, entityModel, triggerType, triggerId);
+    static <T> Accepted<T> accepted(
+        Event<T> event,
+        EntityModel entityModel,
+        Severity severity,
+        TriggerType triggerType,
+        UUID triggerId
+    ) {
+      return new Accepted<>(event, entityModel, severity, triggerType, triggerId);
     }
 
     default boolean isAccepted() {
@@ -401,7 +408,7 @@ public class StateMachine implements AutoCloseable {
       T input,
       @Nullable EventReference triggerEvent
   ) {
-    System.out.println("onEvent " + correlationId + " " + eventTrigger.eventSpec().eventType().name());
+    Debug.log("onEvent " + correlationId + " " + eventTrigger.eventSpec().eventType().name());
     I adaptedInput = eventTrigger.eventSpec().inputAdapter().apply(input);
     Many<Event<?>> responseSink = Sinks.many().unicast().onBackpressureBuffer();
     return eventLog(eventTrigger, input, null)
@@ -414,7 +421,7 @@ public class StateMachine implements AutoCloseable {
                         .filter(e -> e instanceof EventAlreadyExists)
                         // Avoid the "Thundering Herd" problem
                         .jitter(1.0)
-                        .doAfterRetry(signal -> System.out.println(
+                        .doAfterRetry(signal -> Debug.log(
                             System.currentTimeMillis() + ": Retried (" + signal.totalRetries() + ") due to "
                                 + signal.failure().getMessage()))
                         // Rethrow the exception on exhaustion so it can be handled downstream
@@ -486,18 +493,18 @@ public class StateMachine implements AutoCloseable {
       UUID triggerId,
       @Nullable EventReference triggerEvent
   ) {
-    System.out.println(eventLog.entityModel().name() + ": onEvent " + eventType.name() + " with log " + eventLog.events().stream().map(Event::typeName).collect(joining(",")));
+    Debug.log(eventLog.entityModel().name() + ": onEvent " + eventType.name() + " with log " + eventLog.events().stream().map(Event::typeName).collect(joining(",")));
     var now = ZonedDateTime.now(clock);
     var tuple = transitionModel(eventLog, eventType);
     if (tuple.t2() == null) {
-      System.out.println("onEvent " + eventType.name() + ": No transition model found");
+      Debug.log("onEvent " + eventType.name() + ": No transition model found");
       return Mono.just(ProcessResult.rejected(
           eventType,
           new RejectedEvent(eventType, eventLog, tuple.t3())
       ));
     }
     if (tuple.t3() != null) {
-      System.out.println("onEvent " + eventType.name() + ": Current state: " +  tuple.t3());
+      Debug.log("onEvent " + eventType.name() + ": Current state: " +  tuple.t3());
     }
     // Deferred, as a retry is a calculation of its own
     return Mono.defer(() -> calculateAndStore(
@@ -564,7 +571,7 @@ public class StateMachine implements AutoCloseable {
             IdEventAlreadyExists.class,
             e -> storage.eventsByIdEvent().execute(e.idEvent().type(), e.idEvent().getMarshalledData())
                 .switchIfEmpty(Mono.error(e))
-                .doOnNext(_ -> System.out.println("onEvent " + transitionModel.eventType().name() + ": " + e.getMessage()))
+                .doOnNext(_ -> Debug.log("onEvent " + transitionModel.eventType().name() + ": " + e.getMessage()))
                 .flatMap(log -> initial.calculation().recalculateWith(ProcessResult.idExists(e.idEvent().type(), e.idEvent(), log)) ?
                     calculateAndStore(transitionModel, initial) :
                     // The id event would be calculated the same again
@@ -659,14 +666,13 @@ public class StateMachine implements AutoCloseable {
    * of the fired event. Returns Ok if an event was fired, otherwise Empty (or Error).
    */
   public Mono<ResolverStatus> fireConditionalTriggers() {
-    System.out.println("fireConditionalTriggers()");
+    Debug.log("fireConditionalTriggers()");
     return storage.conditionalTriggers().execute(MAX_CONDITIONAL_TRIGGERS_PER_POLL)
-        .doOnNext(t -> System.out.println("fireConditionalTriggers() found trigger: " + t))
+        .doOnNext(t -> Debug.log("fireConditionalTriggers() found trigger: " + t))
         .concatMap(event -> fireConditionalTrigger(event)
             .hasElements()
             .onErrorResume(e -> {
-              e.printStackTrace();
-              System.out.println("Failed to fire conditional trigger " + event.type().name() + " on " + event.entityId() + ": " + e);
+              Debug.log("Failed to fire conditional trigger " + event.type().name() + " on " + event.entityId(), e);
               return Mono.empty();
             })
         )
@@ -768,7 +774,7 @@ public class StateMachine implements AutoCloseable {
   private EventLog logFromNestedChanges(UUID entityId, EntityModel entityModel, TransitionStep<?> transitionStep) {
     for (var c = transitionStep; c != null; c = c.previous()) {
       if (c instanceof OutputStep<?>(TransitionStep<?> previous, ProcessResult<?> stepOutput)
-          && stepOutput instanceof Accepted<?>(Event<?> event, EntityModel model, _, _)
+          && stepOutput instanceof Accepted<?>(Event<?> event, EntityModel model, _, _, _)
           && event.entityId().equals(entityId)
           && model.equals(entityModel)
           && !(previous instanceof ChoiceStep)) {
@@ -859,7 +865,7 @@ public class StateMachine implements AutoCloseable {
                 .filter(e -> e instanceof RejectedEvent)
                 // Avoid the "Thundering Herd" problem
                 .jitter(1.0)
-                .doAfterRetry(signal -> System.out.println(
+                .doAfterRetry(signal -> Debug.log(
                     System.currentTimeMillis() + ": Retried (" + signal.totalRetries() + ") due to " + signal.failure()
                         .getMessage()))
                 // Rethrow the exception on exhaustion so it can be handled downstream
@@ -1007,8 +1013,10 @@ public class StateMachine implements AutoCloseable {
     return tuple(eventLog, (TransitionModel<I, O>) currentStateAndTransition.t2(), currentStateAndTransition.t1());
   }
 
+  /// The changes for the listener, in the order they were calculated, which is the reverse of the order they are
+  /// collected in. The accepted events of an entity are thereby in the order of their numbers.
   private List<Listener.Change> toListenerFormat(List<Change> changes) {
-    return changes.stream()
+    return changes.reversed().stream()
         .map(change -> new Listener.Change(
                 new Listener.Change.Entity(
                     change.entityModel().name(),
@@ -1016,7 +1024,9 @@ public class StateMachine implements AutoCloseable {
                 ),
                 change.newEvent() != null ? new Listener.Change.Event(
                     change.newEvent().eventNumber(),
-                    change.newEvent().type().name()
+                    change.newEvent().type().name(),
+                    change.severity(),
+                    change.newEvent().timestamp()
                 ) : (change.delayedEvent() != null ? new Listener.Change.DelayedEvent(
                     change.delayedEvent().eventNumber(),
                     change.delayedEvent().type().name(),
@@ -1033,7 +1043,7 @@ public class StateMachine implements AutoCloseable {
       TransitionStep<?> transitionStep
   ) {
     List<Change> changes = changes(transitionStep);
-    System.out.println("Changes to store:\n" + changes.stream().map(c -> "  |" + c.toString()).collect(joining("\n")));
+    Debug.log("Changes to store:\n" + changes.stream().map(Object::toString).collect(joining("\n")));
     return Mono.just("")
         .delayUntil(_ -> delayer.apply(changes.stream()
             .filter(change -> change.newEvent() != null)
@@ -1048,6 +1058,13 @@ public class StateMachine implements AutoCloseable {
                         .toList()
                 )
                 .collectList()
+                // The listener is told before the events are emitted to the one who triggered them, which fails if
+                // that one has stopped listening, e.g. after the first event or a timeout
+                .doOnNext(_ -> {
+                  if (!changes.isEmpty() && listener != null) {
+                    listener.changeAccepted(correlationId, toListenerFormat(changes));
+                  }
+                })
                 .flatMap(x -> Mono.just("")
                     .contextWrite(ctx -> {
                           changes.stream()
@@ -1060,7 +1077,7 @@ public class StateMachine implements AutoCloseable {
                                 changeList.sort(comparing(change -> change.newEvent().eventNumber()));
                                 Optional<Many<Event<?>>> responseSink = ctx.getOrEmpty("RS/" + entityId);
                                 if (responseSink.isPresent()) {
-                                  System.out.println("Found response sink for " + changeList.stream().map(c -> c.entityModel().name() + "/" + c.entityId() + "/" + c.newEvent().typeName()).toList());
+                                  Debug.log("Found response sink for " + changeList.stream().map(c -> c.entityModel().name() + "/" + c.entityId() + "/" + c.newEvent().typeName()).toList());
                                   changeList.forEach(change -> responseSink.get().tryEmitNext(change.newEvent()).orThrow());
                                 }
                               });
@@ -1068,11 +1085,6 @@ public class StateMachine implements AutoCloseable {
                         }
                     ).thenReturn(x)
                 )
-                .doOnNext(_ -> {
-                  if (!changes.isEmpty() && listener != null) {
-                    listener.changeAccepted(correlationId, toListenerFormat(changes));
-                  }
-                })
                 // Forward outgoing requests (for guaranteed delivery this will be the first attempt)
                 .transformDeferredContextual((publisher, ctx) -> publisher
                     .doOnNext(_ -> actionTriggers(transitionStep).forEach(actionTrigger ->
@@ -1091,12 +1103,12 @@ public class StateMachine implements AutoCloseable {
                 actionTrigger.eventLog(),
                 stage1
             )
-            .doOnError(e -> System.out.println("onEvent ERROR for " + triggerResult.eventType().name() + " on " + actionTrigger.eventLog().entityModel().name() + ":" + actionTrigger.eventLog().entityId() + ": " + e))
+            .doOnError(e -> Debug.log("onEvent ERROR for " + triggerResult.eventType().name() + " on " + actionTrigger.eventLog().entityModel().name() + ":" + actionTrigger.eventLog().entityId() + ": " + e))
             .retryWhen(RetrySpec.fixedDelay(3, Duration.ofMillis(500))
                 .filter(e -> e instanceof EventAlreadyExists)
                 // Avoid the "Thundering Herd" problem
                 .jitter(1.0)
-                .doAfterRetry(signal -> System.out.println(
+                .doAfterRetry(signal -> Debug.log(
                     System.currentTimeMillis() + ": Retried (" + signal.totalRetries() + ") due to "
                         + signal.failure().getMessage()))
                 // Rethrow the exception on exhaustion so it can be handled downstream

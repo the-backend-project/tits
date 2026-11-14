@@ -23,7 +23,7 @@ class ForwardAction implements Action<HttpRequestMessage> {
 
   @Override
   public Mono<InputEvent<?>> execute(HttpRequestMessage request) {
-    System.out.println(ZonedDateTime.now() + ": Forwarding " + request.requestLine());
+    Debug.log(ZonedDateTime.now() + ": Forwarding " + request.requestLine());
     return forwarder.exchange(request)
         .<InputEvent<?>>map(response -> new InputEvent<>(ResponseReceived, response))
         .onErrorResume(ConnectException.class, _ -> Mono.just(new InputEvent<>(ConnectionFailed, null)));

@@ -13,6 +13,7 @@ import com.github.thxmasj.backend.core.BasicEventType;
 import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.EventType;
+import com.github.thxmasj.backend.core.Severity;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult;
 import com.github.thxmasj.backend.core.TransitionModel;
@@ -98,8 +99,9 @@ public interface Tokens {
     );
   }
 
+  /// A refused token request is a warning for monitoring, as many of them may be an attempt to guess a secret
   private static TransitionModel<Refusal, Refusal> refuse() {
-    return onEvent(TokenRefused).to(States.Refused)
+    return onEvent(TokenRefused).to(States.Refused).severity(Severity.Warning)
         .assembleInput()
         .trigger(Inbox.ReplyCreated).with(Tokens::reply).on(RequestDispatching).identifiedBy(entityIdFromSession())
         .output(Tuple2::t1);

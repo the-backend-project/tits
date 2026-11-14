@@ -1,6 +1,7 @@
 package com.github.thxmasj.backend.core.test;
 
 import com.github.thxmasj.backend.core.EntityModel;
+import com.github.thxmasj.backend.core.Listener;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.StateMachine;
 import com.github.thxmasj.backend.core.TransitionModel;
@@ -75,6 +76,15 @@ public class Init {
       Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions,
       Clock clock
   ) {
+    return stateMachine(schemaName, transitions, clock, new Logger("Test"));
+  }
+
+  public static StateMachine stateMachine(
+      String schemaName,
+      Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions,
+      Clock clock,
+      Listener listener
+  ) {
     return new StateMachine(
         _ -> Mono.empty(),
         transitions,
@@ -84,7 +94,7 @@ public class Init {
         schemaName,
         "Test", // role
         clock,
-        new Logger("Test"),
+        listener,
         true
     );
   }

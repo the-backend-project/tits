@@ -15,6 +15,7 @@ nav = [
     { "HTTP inboxes" = "http-inbox.md" },
     { "HTTP outboxes" = "http-outbox.md" },
     { "Scaling" = "scaling.md" },
+    { "Monitoring" = "monitoring.md" },
     { "Databases" = "databases.md" },
     { "Data model" = "data-model.md" },
     { "Schema creation" = "schema-creation.md" },
