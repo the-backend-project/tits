@@ -1,6 +1,6 @@
 ---
 name: fix
-description: Start work on a GitHub issue. Use when the user says "Fix #N" (or invokes /fix N) — assigns the issue, moves it to In Progress on the project board, creates a fresh branch off origin/main, and syncs it with main before pushing.
+description: Start work on a GitHub issue. Use when the user says "Fix #N" (or invokes /fix N) — assigns the issue, moves it to In Progress on the project board, creates a fresh branch off origin/main, brings the documentation in line with the change, syncs with main, and opens a PR when the fix is complete.
 argument-hint: <issue-number>
 ---
 
@@ -44,7 +44,24 @@ org project 1 ("The Backend").
 6. **Start working** on the issue. Briefly tell the user the branch name and your
    plan, then proceed.
 
-7. **Sync with main before every push.** Before pushing the branch, whether to open
+7. **Make the documentation match the change.** Before pushing, check that the
+   documentation describes what the branch does now:
+
+   - Look up what the change touches (`git diff origin/main --stat`) and grep
+     `docs/*.md`, `README.md` and the Javadoc of the touched public types for the
+     classes, methods, configuration, endpoints, tables and behaviour involved.
+   - Fix whatever the change made wrong or out of date, including code samples,
+     names and defaults that were renamed or removed. Document new behaviour that
+     users of the library need to know about, on the page that already covers that
+     area. A new page also needs an entry in `nav` in `zensical.toml`.
+   - If the docs changed, do a strict build like CI with `/serve-docs --build` and
+     fix any warnings.
+
+   Commit the documentation together with the change it describes. In the PR
+   description, name the pages that were updated, or say why no documentation
+   needed to change.
+
+8. **Sync with main before every push.** Before pushing the branch, whether to open
    the PR or to update it, bring in what has landed on main since:
 
    ```sh
@@ -54,4 +71,17 @@ org project 1 ("The Backend").
    ```
 
    If main moved, resolve any conflicts and run the tests of the affected modules
-   again before pushing. Then push and open the PR with `gh pr create`.
+   again before pushing.
+
+9. **Open a PR when the fix is complete.** Once the issue is resolved, the tests of
+   the affected modules pass and the documentation is up to date, commit, sync with
+   main (step 8), push the branch and open the PR without waiting to be asked:
+
+   ```sh
+   git push -u origin issue-N-<slug>
+   gh pr create --title "<what the change does>" --body "Closes #N. ..."
+   ```
+
+   Include `Closes #N` in the body so that merging closes the issue. Tell the user
+   the PR's URL. If the fix is not complete, for example because a question is still
+   open or tests fail, don't open a PR. Tell the user what is left instead.
