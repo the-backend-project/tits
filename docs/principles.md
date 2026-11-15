@@ -20,12 +20,8 @@ The model is written in the language of the domain, and nothing else goes into i
 
 ## The event log is the source of truth
 
-The event log is immutable: events are appended to it and never changed. The current state of an entity is derived
-from its events, and the other tables of the [data model](data-model.md) only hold work still to be done, such as
-timeouts that are due later.
-
-When something goes wrong, the event log shows what happened and in which order, instead of leaving you to guess from
-the last state stored.
+The [event log](data-model.md) is immutable: events are appended to it and never changed. The current state of an
+entity is derived from its events.
 
 ## All or nothing
 

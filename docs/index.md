@@ -12,7 +12,7 @@ library take care of the transactions, the integrations and the event log.</p>
 You write domain models in plain Java: the states of a payment, an order or a subscription, the events that move it
 between them, and the requests it sends to other systems. The library appends every event to an immutable event log,
 takes the transitions in database transactions, receives and deduplicates HTTP requests, and sends requests to other
-systems reliably. You need no framework, no message broker and no application server, only a JVM and a SQL database.
+systems reliably. It keeps everything in a database, with no framework, message broker or application server.
 
 The library follows the principles of domain-driven design. The model is written in the language of the domain: its
 entities have an identity and a lifecycle, and its events are named after what has happened in the domain, such as
@@ -79,13 +79,13 @@ can break or go out of date. See the [design principles](principles.md) for the 
 * **A small, robust tech stack.** Java, Reactor and a SQL database. There is no framework, message broker, cache or
   application server. Fewer moving parts mean fewer upgrades, fewer outages and less to learn for whoever
   maintains the application next.
-* **A small footprint.** Apps compile to native executables that boot in tens of milliseconds and run in container
-  images built from `scratch`, containing nothing they don't declare. Every dependency is verified against a pinned
-  checksum.
+* **A small footprint.** Apps compile to native executables that boot in tens of milliseconds and need little memory.
+  They run in small container images built from `scratch`, which contain nothing they don't declare. Every dependency
+  is verified against a pinned checksum.
 * **An immutable event log.** Events are appended, never changed, and the state of an entity is derived from them. A
-  bug can be understood from what happened, not guessed at from what is left.
-* **All or nothing.** Everything an event leads to is stored in one transaction or not at all, and changes that
-  conflict are retried from the new state rather than overwritten.
+  failure can be understood from what happened, not guessed at from what is left.
+* **All or nothing.** Everything an event leads to is stored in one transaction or not at all. When concurrent changes
+  conflict, the event is processed again from the new state rather than overwriting the other change.
 * **Diagrams that are never out of date.** The [state diagrams](diagrams.md) are generated from the models, so the
   documentation of the domain always matches the code that runs.
 
