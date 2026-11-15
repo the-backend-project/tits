@@ -1,9 +1,7 @@
 # Identifiers
 
-Entities, entity models, event types and conditional triggers are identified by UUIDs. The ids of entity models and
-event types are fixed: they are chosen when the models are written, and are the same on every instance and in every
-database. The ids of entities and conditional triggers are created by the state machine as it runs, one for each new
-entity or trigger. These are time-ordered UUIDs.
+Every entity is identified by a UUID, which is created for it when the entity is created. Entity ids are time-ordered
+UUIDs.
 
 ## Time-ordered UUIDs
 
@@ -27,13 +25,11 @@ for a client:
 .trigger(ClientIdClaimed).with(d -> d.t1().clientId()).on(ClientIds).identifiedBy(d -> entityId(d.t2(), AlwaysCreate))
 ```
 
-The ids of entity models and event types are not created at runtime, so they may be of any version.
-
 ## Why not random UUIDs
 
-The entity id leads the primary key of every table with entity rows: `Entity`, `Event`, `IdEvent` and `IndexEvent`,
-and the conditional trigger id is the primary key of `ConditionalTrigger` (see the [data model](data-model.md)). Both
-SQL Server and PostgreSQL keep these keys in B-tree indexes, whose leaf pages hold the keys in order.
+The entity id leads the primary key of every table with entity rows: `Entity`, `Event`, `IdEvent` and `IndexEvent`
+(see the [data model](data-model.md)). Both SQL Server and PostgreSQL keep these keys in B-tree indexes, whose leaf
+pages hold the keys in order.
 
 A random UUID (version 4) lands at a random place in the index. At scale this degrades every insert:
 
@@ -53,16 +49,16 @@ state machine doesn't rely on the order of ids for anything else: the events of 
 
 An id tells when its entity was created, so anyone who sees an entity's id, e.g. in a URL, can tell its age.
 
-## Storing UUIDs
+## Storing entity ids
 
-PostgreSQL stores a UUID in its `UUID` type, and compares UUIDs byte by byte from the first, so time-ordered UUIDs are
-in time order in its indexes.
+PostgreSQL stores an entity id in its `UUID` type, and compares UUIDs byte by byte from the first, so entity ids are in
+time order in its indexes.
 
 SQL Server's `UNIQUEIDENTIFIER` compares the last six bytes first, where a time-ordered UUID has random bits. It would
-insert them at random places, as if they were random UUIDs. The state machine therefore stores UUIDs as `BINARY(16)` on
-SQL Server, the 16 bytes in the order of the UUID's string form, which SQL Server compares byte by byte from the first.
-The ids show as binaries in SQL Server's tools, e.g. `0x019A6B2C1D3E7F408A1B2C3D4E5F6071`, which is the UUID without its
-hyphens. To find the events of an entity by its id:
+insert them at random places, as if they were random UUIDs. The state machine therefore stores entity ids as
+`BINARY(16)` on SQL Server, the 16 bytes in the order of the UUID's string form, which SQL Server compares byte by byte
+from the first. The ids show as binaries in SQL Server's tools, e.g. `0x019A6B2C1D3E7F408A1B2C3D4E5F6071`, which is the
+UUID without its hyphens. To find the events of an entity by its id:
 
 ```sql
 SELECT * FROM [schema].[Event]
