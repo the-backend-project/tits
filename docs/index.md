@@ -82,10 +82,11 @@ can break or go out of date. See the [design principles](principles.md) for the 
 * **A small footprint.** Apps compile to native executables that boot in tens of milliseconds and need little memory.
   They run in small container images built from `scratch`, which contain nothing they don't declare. Every dependency
   is verified against a pinned checksum.
-* **CPU bound, not thread bound.** No thread waits for the database or another system: the processing is
-  [non-blocking](scaling.md#vertically-reactive-code), on a few event loop threads, and blocking JDBC queries run on
-  virtual threads. An instance is therefore limited by its CPU rather than by the number of threads, so it handles
-  many concurrent requests on little hardware, and adding cores lets it handle more.
+* **Scales with cores, not memory.** No thread waits for the database or another system: the processing is
+  [non-blocking](scaling.md#vertically-reactive-code), on a few event loop threads. A thread-per-request server needs
+  a thread for every request in flight, and every thread takes memory for its stack, so it scales with memory. Here
+  more concurrent requests don't need more threads, so an instance is CPU bound, and adding cores is what lets it
+  handle more.
 * **An immutable event log.** Events are appended, never changed, and the state of an entity is derived from them. A
   failure can be understood from what happened, not guessed at from what is left.
 * **All or nothing.** Everything an event leads to is stored in one transaction or not at all. When concurrent changes
