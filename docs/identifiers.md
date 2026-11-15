@@ -25,6 +25,18 @@ for a client:
 .trigger(ClientIdClaimed).with(d -> d.t1().clientId()).on(ClientIds).identifiedBy(d -> entityId(d.t2(), AlwaysCreate))
 ```
 
+## Ids of new entities must be time-ordered
+
+An entity selector can create an entity with an id of its own: `newEntityId(id)`, or `entityId(id, AlwaysCreate)` or
+`entityId(id, CreateIfNotExists)` when no entity has the id. That id must be time-ordered. Use one created by
+`Identifiers.newId()`, or the id of another entity, e.g. `c.log().entityId()` for an index or id entity sharing the id
+of the entity it belongs to. If the id is not a version 7 UUID, the state machine doesn't create the entity. It rejects
+the event instead, as a `RejectedEvent` with the reason `InvalidEntityId`, or as a rejected `ProcessResult` for a
+trigger of a transition. A random UUID, for example one taken from a request, can't create an entity.
+
+An existing entity can still be selected by any id, so entities created with random UUIDs before this rule was added
+can still be found and changed, even with `CreateIfNotExists`.
+
 ## Why not random UUIDs
 
 The entity id leads the primary key of every table with entity rows: `Entity`, `Event`, `IdEvent` and `IndexEvent`

@@ -189,8 +189,11 @@ public class StateMachine implements AutoCloseable {
     return new EventLog(entityModel, Identifiers.newId(), List.of());
   }
 
-  private EventLog emptyEventLog(EntityModel entityModel, UUID entityId) {
-    return new EventLog(entityModel, entityId, List.of());
+  /// The log of a new entity with an id given by an entity selector, which must be time-ordered
+  private Mono<EventLog> emptyEventLog(EntityModel entityModel, UUID entityId) {
+    return Identifiers.isTimeOrdered(entityId) ?
+        Mono.just(new EventLog(entityModel, entityId, List.of())) :
+        Mono.error(new NotTimeOrderedEntityId(entityModel, entityId));
   }
 
   public enum ResolverStatus {Ok, Empty, Error}
@@ -692,7 +695,8 @@ public class StateMachine implements AutoCloseable {
   ) {
     return eventTrigger.createEntity() ?
         Mono.just(emptyEventLog(eventTrigger.entityModel())) :
-        eventLog(eventTrigger.entitySelectors().getFirst().apply(inputData), eventTrigger.entityModel(), transitionStep);
+        eventLog(eventTrigger.entitySelectors().getFirst().apply(inputData), eventTrigger.entityModel(), transitionStep)
+            .onErrorMap(NotTimeOrderedEntityId.class, e -> new RejectedEvent(eventTrigger.eventSpec().eventType(), e));
   }
 
   private <I> Mono<EventLog> eventLog(
@@ -715,8 +719,8 @@ public class StateMachine implements AutoCloseable {
               .switchIfEmpty(storage.eventsByEntityId().execute(entityModel, eventTypesByEntityModel.get(entityModel), entityId));
           case CreateIfNotExists -> Mono.justOrEmpty(logFromNestedChanges(entityId, entityModel, transitionStep))
               .switchIfEmpty(storage.eventsByEntityId().execute(entityModel, eventTypesByEntityModel.get(entityModel), entityId))
-              .onErrorResume(UnknownEntity.class, _ -> Mono.just(emptyEventLog(entityModel, entityId)));
-          case AlwaysCreate -> Mono.just(emptyEventLog(entityModel, s.id()));
+              .onErrorResume(UnknownEntity.class, _ -> emptyEventLog(entityModel, entityId));
+          case AlwaysCreate -> emptyEventLog(entityModel, s.id());
         };
       }
       case ByIdEvent<?> s -> eventLog(s, entityModel, transitionStep);
@@ -866,7 +870,7 @@ public class StateMachine implements AutoCloseable {
               );
             })
             .retryWhen(RetrySpec.fixedDelay(3, Duration.ofMillis(500))
-                .filter(e -> e instanceof RejectedEvent)
+                .filter(e -> e instanceof RejectedEvent r && r.reason() != RejectedEvent.Reason.InvalidEntityId)
                 // Avoid the "Thundering Herd" problem
                 .jitter(1.0)
                 .doAfterRetry(signal -> Debug.log(
@@ -917,6 +921,19 @@ public class StateMachine implements AutoCloseable {
     }
   }
 
+  /// An entity was to be created with an id that is not a time-ordered UUID
+  private static class NotTimeOrderedEntityId extends RuntimeException {
+
+    private final EntityModel entityModel;
+    private final UUID entityId;
+
+    NotTimeOrderedEntityId(EntityModel entityModel, UUID entityId) {
+      super("New entities must have time-ordered ids (UUID version 7), but " + entityId + " is version " + entityId.version());
+      this.entityModel = entityModel;
+      this.entityId = entityId;
+    }
+  }
+
   public static class RejectedEvent extends RuntimeException {
 
     public enum Reason {
@@ -925,7 +942,9 @@ public class StateMachine implements AutoCloseable {
       /// The event can't be rolled back to the requested event number
       InvalidRollback,
       /// The entity selected by the trigger does not exist
-      UnknownEntity
+      UnknownEntity,
+      /// The entity selected by the trigger would be created with an id that is not a time-ordered UUID
+      InvalidEntityId
     }
 
     private final Reason reason;
@@ -987,6 +1006,19 @@ public class StateMachine implements AutoCloseable {
       this.eventType = eventType;
       this.entityModel = unknownEntity.entityModel();
       this.entityId = unknownEntity.id();
+      this.currentState = null;
+    }
+
+    RejectedEvent(EventType<?, ?> eventType, NotTimeOrderedEntityId invalidId) {
+      super(String.format(
+          "%s: %s",
+          prefixMessage(eventType, invalidId.entityModel, invalidId.entityId),
+          invalidId.getMessage()
+      ));
+      this.reason = Reason.InvalidEntityId;
+      this.eventType = eventType;
+      this.entityModel = invalidId.entityModel;
+      this.entityId = invalidId.entityId;
       this.currentState = null;
     }
 

@@ -10,20 +10,33 @@ import com.github.thxmasj.backend.core.EntitySelector.ByLastIndexed;
 import java.util.UUID;
 import java.util.function.Function;
 
+/// Selects the entity an event is triggered on
+///
+/// An entity created with an id of its own, by [#newEntityId(UUID)] or by [#entityId(UUID, CreationMode)] with
+/// [CreationMode#AlwaysCreate] or [CreationMode#CreateIfNotExists], must get a time-ordered id: one created by
+/// [Identifiers#newId()], or the id of another entity. The event is otherwise rejected with
+/// [StateMachine.RejectedEvent.Reason#InvalidEntityId], since an id that is not time-ordered would be inserted at a
+/// random place in the indexes. An existing entity can be selected by any id. See
+/// [identifiers](https://the-backend-project.github.io/tits/identifiers/).
 public sealed class EntitySelector permits ById, ByIdFromSession, ByIdEvent, ByLastIndexed {
 
   public static ById entityId(UUID entityId) {
     return new ById(entityId, NeverCreate);
   }
 
+  /// The entity with the id, which is created with it, depending on the creation mode, if it does not exist. An id it
+  /// is created with must be time-ordered.
   public static ById entityId(UUID entityId, CreationMode creationMode) {
     return new ById(entityId, creationMode);
   }
 
+  /// A new entity, with a new time-ordered id
   public static <T> Function<T, ById> newEntityId() {
     return _ -> new ById(Identifiers.newId(), AlwaysCreate);
   }
 
+  /// A new entity with the id, which must be time-ordered: created by [Identifiers#newId()], or the id of another
+  /// entity
   public static ById newEntityId(UUID id) {
     return new ById(id, AlwaysCreate);
   }
