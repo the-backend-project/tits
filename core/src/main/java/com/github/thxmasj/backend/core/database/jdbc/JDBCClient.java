@@ -42,7 +42,7 @@ public class JDBCClient implements DatabaseClient {
     return Mono.fromCallable(() -> {
           try (
               Connection connection = dataSource.getConnection();
-              PreparedStatement statement = prepare(sql, parameters, connection)
+              PreparedStatement statement = prepare(sql, parameters, connection, this::setParameter)
           ) {
             return mapResult(statement, rowMapper);
           }
@@ -57,7 +57,7 @@ public class JDBCClient implements DatabaseClient {
     return Mono.fromCallable(() -> {
           try (
               Connection connection = dataSource.getConnection();
-              PreparedStatement statement = prepare(sql, parameters, connection)
+              PreparedStatement statement = prepare(sql, parameters, connection, this::setParameter)
           ){
             return statement.executeUpdate();
           }
@@ -88,7 +88,7 @@ public class JDBCClient implements DatabaseClient {
       if (results) {
         try (ResultSet rs = statement.getResultSet()) {
           while (rs.next()) {
-            lastResult.add(rowMapper.apply(new JDBCRow(rs)));
+            lastResult.add(rowMapper.apply(new JDBCRow(rs, this::getColumn)));
           }
         }
       } else {
@@ -108,6 +108,17 @@ public class JDBCClient implements DatabaseClient {
       Throwable violation = error instanceof SQLException e ? constraintViolation(e, queryName, message) : null;
       return violation != null ? violation : new RuntimeException(message, error);
     };
+  }
+
+  /// Sets a parameter of a statement. Without a database specific client, the value is set as is, and null with the
+  /// JDBC type of the parameter's class.
+  protected void setParameter(PreparedStatement statement, int index, Parameter<?> parameter) throws SQLException {
+    PreparedStatementSupport.setParameter(statement, index, parameter);
+  }
+
+  /// Gets a column of a row. Without a database specific client, the driver converts it to the type.
+  protected <T> T getColumn(ResultSet resultSet, String name, Class<T> type) throws SQLException {
+    return resultSet.getObject(name, type);
   }
 
   /// The constraint violation the error is, as reported by the database, or null if it is not a constraint violation.

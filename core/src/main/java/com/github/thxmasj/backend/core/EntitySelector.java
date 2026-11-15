@@ -21,7 +21,7 @@ public sealed class EntitySelector permits ById, ByIdFromSession, ByIdEvent, ByL
   }
 
   public static <T> Function<T, ById> newEntityId() {
-    return _ -> new ById(UUID.randomUUID(), AlwaysCreate);
+    return _ -> new ById(Identifiers.newId(), AlwaysCreate);
   }
 
   public static ById newEntityId(UUID id) {

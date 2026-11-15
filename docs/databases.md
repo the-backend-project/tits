@@ -76,6 +76,8 @@ Pros:
 Cons:
 
 * The driver blocks, so each query takes a virtual thread while it runs.
+* UUIDs are stored as `BINARY(16)` rather than `UNIQUEIDENTIFIER`, so they show as binaries in SQL Server's tools
+  (see [identifiers](identifiers.md#storing-uuids)).
 * Connections are configured for Azure: encryption is always on, and the server certificate is validated against
   `*.database.windows.net` unless it is trusted blindly (see [hello world demo](hello-world.md)).
 

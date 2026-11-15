@@ -186,7 +186,7 @@ public class StateMachine implements AutoCloseable {
   }
 
   private EventLog emptyEventLog(EntityModel entityModel) {
-    return new EventLog(entityModel, UUID.randomUUID(), List.of());
+    return new EventLog(entityModel, Identifiers.newId(), List.of());
   }
 
   private EventLog emptyEventLog(EntityModel entityModel, UUID entityId) {

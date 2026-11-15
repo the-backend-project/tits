@@ -767,7 +767,7 @@ public class TransitionModelBuilder<I, T, O> {
               return new ConditionalTriggerStep<>(
                   c,
                   new ConditionalTrigger<>(
-                      UUID.randomUUID(),
+                      Identifiers.newId(),
                       new EventReference(
                           c.inputStep().log().entityId(),
                           c.inputStep().eventNumber()

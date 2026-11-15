@@ -5,6 +5,7 @@ import static com.github.thxmasj.backend.core.EntitySelector.CreationMode.Always
 import static com.github.thxmasj.backend.core.EntitySelector.entityId;
 import static com.github.thxmasj.backend.core.EntitySelector.entityIdFromSession;
 import static com.github.thxmasj.backend.core.EntitySelector.newEntityId;
+import static com.github.thxmasj.backend.core.Identifiers.newId;
 import static com.github.thxmasj.backend.core.TransitionModelBuilder.WithEvent.onEvent;
 import static com.github.thxmasj.backend.core.Tuples.tuple;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.EntityModels.RequestDispatching;
@@ -119,7 +120,7 @@ public interface Clients {
             Begin, List.of(
                 // The client gets a new entity id, which its id entity is created with
                 onEvent(RegistrationRequested).to(States.Accepted)
-                    .assemble(c -> tuple(c.input(), UUID.randomUUID()))
+                    .assemble(c -> tuple(c.input(), newId()))
                     .trigger(ClientIdClaimed).with(d -> d.t1().clientId()).on(ClientIds).identifiedBy(d -> entityId(d.t2(), AlwaysCreate))
                     .when(d -> d.t2().isIdExists()).then(
                         onEvent(RegistrationRejected).to(States.Rejected)
