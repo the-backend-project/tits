@@ -1,6 +1,6 @@
 ---
 name: fix
-description: Start work on a GitHub issue. Use when the user says "Fix #N" (or invokes /fix N) — assigns the issue, moves it to In Progress on the project board, creates a fresh branch off origin/main, asks for confirmation of the plan unless the task is trivial, brings the documentation in line with the change, syncs with main, and opens a PR when the fix is complete.
+description: Start work on a GitHub issue. Use when the user says "Fix #N" (or invokes /fix N) — assigns the issue, moves it to In Progress on the project board, creates a fresh branch off origin/main in a worktree of its own, asks for confirmation of the plan unless the task is trivial, brings the documentation in line with the change, syncs with main, and opens a PR when the fix is complete.
 argument-hint: <issue-number>
 ---
 
@@ -9,8 +9,18 @@ Start work on issue #$ARGUMENTS (or the number given in "Fix #N").
 The repo is `the-backend-project/tits`; the board is
 org project 1 ("The Backend").
 
-1. **Check the working tree.** If `git status --porcelain` is not empty, stop and
-   ask the user what to do with the local changes.
+1. **Check for earlier work on the issue.** The work happens in a worktree of its
+   own (step 5), so local changes in the main checkout don't matter and must be
+   left alone. Instead, look for a worktree or branch from an earlier start on the
+   issue:
+
+   ```sh
+   git worktree list
+   git branch --list 'issue-N-*'
+   ```
+
+   If one exists, continue in it instead of creating a new one (skip step 5), or
+   ask the user if it is unclear whether that work should be kept.
 
 2. **Read the issue:** `gh issue view N --json number,title,body,state,comments`.
    If it is closed, stop and tell the user.
@@ -31,15 +41,22 @@ org project 1 ("The Backend").
 
    Status option IDs: Todo `f75ad846`, In Progress `47fc9ee4`, Done `98236657`.
 
-5. **Branch off origin/main:**
+5. **Branch off origin/main in a new worktree.** Never switch branches in the main
+   checkout: the user may have work in progress there, and other issues may be
+   worked on at the same time. Create the branch in a worktree next to it:
 
    ```sh
    git fetch origin
-   git switch --no-track -c issue-N-<slug> origin/main
+   git worktree add --no-track -b issue-N-<slug> ../state-machine-issue-N-<slug> origin/main
    ```
 
    `<slug>` is the issue title lowercased, non-alphanumerics replaced by `-`,
    trimmed to a few words (e.g. `issue-136-timeout-rows-not-deleted`).
+
+   Do all the remaining steps in that worktree: edit files under its path and
+   run git, Maven and the docs build there. The shell may return to the main
+   checkout between commands, so `cd` into the worktree in every command (or use
+   `git -C`).
 
 6. **Plan, and confirm the plan if it needs it.** Tell the user the branch name
    and your plan: what you will change, where, and how you will test it. Then
@@ -99,3 +116,11 @@ org project 1 ("The Backend").
    Include `Closes #N` in the body so that merging closes the issue. Tell the user
    the PR's URL. If the fix is not complete, for example because a question is still
    open or tests fail, don't open a PR. Tell the user what is left instead.
+
+   Leave the worktree in place after opening the PR, since review changes are
+   made there. Once the PR is merged, remove it and the local branch:
+
+   ```sh
+   git worktree remove ../state-machine-issue-N-<slug>
+   git branch -D issue-N-<slug>
+   ```
