@@ -117,6 +117,10 @@ public class StateMachine implements AutoCloseable {
     this(delayer, transitions, database, database.client(dataSource), schemaDataSource, schemaName, role, clock, listener, withResolving);
   }
 
+  /// @param delayer delays the storing of new events until the returned [Mono] completes, e.g. for tests to hold a
+  ///                request at an event. It is given a key `<correlation id>-<event type id>` of each new event, so an
+  ///                event is identified by its [EventType#id()], which stays the same when the event type is renamed.
+  ///                Null for no delay.
   /// @param client a client of the database, which is closed with the state machine
   /// @param schemaDataSource a data source of the database to create the schema with, or null if it is created
   ///                         elsewhere
@@ -1047,7 +1051,7 @@ public class StateMachine implements AutoCloseable {
     return Mono.just("")
         .delayUntil(_ -> delayer.apply(changes.stream()
             .filter(change -> change.newEvent() != null)
-            .map(change -> correlationId + "-" + change.newEvent().typeName())
+            .map(change -> correlationId + "-" + change.newEvent().type().id())
             .toList())
         )
         .flatMap(_ -> storage.changeState().execute(
