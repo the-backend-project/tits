@@ -40,7 +40,7 @@ jobs:
 
   # Finds out which jobs the pull request affects. Changes to documentation only (docs/, Markdown files, the Zensical
   # configuration) skip the Maven builds. Both apps are built from the same modules, so only changes to modules they do
-  # not depend on (documentation, templates, test-api, deploy) or to the other app skip a native image build.
+  # not depend on (documentation, templates, doc-diagrams, test-api, deploy) or to the other app skip a native image build.
   changes:
     runs-on: ubuntu-latest
     outputs:

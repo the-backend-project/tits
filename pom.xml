@@ -23,6 +23,7 @@
         <module>templates</module>
         <module>apps/identity-provider</module>
         <module>apps/hello-world</module>
+        <module>doc-diagrams</module>
         <module>deploy</module>
     </modules>
 

@@ -4,7 +4,35 @@ The `apps/hello-world` module is a hello world web application built with the HT
 aims at following the principles of [the twelve-factor app](https://12factor.net/), is compiled with GraalVM to a native
 executable which boots in a few tens of milliseconds, and is packaged in a container image built from `scratch`.
 
-Every `GET /` creates a `Greeting` entity, whose transition to the `Greeted` state responds with a page saying hello.
+## Model
+
+| Entity | Description |
+|---|---|
+| `Greeting` | A greeting, created for every `GET /`. Its transition to `Greeted` responds with a page saying hello, showing the greeting's entity id. |
+
+The request itself is an entity of the [HTTP inbox](http-inbox.md): the transition of the greeting triggers the
+response on the `RequestDispatching` entity of the request, which the listener sends to the client.
+
+The [state diagram](diagrams.md) is generated from the model. Hover over the name of an event for its details.
+
+`Greeting`:
+
+<object data="../images/com.github.thxmasj.backend.helloworld.Greeting.svg" type="image/svg+xml" width="100%"></object>
+
+[Open the diagram in full size](images/com.github.thxmasj.backend.helloworld.Greeting.svg)
+
+The entity models, with those of the HTTP inbox, and how they relate through triggers:
+
+<object data="../images/com.github.thxmasj.backend.helloworld.er.svg" type="image/svg+xml" width="100%"></object>
+
+[Open the diagram in full size](images/com.github.thxmasj.backend.helloworld.er.svg)
+
+## Endpoints
+
+| Endpoint | Description |
+|---|---|
+| `GET /` | Creates a greeting and responds with a page saying hello. |
+| `GET /health` | Responds `200 OK` as long as the process is able to serve HTTP. It does not involve the database. |
 
 ## Running
 
@@ -48,24 +76,9 @@ To check the metadata after changing the libraries, add `--exact-reachability-me
 `MissingReflectionRegistrationError` and `MissingResourceRegistrationError` in its output. Probes for optional
 service providers, such as SLF4J providers, and for native transports of other architectures are expected.
 
-## The twelve factors
-
-| Factor | How the demo follows it |
-|---|---|
-| I. Codebase | The demo lives in the same repository as the libraries, and the same image is deployed everywhere. |
-| II. Dependencies | Dependencies are declared in `apps/hello-world/pom.xml` and verified against pinned checksums. Maven and the GraalVM builder image are pinned by checksum and digest. The executable is statically linked except for glibc, which is copied into the image, so the image contains nothing it does not declare. |
-| III. Config | All configuration is read from environment variables, see below. Credentials and the location of the database have no defaults. |
-| IV. Backing services | The database is an attached resource, located by `DATABASE_HOST`, `DATABASE_PORT` and `DATABASE_NAME`. |
-| V. Build, release, run | The `Dockerfile` is the build stage. An image combined with an environment is a release, which is run without modification. |
-| VI. Processes | The process is stateless. Every request is handled by the state machine, which keeps all state in the database, so any process can handle any request. |
-| VII. Port binding | The process serves HTTP by itself, with reactor-netty, on `$PORT`. |
-| VIII. Concurrency | Scale out by running more processes against the same database. |
-| IX. Disposability | The native executable is listening after a few tens of milliseconds. On `SIGTERM` it stops accepting requests and lets those in flight complete, then stops the state machine's workers once their ongoing work completes, and closes the database connection pool. |
-| X. Dev/prod parity | Locally, Compose runs the same image against the same kind of database as other environments. |
-| XI. Logs | The events of the state machine are written unbuffered to stdout, as a line of JSON each, for the execution environment to collect and raise alerts on (see [monitoring](monitoring.md)). |
-| XII. Admin processes | The schema is created by `hello-world migrate`, run as a one-off process from the same image with the same configuration, but with credentials allowed to create the schema. |
-
 ### Configuration
+
+The demo is configured by environment variables:
 
 | Variable | Default | Description |
 |---|---|---|
@@ -100,7 +113,22 @@ service providers, such as SLF4J providers, and for native transports of other a
 
 The modes with Microsoft Entra ID are for Azure SQL only.
 
-`GET /health` responds `200 OK` as long as the process is able to serve HTTP. It does not involve the database.
+## The twelve factors
+
+| Factor | How the demo follows it |
+|---|---|
+| I. Codebase | The demo lives in the same repository as the libraries, and the same image is deployed everywhere. |
+| II. Dependencies | Dependencies are declared in `apps/hello-world/pom.xml` and verified against pinned checksums. Maven and the GraalVM builder image are pinned by checksum and digest. The executable is statically linked except for glibc, which is copied into the image, so the image contains nothing it does not declare. |
+| III. Config | All configuration is read from environment variables, see [Configuration](#configuration). Credentials and the location of the database have no defaults. |
+| IV. Backing services | The database is an attached resource, located by `DATABASE_HOST`, `DATABASE_PORT` and `DATABASE_NAME`. |
+| V. Build, release, run | The `Dockerfile` is the build stage. An image combined with an environment is a release, which is run without modification. |
+| VI. Processes | The process is stateless. Every request is handled by the state machine, which keeps all state in the database, so any process can handle any request. |
+| VII. Port binding | The process serves HTTP by itself, with reactor-netty, on `$PORT`. |
+| VIII. Concurrency | Scale out by running more processes against the same database. |
+| IX. Disposability | The native executable is listening after a few tens of milliseconds. On `SIGTERM` it stops accepting requests and lets those in flight complete, then stops the state machine's workers once their ongoing work completes, and closes the database connection pool. |
+| X. Dev/prod parity | Locally, Compose runs the same image against the same kind of database as other environments. |
+| XI. Logs | The events of the state machine are written unbuffered to stdout, as a line of JSON each, for the execution environment to collect and raise alerts on (see [monitoring](monitoring.md)). |
+| XII. Admin processes | The schema is created by `hello-world migrate`, run as a one-off process from the same image with the same configuration, but with credentials allowed to create the schema. |
 
 ## Gaps
 

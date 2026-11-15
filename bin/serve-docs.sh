@@ -1,7 +1,8 @@
 #!/bin/sh
 
 # Builds the documentation site the same way as the GitHub Pages workflow, then
-# serves it on http://localhost:8000 with live reload.
+# serves it on http://localhost:8000 with live reload. The diagrams are generated
+# into docs/images by the doc-diagrams module, from the templates and the apps.
 #
 #   bin/serve-docs.sh                       # generate diagrams and serve
 #   bin/serve-docs.sh -a localhost:8001     # arguments are passed to zensical serve, here another port
@@ -48,8 +49,8 @@ if [ ! -x .venv/bin/zensical ]; then
 fi
 
 if [ -z "$SKIP_DIAGRAMS" ]; then
-  mvn -B -q package -am -pl templates -DskipTests
-  java -jar templates/target/templates-*-SNAPSHOT.jar > /dev/null
+  mvn -B -q package -am -pl doc-diagrams -DskipTests
+  java -jar doc-diagrams/target/doc-diagrams.jar > /dev/null
 fi
 
 if [ "$1" = "--build" ]; then
