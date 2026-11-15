@@ -1,6 +1,16 @@
 # The Integratable Transaction Server
 
-Documentation is available at https://the-backend-project.github.io/tits/.
+A Java library for backends that must not lose track of anything, such as payments, orders and contracts. You model
+your business as state machines in plain Java. The library stores every event in the entity's event log, takes the
+transitions in database transactions, deduplicates incoming HTTP requests and sends requests to other systems reliably.
+All it needs is a JVM and SQL Server or PostgreSQL. It is built for systems that have to stay stable and maintainable
+for many years.
+
+Documentation is available at https://the-backend-project.github.io/tits/:
+
+* [Getting started](docs/getting-started.md): add the libraries, declare a model, run it and test it.
+* [Design principles](docs/principles.md): what the project optimises for, and why.
+* [Architecture](docs/architecture.md): how the parts fit together.
 
 The [apps](apps) are applications built with the HTTP inbox and the state machine, compiled to native executables:
 
@@ -30,5 +40,5 @@ a data source. See [Databases](docs/databases.md) for the pros and cons of each 
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for how to build the project, run the tests on each database, pin dependency
-checksums, preview the documentation and work on issues with Claude Code.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for where to start and how the repository is laid out, how to build the project,
+run the tests on each database, pin dependency checksums, preview the documentation and work on issues with Claude Code.
