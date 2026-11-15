@@ -1,6 +1,7 @@
 package com.github.thxmasj.backend.http.inbox;
 
 import static com.github.thxmasj.backend.core.EntitySelector.CreationMode.AlwaysCreate;
+import static com.github.thxmasj.backend.core.Identifiers.newId;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.EntityModels.RequestRouting;
 
 import com.github.thxmasj.backend.core.BasicEventType;
@@ -40,7 +41,7 @@ public interface HttpInbox {
 
   EventTrigger<HttpRequestMessage, HttpRequestMessage, ?> TRIGGER = new EventTrigger<>(
       new EventSpec<>(RequestReceived, Function.identity()),
-      List.of(_ -> new ById(UUID.randomUUID(), AlwaysCreate)),
+      List.of(_ -> new ById(newId(), AlwaysCreate)),
       RequestRouting,
       false
   );

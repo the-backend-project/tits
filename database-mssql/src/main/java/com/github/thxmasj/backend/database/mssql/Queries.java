@@ -21,7 +21,7 @@ final class Queries {
     return
         """
         SET NOCOUNT ON;
-        DECLARE @entityId UNIQUEIDENTIFIER, @entityModelId UNIQUEIDENTIFIER;
+        DECLARE @entityId BINARY(16), @entityModelId BINARY(16);
 
         SELECT TOP(1) @entityId=e.EntityId, @entityModelId=e.EntityModelId
         FROM [{schema}].[IdEvent] ie WITH (INDEX(ixType_Data))
@@ -39,7 +39,7 @@ final class Queries {
     return
         """
         SET NOCOUNT ON;
-        DECLARE @entityId UNIQUEIDENTIFIER;
+        DECLARE @entityId BINARY(16);
 
         SELECT TOP(1) @entityId=EntityId
         FROM (
@@ -79,10 +79,10 @@ final class Queries {
     return
         """
         DECLARE @processing TABLE (
-          EntityId UNIQUEIDENTIFIER,
-          EntityModelId UNIQUEIDENTIFIER,
+          EntityId BINARY(16),
+          EntityModelId BINARY(16),
           EventNumber SMALLINT,
-          Type UNIQUEIDENTIFIER,
+          Type BINARY(16),
           Data VARBINARY(MAX),
           Deadline DATETIME2(2),
           Attempt INT,
@@ -152,7 +152,7 @@ final class Queries {
               AND NOT EXISTS (
                 SELECT 1 FROM [{schema}].[Event] e
                 WHERE e.EntityId = ie.EntityId
-                  AND e.Type IN (SELECT CAST(lt.value AS UNIQUEIDENTIFIER) FROM STRING_SPLIT(ce.LastTypes, ',') lt)
+                  AND e.Type IN (SELECT CONVERT(BINARY(16), REPLACE(lt.value, '-', ''), 2) FROM STRING_SPLIT(ce.LastTypes, ',') lt)
                   AND e.EventNumber = (SELECT MAX(e2.EventNumber) FROM [{schema}].[Event] e2 WHERE e2.EntityId = ie.EntityId)
               )
           )

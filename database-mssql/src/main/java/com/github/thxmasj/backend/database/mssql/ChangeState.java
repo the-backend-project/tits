@@ -31,9 +31,9 @@ class ChangeState extends com.github.thxmasj.backend.core.database.ChangeState {
         """
         SET XACT_ABORT ON;
         BEGIN TRANSACTION;
-        DECLARE @OutboxElement         TABLE (ChangeIndex TINYINT, MessageIndex TINYINT, RequestId UNIQUEIDENTIFIER);
-        DECLARE @QueueElement          TABLE (ChangeIndex TINYINT, MessageIndex TINYINT, RequestId UNIQUEIDENTIFIER, ElementId BINARY(8), Guaranteed BIT);
-        DECLARE @QueueElementToProcess TABLE (ChangeIndex TINYINT, MessageIndex TINYINT, RequestId UNIQUEIDENTIFIER, ElementId BINARY(8));
+        DECLARE @OutboxElement         TABLE (ChangeIndex TINYINT, MessageIndex TINYINT, RequestId BINARY(16));
+        DECLARE @QueueElement          TABLE (ChangeIndex TINYINT, MessageIndex TINYINT, RequestId BINARY(16), ElementId BINARY(8), Guaranteed BIT);
+        DECLARE @QueueElementToProcess TABLE (ChangeIndex TINYINT, MessageIndex TINYINT, RequestId BINARY(16), ElementId BINARY(8));
         """ + IntStream.range(0, changes.size()).mapToObj(i -> insertSql(
             i,
             "p" + i + "_",
@@ -64,7 +64,7 @@ class ChangeState extends com.github.thxmasj.backend.core.database.ChangeState {
   ) {
     String sql =
         """
-        DECLARE @entityId{changeIndex} UNIQUEIDENTIFIER
+        DECLARE @entityId{changeIndex} BINARY(16)
         SELECT @entityId{changeIndex}=:entityId
         """.replace("{changeIndex}", String.valueOf(changeIndex));
     if (event != null && (entityModel instanceof IndexEntityModel || entityModel instanceof IdEntityModel)) {
@@ -192,8 +192,8 @@ class ChangeState extends com.github.thxmasj.backend.core.database.ChangeState {
     return sql.replaceAll(":([a-zA-Z0-9_]+)", ":" + parameterPrefix + "$1");
   }
 
-  /// The duplicate key of an id event, as reported by SQL Server, e.g.
-  /// "f721bf54-891b-41a0-aa63-5d3cbde52437, 0x7B22..."
+  /// The duplicate key of an id event, as reported by SQL Server with its type as a UUID (see
+  /// [MssqlClient#withUuid(String)]), e.g. "019a6b2c-1d3e-7f40-8a1b-2c3d4e5f6071, 0x7B22..."
   @Override
   protected String duplicateKey(Event<?> idEvent) {
     return idEvent.type().id() + ", 0x" + HexFormat.of().formatHex(idEvent.getMarshalledData());

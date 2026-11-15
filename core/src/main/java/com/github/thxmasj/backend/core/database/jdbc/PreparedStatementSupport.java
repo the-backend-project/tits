@@ -18,7 +18,18 @@ public class PreparedStatementSupport {
 
   private static final Pattern parameterPattern = Pattern.compile(":[a-zA-Z0-9_]+");
 
-  public static PreparedStatement prepare(String sql, Map<String, Parameter<?>> parameters, Connection connection) throws SQLException {
+  /// Sets a parameter of a statement
+  @FunctionalInterface
+  public interface ParameterSetter {
+    void set(PreparedStatement statement, int index, Parameter<?> parameter) throws SQLException;
+  }
+
+  public static PreparedStatement prepare(
+      String sql,
+      Map<String, Parameter<?>> parameters,
+      Connection connection,
+      ParameterSetter parameterSetter
+  ) throws SQLException {
     Matcher matcher = parameterPattern.matcher(sql);
     StringBuilder builder = new StringBuilder();
     Map<String, List<Integer>> positions = new HashMap<>();
@@ -35,13 +46,18 @@ public class PreparedStatementSupport {
       for (Integer position : entry.getValue()) {
         Parameter<?> parameter = parameters.get(entry.getKey());
         if (parameter == null) throw new IllegalStateException("Parameter " + entry.getKey() + " not found in " + parameters.keySet());
-        if (parameter.value() == null)
-          statement.setNull(position + 1, jdbcType(parameter.type()).getVendorTypeNumber());
-        else
-          statement.setObject(position + 1, parameter.value());
+        parameterSetter.set(statement, position + 1, parameter);
       }
     }
     return statement;
+  }
+
+  /// Sets the parameter's value as is, or null with the JDBC type of its class
+  public static void setParameter(PreparedStatement statement, int index, Parameter<?> parameter) throws SQLException {
+    if (parameter.value() == null)
+      statement.setNull(index, jdbcType(parameter.type()).getVendorTypeNumber());
+    else
+      statement.setObject(index, parameter.value());
   }
 
   /// The next result set of a batch, skipping update counts

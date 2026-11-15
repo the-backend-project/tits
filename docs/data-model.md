@@ -75,7 +75,9 @@ events, delayed triggers and conditional triggers, possibly on several entities)
 ## Tables
 
 The tables and columns are the same on each database, with the types given for each table below. All columns are
-`NOT NULL`, except the `Data` columns of `Event`, `DelayedTrigger` and `ConditionalTrigger`.
+`NOT NULL`, except the `Data` columns of `Event`, `DelayedTrigger` and `ConditionalTrigger`. UUIDs are stored as
+`BINARY(16)` on SQL Server, so that time-ordered UUIDs are in time order in its indexes (see
+[identifiers](identifiers.md)).
 
 ### Metadata
 
@@ -94,8 +96,8 @@ here.
 
 | Column        | SQL Server         | PostgreSQL |
 |---------------|--------------------|------------|
-| EntityId      | `UNIQUEIDENTIFIER` | `UUID`     |
-| EntityModelId | `UNIQUEIDENTIFIER` | `UUID`     |
+| EntityId      | `BINARY(16)`       | `UUID`     |
+| EntityModelId | `BINARY(16)`       | `UUID`     |
 
 ### Event
 
@@ -107,9 +109,9 @@ same state both try to insert the same event number, and only one of them succee
 
 | Column      | SQL Server         | PostgreSQL  |
 |-------------|--------------------|-------------|
-| EntityId    | `UNIQUEIDENTIFIER` | `UUID`      |
+| EntityId    | `BINARY(16)`       | `UUID`      |
 | EventNumber | `SMALLINT`         | `SMALLINT`  |
-| Type        | `UNIQUEIDENTIFIER` | `UUID`      |
+| Type        | `BINARY(16)`       | `UUID`      |
 | Data        | `VARBINARY(MAX)`   | `BYTEA`     |
 | Timestamp   | `DATETIME2`        | `TIMESTAMP` |
 
@@ -128,9 +130,9 @@ PostgreSQL has no such limit in the schema, but its B-tree indexes take keys of 
 
 | Column      | SQL Server         | PostgreSQL  |
 |-------------|--------------------|-------------|
-| EntityId    | `UNIQUEIDENTIFIER` | `UUID`      |
+| EntityId    | `BINARY(16)`       | `UUID`      |
 | EventNumber | `SMALLINT`         | `SMALLINT`  |
-| Type        | `UNIQUEIDENTIFIER` | `UUID`      |
+| Type        | `BINARY(16)`       | `UUID`      |
 | Data        | `VARBINARY(1684)`  | `BYTEA`     |
 | Timestamp   | `DATETIME2`        | `TIMESTAMP` |
 
@@ -151,9 +153,9 @@ belongs to, which may index many entities. The index is used to:
 
 | Column      | SQL Server         | PostgreSQL  |
 |-------------|--------------------|-------------|
-| EntityId    | `UNIQUEIDENTIFIER` | `UUID`      |
+| EntityId    | `BINARY(16)`       | `UUID`      |
 | EventNumber | `SMALLINT`         | `SMALLINT`  |
-| Type        | `UNIQUEIDENTIFIER` | `UUID`      |
+| Type        | `BINARY(16)`       | `UUID`      |
 | Data        | `VARBINARY(1684)`  | `BYTEA`     |
 | Timestamp   | `DATETIME2`        | `TIMESTAMP` |
 
@@ -169,10 +171,10 @@ event number no longer follows the entity's last event are deleted instead of fi
 
 | Column        | SQL Server         | PostgreSQL     |
 |---------------|--------------------|----------------|
-| EntityId      | `UNIQUEIDENTIFIER` | `UUID`         |
-| EntityModelId | `UNIQUEIDENTIFIER` | `UUID`         |
+| EntityId      | `BINARY(16)`       | `UUID`         |
+| EntityModelId | `BINARY(16)`       | `UUID`         |
 | EventNumber   | `SMALLINT`         | `SMALLINT`     |
-| Type          | `UNIQUEIDENTIFIER` | `UUID`         |
+| Type          | `BINARY(16)`       | `UUID`         |
 | Data          | `VARBINARY(MAX)`   | `BYTEA`        |
 | Deadline      | `DATETIME2(2)`     | `TIMESTAMP(2)` |
 | CorrelationId | `VARCHAR(36)`      | `VARCHAR(36)`  |
@@ -190,15 +192,15 @@ condition is met (`ConditionalTriggers`). The row is deleted in the same transac
 
 | Column             | SQL Server         | PostgreSQL     |
 |--------------------|--------------------|----------------|
-| Id                 | `UNIQUEIDENTIFIER` | `UUID`         |
-| EntityId           | `UNIQUEIDENTIFIER` | `UUID`         |
-| EntityModelId      | `UNIQUEIDENTIFIER` | `UUID`         |
-| TriggerEntityId    | `UNIQUEIDENTIFIER` | `UUID`         |
+| Id                 | `BINARY(16)`       | `UUID`         |
+| EntityId           | `BINARY(16)`       | `UUID`         |
+| EntityModelId      | `BINARY(16)`       | `UUID`         |
+| TriggerEntityId    | `BINARY(16)`       | `UUID`         |
 | TriggerEventNumber | `INT`              | `INT`          |
-| Type               | `UNIQUEIDENTIFIER` | `UUID`         |
+| Type               | `BINARY(16)`       | `UUID`         |
 | Data               | `VARBINARY(MAX)`   | `BYTEA`        |
 | Timestamp          | `DATETIME2`        | `TIMESTAMP`    |
 | LastTypes          | `VARCHAR(370)`     | `VARCHAR(370)` |
-| ReferenceType      | `UNIQUEIDENTIFIER` | `UUID`         |
+| ReferenceType      | `BINARY(16)`       | `UUID`         |
 | IndexKey           | `VARBINARY(1700)`  | `BYTEA`        |
 | CorrelationId      | `VARCHAR(36)`      | `VARCHAR(36)`  |

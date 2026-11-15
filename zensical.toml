@@ -18,6 +18,7 @@ nav = [
     { "Monitoring" = "monitoring.md" },
     { "Databases" = "databases.md" },
     { "Data model" = "data-model.md" },
+    { "Identifiers" = "identifiers.md" },
     { "Schema creation" = "schema-creation.md" },
     { "Testing" = "testing.md" },
     { "Diagrams" = "diagrams.md" },

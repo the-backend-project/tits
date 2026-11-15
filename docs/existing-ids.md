@@ -18,7 +18,7 @@ taken this way:
 
 ```java
 onEvent(RegistrationRequested).to(States.Accepted)
-    .assemble(c -> tuple(c.input(), UUID.randomUUID()))
+    .assemble(c -> tuple(c.input(), newId()))
     .trigger(ClientIdClaimed).with(d -> d.t1().clientId()).on(ClientIds).identifiedBy(d -> entityId(d.t2(), AlwaysCreate))
     .when(d -> d.t2().isIdExists()).then(rejectRegistration, d -> d.t1().t1())
     .otherwise(acceptRegistration, d -> d.t1())

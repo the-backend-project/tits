@@ -7,6 +7,7 @@ import static com.github.thxmasj.backend.core.EntitySelector.CreationMode.Create
 import static com.github.thxmasj.backend.core.EntitySelector.entityId;
 import static com.github.thxmasj.backend.core.EntitySelector.entityIdFromSession;
 import static com.github.thxmasj.backend.core.EntitySelector.idEvent;
+import static com.github.thxmasj.backend.core.Identifiers.newId;
 import static com.github.thxmasj.backend.core.TransitionModelBuilder.WithEvent.onEvent;
 import static com.github.thxmasj.backend.core.Tuples.tuple;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.RequestAccepted;
@@ -201,7 +202,7 @@ public interface TransitionModels {
                     .identifiedBy(d ->
                         contentRoute.isRollback() ?
                             idEvent(MessageIdClaimed, d.messageId(), CreateIfNotExists) :
-                            new ById(UUID.randomUUID(), AlwaysCreate)
+                            new ById(newId(), AlwaysCreate)
                     )
                     .output(),
                 d -> {

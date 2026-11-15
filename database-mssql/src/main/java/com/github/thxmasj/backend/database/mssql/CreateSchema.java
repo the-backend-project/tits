@@ -49,17 +49,17 @@ public class CreateSchema {
         """
         CREATE TABLE [{schema}].[Entity]
         (
-            EntityId      UNIQUEIDENTIFIER NOT NULL,
-            EntityModelId UNIQUEIDENTIFIER NOT NULL,
+            EntityId      BINARY(16)       NOT NULL,
+            EntityModelId BINARY(16)       NOT NULL,
             CONSTRAINT [pkEntity] PRIMARY KEY (EntityId)
         );
         GRANT INSERT, SELECT ON [{schema}].[Entity] TO [{role}];
 
         CREATE TABLE [{schema}].[Event]
         (
-            EntityId    UNIQUEIDENTIFIER   NOT NULL,
+            EntityId    BINARY(16)         NOT NULL,
             EventNumber SMALLINT           NOT NULL,
-            Type        UNIQUEIDENTIFIER   NOT NULL,
+            Type        BINARY(16)         NOT NULL,
             Data        VARBINARY(MAX),
             --Data        VARCHAR(MAX),
             Timestamp   DATETIME2          NOT NULL,
@@ -70,9 +70,9 @@ public class CreateSchema {
 
         CREATE TABLE [{schema}].[IndexEvent]
         (
-            EntityId    UNIQUEIDENTIFIER   NOT NULL,
+            EntityId    BINARY(16)         NOT NULL,
             EventNumber SMALLINT           NOT NULL,
-            Type        UNIQUEIDENTIFIER   NOT NULL,
+            Type        BINARY(16)         NOT NULL,
             --Data        VARCHAR(1700)    NOT NULL,
             -- Leaves room for Type in the 1700 bytes of the index key
             Data        VARBINARY(1684)    NOT NULL,
@@ -86,9 +86,9 @@ public class CreateSchema {
 
         CREATE TABLE [{schema}].[IdEvent]
         (
-            EntityId    UNIQUEIDENTIFIER   NOT NULL,
+            EntityId    BINARY(16)         NOT NULL,
             EventNumber SMALLINT           NOT NULL,
-            Type        UNIQUEIDENTIFIER   NOT NULL,
+            Type        BINARY(16)         NOT NULL,
             -- Leaves room for Type in the 1700 bytes of the unique index key
             Data        VARBINARY(1684)    NOT NULL,
             Timestamp   DATETIME2          NOT NULL,
@@ -99,10 +99,10 @@ public class CreateSchema {
 
         CREATE TABLE [{schema}].[DelayedTrigger]
         (
-            EntityId      UNIQUEIDENTIFIER NOT NULL,
-            EntityModelId UNIQUEIDENTIFIER NOT NULL,
+            EntityId      BINARY(16)       NOT NULL,
+            EntityModelId BINARY(16)       NOT NULL,
             EventNumber   SMALLINT         NOT NULL,
-            Type          UNIQUEIDENTIFIER NOT NULL,
+            Type          BINARY(16)       NOT NULL,
             Data          VARBINARY(MAX),
             --Data          VARCHAR(MAX),
             Deadline      DATETIME2(2)     NOT NULL,
@@ -115,16 +115,16 @@ public class CreateSchema {
 
         CREATE TABLE [{schema}].[ConditionalTrigger]
         (
-            Id            UNIQUEIDENTIFIER NOT NULL,
-            EntityId      UNIQUEIDENTIFIER NOT NULL,
-            EntityModelId UNIQUEIDENTIFIER NOT NULL,
-            TriggerEntityId    UNIQUEIDENTIFIER NOT NULL,
+            Id            BINARY(16)       NOT NULL,
+            EntityId      BINARY(16)       NOT NULL,
+            EntityModelId BINARY(16)       NOT NULL,
+            TriggerEntityId    BINARY(16)       NOT NULL,
             TriggerEventNumber INT              NOT NULL,
-            Type          UNIQUEIDENTIFIER NOT NULL,
+            Type          BINARY(16)       NOT NULL,
             Data          VARBINARY(MAX),
             Timestamp     DATETIME2        NOT NULL,
             LastTypes     VARCHAR(370)     NOT NULL, -- Comma separated event type ids, at most 10
-            ReferenceType UNIQUEIDENTIFIER NOT NULL,
+            ReferenceType BINARY(16)       NOT NULL,
             IndexKey      VARBINARY(1700)  NOT NULL,
             CorrelationId VARCHAR(36)      NOT NULL,
             CONSTRAINT [pkConditionalTrigger] PRIMARY KEY (Id)
