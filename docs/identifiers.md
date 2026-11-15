@@ -17,9 +17,10 @@ Ids created later are greater, so they sort in the order they are created, to th
   time (ms)    version 7, then random bits
 ```
 
-`Identifiers.newId()` creates one, with `UUID.ofEpochMillis` of the JDK. It is what the state machine uses for new
-entities, and what a transition should use for an entity it creates with an id of its own, as the
-[identity provider](existing-ids.md) does for a client:
+`Identifiers.newId()` creates one, with the same layout as `UUID.ofEpochMillis`, which was added in Java 26 and so can't
+be used while the native images are built for Java 25. It is what the state machine uses for new entities, and what a
+transition should use for an entity it creates with an id of its own, as the [identity provider](existing-ids.md) does
+for a client:
 
 ```java
 .assemble(c -> tuple(c.input(), newId()))

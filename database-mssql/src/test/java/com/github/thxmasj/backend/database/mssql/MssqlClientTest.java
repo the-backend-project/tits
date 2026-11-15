@@ -20,9 +20,10 @@ class MssqlClientTest {
 
   @Test
   void timeOrderedUuidsAreOrderedAsBinaries() {
-    // SQL Server compares BINARY values as unsigned bytes from the first
-    UUID earlier = UUID.ofEpochMillis(1_700_000_000_000L);
-    UUID later = UUID.ofEpochMillis(1_700_000_000_001L);
+    // SQL Server compares BINARY values as unsigned bytes from the first. These are version 7 UUIDs a millisecond
+    // apart, with random bits that would order them the other way.
+    UUID earlier = UUID.fromString("018bcfe5-6800-7fff-bfff-ffffffffffff");
+    UUID later = UUID.fromString("018bcfe5-6801-7000-8000-000000000000");
     assertTrue(Arrays.compareUnsigned(MssqlClient.bytes(earlier), MssqlClient.bytes(later)) < 0);
   }
 
