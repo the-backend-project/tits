@@ -35,10 +35,10 @@ jobs:
           pip install zensical
       - name: Configure Pages
         uses: actions/configure-pages@v6
-      - name: Build the templates
-        run: mvn -B package -am -pl templates -DskipTests -Daether.artifactResolver.postProcessor.trustedChecksums.failIfMissing=true
-      - name: Generate diagrams from the templates
-        run: java -jar templates/target/templates-0.3.0-SNAPSHOT.jar
+      - name: Build the diagram generator
+        run: mvn -B package -am -pl doc-diagrams -DskipTests -Daether.artifactResolver.postProcessor.trustedChecksums.failIfMissing=true
+      - name: Generate diagrams from the templates and the apps
+        run: java -jar doc-diagrams/target/doc-diagrams.jar
       - name: Build Pages
         run: zensical build --strict
       - name: Upload Pages

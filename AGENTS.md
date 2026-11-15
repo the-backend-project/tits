@@ -13,8 +13,9 @@ user-level instructions or memory.
   Java 25.
 - Run the tests of the modules a change affects before opening a pull request. They need a database: SQL Server
   (`bin/start-mssql.sh`, port 11433) by default, or PostgreSQL (`bin/start-postgres.sh`, port 15432) with
-  `-Ddatabase=pgsql-jdbc`, `pgsql-r2dbc` or `pgsql-vertx` and `-pl '!apps/hello-world'`. Check whether the port already
-  answers before starting a database. The tests of the core module that need a database are run by the database modules.
+  `-Ddatabase=pgsql-jdbc`, `pgsql-r2dbc` or `pgsql-vertx` and `-pl '!apps/hello-world,!doc-diagrams'`. Check whether
+  the port already answers before starting a database. The tests of the core module that need a database are run by
+  the database modules.
 - After adding or upgrading a dependency or plugin, record the checksums as described in
   [Dependency checksums](CONTRIBUTING.md#dependency-checksums), with the Maven version CI uses as well as the local one
   if they differ. Different Maven versions write `.mvn/checksums/checksums.sha256` in different orders, so sort it with

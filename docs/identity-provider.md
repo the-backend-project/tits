@@ -5,6 +5,47 @@ The `apps/identity-provider` module is an OAuth 2.0 authorization server for the
 state machine. Clients get access tokens to call other services with, and the services verify the tokens with the
 identity provider's public keys, e.g. with the HTTP inbox's [`bearerToken` authorizer](http-inbox.md#access-tokens).
 
+## Model
+
+| Entity | Description |
+|---|---|
+| `Client` | A registered client, with its subject if it has one, the hash of its secret, its scopes and the client id of the client which registered it. Found by its client id, which is an id event of `ClientIds` and therefore unique. |
+| `Client registration` | A registration request: accepted, creating a client, or rejected because the client id is taken. |
+| `Token request` | A token request: the token issued, or why it was refused. Its entity id is the `jti` of the token. |
+
+Every registration and token request is an entity of its own, so the event log is a complete record of who registered
+which clients and which tokens were issued to whom, without the event log of a client growing with its tokens. A token
+request reads its client with a read-only event.
+
+A refused token request is an event of [severity](monitoring.md#severity) `Warning`, so attempts to guess a secret
+show up in the monitoring.
+
+The [state diagrams](diagrams.md) are generated from the model. Hover over the name of an event for its details.
+
+`Client`:
+
+<object data="../images/com.github.thxmasj.backend.identityprovider.Client.svg" type="image/svg+xml"></object>
+
+[Open the diagram in full size](images/com.github.thxmasj.backend.identityprovider.Client.svg)
+
+`Client registration`:
+
+<object data="../images/com.github.thxmasj.backend.identityprovider.ClientRegistration.svg" type="image/svg+xml"></object>
+
+[Open the diagram in full size](images/com.github.thxmasj.backend.identityprovider.ClientRegistration.svg)
+
+`Token request`:
+
+<object data="../images/com.github.thxmasj.backend.identityprovider.TokenRequest.svg" type="image/svg+xml"></object>
+
+[Open the diagram in full size](images/com.github.thxmasj.backend.identityprovider.TokenRequest.svg)
+
+The entity models, with those of the [HTTP inbox](http-inbox.md), and how they relate through triggers:
+
+<object data="../images/com.github.thxmasj.backend.identityprovider.er.svg" type="image/svg+xml"></object>
+
+[Open the diagram in full size](images/com.github.thxmasj.backend.identityprovider.er.svg)
+
 ## Endpoints
 
 | Endpoint | Description |
@@ -49,21 +90,6 @@ with an invalid subject is refused with 400, like any other invalid registration
 
 The registration endpoint identifies the client of a bearer token by its `client_id` claim, so a client registers
 other clients as its client id whatever its subject. The bootstrap client has no subject.
-
-## Model
-
-| Entity | Description |
-|---|---|
-| `Client` | A registered client, with its subject if it has one, the hash of its secret, its scopes and the client id of the client which registered it. Found by its client id, which is an id event of `ClientIds` and therefore unique. |
-| `Client registration` | A registration request: accepted, creating a client, or rejected because the client id is taken. |
-| `Token request` | A token request: the token issued, or why it was refused. Its entity id is the `jti` of the token. |
-
-Every registration and token request is an entity of its own, so the event log is a complete record of who registered
-which clients and which tokens were issued to whom, without the event log of a client growing with its tokens. A token
-request reads its client with a read-only event.
-
-A refused token request is an event of [severity](monitoring.md#severity) `Warning`, so attempts to guess a secret
-show up in the monitoring.
 
 ## Credentials
 

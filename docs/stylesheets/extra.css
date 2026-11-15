@@ -219,3 +219,11 @@ body {
   color: inherit;
   background: transparent;
 }
+
+/* The generated diagrams are shown at their own size, in which their text matches that of the page, and shrunk to the
+   width of the page if they are wider. Stretching a small diagram to the width of the page would enlarge its text. */
+.md-typeset object[type="image/svg+xml"] {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}

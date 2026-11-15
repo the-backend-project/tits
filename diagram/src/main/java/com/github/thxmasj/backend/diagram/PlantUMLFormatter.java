@@ -63,8 +63,16 @@ public class PlantUMLFormatter {
     return file;
   }
 
+  /// Writes the diagram as SVG into the directory, named after the package of the entity model's class and its name.
   public File formatToImage(String directory) throws IOException {
-    File file = file(directory, "svg");
+    return formatToImage(file(directory, "svg"));
+  }
+
+  /// Writes the diagram as SVG to the file, e.g. for an entity model created with `EntityModel.of`, whose class is in
+  /// the core library's package rather than the application's.
+  public File formatToImage(File file) throws IOException {
+    //noinspection ResultOfMethodCallIgnored
+    file.getAbsoluteFile().getParentFile().mkdirs();
     Diagram diagram = diagram();
     var svg = new ByteArrayOutputStream();
     new SourceStringReader(diagram.source()).outputImage(svg, new FileFormatOption(FileFormat.SVG));
