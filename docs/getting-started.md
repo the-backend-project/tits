@@ -53,7 +53,7 @@ module com.example.helloworld {
 
 An [entity model](entities.md) has a name and a UUID, a set of states and the event types that move its entities
 between them. The UUIDs are what is stored in the database, so generate them once and never change them (see the
-[design principles](principles.md#the-history-is-the-source-of-truth)):
+[design principles](principles.md#safe-to-change)):
 
 ```java
 EntityModel Greeting = EntityModel.of("Greeting", UUID.fromString("8a4c1d36-4f0e-4b8e-9a47-2f5f0c0b6d11"));
@@ -104,7 +104,7 @@ response. Both are in `Greetings.java` in the demo.
 
 ## Running it
 
-Build a data source with the database module, give it to a `StateMachine` with the transitions, and serve HTTP with
+Build a data source with the database module, give it to a `StateMachine` with your domain model, and serve HTTP with
 an `HttpInboxListener`:
 
 ```java

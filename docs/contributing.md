@@ -1,6 +1,7 @@
 # Contributing
 
-Issues and pull requests are welcome, from bug reports to new templates and database modules. The project is
+Issues and pull requests are welcome, from bug reports and new templates to more ways to deploy: other cloud
+providers than Azure, and other databases than SQL Server and PostgreSQL. The project is
 developed in the open on [GitHub](https://github.com/the-backend-project/tits), and the work in progress is tracked on
 the [project board](https://github.com/orgs/the-backend-project/projects/1).
 
@@ -28,7 +29,7 @@ covers the rest:
   of new dependencies,
 * [previewing this documentation](https://github.com/the-backend-project/tits/blob/main/CONTRIBUTING.md#documentation)
   locally, and
-* [working on issues with Claude Code](https://github.com/the-backend-project/tits/blob/main/CONTRIBUTING.md#working-on-issues-with-claude-code).
+* [working on issues with an agentic workflow](https://github.com/the-backend-project/tits/blob/main/CONTRIBUTING.md#working-on-issues-with-claude-code).
 
 The conventions for code, documentation and Git are in
 [AGENTS.md](https://github.com/the-backend-project/tits/blob/main/AGENTS.md). Coding agents follow them, and so do

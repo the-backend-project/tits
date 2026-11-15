@@ -6,13 +6,19 @@ hide:
 
 # The Integratable Transaction Server
 
-<p class="tagline">A Java library for backends that must not lose track: model your business as state machines, and
-let the library take care of the transactions, the integrations and the history.</p>
+<p class="tagline">A Java library for event-sourced backends: model your domain as state machines, and let the
+library take care of the transactions, the integrations and the event log.</p>
 
-You write entity models in plain Java: the states of a payment, an order or a client, the events that move it between
-them, and the requests it sends to other systems. The library stores every event in the entity's event log, takes the
-transitions in database transactions, receives and deduplicates HTTP requests, and sends requests to other systems
-reliably. You need no framework, no message broker and no application server, only a JVM and a SQL database.
+You write domain models in plain Java: the states of a payment, an order or a subscription, the events that move it
+between them, and the requests it sends to other systems. The library appends every event to an immutable event log,
+takes the transitions in database transactions, receives and deduplicates HTTP requests, and sends requests to other
+systems reliably. You need no framework, no message broker and no application server, only a JVM and a SQL database.
+
+The library follows the principles of domain-driven design. The model is written in the language of the domain: its
+entities have an identity and a lifecycle, and its events are named after what has happened in the domain, such as
+`Merchant suspended`. Persistence, messaging and HTTP are left to the library, so the model holds nothing but the
+domain logic, and the state diagrams generated from it can be read by the domain experts too. See the
+[design principles](principles.md#domain-driven-design).
 
 [Get started :material-arrow-right:](getting-started.md){ .md-button .md-button--primary }
 [Read the design principles](principles.md){ .md-button }
@@ -67,19 +73,21 @@ reliably. You need no framework, no message broker and no application server, on
 
 ## Built to last
 
-Systems that move money or manage contracts run for many years, and the people maintaining them change. The library
-is built for that kind of system. See the [design principles](principles.md) for the details.
+An application built on the library needs little maintenance and doesn't age quickly. There is not much in it that
+can break or go out of date. See the [design principles](principles.md) for the details.
 
-* **The history is kept for good.** Events are never updated or deleted, and the state of an entity is derived from
-  them. A bug can be understood from what happened, not guessed at from what is left.
-* **Correctness comes before convenience.** Everything an event leads to is stored in one transaction or not at all,
-  and changes that conflict are retried from the new state rather than overwritten.
-* **It stays on long-term support releases.** The libraries target [Java 25](modules.md#java-version), the latest LTS
-  release, and move only to the next one. Your application is never forced onto a short-lived release.
-* **The models stay readable.** A model is a declaration you can review, test and draw, so it can still be understood
-  long after its authors have moved on.
-* **The builds are reproducible.** Every dependency and plugin is verified against a pinned checksum, and the apps run
-  as statically linked executables in images built from `scratch`.
+* **A small, robust tech stack.** Java, Reactor and a SQL database. There is no framework, message broker, cache or
+  application server. Fewer moving parts mean fewer upgrades, fewer outages and less to learn for whoever
+  maintains the application next.
+* **A small footprint.** Apps compile to native executables that boot in tens of milliseconds and run in container
+  images built from `scratch`, containing nothing they don't declare. Every dependency is verified against a pinned
+  checksum.
+* **An immutable event log.** Events are appended, never changed, and the state of an entity is derived from them. A
+  bug can be understood from what happened, not guessed at from what is left.
+* **All or nothing.** Everything an event leads to is stored in one transaction or not at all, and changes that
+  conflict are retried from the new state rather than overwritten.
+* **Diagrams that are never out of date.** The [state diagrams](diagrams.md) are generated from the models, so the
+  documentation of the domain always matches the code that runs.
 
 ## A taste of it
 

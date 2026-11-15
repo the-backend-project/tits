@@ -1,10 +1,10 @@
 # The Integratable Transaction Server
 
-A Java library for backends that must not lose track of anything, such as payments, orders and contracts. You model
-your business as state machines in plain Java. The library stores every event in the entity's event log, takes the
-transitions in database transactions, deduplicates incoming HTTP requests and sends requests to other systems reliably.
-All it needs is a JVM and SQL Server or PostgreSQL. It is built for systems that have to stay stable and maintainable
-for many years.
+An event-sourcing library for Java. You model your domain as state machines in plain Java, following domain-driven
+design. The library appends every event to an immutable event log, takes the transitions in ACID transactions with
+optimistic concurrency, deduplicates incoming HTTP requests, and sends outgoing ones through a transactional outbox.
+It is reactive and stateless, compiles to GraalVM native images, and needs nothing but a JVM and SQL Server or
+PostgreSQL: no framework, no message broker.
 
 Documentation is available at https://the-backend-project.github.io/tits/:
 
@@ -41,4 +41,6 @@ a data source. See [Databases](docs/databases.md) for the pros and cons of each 
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for where to start and how the repository is laid out, how to build the project,
-run the tests on each database, pin dependency checksums, preview the documentation and work on issues with Claude Code.
+run the tests on each database, pin dependency checksums and preview the documentation. Issues can be taken from the
+board to a pull request with an agentic workflow, where a coding agent follows the project's conventions in
+[AGENTS.md](AGENTS.md).
