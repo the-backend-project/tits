@@ -170,4 +170,4 @@ The state machine closes the data source or client, and with it the connection p
 The tests run on SQL Server by default. To run them on PostgreSQL, run the build with `-pl '!apps/hello-world'` and
 `-Ddatabase=pgsql-jdbc`, `-Ddatabase=pgsql-r2dbc` or `-Ddatabase=pgsql-vertx`. The tests of the core module that need a
 database are run by the module of the database, and the other modules' tests use it too. See the
-[README](https://github.com/the-backend-project/tits#building).
+[contributing guide](https://github.com/the-backend-project/tits/blob/main/CONTRIBUTING.md#building).

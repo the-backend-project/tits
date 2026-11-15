@@ -99,8 +99,8 @@ git remote -v
 7. **Make the documentation match the change.** Before pushing, check that the
    documentation describes what the branch does now:
 
-   - Look up what the change touches (`git diff origin/main --stat`) and grep
-     `docs/*.md`, `README.md` and the Javadoc of the touched public types for the
+   - Look up what the change touches (`git diff <base>/main --stat`) and grep
+     `docs/*.md`, `README.md`, `CONTRIBUTING.md`, `AGENTS.md` and the Javadoc of the touched public types for the
      classes, methods, configuration, endpoints, tables and behaviour involved.
    - Fix whatever the change made wrong or out of date, including code samples,
      names and defaults that were renamed or removed. Document new behaviour that

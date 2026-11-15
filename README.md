@@ -28,63 +28,7 @@ or through the Vert.x client with [database-pgsql-vertx](database-pgsql-vertx). 
 module's `Database` and a `DatabaseClient` from its `client(config)`, which has a connection pool of its own, instead of
 a data source. See [Databases](docs/databases.md) for the pros and cons of each module.
 
-## Building
+## Contributing
 
-Requires Java 25 and Maven 3.9 or later. The libraries target the latest LTS release of Java, see
-[Java version](docs/modules.md#java-version).
-
-The tests need a database. They run on SQL Server by default, which can be started with `bin/start-mssql.sh`. To run
-them on PostgreSQL, start it with `bin/start-postgres.sh` and run the build with `-Ddatabase=pgsql-jdbc -pl '!apps/hello-world'`, or
-with `-Ddatabase=pgsql-r2dbc` or `-Ddatabase=pgsql-vertx` for its reactive drivers. The tests of the core module that
-need a database are run by the database modules, each on its own database.
-
-### Dependency checksums
-
-Every artifact Maven resolves (dependencies and plugins) is verified against the SHA-256 checksums pinned in
-`.mvn/checksums/checksums.sha256`, and the build fails on a mismatch. CI also fails on an artifact without a pinned
-checksum; locally such artifacts are allowed, so IntelliJ IDEA can sync the project (it does not expand
-`${maven.multiModuleProjectDirectory}` in `.mvn/maven.config` and therefore never finds the checksums file). To check
-for unpinned artifacts locally like CI does, add `-Daether.artifactResolver.postProcessor.trustedChecksums.failIfMissing=true`.
-
-After adding or upgrading a dependency or plugin, record the new checksums and commit the updated file:
-
-```shell
-mvn verify -Daether.artifactResolver.postProcessor.trustedChecksums.record=true
-```
-
-The set of resolved artifacts can differ between Maven versions, so record with the Maven version used in CI as well
-as your local one if they differ.
-
-## Documentation
-
-The documentation site is built with [Zensical](https://zensical.org) from the Markdown in [docs](docs), with state
-diagrams generated from the [templates](templates) module. To preview it locally with live reload on
-http://localhost:8000:
-
-```shell
-bin/serve-docs.sh
-```
-
-This requires Graphviz (`dot`) and Python 3.10 or later in addition to the build requirements above. Zensical is
-installed into a `.venv` on first run. Set `PYTHON` to choose another interpreter, set `SKIP_DIAGRAMS=1` to reuse the
-diagrams already generated in `docs/images`, or pass `--build` to do a strict build into `site` like CI does.
-
-## Working on issues with Claude Code
-
-The [fix](.claude/skills/fix/SKILL.md) skill takes a GitHub issue from the board to a pull request. It needs the
-[GitHub CLI](https://cli.github.com) (`gh`), logged in with your account. Run it in Claude Code with `/fix N` (or say
-"Fix #N"), where N is the number of the issue. Claude then:
-
-1. Assigns the issue to you (the user `gh` is logged in as) and moves it to In Progress on the board. Without write
-   access to the repository it skips this step, and you work from a fork instead.
-2. Creates the branch `issue-N-<slug>` off `main` in a worktree of its own, `.claude/worktrees/issue-N-<slug>`
-   (ignored by git), so the branch and local changes of the main checkout are left alone and several issues can be
-   worked on at the same time. If a worktree or branch for the issue already exists, it continues there.
-3. Presents its plan. If the task is large or the plan is not obvious, it waits for you to confirm or correct the plan
-   before starting the work; a trivial fix goes ahead right away.
-4. Makes the change and runs the tests of the affected modules, and updates `docs` and this README to match.
-5. Merges or rebases what has landed on main, pushes the branch and opens a pull request that closes the issue.
-
-The worktree stays in place for review changes. Once the pull request is merged, Claude can remove the worktree and the
-local branch. In IntelliJ IDEA, mark `.claude/worktrees` as excluded so the worktrees aren't indexed with the main
-checkout.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how to build the project, run the tests on each database, pin dependency
+checksums, preview the documentation and work on issues with Claude Code.

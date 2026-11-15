@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(mvn *)",
+      "Bash(bin/serve-docs.sh *)",
+      "Bash(bin/start-mssql.sh)",
+      "Bash(bin/start-postgres.sh)",
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git show *)",
+      "Bash(git branch --list *)",
+      "Bash(git worktree list *)",
+      "Bash(git remote -v)",
+      "Bash(git fetch *)",
+      "Bash(gh issue view *)",
+      "Bash(gh issue list *)",
+      "Bash(gh pr view *)",
+      "Bash(gh pr list *)",
+      "Bash(gh pr diff *)",
+      "Bash(gh pr checks *)",
+      "Bash(gh run view *)",
+      "Bash(gh run list *)",
+      "Bash(gh repo view *)"
+    ],
+    "deny": [
+      "Bash(mvn *deploy*)"
+    ]
+  }
+}
