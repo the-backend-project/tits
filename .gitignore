@@ -7,3 +7,4 @@ docs/images
 .venv
 deploy/Pulumi.*.yaml
 .claude/worktrees/
+.claude/settings.local.json

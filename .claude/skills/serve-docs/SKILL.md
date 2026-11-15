@@ -8,8 +8,9 @@ Serve the documentation with `bin/serve-docs.sh`, which builds it the same way a
 first run, the script installs Zensical into `.venv`. It also generates the diagrams from the templates unless
 `SKIP_DIAGRAMS` is set.
 
-1. **Load the tools.** Run `source ~/.zshenv` in the same command as the script, because Maven may not be on the PATH
-   without it.
+1. **Check the tools.** The script needs `mvn`, `dot` (Graphviz) and Python 3.10 or later on the PATH. If one is
+   missing, tell the user instead of guessing where it is installed, unless the user's own instructions say how to
+   load it.
 
 2. **Pick the mode from the arguments.**
    - No arguments: serve with live reload.
@@ -27,7 +28,7 @@ first run, the script installs Zensical into `.venv`. It also generates the diag
    another port. Run the script with `run_in_background: true`, because `zensical serve` doesn't exit:
 
    ```sh
-   source ~/.zshenv; bin/serve-docs.sh -a localhost:8000
+   bin/serve-docs.sh -a localhost:8000
    ```
 
    Then wait for the server in a separate command that exits once the server answers or the output shows an error,
