@@ -109,9 +109,6 @@ work around.
 
 ### Native compilation
 
-- **No GraalVM supports Java 27 yet.** The newest GraalVM is based on Java 25, while the libraries target Java 27.
-  The image build therefore compiles the libraries with `-Dmaven.compiler.release=25`. This works as long as the
-  libraries do not use language features or APIs newer than Java 25.
 - **Jackson needs reflection.** The state machine marshals event data with Jackson, which accesses the data classes
   reflectively. Applications must provide reachability metadata for their own data classes. Event references and message
   ids, which the HTTP inbox stores with its events, use data types that need no reflection.

@@ -12,3 +12,14 @@
 
 An application depends on core, the database module of its database, and http-inbox and http-outbox if it receives or
 sends HTTP requests. See the [apps](apps.md) for complete applications.
+
+## Java version
+
+The libraries require Java 25, the latest long-term support (LTS) release, and are compiled for it. They use no
+language features or APIs of later releases, so applications can stay on an LTS release, with its years of updates,
+and can be compiled to native executables with [GraalVM](https://www.graalvm.org/), whose newest release is for
+Java 25. The [apps](apps.md) are built that way.
+
+The libraries are committed to stability. They move to a newer release of Java only when it is the next LTS release
+and GraalVM supports it, never for a feature of a release in between. An application built on the libraries is not
+forced onto a newer Java than it can run on.

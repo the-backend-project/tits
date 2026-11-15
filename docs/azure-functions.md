@@ -41,7 +41,7 @@ linked with, and a launcher script which passes the port the Functions host choo
 
 ## Requirements
 
-- Java 27 and Maven 3.9 or later, as for the rest of the build
+- Java 25 and Maven 3.9 or later, as for the rest of the build
 - [Docker](https://docs.docker.com/get-docker/), to build the image and run the migrate admin process
 - The [Pulumi CLI](https://www.pulumi.com/docs/iac/download-install/)
 - The [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli), logged in with `az login` to a subscription

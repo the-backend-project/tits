@@ -14,8 +14,8 @@ public final class Identifiers {
 
   /// A new time-ordered id
   ///
-  /// It has the layout of `UUID.ofEpochMillis`, which is not used as it was added in Java 26, and the native images
-  /// are built with GraalVM for Java 25. The random bits are those of a random UUID (version 4), which has random bits
+  /// It has the layout of `UUID.ofEpochMillis`, which is not used as it was added in Java 26, and the libraries target
+  /// Java 25. The random bits are those of a random UUID (version 4), which has random bits
   /// where version 7 has, and the same variant: the 48 bits of time replace its first 48 random bits, and the version
   /// is set to 7.
   public static UUID newId() {
