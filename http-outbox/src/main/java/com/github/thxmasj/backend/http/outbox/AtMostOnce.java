@@ -324,7 +324,7 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
                 .assemble(c -> tuple(
                     c.input(),
                     c.triggerEvent(), // process id
-                    c.log().entityId() // my id
+                    c.entityId() // my id
                 ))
 
                 .trigger(ProcessReferenced)
@@ -339,7 +339,7 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
                 .assemble(c -> tuple(
                     c.input().request(),
                     c.triggerEvent(), // process id
-                    c.log().entityId(), // my id
+                    c.entityId(), // my id
                     c.input().batchId()
                 ))
 

@@ -39,8 +39,8 @@ public class MerchantTransitions {
     return Map.of(
         Begin, List.of(
             onEvent(MerchantCreated).to(Active)
-                .assemble(c -> tuple(c.input(), c.eventReference()))
-                .trigger(MerchantIdClaimed).with(d -> d.t1().id()).on(Ids).identifiedBy(d -> entityId(d.t2().entityId(), CreateIfNotExists))
+                .assemble(c -> tuple(c.input(), c.eventReference(), c.entityId()))
+                .trigger(MerchantIdClaimed).with(d -> d.t1().id()).on(Ids).identifiedBy(d -> entityId(d.t3(), CreateIfNotExists))
                 .trigger(InitialSettlementOpened).with(d -> new com.github.thxmasj.backend.templates.cardpayment.MerchantId(d.t1().t1().id())).on(Settlement).identifiedBy(newEntityId())
                 .trigger(RequestCompleted).with(d -> tuple("", d.t1().t1().t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t1().t1().t1())

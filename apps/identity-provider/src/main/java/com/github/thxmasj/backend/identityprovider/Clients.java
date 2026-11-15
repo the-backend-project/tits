@@ -1,11 +1,8 @@
 package com.github.thxmasj.backend.identityprovider;
 
 import static com.github.thxmasj.backend.core.EntityModel.Begin;
-import static com.github.thxmasj.backend.core.EntitySelector.CreationMode.AlwaysCreate;
-import static com.github.thxmasj.backend.core.EntitySelector.entityId;
 import static com.github.thxmasj.backend.core.EntitySelector.entityIdFromSession;
 import static com.github.thxmasj.backend.core.EntitySelector.newEntityId;
-import static com.github.thxmasj.backend.core.Identifiers.newId;
 import static com.github.thxmasj.backend.core.TransitionModelBuilder.WithEvent.onEvent;
 import static com.github.thxmasj.backend.core.Tuples.tuple;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.EntityModels.RequestDispatching;
@@ -13,6 +10,7 @@ import static com.github.thxmasj.backend.http.inbox.HttpInbox.EntityModels.Reque
 import com.github.thxmasj.backend.core.BasicEventType;
 import com.github.thxmasj.backend.core.BasicEventType.ReadOnly;
 import com.github.thxmasj.backend.core.DataType;
+import com.github.thxmasj.backend.core.EntityId;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.IdEntityModel;
@@ -76,7 +74,7 @@ public interface Clients {
       DataType.json(Registration.class),
       DataType.none()
   );
-  EventType<Tuple2<Registration, UUID>, Registration> RegistrationAccepted = BasicEventType.of(
+  EventType<Tuple2<Registration, EntityId>, Registration> RegistrationAccepted = BasicEventType.of(
       "Registration accepted",
       UUID.fromString("8d2a5f7c-4b91-4e36-a0c8-1e7f3b9d5a24"),
       DataType.unknown(),
@@ -120,8 +118,8 @@ public interface Clients {
             Begin, List.of(
                 // The client gets a new entity id, which its id entity is created with
                 onEvent(RegistrationRequested).to(States.Accepted)
-                    .assemble(c -> tuple(c.input(), newId()))
-                    .trigger(ClientIdClaimed).with(d -> d.t1().clientId()).on(ClientIds).identifiedBy(d -> entityId(d.t2(), AlwaysCreate))
+                    .assemble(c -> tuple(c.input(), EntityId.newId()))
+                    .trigger(ClientIdClaimed).with(d -> d.t1().clientId()).on(ClientIds).identifiedBy(d -> newEntityId(d.t2()))
                     .when(d -> d.t2().isIdExists()).then(
                         onEvent(RegistrationRejected).to(States.Rejected)
                             .assembleInput()

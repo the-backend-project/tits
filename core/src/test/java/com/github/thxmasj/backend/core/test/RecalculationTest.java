@@ -92,7 +92,7 @@ public class RecalculationTest {
         Order, Map.<State, List<TransitionModel<?, ?>>>of(
             Begin, List.of(
                 onEvent(OrderPlaced).to(States.Placed)
-                    .assemble(c -> executed("Assemble order", tuple(c.input(), c.log().entityId())))
+                    .assemble(c -> executed("Assemble order", tuple(c.input(), c.entityId())))
                     .trigger(StockReserved).withReactive(d -> Mono.fromSupplier(() -> executed("Reserve data", d.t1()))).on(Stock).identifiedBy(newEntityId())
                     .trigger(OrderNumberClaimed).with(d -> executed("Order number data", d.t1().t1())).on(Ids).identifiedBy(d -> entityId(d.t1().t2(), CreateIfNotExists))
                     .output(d -> executed("Output order", d.t2().isIdExists() ?
@@ -101,7 +101,7 @@ public class RecalculationTest {
                 // The rejected reservation is handled by a step after the trigger of the order number, and only if the
                 // number does not exist
                 onEvent(OrderBought).to(States.Placed)
-                    .assemble(c -> tuple(c.input(), c.log().entityId()))
+                    .assemble(c -> tuple(c.input(), c.entityId()))
                     .trigger(ReservationRefused).with(Tuple2::t1).on(Stock).identifiedBy(newEntityId())
                     .trigger(OrderNumberClaimed).with(d -> d.t1().t1()).on(Ids).identifiedBy(d -> entityId(d.t1().t2(), CreateIfNotExists))
                     .when(d -> d.t2().isIdExists()).then(
@@ -117,7 +117,7 @@ public class RecalculationTest {
                         d -> d.t1().t1().t1()
                     ),
                 onEvent(OrderTagged).to(States.Placed)
-                    .assemble(c -> tuple(c.input(), c.log().entityId()))
+                    .assemble(c -> tuple(c.input(), c.entityId()))
                     .trigger(CodeClaimed).with(Tuple2::t1).on(Ids).identifiedBy(d -> entityId(d.t2(), CreateIfNotExists))
                     .output(d -> d.t1().t1())
             ),

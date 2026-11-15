@@ -17,13 +17,43 @@ Ids created later are greater, so they sort in the order they are created, to th
 
 `Identifiers.newId()` creates one, with the same layout as `UUID.ofEpochMillis`, which was added in Java 26 and so can't
 be used by the libraries, as they [target Java 25](modules.md#java-version). It is what the state machine uses for new
-entities, and what a transition should use for an entity it creates with an id of its own, as the
-[identity provider](existing-ids.md) does for a client:
+entities.
+
+## Ids of new entities
+
+An entity can't be created with an id of the application's choosing: a random UUID, or one taken from a request, would
+land at a random place in the indexes (see below). The entity selectors that may create an entity therefore take its id
+as an `EntityId`, which can't be made from a UUID. There are two ways to get one:
+
+* `EntityId.newId()`, a new time-ordered id.
+* `c.entityId()` in a transition, the id of the entity the transition is on.
+
+| Selector                           | Entity                                                      |
+|------------------------------------|-------------------------------------------------------------|
+| `newEntityId()`                    | A new entity with a new time-ordered id                     |
+| `newEntityId(entityId)`            | A new entity with the `EntityId`                            |
+| `entityId(entityId, creationMode)` | The entity with the `EntityId`, created if the mode says so |
+| `entityId(id)`                     | The existing entity with the UUID or `EntityId`             |
+
+An entity shares the id of the entity it belongs to, e.g. an [id entity](existing-ids.md) or an index entity:
 
 ```java
-.assemble(c -> tuple(c.input(), newId()))
-.trigger(ClientIdClaimed).with(d -> d.t1().clientId()).on(ClientIds).identifiedBy(d -> entityId(d.t2(), AlwaysCreate))
+.assemble(c -> tuple(c.input(), c.entityId()))
+.trigger(AccountNumberClaimed).with(Tuple2::t1).on(Ids).identifiedBy(d -> entityId(d.t2(), CreateIfNotExists))
 ```
+
+Two entities that are not id or index entities can't share an id, as their events are in the same table. The
+[identity provider](identity-provider.md) therefore creates a client and its id entity with a new id, which it makes
+before the id entity is created, so that it can create the client with it later in the transition:
+
+```java
+.assemble(c -> tuple(c.input(), EntityId.newId()))
+.trigger(ClientIdClaimed).with(d -> d.t1().clientId()).on(ClientIds).identifiedBy(d -> newEntityId(d.t2()))
+```
+
+An existing entity is selected by any UUID with `entityId(id)`, so entities created with random UUIDs before the ids
+were time-ordered can still be found. An HTTP route's `parseEntityId` only selects existing entities, as its id comes
+from the request.
 
 ## Why not random UUIDs
 

@@ -104,7 +104,7 @@ public class TestApiTest {
     return Map.of(
         Begin, List.of(
             onEvent(send).to(ShipmentStates.Sent)
-                .assemble(c -> tuple(c.input(), c.log().entityId()))
+                .assemble(c -> tuple(c.input(), c.entityId()))
                 .trigger(ShipmentOfAccountReferenced).with(_ -> shipmentAccount).on(ShipmentIndex).identifiedBy(d -> newEntityId(d.t2()))
                 .output(d -> d.t1().t1())
         ),
@@ -118,7 +118,7 @@ public class TestApiTest {
       Account, Map.<State, List<TransitionModel<?, ?>>>of(
           Begin, List.of(
               onEvent(AccountOpened).to(AccountStates.Opened)
-                  .assemble(c -> tuple(c.input(), c.log().entityId()))
+                  .assemble(c -> tuple(c.input(), c.entityId()))
                   .trigger(AccountNumberClaimed).with(Tuple2::t1).on(Ids).identifiedBy(d -> entityId(d.t2(), CreateIfNotExists))
                   .trigger(AccountExpired).after(_ -> Duration.ofHours(1))
                   .output(d -> d.t1().t1())
@@ -142,7 +142,7 @@ public class TestApiTest {
       Statement, Map.<State, List<TransitionModel<?, ?>>>of(
           Begin, List.of(
               onEvent(StatementIssued).to(StatementStates.Issued)
-                  .assemble(c -> tuple(c.input(), c.log().entityId()))
+                  .assemble(c -> tuple(c.input(), c.entityId()))
                   .trigger(StatementOfAccountReferenced).with(d -> d.t1().account()).on(Index).identifiedBy(d -> newEntityId(d.t2()))
                   .trigger(NumberOfStatementIndexed).with(d -> d.t1().t1().number()).on(Index).identifiedBy(d -> entityId(d.t1().t2()))
                   .output(d -> d.t1().t1().t1())

@@ -653,7 +653,7 @@ public class StateMachine implements AutoCloseable {
     var eventTrigger = new EventTrigger<Void, T, O>(
         new EventTrigger.EventSpec<>(eventType, _ -> conditionalTrigger.data()),
         // The target entity may not exist yet, in which case it is created by the fired event
-        List.of(_ -> EntitySelector.entityId(conditionalTrigger.entityId(), EntitySelector.CreationMode.CreateIfNotExists)),
+        List.of(_ -> new ById(conditionalTrigger.entityId(), EntitySelector.CreationMode.CreateIfNotExists)),
         conditionalTrigger.entityModel(),
         false,
         null,
