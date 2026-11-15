@@ -6,3 +6,4 @@ docs/images
 .mvn/checksums/*.bak
 .venv
 deploy/Pulumi.*.yaml
+.claude/worktrees/

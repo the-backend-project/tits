@@ -43,20 +43,21 @@ org project 1 ("The Backend").
 
 5. **Branch off origin/main in a new worktree.** Never switch branches in the main
    checkout: the user may have work in progress there, and other issues may be
-   worked on at the same time. Create the branch in a worktree next to it:
+   worked on at the same time. From the root of the main checkout, create the
+   branch in a worktree under `.claude/worktrees` (ignored by git):
 
    ```sh
    git fetch origin
-   git worktree add --no-track -b issue-N-<slug> ../state-machine-issue-N-<slug> origin/main
+   git worktree add --no-track -b issue-N-<slug> .claude/worktrees/issue-N-<slug> origin/main
+   cd .claude/worktrees/issue-N-<slug>
    ```
 
    `<slug>` is the issue title lowercased, non-alphanumerics replaced by `-`,
    trimmed to a few words (e.g. `issue-136-timeout-rows-not-deleted`).
 
    Do all the remaining steps in that worktree: edit files under its path and
-   run git, Maven and the docs build there. The shell may return to the main
-   checkout between commands, so `cd` into the worktree in every command (or use
-   `git -C`).
+   run git, Maven and the docs build there. When searching the main checkout,
+   exclude `.claude/worktrees` so other issues' worktrees don't show up.
 
 6. **Plan, and confirm the plan if it needs it.** Tell the user the branch name
    and your plan: what you will change, where, and how you will test it. Then
@@ -118,9 +119,10 @@ org project 1 ("The Backend").
    open or tests fail, don't open a PR. Tell the user what is left instead.
 
    Leave the worktree in place after opening the PR, since review changes are
-   made there. Once the PR is merged, remove it and the local branch:
+   made there. Once the PR is merged, remove it and the local branch from the
+   root of the main checkout:
 
    ```sh
-   git worktree remove ../state-machine-issue-N-<slug>
+   git worktree remove .claude/worktrees/issue-N-<slug>
    git branch -D issue-N-<slug>
    ```
