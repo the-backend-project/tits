@@ -15,7 +15,7 @@ The three PostgreSQL modules run the same SQL. The reactive ones reuse the queri
 the schema through its JDBC driver, as [schema creation](schema-creation.md) is done once at startup and does not need
 to be reactive. They differ in how the queries reach the database.
 
-## Choosing a module
+## Choosing a database driver
 
 * **SQL Server or Azure SQL:** database-mssql, the only one for them. It is also the only one the
   [hello world demo](hello-world.md) and its Azure deployment are made for.

@@ -5,7 +5,12 @@ repo_name = "the-backend-project/tits"
 copyright = "Background photo by <a href=\"https://unsplash.com/@annaval\">Anna Valberg</a> on <a href=\"https://unsplash.com/photos/s990e8olqU4\">Unsplash</a>"
 extra_css = ["stylesheets/extra.css"]
 nav = [
-  { "Overview" = "index.md" },
+  { "Overview" = [
+    { "Introduction" = "index.md" },
+    { "Getting started" = "getting-started.md" },
+    { "Design principles" = "principles.md" },
+    { "Contributing" = "contributing.md" },
+  ] },
   { "Architecture" = [
     { "Overview" = "architecture.md" },
     { "Modules" = "modules.md" },

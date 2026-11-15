@@ -4,6 +4,46 @@ Issues and pull requests are welcome. Work in progress is tracked on the
 [project board](https://github.com/orgs/the-backend-project/projects/1). The conventions that coding agents follow are in
 [AGENTS.md](AGENTS.md), and they apply to human contributors as well.
 
+The project aims for stable, robust and long-lived systems, and it judges changes by that. Read the
+[design principles](docs/principles.md) before proposing a larger change.
+
+## Finding your way
+
+### Where to start
+
+* Issues labelled [good first issue](https://github.com/the-backend-project/tits/labels/good%20first%20issue) are
+  small and self-contained. The Todo column of the [project board](https://github.com/orgs/the-backend-project/projects/1)
+  lists what is planned next.
+* To learn the code, read [Getting started](docs/getting-started.md) and the [architecture](docs/architecture.md), and
+  then follow the hello world demo (`apps/hello-world`) from `HelloWorld.main` into the core module.
+* For a bug, open an issue with a test or the steps that reproduce it. For a larger change, open an issue to agree on
+  the approach before writing the code.
+
+### Repository layout
+
+| Path                                                | Contains                                                                         |
+|-----------------------------------------------------|----------------------------------------------------------------------------------|
+| [core](core)                                        | The state machine, `TransitionModelBuilder` and the interface of the databases   |
+| [database-mssql](database-mssql), `database-pgsql-*` | The SQL and driver of each database, and the tests of core that need a database  |
+| [http-inbox](http-inbox), [http-outbox](http-outbox) | Receiving and sending HTTP requests as entities                                  |
+| [test-api](test-api)                                | The API for tests to look into and manipulate the database of a state machine    |
+| [diagram](diagram)                                  | State diagrams and ER diagrams generated from a model                            |
+| [templates](templates)                              | Ready-made models of a domain, such as card payments                             |
+| [apps](apps)                                        | The identity provider and the hello world demo, compiled to native executables   |
+| [deploy](deploy)                                    | Deployment of the apps to Azure Functions with Pulumi                            |
+| [docs](docs)                                        | The documentation site, see [Documentation](#documentation)                      |
+| [bin](bin), [test](test)                            | Scripts to start the test databases and serve the docs, and the databases' setup |
+| [.mvn/checksums](.mvn/checksums)                    | The pinned checksums of all dependencies, see [below](#dependency-checksums)     |
+
+The [Modules](docs/modules.md) page describes what an application depends on.
+
+### What a pull request needs
+
+* Tests of the changed behaviour, passing on the database modules the change affects.
+* The documentation in [docs](docs), the [README](README.md) and this guide updated to match, in the same pull
+  request.
+* `Closes #N` in the description when it resolves issue N.
+
 ## Building
 
 Requires Java 25 and Maven 3.9 or later. The libraries target the latest LTS release of Java, see

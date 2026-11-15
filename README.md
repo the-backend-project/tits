@@ -1,6 +1,16 @@
 # The Integratable Transaction Server
 
-Documentation is available at https://the-backend-project.github.io/tits/.
+An event-sourcing library for Java. You model your domain as state machines in plain Java, following domain-driven
+design. The library appends every event to an immutable event log, takes the transitions in ACID transactions with
+optimistic concurrency, deduplicates incoming HTTP requests, and sends outgoing ones through a transactional outbox.
+It is reactive and stateless, runs on the JVM or as a GraalVM native image, and keeps everything in a database,
+with no framework or message broker.
+
+Documentation is available at https://the-backend-project.github.io/tits/:
+
+* [Getting started](docs/getting-started.md): add the libraries, declare a model, run it and test it.
+* [Design principles](docs/principles.md): what the project optimises for, and why.
+* [Architecture](docs/architecture.md): how the parts fit together.
 
 The [apps](apps) are applications built with the HTTP inbox and the state machine, compiled to native executables:
 
@@ -30,5 +40,7 @@ a data source. See [Databases](docs/databases.md) for the pros and cons of each 
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for how to build the project, run the tests on each database, pin dependency
-checksums, preview the documentation and work on issues with Claude Code.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for where to start and how the repository is laid out, how to build the project,
+run the tests on each database, pin dependency checksums and preview the documentation. Issues can be taken from the
+board to a pull request with an agentic workflow, where a coding agent follows the project's conventions in
+[AGENTS.md](AGENTS.md).
