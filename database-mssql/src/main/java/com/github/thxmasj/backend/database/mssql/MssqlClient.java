@@ -68,7 +68,8 @@ public class MssqlClient extends JDBCClient {
     return new UUID(buffer.getLong(), buffer.getLong());
   }
 
-  /// The duplicate key with its leading entity id as a UUID, as SQL Server gives it as a binary, e.g. "0x019A...C3, 1"
+  /// The duplicate key with its leading binary as a UUID, e.g. "0x019A...C3, 1" as "019a...c3, 1". The keys of the
+  /// primary keys and the unique index of the schema lead with a UUID column, which SQL Server reports as a binary.
   static String withUuid(String duplicateKey) {
     Matcher matcher = binaryUuidPattern.matcher(duplicateKey);
     if (!matcher.find())
@@ -89,7 +90,7 @@ public class MssqlClient extends JDBCClient {
       case SQLServerException f when f.getSQLServerError().getErrorNumber() == 2601 -> {
         Matcher duplicateKeyRowMatcher = duplicateKeyRowPattern.matcher(f.getMessage());
         if (duplicateKeyRowMatcher.matches())
-          yield new UniqueIndexConstraintViolation(queryName, null, duplicateKeyRowMatcher.group(4), duplicateKeyRowMatcher.group(2), duplicateKeyRowMatcher.group(3), f);
+          yield new UniqueIndexConstraintViolation(queryName, null, withUuid(duplicateKeyRowMatcher.group(4)), duplicateKeyRowMatcher.group(2), duplicateKeyRowMatcher.group(3), f);
         else
           yield new DataIntegrityViolation(queryName, null, "N/A", errorMessage, f);
       }

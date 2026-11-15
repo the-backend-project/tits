@@ -36,6 +36,10 @@ class MssqlClientTest {
         "019a6b2c-1d3e-7f40-8a1b-2c3d4e5f6071",
         MssqlClient.withUuid("0x019A6B2C1D3E7F408A1B2C3D4E5F6071")
     );
+    assertEquals(
+        "019a6b2c-1d3e-7f40-8a1b-2c3d4e5f6071, 0x7B22",
+        MssqlClient.withUuid("0x019A6B2C1D3E7F408A1B2C3D4E5F6071, 0x7B22")
+    );
     assertEquals("0x7B22, 1", MssqlClient.withUuid("0x7B22, 1"));
   }
 
