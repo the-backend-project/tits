@@ -1,6 +1,6 @@
 ---
 name: fix
-description: Start work on a GitHub issue. Use when the user says "Fix #N" (or invokes /fix N) — assigns the issue, moves it to In Progress on the project board, creates a fresh branch off origin/main, brings the documentation in line with the change, syncs with main, and opens a PR when the fix is complete.
+description: Start work on a GitHub issue. Use when the user says "Fix #N" (or invokes /fix N) — assigns the issue, moves it to In Progress on the project board, creates a fresh branch off origin/main, asks for confirmation of the plan unless the task is trivial, brings the documentation in line with the change, syncs with main, and opens a PR when the fix is complete.
 argument-hint: <issue-number>
 ---
 
@@ -41,8 +41,22 @@ org project 1 ("The Backend").
    `<slug>` is the issue title lowercased, non-alphanumerics replaced by `-`,
    trimmed to a few words (e.g. `issue-136-timeout-rows-not-deleted`).
 
-6. **Start working** on the issue. Briefly tell the user the branch name and your
-   plan, then proceed.
+6. **Plan, and confirm the plan if it needs it.** Tell the user the branch name
+   and your plan: what you will change, where, and how you will test it. Then
+   decide whether the plan needs confirmation before you spend effort on it:
+
+   - **Ask first** when the task is large or the plan is not obvious: it touches
+     several modules or public API, changes the database schema or behaviour users
+     rely on, involves a design choice the issue leaves open, or the issue can be
+     read more than one way. Stop and ask the user to confirm or correct the plan
+     (with `AskUserQuestion` when the choice is between concrete alternatives), and
+     don't start the work until they answer.
+   - **Proceed** when the task is trivial and the plan is obvious from the issue,
+     for example a small, local fix with one reasonable solution. Say that you are
+     going ahead without confirmation.
+
+   If the work turns out to be bigger or different than planned, stop and confirm
+   the new plan before continuing.
 
 7. **Make the documentation match the change.** Before pushing, check that the
    documentation describes what the branch does now:
