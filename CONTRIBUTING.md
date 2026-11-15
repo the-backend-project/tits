@@ -51,8 +51,10 @@ Requires Java 25 and Maven 3.9 or later. The libraries target the latest LTS rel
 [Java version](docs/modules.md#java-version).
 
 The tests need a database. They run on SQL Server by default, which can be started with `bin/start-mssql.sh`. To run
-them on PostgreSQL, start it with `bin/start-postgres.sh` and run the build with `-Ddatabase=pgsql-jdbc -pl '!apps/hello-world'`, or
-with `-Ddatabase=pgsql-r2dbc` or `-Ddatabase=pgsql-vertx` for its reactive drivers. The tests of the core module that
+them on PostgreSQL, start it with `bin/start-postgres.sh` and run the build with
+`-Ddatabase=pgsql-jdbc -pl '!apps/hello-world,!doc-diagrams'`, or with `-Ddatabase=pgsql-r2dbc` or
+`-Ddatabase=pgsql-vertx` for its reactive drivers. The hello world demo runs on SQL Server only, and the doc-diagrams
+module depends on it, so both are left out. The tests of the core module that
 need a database are run by the database modules, each on its own database.
 
 ### Dependency checksums
