@@ -68,3 +68,23 @@ bin/serve-docs.sh
 This requires Graphviz (`dot`) and Python 3.10 or later in addition to the build requirements above. Zensical is
 installed into a `.venv` on first run. Set `PYTHON` to choose another interpreter, set `SKIP_DIAGRAMS=1` to reuse the
 diagrams already generated in `docs/images`, or pass `--build` to do a strict build into `site` like CI does.
+
+## Working on issues with Claude Code
+
+The [fix](.claude/skills/fix/SKILL.md) skill takes a GitHub issue from the board to a pull request. It needs the
+[GitHub CLI](https://cli.github.com) (`gh`), logged in with your account. Run it in Claude Code with `/fix N` (or say
+"Fix #N"), where N is the number of the issue. Claude then:
+
+1. Assigns the issue to you (the user `gh` is logged in as) and moves it to In Progress on the board. Without write
+   access to the repository it skips this step, and you work from a fork instead.
+2. Creates the branch `issue-N-<slug>` off `main` in a worktree of its own, `.claude/worktrees/issue-N-<slug>`
+   (ignored by git), so the branch and local changes of the main checkout are left alone and several issues can be
+   worked on at the same time. If a worktree or branch for the issue already exists, it continues there.
+3. Presents its plan. If the task is large or the plan is not obvious, it waits for you to confirm or correct the plan
+   before starting the work; a trivial fix goes ahead right away.
+4. Makes the change and runs the tests of the affected modules, and updates `docs` and this README to match.
+5. Merges or rebases what has landed on main, pushes the branch and opens a pull request that closes the issue.
+
+The worktree stays in place for review changes. Once the pull request is merged, Claude can remove the worktree and the
+local branch. In IntelliJ IDEA, mark `.claude/worktrees` as excluded so the worktrees aren't indexed with the main
+checkout.

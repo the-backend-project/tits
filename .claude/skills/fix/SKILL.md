@@ -1,21 +1,46 @@
 ---
 name: fix
-description: Start work on a GitHub issue. Use when the user says "Fix #N" (or invokes /fix N) — assigns the issue, moves it to In Progress on the project board, creates a fresh branch off origin/main, asks for confirmation of the plan unless the task is trivial, brings the documentation in line with the change, syncs with main, and opens a PR when the fix is complete.
+description: Start work on a GitHub issue. Use when the user says "Fix #N" (or invokes /fix N) — assigns the issue to the user and moves it to In Progress on the project board (if they have write access), creates a fresh branch off main in a worktree of its own, asks for confirmation of the plan unless the task is trivial, brings the documentation in line with the change, syncs with main, and opens a PR when the fix is complete.
 argument-hint: <issue-number>
 ---
 
 Start work on issue #$ARGUMENTS (or the number given in "Fix #N").
 
 The repo is `the-backend-project/tits`; the board is
-org project 1 ("The Backend").
+org project 1 ("The Backend"). The skill works for anyone who runs it with their own
+`gh` login. Find out once what the user can do:
 
-1. **Check the working tree.** If `git status --porcelain` is not empty, stop and
-   ask the user what to do with the local changes.
+```sh
+gh repo view the-backend-project/tits --json viewerPermission --jq .viewerPermission
+git remote -v
+```
+
+- With `WRITE`, `MAINTAIN` or `ADMIN` the user can assign the issue, move it on the
+  board and push branches to the repo. `<base>` below is the remote that points to
+  `the-backend-project/tits` (usually `origin`), and branches are pushed there too.
+- With less, the user works from a fork: skip steps 3 and 4 and say so. `<base>` is
+  the remote that points to `the-backend-project/tits` (usually `upstream`; add it
+  with `git remote add upstream https://github.com/the-backend-project/tits.git` if
+  it is missing), and branches are pushed to the fork (usually `origin`).
+
+1. **Check for earlier work on the issue.** The work happens in a worktree of its
+   own (step 5), so local changes in the main checkout don't matter and must be
+   left alone. Instead, look for a worktree or branch from an earlier start on the
+   issue:
+
+   ```sh
+   git worktree list
+   git branch --list 'issue-N-*'
+   ```
+
+   If one exists, continue in it instead of creating a new one (skip step 5), or
+   ask the user if it is unclear whether that work should be kept.
 
 2. **Read the issue:** `gh issue view N --json number,title,body,state,comments`.
    If it is closed, stop and tell the user.
 
-3. **Assign it:** `gh issue edit N --add-assignee thxmasj-claude`
+3. **Assign it** to the user `gh` is logged in as:
+   `gh issue edit N --add-assignee @me`
 
 4. **Move it to In Progress.** `item-add` is idempotent and returns the existing
    item if the issue is already on the board:
@@ -30,16 +55,29 @@ org project 1 ("The Backend").
    ```
 
    Status option IDs: Todo `f75ad846`, In Progress `47fc9ee4`, Done `98236657`.
+   These are the ids of the board, its Status field and the field's options. If the
+   board is recreated, look them up with `gh project view 1 --owner
+   the-backend-project --format json` and `gh project field-list 1 --owner
+   the-backend-project --format json`. If the user can't write to the board, skip
+   this step and say so.
 
-5. **Branch off origin/main:**
+5. **Branch off `<base>/main` in a new worktree.** Never switch branches in the main
+   checkout: the user may have work in progress there, and other issues may be
+   worked on at the same time. From the root of the main checkout, create the
+   branch in a worktree under `.claude/worktrees` (ignored by git):
 
    ```sh
-   git fetch origin
-   git switch --no-track -c issue-N-<slug> origin/main
+   git fetch <base>
+   git worktree add --no-track -b issue-N-<slug> .claude/worktrees/issue-N-<slug> <base>/main
+   cd .claude/worktrees/issue-N-<slug>
    ```
 
    `<slug>` is the issue title lowercased, non-alphanumerics replaced by `-`,
    trimmed to a few words (e.g. `issue-136-timeout-rows-not-deleted`).
+
+   Do all the remaining steps in that worktree: edit files under its path and
+   run git, Maven and the docs build there. When searching the main checkout,
+   exclude `.claude/worktrees` so other issues' worktrees don't show up.
 
 6. **Plan, and confirm the plan if it needs it.** Tell the user the branch name
    and your plan: what you will change, where, and how you will test it. Then
@@ -79,9 +117,9 @@ org project 1 ("The Backend").
    the PR or to update it, bring in what has landed on main since:
 
    ```sh
-   git fetch origin
-   git rebase origin/main   # branch not pushed yet
-   git merge origin/main    # branch already pushed: no force push
+   git fetch <base>
+   git rebase <base>/main   # branch not pushed yet
+   git merge <base>/main    # branch already pushed: no force push
    ```
 
    If main moved, resolve any conflicts and run the tests of the affected modules
@@ -93,9 +131,21 @@ org project 1 ("The Backend").
 
    ```sh
    git push -u origin issue-N-<slug>
-   gh pr create --title "<what the change does>" --body "Closes #N. ..."
+   gh pr create --repo the-backend-project/tits --title "<what the change does>" --body "Closes #N. ..."
    ```
+
+   When working from a fork, push to the fork's remote and add
+   `--head <fork-owner>:issue-N-<slug>` to `gh pr create`.
 
    Include `Closes #N` in the body so that merging closes the issue. Tell the user
    the PR's URL. If the fix is not complete, for example because a question is still
    open or tests fail, don't open a PR. Tell the user what is left instead.
+
+   Leave the worktree in place after opening the PR, since review changes are
+   made there. Once the PR is merged, remove it and the local branch from the
+   root of the main checkout:
+
+   ```sh
+   git worktree remove .claude/worktrees/issue-N-<slug>
+   git branch -D issue-N-<slug>
+   ```
