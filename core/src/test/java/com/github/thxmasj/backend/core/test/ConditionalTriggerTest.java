@@ -96,7 +96,7 @@ public class ConditionalTriggerTest {
         Order, Map.<State, List<TransitionModel<?, ?>>>of(
             Begin, List.of(
                 onEvent(OrderCreated).to(OrderStates.Created)
-                    .assemble(c -> tuple(c.input(), c.log().entityId()))
+                    .assemble(c -> tuple(c.input(), c.entityId()))
                     .trigger(orderReferenced).with(t -> t.t1()).on(Index).identifiedBy(t -> newEntityId(t.t2()))
                     .output()
             ),

@@ -97,7 +97,7 @@ public class IdEventTest {
       Account, Map.<State, List<TransitionModel<?, ?>>>of(
           Begin, List.of(
               onEvent(AccountOpened).to(States.Opened)
-                  .assemble(c -> tuple(c.input(), c.log().entityId()))
+                  .assemble(c -> tuple(c.input(), c.entityId()))
                   .trigger(AccountNumberClaimed).with(Tuple2::t1).on(Ids).identifiedBy(d -> entityId(d.t2(), CreateIfNotExists))
                   .trigger(AliasClaimed).with(d -> "alias-" + d.t1().t1()).on(Ids).identifiedBy(d -> entityId(d.t1().t2(), CreateIfNotExists))
                   .output(d -> d.t1().t2().isIdExists() ?
@@ -109,7 +109,7 @@ public class IdEventTest {
       Statement, Map.<State, List<TransitionModel<?, ?>>>of(
           Begin, List.of(
               onEvent(StatementIssued).to(States.Issued)
-                  .assemble(c -> tuple(c.input(), c.log().entityId()))
+                  .assemble(c -> tuple(c.input(), c.entityId()))
                   .trigger(StatementOfAccountIndexed).with(Tuple2::t1).on(Index).identifiedBy(d -> newEntityId(d.t2()))
                   .output(d -> d.t1().t1())
           ),

@@ -42,7 +42,7 @@ public class EntitiesByIndexTest {
     Map<State, List<TransitionModel<?, ?>>> orderTransitions = Map.of(
         Begin, List.of(
             onEvent(OrderCreated).to(OrderStates.Created)
-                .assemble(c -> tuple(c.input(), c.log().entityId()))
+                .assemble(c -> tuple(c.input(), c.entityId()))
                 .trigger(customerReferenced).with(t -> t.t1()).on(Index).identifiedBy(t -> newEntityId(t.t2()))
                 .output()
         ),

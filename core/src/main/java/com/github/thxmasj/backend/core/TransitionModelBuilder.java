@@ -58,13 +58,18 @@ public class TransitionModelBuilder<I, T, O> {
 
   }
 
-  public interface TransitionContext<I> {
+  /// Sealed, as [#entityId()] must only give the id of an entity the state machine has read or created
+  public sealed interface TransitionContext<I> permits TransitionStep.InputStep {
     EventReference triggerEvent();
     State from();
     ZonedDateTime timestamp();
     String correlationId();
     EventLog log();
     I input();
+    /// The id of the entity the transition is on, for creating an entity with the same id, e.g. its index entity
+    default EntityId entityId() {
+      return EntityId.of(log().entityId());
+    }
     default EventReference eventReference() {
       return new EventReference(log().entityId(), log().lastEventNumber() + 1);
     }

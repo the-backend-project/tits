@@ -129,14 +129,14 @@ public class SettlementTransitions {
 //                .assemble(d -> new AcquirerBatchNumber(d.input().value(), 0))
 //                .output(d -> d),
             onEvent(SettlementEvent.SettlementOpened).to(Open)
-                .assemble(c -> tuple(c.input(), c.log().entityId()))
+                .assemble(c -> tuple(c.input(), c.entityId()))
                 .trigger(BatchNumberClaimed).with(d -> d.t1().batchNumber()).on(Ids).identifiedBy(d -> entityId(d.t2(), CreateIfNotExists))
                 .trigger(AcquirerBatchNumberClaimed).with(d -> d.t1().t1().acquirerBatchNumber()).on(Ids).identifiedBy(d -> entityId(d.t1().t2(), CreateIfNotExists))
                 .trigger(BatchIndexed).with(d -> d.t1().t1().t1().batchNumber()).on(Index).identifiedBy(d -> newEntityId(d.t1().t1().t2()))
                 .output(d -> d.t1().t1().t1().t1()),
             // The first settlement of a merchant. The acquirer's batch number is assigned when it is first seen in a response.
             onEvent(InitialSettlementOpened).to(AwaitingAcquirerBatchNumber)
-                .assemble(c -> tuple(new BatchNumber(c.input().value(), 1), c.log().entityId()))
+                .assemble(c -> tuple(new BatchNumber(c.input().value(), 1), c.entityId()))
                 .trigger(BatchNumberClaimed).with(Tuple2::t1).on(Ids).identifiedBy(d -> entityId(d.t2(), CreateIfNotExists))
                 .trigger(BatchIndexed).with(d -> d.t1().t1()).on(Index).identifiedBy(d -> newEntityId(d.t1().t2()))
                 .output(d -> d.t1().t1().t1())
@@ -144,7 +144,7 @@ public class SettlementTransitions {
         // Open, but the acquirer's batch number is not known until the first response referring to the settlement
         AwaitingAcquirerBatchNumber, join(List.of(
             onEvent(AcquirerBatchNumberAssigned).to(Open)
-                .assemble(c -> tuple(c.input(), c.log().entityId()))
+                .assemble(c -> tuple(c.input(), c.entityId()))
                 .trigger(AcquirerBatchNumberClaimed).with(Tuple2::t1).on(Ids).identifiedBy(d -> entityId(d.t2(), CreateIfNotExists))
                 .output(d -> d.t1().t1()),
             onEvent(BatchNumberLookedUp).toSelf().assemble(c -> batchNumber(c.log())).output(d -> d),

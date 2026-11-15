@@ -8,7 +8,6 @@ import java.util.*;
 import java.util.function.*;
 import java.util.regex.*;
 
-import static com.github.thxmasj.backend.core.EntitySelector.CreationMode.*;
 import static com.github.thxmasj.backend.core.Validated.*;
 
 /// Defines a route for an HTTP request
@@ -49,7 +48,9 @@ public record HttpRequestRoute<T>(
       return processEventType instanceof BasicEventType.Rollback && processSelector == null;
     }
 
-    public static Validated<EntitySelector> entityId(String s, EntitySelector.CreationMode creationMode) {
+    /// The existing entity with the id. An entity can't be created with an id from a request, as it would not be
+    /// time-ordered.
+    public static Validated<EntitySelector> entityId(String s) {
       if (s == null)
         return invalid("Entity id is missing");
       UUID uuid;
@@ -58,45 +59,34 @@ public record HttpRequestRoute<T>(
       } catch (IllegalArgumentException e) {
         return invalid("Entity id is invalid: " + e.getMessage());
       }
-      return valid(EntitySelector.entityId(uuid, creationMode));
+      return valid(EntitySelector.entityId(uuid));
     }
 
-    public static Validated<EntitySelector> entityId(UUID uuid, EntitySelector.CreationMode creationMode) {
+    /// The existing entity with the id
+    public static Validated<EntitySelector> entityId(UUID uuid) {
       if (uuid == null)
         return invalid("Entity id is missing");
-      return valid(EntitySelector.entityId(uuid, creationMode));
+      return valid(EntitySelector.entityId(uuid));
     }
 
     public static <T> BiFunction<HttpRequestMessage, T, Validated<EntitySelector>> newEntity() {
-      return (_, _) -> new Valid<>(new EntitySelector.ById(Identifiers.newId(), AlwaysCreate));
+      return (_, _) -> new Valid<>(EntitySelector.newEntity());
     }
 
+    /// The existing entity with the id in the request line. An entity can't be created with an id from a request, as
+    /// it would not be time-ordered.
     public static <T> BiFunction<HttpRequestMessage, T, Validated<EntitySelector>> parseEntityId(
         String requestLinePattern,
         int captureGroup
     ) {
-      return parseEntityId(Pattern.compile(requestLinePattern), captureGroup, NeverCreate);
+      return parseEntityId(Pattern.compile(requestLinePattern), captureGroup);
     }
 
-    public static <T> BiFunction<HttpRequestMessage, T, Validated<EntitySelector>> parseEntityId(
-        String requestLinePattern,
-        int captureGroup,
-        EntitySelector.CreationMode creationMode
-    ) {
-      return parseEntityId(Pattern.compile(requestLinePattern), captureGroup, creationMode);
-    }
-
+    /// The existing entity with the id in the request line. An entity can't be created with an id from a request, as
+    /// it would not be time-ordered.
     public static <T> BiFunction<HttpRequestMessage, T, Validated<EntitySelector>> parseEntityId(
         Pattern requestLinePattern,
         int captureGroup
-    ) {
-      return parseEntityId(requestLinePattern, captureGroup, NeverCreate);
-    }
-
-    public static <T> BiFunction<HttpRequestMessage, T, Validated<EntitySelector>> parseEntityId(
-        Pattern requestLinePattern,
-        int captureGroup,
-        EntitySelector.CreationMode creationMode
     ) {
       return (request, _) -> {
         Matcher matcher = requestLinePattern.matcher(request.requestLine());
@@ -104,7 +94,7 @@ public record HttpRequestRoute<T>(
         if (s == null)
           return new Invalid<>("Unable to extract entity id from request line");
         try {
-          return new Valid<>(EntitySelector.entityId(UUID.fromString(s), creationMode));
+          return new Valid<>(EntitySelector.entityId(UUID.fromString(s)));
         } catch (IllegalArgumentException e) {
           return new Invalid<>("Entity id is not a valid UUID");
         }

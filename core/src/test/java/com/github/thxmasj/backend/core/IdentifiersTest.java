@@ -1,7 +1,6 @@
 package com.github.thxmasj.backend.core;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -30,12 +29,6 @@ class IdentifiersTest {
   @Test
   void idsOfTheSameTimeDiffer() {
     assertNotEquals(Identifiers.newId(1_700_000_000_000L), Identifiers.newId(1_700_000_000_000L));
-  }
-
-  @Test
-  void newIdsAreTimeOrderedButRandomIdsAreNot() {
-    assertTrue(Identifiers.isTimeOrdered(Identifiers.newId()));
-    assertFalse(Identifiers.isTimeOrdered(UUID.randomUUID()));
   }
 
 }

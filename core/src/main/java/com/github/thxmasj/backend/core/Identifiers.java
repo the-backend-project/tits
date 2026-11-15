@@ -22,11 +22,6 @@ public final class Identifiers {
     return newId(System.currentTimeMillis());
   }
 
-  /// Whether an id is time-ordered, i.e. a UUID of version 7, as the ids of new entities must be
-  public static boolean isTimeOrdered(UUID id) {
-    return id.variant() == 2 && id.version() == 7;
-  }
-
   /// A new time-ordered id with a time in milliseconds since the Unix epoch
   static UUID newId(long epochMillis) {
     UUID random = UUID.randomUUID();

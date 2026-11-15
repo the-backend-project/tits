@@ -16,12 +16,12 @@ An event type has two type parameters, `EventType<I, O>`, and so does the transi
 `BasicEventType.of(name, id)` one with neither (`Void`). The [identity provider](identity-provider.md) has event types
 of all kinds:
 
-| Event type              | `I`                    | `O`            |
-|-------------------------|------------------------|----------------|
-| `ClientRegistered`      | `Registration`         | `Registration` |
-| `RegistrationRequested` | `Registration`         | `Void`         |
-| `RegistrationAccepted`  | `(Registration, UUID)` | `Registration` |
-| `ClientIdClaimed`       | `String`               | `String`       |
+| Event type              | `I`                        | `O`            |
+|-------------------------|----------------------------|----------------|
+| `ClientRegistered`      | `Registration`             | `Registration` |
+| `RegistrationRequested` | `Registration`             | `Void`         |
+| `RegistrationAccepted`  | `(Registration, EntityId)` | `Registration` |
+| `ClientIdClaimed`       | `String`                   | `String`       |
 
 ## Steps
 
@@ -168,17 +168,17 @@ flowchart LR
     in(["Registration"]) --> i1
     subgraph request ["RequestRegistration, EventType#lt;Registration, Void#gt;"]
         direction LR
-        i1["InputStep<br>Registration"] -- "assemble" --> a1["AssembleStep<br>(Registration, UUID)"]
-        a1 -- "trigger(ClientIdClaimed)" --> t1["TriggerStep<br>((Registration, UUID), ProcessResult#lt;String#gt;)"]
+        i1["InputStep<br>Registration"] -- "assemble" --> a1["AssembleStep<br>(Registration, EntityId)"]
+        a1 -- "trigger(ClientIdClaimed)" --> t1["TriggerStep<br>((Registration, EntityId), ProcessResult#lt;String#gt;)"]
         o1["OutputStep<br>Completed"]
     end
     subgraph reject ["RejectRegistration, EventType#lt;Registration, Registration#gt;"]
         direction LR
         r1["InputStep<br>Registration"] --> r2["..."] --> r3["OutputStep<br>Accepted, with Registration"]
     end
-    subgraph accept ["AcceptRegistration, EventType#lt;(Registration, UUID), Registration#gt;"]
+    subgraph accept ["AcceptRegistration, EventType#lt;(Registration, EntityId), Registration#gt;"]
         direction LR
-        c1["InputStep<br>(Registration, UUID)"] --> c2["..."] --> c3["OutputStep<br>Accepted, with Registration"]
+        c1["InputStep<br>(Registration, EntityId)"] --> c2["..."] --> c3["OutputStep<br>Accepted, with Registration"]
     end
     t1 -- "when(id exists)" --> r1
     t1 -- "otherwise" --> c1
