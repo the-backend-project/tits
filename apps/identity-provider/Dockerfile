@@ -3,7 +3,7 @@
 #
 #   docker build -f apps/identity-provider/Dockerfile -t tits-identity-provider .
 
-# GraalVM Community 25 (multi-arch index digest). No GraalVM release supports Java 27 yet, so the build targets 25.
+# GraalVM Community 25 (multi-arch index digest), the Java version the libraries target.
 FROM ghcr.io/graalvm/native-image-community:25i5-25.0.5.0.3-ol10@sha256:2800b5bd11cbb9bf11c92591d05ea37d9a735522bdc0e86827302d998843ad79 AS build
 
 # Maven Central is much faster than archive.apache.org, and keeps every release.
@@ -18,7 +18,7 @@ ENV PATH=/opt/apache-maven-${MAVEN_VERSION}/bin:$PATH
 WORKDIR /src
 COPY . .
 RUN --mount=type=cache,target=/root/.m2 \
-    mvn -B -q package -pl apps/identity-provider -am -DskipTests -Dmaven.compiler.release=25 \
+    mvn -B -q package -pl apps/identity-provider -am -DskipTests \
       -Daether.artifactResolver.postProcessor.trustedChecksums.failIfMissing=true
 
 # NATIVE_IMAGE_OPTS passes extra options to native-image. CI sets it to -Ob (quick build mode), which builds faster

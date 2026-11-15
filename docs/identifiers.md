@@ -16,9 +16,9 @@ Ids created later are greater, so they sort in the order they are created, to th
 ```
 
 `Identifiers.newId()` creates one, with the same layout as `UUID.ofEpochMillis`, which was added in Java 26 and so can't
-be used while the native images are built for Java 25. It is what the state machine uses for new entities, and what a
-transition should use for an entity it creates with an id of its own, as the [identity provider](existing-ids.md) does
-for a client:
+be used by the libraries, as they [target Java 25](modules.md#java-version). It is what the state machine uses for new
+entities, and what a transition should use for an entity it creates with an id of its own, as the
+[identity provider](existing-ids.md) does for a client:
 
 ```java
 .assemble(c -> tuple(c.input(), newId()))
