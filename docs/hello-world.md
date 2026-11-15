@@ -17,13 +17,13 @@ The [state diagram](diagrams.md) is generated from the model. Hover over the nam
 
 `Greeting`:
 
-<object data="../images/com.github.thxmasj.backend.helloworld.Greeting.svg" type="image/svg+xml" width="100%"></object>
+<object data="../images/com.github.thxmasj.backend.helloworld.Greeting.svg" type="image/svg+xml"></object>
 
 [Open the diagram in full size](images/com.github.thxmasj.backend.helloworld.Greeting.svg)
 
 The entity models, with those of the HTTP inbox, and how they relate through triggers:
 
-<object data="../images/com.github.thxmasj.backend.helloworld.er.svg" type="image/svg+xml" width="100%"></object>
+<object data="../images/com.github.thxmasj.backend.helloworld.er.svg" type="image/svg+xml"></object>
 
 [Open the diagram in full size](images/com.github.thxmasj.backend.helloworld.er.svg)
 

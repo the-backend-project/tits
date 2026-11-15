@@ -24,25 +24,25 @@ The [state diagrams](diagrams.md) are generated from the model. Hover over the n
 
 `Client`:
 
-<object data="../images/com.github.thxmasj.backend.identityprovider.Client.svg" type="image/svg+xml" width="100%"></object>
+<object data="../images/com.github.thxmasj.backend.identityprovider.Client.svg" type="image/svg+xml"></object>
 
 [Open the diagram in full size](images/com.github.thxmasj.backend.identityprovider.Client.svg)
 
 `Client registration`:
 
-<object data="../images/com.github.thxmasj.backend.identityprovider.ClientRegistration.svg" type="image/svg+xml" width="100%"></object>
+<object data="../images/com.github.thxmasj.backend.identityprovider.ClientRegistration.svg" type="image/svg+xml"></object>
 
 [Open the diagram in full size](images/com.github.thxmasj.backend.identityprovider.ClientRegistration.svg)
 
 `Token request`:
 
-<object data="../images/com.github.thxmasj.backend.identityprovider.TokenRequest.svg" type="image/svg+xml" width="100%"></object>
+<object data="../images/com.github.thxmasj.backend.identityprovider.TokenRequest.svg" type="image/svg+xml"></object>
 
 [Open the diagram in full size](images/com.github.thxmasj.backend.identityprovider.TokenRequest.svg)
 
 The entity models, with those of the [HTTP inbox](http-inbox.md), and how they relate through triggers:
 
-<object data="../images/com.github.thxmasj.backend.identityprovider.er.svg" type="image/svg+xml" width="100%"></object>
+<object data="../images/com.github.thxmasj.backend.identityprovider.er.svg" type="image/svg+xml"></object>
 
 [Open the diagram in full size](images/com.github.thxmasj.backend.identityprovider.er.svg)
 

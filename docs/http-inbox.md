@@ -45,10 +45,10 @@ issuer has added since.
 
 ## State diagrams
 
-<object data="../images/com.github.thxmasj.backend.http.inbox.RequestRouting.svg" type="image/svg+xml" width="100%"></object>
+<object data="../images/com.github.thxmasj.backend.http.inbox.RequestRouting.svg" type="image/svg+xml"></object>
 
 [Open the RequestRouting diagram in full size](images/com.github.thxmasj.backend.http.inbox.RequestRouting.svg)
 
-<object data="../images/com.github.thxmasj.backend.http.inbox.RequestDispatching.svg" type="image/svg+xml" width="100%"></object>
+<object data="../images/com.github.thxmasj.backend.http.inbox.RequestDispatching.svg" type="image/svg+xml"></object>
 
 [Open the RequestDispatching diagram in full size](images/com.github.thxmasj.backend.http.inbox.RequestDispatching.svg)

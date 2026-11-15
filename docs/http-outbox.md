@@ -108,7 +108,7 @@ inflight timeout.
 
 The diagram generated from the model shows every event, including the intermediate ones of the choices above:
 
-<object data="../images/com.github.thxmasj.backend.http.outbox.AtLeastOnce.svg" type="image/svg+xml" width="100%"></object>
+<object data="../images/com.github.thxmasj.backend.http.outbox.AtLeastOnce.svg" type="image/svg+xml"></object>
 
 [Open the diagram in full size](images/com.github.thxmasj.backend.http.outbox.AtLeastOnce.svg)
 
@@ -195,7 +195,7 @@ never received.
 
 The diagram generated from the model, with both rollback models:
 
-<object data="../images/com.github.thxmasj.backend.http.outbox.AtMostOnce.svg" type="image/svg+xml" width="100%"></object>
+<object data="../images/com.github.thxmasj.backend.http.outbox.AtMostOnce.svg" type="image/svg+xml"></object>
 
 [Open the diagram in full size](images/com.github.thxmasj.backend.http.outbox.AtMostOnce.svg)
 
