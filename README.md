@@ -30,7 +30,8 @@ a data source. See [Databases](docs/databases.md) for the pros and cons of each 
 
 ## Building
 
-Requires Java 27 and Maven 3.9 or later.
+Requires Java 25 and Maven 3.9 or later. The libraries target the latest LTS release of Java, see
+[Java version](docs/modules.md#java-version).
 
 The tests need a database. They run on SQL Server by default, which can be started with `bin/start-mssql.sh`. To run
 them on PostgreSQL, start it with `bin/start-postgres.sh` and run the build with `-Ddatabase=pgsql-jdbc -pl '!apps/hello-world'`, or

@@ -350,7 +350,7 @@
     <properties>
         <reactor.version>3.8.8</reactor.version>
         <jackson.version>3.3.0</jackson.version>
-        <maven.compiler.release>27</maven.compiler.release>
+        <maven.compiler.release>25</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 

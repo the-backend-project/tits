@@ -13,7 +13,7 @@ jobs:
       - name: Set up JDK 27
         uses: actions/setup-java@v6
         with:
-          java-version: '27'
+          java-version: '25'
           distribution: 'temurin'
           cache: maven
       # Modules depending on each other at a release version are subject to trusted checksum verification, but
