@@ -174,9 +174,11 @@ class ERDiagramFormatterTest {
   }
 
   @Test
-  void triggerOnGroupIsDrawnInStateDiagram(@TempDir Path directory) throws IOException {
-    File file = new PlantUMLFormatter(Car, modelWithGroup().get(Car)).formatToImage(directory.resolve("Car.svg").toFile());
-    assertThat(Files.readString(file.toPath())).contains("Car parked@Places");
+  void triggerOnGroupIsDrawnInStateDiagram() {
+    // The details of the arrow rather than the SVG, which only shows them where Graphviz does the layout
+    var labels = new PlantUMLFormatter(Car, modelWithGroup().get(Car)).diagram().labelsBySourceLine().values();
+    assertThat(labels.stream().flatMap(List::stream).flatMap(label -> label.details().stream()))
+        .contains("<&share>Car parked@Places");
   }
 
 }

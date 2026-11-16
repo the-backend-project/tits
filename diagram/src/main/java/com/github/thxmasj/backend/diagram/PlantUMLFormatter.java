@@ -188,13 +188,15 @@ public class PlantUMLFormatter {
     return diagram().source();
   }
 
-  private record Label(String eventName, List<String> details) {}
+  record Label(String eventName, List<String> details) {}
 
   private record Arrow(String arrow, List<Label> labels) {}
 
-  private record Diagram(String source, Map<Integer, List<Label>> labelsBySourceLine) {}
+  record Diagram(String source, Map<Integer, List<Label>> labelsBySourceLine) {}
 
-  private Diagram diagram() {
+  /// The source of the diagram, and the labels of its arrows with the details shown when hovering over an event name.
+  /// Package-private for tests, as the SVG only gets the details where Graphviz does the layout.
+  Diagram diagram() {
     List<Arrow> arrows = mergeParallelTransitions(formatTransitionsFrom(
         Begin,
         this.transitions.get(Begin),
