@@ -77,7 +77,7 @@ public class PlantUMLFormatter {
     var svg = new ByteArrayOutputStream();
     new SourceStringReader(diagram.source()).outputImage(svg, new FileFormatOption(FileFormat.SVG));
     try (var out = new FileOutputStream(file)) {
-      out.write(addDetailPopups(svg.toString(UTF_8), diagram.labelsBySourceLine()).getBytes(UTF_8));
+      out.write(DiagramColours.addStyle(addDetailPopups(svg.toString(UTF_8), diagram.labelsBySourceLine())).getBytes(UTF_8));
     }
     return file;
   }
@@ -166,7 +166,7 @@ public class PlantUMLFormatter {
 
   private static String detailHtml(String detail) {
     String html = detail
-        .replace("<&share>", "\u21aa ").replace("<&bolt>", "\u26a1 ").replace("<&warning>", "\u26a0 ")
+        .replace("<&share>", "\u21aa ").replace("<&bolt>", "\u26a1 ")
         .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     return html.contains("&lt;color:red&gt;")
         ? "<span style=\"color:#7a0000\">" + html.replace("&lt;color:red&gt;", "") + "</span>"
@@ -248,19 +248,19 @@ public class PlantUMLFormatter {
   }
 
   // Combines transitions between the same pair of states into one arrow with the event names stacked, as side-by-side
-  // parallel arrows make the diagram very wide.
+  // parallel arrows make the diagram very wide. The self transitions of a state are combined into one loop likewise, as
+  // a state with many loops is drawn with them side by side. Equal transitions, e.g. the same refusal in several
+  // branches of a choice, are shown once.
   private List<Arrow> mergeParallelTransitions(String transitions) {
     Map<String, Arrow> arrows = new LinkedHashMap<>();
     for (String line : transitions.split("\n")) {
       if (line.isBlank()) continue;
       String[] arrowAndLabel = line.split(": ", 2);
-      String[] parts = arrowAndLabel[0].split(" ");
       String[] labelLines = arrowAndLabel[1].split("\\\\n");
-      // Self transitions are drawn as loops, which don't widen the diagram
-      String key = parts[0].equals(parts[2]) ? line : arrowAndLabel[0];
-      arrows.computeIfAbsent(key, _ -> new Arrow(arrowAndLabel[0], new ArrayList<>())).labels().add(
-          new Label(labelLines[0], List.of(labelLines).subList(1, labelLines.length))
-      );
+      List<Label> labels = arrows.computeIfAbsent(arrowAndLabel[0], _ -> new Arrow(arrowAndLabel[0], new ArrayList<>())).labels();
+      Label label = new Label(labelLines[0], List.of(labelLines).subList(1, labelLines.length));
+      if (!labels.contains(label))
+        labels.add(label);
     }
     return List.copyOf(arrows.values());
   }
@@ -346,14 +346,27 @@ public class PlantUMLFormatter {
         sourceState.equals(Begin) && !targetState.equals(Begin) ? "-right->" : "-->",
         stateId(targetState),
         Stream.of(
-            String.format("%s", eventType.name()),
-            transition.severity() != Severity.Info ? "<&warning>" + transition.severity() : "",
+            eventName(eventType, transition.severity()),
             eventType.inputDataType().equals(DataType.none()) && eventType.outputDataType().equals(DataType.none()) ? "" : "f: " + eventType.inputDataType().name() + " → " + eventType.outputDataType().name(),
             transition.triggers().stream().map(t -> "<&share>" + t.eventSpec().eventType().name() + "@" + ofNullable(t.entityModel()).map(m -> m.name()).orElse("???")).collect(joining("\\n")),
             transition.actions().stream().map(a -> "<&bolt>" + a.name()).collect(joining("\\n")),
             transition.reverseModel() != null ? transition.reverseModel().triggers().stream().map(t -> "<&share><color:red>" + t.eventSpec().eventType().name() + "@" + ofNullable(t.entityModel()).map(m -> m.name()).orElse("???")).collect(joining("\\n")) : ""
         ).filter(not(String::isEmpty)).collect(joining("\\n"))
     );
+  }
+
+  // Events of transitions with a severity above Info are named in bold, after a symbol for their severity, in the colour
+  // of their severity. The symbols have a text presentation by default, so they are drawn in that colour rather than as
+  // emoji.
+  private static String eventName(EventType<?, ?> eventType, Severity severity) {
+    String symbol = switch (severity) {
+      case Info -> null;
+      case Warning -> "\u26a0";
+      case Error -> "\u2716";
+      case Critical -> "\u203c";
+    };
+    if (symbol == null) return eventType.name();
+    return "<color:" + DiagramColours.of(severity).light() + "><b>" + symbol + " " + eventType.name() + "</b></color>";
   }
 
   private String state(State state) {
