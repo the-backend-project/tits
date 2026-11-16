@@ -105,9 +105,10 @@ where N is the number of the issue. The agent then:
 4. Makes the change and runs the tests of the affected modules, and updates `docs`, the README and this guide to match.
 5. Merges or rebases what has landed on main, pushes the branch and opens a pull request that closes the issue.
 
-The worktree stays in place for review changes. Once the pull request is merged, the agent can remove the worktree and
-the local branch. In IntelliJ IDEA, mark `.worktrees` as excluded so the worktrees aren't indexed with the main
-checkout.
+The agent tells you the worktree's path when it presents its plan and again with the pull request, so you can open
+it in your editor; `git worktree list` lists them all. The worktree stays in place for review changes. Once the pull
+request is merged, the agent can remove the worktree and the local branch. In IntelliJ IDEA, mark `.worktrees` as
+excluded so the worktrees aren't indexed with the main checkout.
 
 The skills are in [.agents/skills](.agents/skills), and both agents read the project's conventions from
 [AGENTS.md](AGENTS.md). The project's settings for each agent allow the common commands without asking: Maven (except

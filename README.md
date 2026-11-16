@@ -6,6 +6,62 @@ optimistic concurrency, deduplicates incoming HTTP requests, and sends outgoing 
 It is reactive and stateless, runs on the JVM or as a GraalVM native image, and keeps everything in a database,
 with no framework or message broker.
 
+## The model is the code, and the diagram is drawn from it
+
+A transition says which event takes an entity from which state to which, and which events it triggers on other
+entities. Below on the left are the transitions of a client registration in the [identity provider](docs/identity-provider.md),
+abridged from [Clients.java](apps/identity-provider/src/main/java/com/github/thxmasj/backend/identityprovider/Clients.java).
+On the right is the state diagram the [diagram module](docs/diagrams.md) draws from the same transitions, with no
+separate description to keep in sync. Where it is [published](https://the-backend-project.github.io/tits/identity-provider/),
+it shows the data and triggers of an event when the mouse hovers over its name.
+
+<table>
+<tr>
+<td>
+
+```java
+ClientRegistration, Map.of(
+  Begin, List.of(
+    onEvent(RegistrationRequested).to(Accepted)
+      .assemble(c -> tuple(c.input(), EntityId.newId()))
+      // Claim the client id, unless it is taken
+      .trigger(ClientIdClaimed).with(d -> d.t1().clientId())
+        .on(ClientIds).identifiedBy(d -> newEntityId(d.t2()))
+      .when(d -> d.t2().isIdExists()).then(
+        onEvent(RegistrationRejected).to(Rejected)
+          .assembleInput()
+          .trigger(ReplyCreated).with(d -> Reply.error(409, ...))
+            .on(Request).identifiedBy(entityIdFromSession())
+          .output(Tuple2::t1),
+        d -> d.t1().t1()
+      )
+      .otherwise(
+        onEvent(RegistrationAccepted).to(Accepted)
+          .assemble(...)
+          .trigger(ClientRegistered).with(...)
+            .on(Client).identifiedBy(...)
+          .trigger(ReplyCreated).with(d -> Reply.json(201, ...))
+            .on(Request).identifiedBy(entityIdFromSession())
+          .output(...),
+        Tuple2::t1
+      )
+  ),
+  Accepted, List.of(),
+  Rejected, List.of()
+)
+```
+
+</td>
+<td>
+
+<img alt="State diagram of a client registration: a registration request is accepted, or rejected if the client id is taken" src="https://the-backend-project.github.io/tits/images/com.github.thxmasj.backend.identityprovider.ClientRegistration.svg">
+
+</td>
+</tr>
+</table>
+
+## Documentation and apps
+
 Documentation is available at https://the-backend-project.github.io/tits/:
 
 * [Getting started](docs/getting-started.md): add the libraries, declare a model, run it and test it.
