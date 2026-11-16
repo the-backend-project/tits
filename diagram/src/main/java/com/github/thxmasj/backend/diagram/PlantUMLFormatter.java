@@ -248,18 +248,16 @@ public class PlantUMLFormatter {
   }
 
   // Combines transitions between the same pair of states into one arrow with the event names stacked, as side-by-side
-  // parallel arrows make the diagram very wide. Equal transitions, e.g. the same refusal in several branches of a
-  // choice, are shown once.
+  // parallel arrows make the diagram very wide. The self transitions of a state are combined into one loop likewise, as
+  // a state with many loops is drawn with them side by side. Equal transitions, e.g. the same refusal in several
+  // branches of a choice, are shown once.
   private List<Arrow> mergeParallelTransitions(String transitions) {
     Map<String, Arrow> arrows = new LinkedHashMap<>();
     for (String line : transitions.split("\n")) {
       if (line.isBlank()) continue;
       String[] arrowAndLabel = line.split(": ", 2);
-      String[] parts = arrowAndLabel[0].split(" ");
       String[] labelLines = arrowAndLabel[1].split("\\\\n");
-      // Self transitions are drawn as loops, which don't widen the diagram
-      String key = parts[0].equals(parts[2]) ? line : arrowAndLabel[0];
-      List<Label> labels = arrows.computeIfAbsent(key, _ -> new Arrow(arrowAndLabel[0], new ArrayList<>())).labels();
+      List<Label> labels = arrows.computeIfAbsent(arrowAndLabel[0], _ -> new Arrow(arrowAndLabel[0], new ArrayList<>())).labels();
       Label label = new Label(labelLines[0], List.of(labelLines).subList(1, labelLines.length));
       if (!labels.contains(label))
         labels.add(label);

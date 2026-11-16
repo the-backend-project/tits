@@ -51,6 +51,20 @@ class PlantUMLFormatterTest {
   }
 
   @Test
+  void selfTransitionsOfAStateAreStackedOnOneLoop() {
+    Map<State, List<TransitionModel<?, ?>>> transitions = Map.of(
+        Begin, List.of(onEvent(Requested).to(States.Accepted).output()),
+        States.Accepted, List.of(
+            onEvent(Refused).toSelf().output(),
+            onEvent(Withdrawn).toSelf().output()
+        )
+    );
+    String diagram = new PlantUMLFormatter(Request, transitions).format();
+    String acceptedId = States.Accepted.name() + States.Accepted.hashCode();
+    assertThat(diagram).contains(acceptedId + " --> " + acceptedId + ": Refused\\nWithdrawn\n");
+  }
+
+  @Test
   void eventNameIsColouredAfterTheSeverityOfItsTransition(@TempDir Path directory) throws IOException {
     Map<State, List<TransitionModel<?, ?>>> transitions = Map.of(
         Begin, List.of(
