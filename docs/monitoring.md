@@ -71,7 +71,8 @@ These transitions have a severity of their own:
 | Model                                      | Events                                                    | Severity  |
 |--------------------------------------------|-----------------------------------------------------------|-----------|
 | `AtLeastOnce` [outbox requests](http-outbox.md#atleastonce) | The events leading to `Dead`: the attempts are exhausted, or the request is rejected permanently | `Error` |
-| Inbox requests of the [HTTP inbox](http-inbox.md) | `Failed request completed`, which responds 500 Internal Server Error | `Error` |
+| Inbox requests of the [HTTP inbox](http-inbox.md) | `Failed request completed`, which responds 500 Internal Server Error, and `Request failed`, when a function the application gave the request throws an exception | `Error` |
+| `RequestRouting` of the [HTTP inbox](http-inbox.md) | `Request failed`, when the matcher of an inbox request throws an exception | `Error` |
 | `Token request` of the [identity provider](identity-provider.md) | `Token refused`, as many of them may be an attempt to guess a secret | `Warning` |
 | `Authorization` of the [identity provider](identity-provider.md) | `Authorization refused`, for an unknown client or redirect URI, and `User authentication failed` | `Warning` |
 | `Settlement` of the [card payment template](cardpayments.md) | `Imbalance detected` and `Settlement timed out`, which leave the settlement in `Error` | `Error` |

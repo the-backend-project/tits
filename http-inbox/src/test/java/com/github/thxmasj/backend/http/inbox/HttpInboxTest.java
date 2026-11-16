@@ -13,6 +13,7 @@ import static com.github.thxmasj.backend.core.Validated.valid;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.FailedRequestCompleted;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.InvalidRequestCompleted;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.RequestCompleted;
+import static com.github.thxmasj.backend.http.inbox.HttpInbox.RequestFailed;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.RequestRouting;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.Request;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.TRIGGER;
@@ -48,6 +49,8 @@ import com.github.thxmasj.backend.core.EventTrigger;
 import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.database.Mappers;
 import com.github.thxmasj.backend.core.test.Init;
+import com.github.thxmasj.backend.core.test.Logger;
+import com.github.thxmasj.backend.core.Listener.Change;
 import com.github.thxmasj.backend.diagram.PlantUMLFormatter;
 import com.github.thxmasj.backend.core.Severity;
 import com.github.thxmasj.backend.core.State;
@@ -82,9 +85,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import reactor.core.publisher.Mono;
 import reactor.netty.DisposableServer;
 import tools.jackson.databind.ObjectMapper;
@@ -292,8 +300,60 @@ public class HttpInboxTest {
       )
       .build("OwnedRequest", UUID.fromString("e2b7d14c-6a93-4f08-8c5e-3d9a1f6b2c47"));
 
-  static List<HttpInboxRequest<?>> requests = List.of(
+  /// Functions of an inbox request, as the application may give them, which throw an exception
+  private static <T, R> R fail(String message) {
+    throw new IllegalStateException(message);
+  }
+
+  /// Its normalizer expects a header, which a retried request may lack
+  static HttpInboxRequest<byte[]> NormalizedRequest = withBody("PUT .*/normalized/.*")
+      .messageIdParser(parseMessageId("PUT .*/normalized/(.*)", 1))
+      .normalizer(m -> {
+        if (m.headerValue("X-Version") == null)
+          throw new IllegalStateException("X-Version missing");
+        return m;
+      })
+      .process(InternalProcessingRequested, Lamp, newEntity())
+      .build("NormalizedRequest", UUID.fromString("5c2e8b17-4d9a-4f36-b0e1-7a3d6c9f2e58"));
+
+  /// Each of the functions the application gives it throws for a request to its path
+  static List<HttpInboxRequest<?>> faultyRequests = List.of(
+      HttpInboxRequest.matching(m -> m.requestLine().matches("PUT .*/faulty/parser/.*"))
+          .contentParser(_ -> fail("Parser failed"))
+          .process(InternalProcessingRequested, Lamp, newEntity())
+          .build("FaultyParserRequest", UUID.fromString("0e4a7c21-93b5-4f8d-a6c2-1d5e8b3f7a90")),
+      withBody("PUT .*/faulty/message-id/.*")
+          .messageIdParser((_, _) -> fail("Message id parser failed"))
+          .process(InternalProcessingRequested, Lamp, newEntity())
+          .build("FaultyMessageIdRequest", UUID.fromString("7b1d9e43-26c8-4a5f-8e07-c3f2a6d1b984")),
+      withBody("PUT .*/faulty/authorizer/.*")
+          .authorizer((_, _) -> fail("Authorizer failed"))
+          .process(InternalProcessingRequested, Lamp, newEntity())
+          .build("FaultyAuthorizerRequest", UUID.fromString("a2f6c8d0-4e19-4b73-95a8-6d0e3c7b1f25")),
+      withBody("PUT .*/faulty/predicate/.*")
+          .process(when("never", _ -> fail("Predicate failed")), InternalProcessingRequested, Lamp, newEntity())
+          .process(InternalProcessingRequested, Lamp, newEntity())
+          .build("FaultyPredicateRequest", UUID.fromString("c94b2e17-5a3d-4f60-b8e1-0d7a6f2c9e43")),
+      withBody("PUT .*/faulty/selector/.*")
+          .process(InternalProcessingRequested, Lamp, (_, _) -> fail("Selector failed"))
+          .build("FaultySelectorRequest", UUID.fromString("3e8a1f6d-b072-4c95-a14e-9f2d5b7c0a86")),
+      withBody("PUT .*/faulty/input/.*")
+          .process(ZeroProcessingRequested, Lamp, _ -> fail("Input failed"), newEntity())
+          .build("FaultyInputRequest", UUID.fromString("e61c4b9a-0d27-48f3-b5a6-2c8e9f1d7b30")),
+      withBody("PUT .*/faulty/rollback/.*")
+          .messageIdParser(parseMessageId("PUT .*/faulty/rollback/(.*)", 1))
+          .process(InternalProcessingRequested, Lamp, newEntity())
+          .rollback(m -> m.requestLine().matches("DELETE .*/faulty/rollback/.*"), (_, _) -> fail("Rollback message id parser failed"))
+          .build("FaultyRollbackRequest", UUID.fromString("8d3f0a72-1c6e-4b94-9e5d-a7b2c4f8e016")),
+      HttpInboxRequest.matching(m -> m.requestLine().contains("/faulty/matcher/") ? fail("Matcher failed") : false)
+          .noContent()
+          .process(InternalProcessingRequested, Lamp, newEntity())
+          .build("FaultyMatcherRequest", UUID.fromString("f05b7d39-6a24-4e81-8c3f-b1e9d2a6c574"))
+  );
+
+  static List<HttpInboxRequest<?>> requests = Stream.concat(Stream.of(
       ContentRequest,
+      NormalizedRequest,
       OwnedRequest,
       withBody("PUT .*/protected/.*")
           .authorizer(HttpInbox.bearerToken(verifier, "payments"))
@@ -335,7 +395,7 @@ public class HttpInboxTest {
           .noContent()
           .process(EventsRolledBack, Lamp, _ -> new Data(0, "Cancel"), parseEntityId("DELETE .*/internal/(.*)", 1))
           .build("CancelRequest", UUID.fromString("f5ef4720-c6bc-4686-be8b-85eeb0fdc372"))
-  );
+  ), faultyRequests.stream()).toList();
 
   private static StateMachine createStateMachine(
       EntityModel entityModel,
@@ -355,7 +415,18 @@ public class HttpInboxTest {
       }
     }
     transitions.put(Index, Index.transitions());
-    return Init.stateMachine(HttpInbox.transitions(requests, transitions));
+    return Init.stateMachine(
+        UUID.randomUUID().toString(),
+        HttpInbox.transitions(requests, transitions),
+        Clock.systemUTC(),
+        new Logger("Test") {
+          @Override
+          public void changeAccepted(String correlationId, List<Change> accepted) {
+            super.changeAccepted(correlationId, accepted);
+            changes.computeIfAbsent(correlationId, _ -> new CopyOnWriteArrayList<>()).addAll(accepted);
+          }
+        }
+    );
   }
 
   private static TypedHttpRequest<Void> requestMessage(String path) {
@@ -634,6 +705,63 @@ public class HttpInboxTest {
     assertEquals(500, response.statusCode());
     assertEquals("Subsystem unavailable", ProblemDetail.parse(response.body()).detail());
   }
+
+  /// A function the application gave the inbox request which throws fails the request, which is answered with 500,
+  /// rather than left without a response
+  @ParameterizedTest
+  @CsvSource({
+      "PUT, /faulty/parser/1",
+      "PUT, /faulty/message-id/1",
+      "PUT, /faulty/authorizer/1",
+      "PUT, /faulty/predicate/1",
+      "PUT, /faulty/selector/1",
+      "PUT, /faulty/input/1",
+      "DELETE, /faulty/rollback/1",
+      "PUT, /faulty/matcher/1",
+  })
+  public void whenFunctionOfRequestThrowsThenRequestFailsWithInternalServerError(Method method, String path) throws IOException {
+    assertFailed(new HttpRequestMessage(method, URI.create(path), Map.of(), "Hello!".getBytes()));
+  }
+
+  /// A retried request is compared with the first one after both are normalized, and the normalizer may fail
+  @Test
+  public void whenNormalizerThrowsOnRetriedRequestThenRequestFailsWithInternalServerError() throws IOException {
+    String messageId = UUID.randomUUID().toString();
+    URI uri = URI.create("/normalized/" + messageId);
+    HttpResponseMessage first = HttpMessageParser.parseResponse(
+        onRequest(TRIGGER, new HttpRequestMessage(PUT, uri, Map.of("X-Version", "1"), "Hello!".getBytes())).data()
+    );
+    assertEquals(201, first.statusCode());
+    assertFailed(new HttpRequestMessage(PUT, uri, Map.of(), "Hello!".getBytes()));
+  }
+
+  @Test
+  public void failedRequestIsAnError() {
+    TransitionModel<?, ?> failed = NormalizedRequest.transitions().get(Begin).getFirst().filters().stream()
+        .map(filter -> filter.alternative().model())
+        .filter(transition -> transition.eventType() == RequestFailed)
+        .findFirst()
+        .orElseThrow();
+    assertEquals(Severity.Error, failed.severity());
+  }
+
+  /// The request is answered with 500 Internal Server Error, without telling the failure, which is recorded as an event
+  /// of severity Error
+  private void assertFailed(HttpRequestMessage request) throws IOException {
+    String correlationId = UUID.randomUUID().toString();
+    Event<?> responseEvent = onRequest(correlationId, TRIGGER, request);
+    HttpResponseMessage response = HttpMessageParser.parseResponse(responseEvent.data());
+    assertEquals(500, response.statusCode());
+    assertEquals(null, ProblemDetail.parse(response.body()).detail());
+    assertThat(changes.getOrDefault(correlationId, List.of()))
+        .anySatisfy(change -> {
+          assertEquals(RequestFailed.name(), change.event().type());
+          assertEquals(Severity.Error, change.event().severity());
+        });
+  }
+
+  /// The changes the state machine stored, by correlation id
+  private static final Map<String, List<Change>> changes = new ConcurrentHashMap<>();
 
   /// A response of 500 is an error for monitoring
   @Test
@@ -1103,8 +1231,12 @@ public class HttpInboxTest {
   }
 
   private Event<?> onRequest(EventTrigger<HttpRequestMessage, ?, ?> eventTrigger, HttpRequestMessage requestMessage) {
+    return onRequest(UUID.randomUUID().toString(), eventTrigger, requestMessage);
+  }
+
+  private Event<?> onRequest(String correlationId, EventTrigger<HttpRequestMessage, ?, ?> eventTrigger, HttpRequestMessage requestMessage) {
     System.out.println(getClass().getSimpleName() + ": onRequest(...) with " + requestMessage.requestLine());
-    return stateMachine.onEvent(UUID.randomUUID().toString(), eventTrigger, requestMessage)
+    return stateMachine.onEvent(correlationId, eventTrigger, requestMessage)
         .doOnNext(e -> System.out.println("Test got response: " + e.type().name()))
         .switchIfEmpty(Mono.defer(() -> Mono.error(new RuntimeException("Test error"))))
         // First event is the triggered event.

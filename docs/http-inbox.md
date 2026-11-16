@@ -79,6 +79,21 @@ listener can authenticate, log or rewrite requests before they reach the inbox.
 A response of 500 Internal Server Error, which the application triggers with `FailedRequestCompleted`, is an event of
 [severity](monitoring.md#severity) `Error`.
 
+### Failing functions
+
+The functions the application gives an inbox request may throw an exception: the matcher, the content parser, the
+message id parser, the authorizer, the content predicates, the selector and the input of the processes, the normalizer,
+and the matcher, message id parser and authorizer of a rollback. The request then fails, with the event
+`Request failed` of severity `Error`, on the inbox request, or on `RequestRouting` if a matcher failed. The event's data
+names the function and the request, and gives the exception, e.g.
+`The normalizer of PlaceOrder failed: java.lang.IllegalStateException: ...`. The client gets 500 Internal Server Error
+without the detail, rather than waiting for the listener's response timeout. Return an invalid `Validated` or a
+refused `Authorization` for a request the client got wrong, so that it is answered with 4xx and the reason.
+
+The input of the process is created when the request is validated, before the message id is claimed, so it is created
+for a retried request too. The normalizer is only called when a request is compared with an earlier one with the same
+message id, so it fails on a retried request only.
+
 ## Content routing
 
 The requests to one endpoint can trigger different events, by their content. An inbox request then has several
@@ -173,7 +188,7 @@ The `PlaceOrder` inbox request, from receiving the request to its response, and 
 |---------------|-----------------------------------------------------------------------------------------------------------|
 | `Dispatched`  | The request is dispatched to the application, which hasn't responded yet                                   |
 | `Rejected`    | The application rejected the request, or the message id is taken by another or a rolled back request       |
-| `Completed`   | The request is answered, also if it was invalid or refused                                                 |
+| `Completed`   | The request is answered, also if it was invalid, refused or failed                                         |
 | `RollingBack` | A rollback of the request is received, and its events on the application are being rolled back             |
 | `RolledBack`  | The request is rolled back                                                                                 |
 | `RejectedRollbackFromDispatched`, `RejectedRollbackFromCompleted` | The application rejected the rollback                  |
