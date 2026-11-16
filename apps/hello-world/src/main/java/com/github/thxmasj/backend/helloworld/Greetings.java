@@ -3,14 +3,8 @@ package com.github.thxmasj.backend.helloworld;
 import static com.github.thxmasj.backend.core.EntityModel.Begin;
 import static com.github.thxmasj.backend.core.EntitySelector.entityIdFromSession;
 import static com.github.thxmasj.backend.core.TransitionModelBuilder.WithEvent.onEvent;
-import static com.github.thxmasj.backend.core.Validated.valid;
-import static com.github.thxmasj.backend.http.inbox.HttpInbox.EntityModels.RequestDispatching;
-import static com.github.thxmasj.backend.http.inbox.HttpInbox.EntityModels.RequestRouting;
-import static com.github.thxmasj.backend.http.inbox.HttpRequestRoute.ContentRoute.anyContent;
-import static com.github.thxmasj.backend.http.inbox.HttpRequestRoute.ContentRoute.newEntity;
-import static com.github.thxmasj.backend.http.inbox.HttpInbox.MessageIds;
-import static com.github.thxmasj.backend.http.inbox.TransitionModels.requestDispatchingTransitions;
-import static com.github.thxmasj.backend.http.inbox.TransitionModels.requestRoutingTransitions;
+import static com.github.thxmasj.backend.http.inbox.HttpInbox.Request;
+import static com.github.thxmasj.backend.http.inbox.HttpInboxRequest.newEntity;
 
 import com.github.thxmasj.backend.core.BasicEventType;
 import com.github.thxmasj.backend.core.DataType;
@@ -18,8 +12,8 @@ import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.TransitionModel;
-import com.github.thxmasj.backend.http.inbox.HttpInbox.CustomResponse;
-import com.github.thxmasj.backend.http.inbox.HttpRequestRoute;
+import com.github.thxmasj.backend.http.inbox.HttpInbox;
+import com.github.thxmasj.backend.http.inbox.HttpInboxRequest;
 import com.github.thxmasj.backend.http.inbox.ResponseEventType;
 import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
 import java.nio.charset.StandardCharsets;
@@ -44,24 +38,12 @@ public interface Greetings {
       DataType.string()
   );
 
-  List<HttpRequestRoute<?>> routes = List.of(
-      new HttpRequestRoute<>(
-          m -> m.requestLine().matches("GET /(\\?.*)?"),
-          _ -> valid(null),
-          List.of(anyContent(
-              null,
-              null,
-              UUID.fromString("5e3d4a8c-0f2b-4c6e-b1d7-9a8f7e6d5c4b"),
-              GreetingRequested,
-              Greeting,
-              _ -> null,
-              newEntity()
-          ))
-      )
-  );
-
-  List<CustomResponse<?>> customResponses = List.of(
-      new CustomResponse<>(
+  /// A `GET /`, which creates a greeting and is answered with its page
+  HttpInboxRequest<Void> GreetingRequest = HttpInboxRequest
+      .matching(m -> m.requestLine().matches("GET /(\\?.*)?"))
+      .noContent()
+      .process(GreetingRequested, Greeting, newEntity())
+      .response(
           GreetingResponseCreated,
           c -> new HttpResponseMessage(
               200,
@@ -70,23 +52,20 @@ public interface Greetings {
               page(c.input(), c.correlationId()).getBytes(StandardCharsets.UTF_8)
           )
       )
-  );
+      .build("GreetingRequest", UUID.fromString("5e3d4a8c-0f2b-4c6e-b1d7-9a8f7e6d5c4b"));
 
   static Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions() {
-    return Map.of(
+    return HttpInbox.transitions(List.of(GreetingRequest), Map.of(
         Greeting, Map.of(
             Begin, List.of(
                 onEvent(GreetingRequested).to(States.Greeted)
                     .assemble(c -> c.log().entityId().toString())
-                    .trigger(GreetingResponseCreated).with(id -> id).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                    .trigger(GreetingResponseCreated).with(id -> id).on(Request).identifiedBy(entityIdFromSession())
                     .output()
             ),
             States.Greeted, List.of()
-        ),
-        RequestRouting, requestRoutingTransitions(routes),
-        RequestDispatching, requestDispatchingTransitions(routes, customResponses),
-        MessageIds, MessageIds.transitions()
-    );
+        )
+    ));
   }
 
   private static String page(String greetingId, String correlationId) {

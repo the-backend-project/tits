@@ -74,33 +74,51 @@ ResponseEventType<String> GreetingResponseCreated = new ResponseEventType<>(
 );
 ```
 
+The requests the application receives are entities too, of the [HTTP inbox](http-inbox.md). An inbox request matches
+requests and says which event they trigger on which entity, here `GreetingRequested` on a new `Greeting` for every
+`GET /`, and turns the response event into an HTTP response:
+
+```java
+HttpInboxRequest<Void> GreetingRequest = HttpInboxRequest
+    .matching(m -> m.requestLine().matches("GET /(\\?.*)?"))
+    .noContent()
+    .process(GreetingRequested, Greeting, newEntity())
+    .response(
+        GreetingResponseCreated,
+        c -> new HttpResponseMessage(
+            200,
+            "OK",
+            Map.of("Content-Type", "text/html;charset=UTF-8", "X-Correlation-Id", c.correlationId()),
+            page(c.input(), c.correlationId()).getBytes(StandardCharsets.UTF_8)
+        )
+    )
+    .build("GreetingRequest", UUID.fromString("5e3d4a8c-0f2b-4c6e-b1d7-9a8f7e6d5c4b"));
+```
+
 The [transitions](transition-models.md) say what happens on each event type in each state. A greeting starts in
 `Begin`, and `GreetingRequested` takes it to `Greeted`. On the way, the transition triggers the response on the request
-that is waiting for it:
+that is waiting for it, `HttpInbox.Request`, which stands for whichever inbox request the greeting was requested by:
 
 ```java
 static Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions() {
-  return Map.of(
+  return HttpInbox.transitions(List.of(GreetingRequest), Map.of(
       Greeting, Map.of(
           Begin, List.of(
               onEvent(GreetingRequested).to(States.Greeted)
                   .assemble(c -> c.log().entityId().toString())
-                  .trigger(GreetingResponseCreated).with(id -> id).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                  .trigger(GreetingResponseCreated).with(id -> id).on(Request).identifiedBy(entityIdFromSession())
                   .output()
           ),
           States.Greeted, List.of()
-      ),
-      RequestRouting, requestRoutingTransitions(routes),
-      RequestDispatching, requestDispatchingTransitions(routes, customResponses),
-      MessageIds, MessageIds.transitions()
-  );
+      )
+  ));
 }
 ```
 
-The last three entries are the entity models of the [HTTP inbox](http-inbox.md). Its requests are entities too, so
-they are part of the same map. The `routes` match requests and say which event they trigger on which entity, here
-`GreetingRequested` on a new `Greeting` for every `GET /`. The `customResponses` turn the response event into an HTTP
-response. Both are in `Greetings.java` in the demo.
+`HttpInbox.transitions` adds the entity models of the inbox to those of the application: the inbox requests,
+`RequestRouting`, which routes a request to the inbox request matching it, and `MessageIds`. It also checks that the
+inbox request takes the response the greeting gives, `GreetingResponseCreated`. Both are in `Greetings.java` in the
+demo.
 
 ## Running it
 

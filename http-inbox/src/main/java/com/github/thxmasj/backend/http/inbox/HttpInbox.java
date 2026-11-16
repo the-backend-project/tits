@@ -1,11 +1,11 @@
 package com.github.thxmasj.backend.http.inbox;
 
 import static com.github.thxmasj.backend.core.EntitySelector.newEntityId;
-import static com.github.thxmasj.backend.http.inbox.HttpInbox.EntityModels.RequestRouting;
 
 import com.github.thxmasj.backend.core.BasicEventType;
 import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.EntityModel;
+import com.github.thxmasj.backend.core.EntityModelGroup;
 import com.github.thxmasj.backend.core.EntitySelector;
 import com.github.thxmasj.backend.core.EventReference;
 import com.github.thxmasj.backend.core.EventTrigger;
@@ -13,7 +13,7 @@ import com.github.thxmasj.backend.core.EventTrigger.EventSpec;
 import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.IdEntityModel;
 import com.github.thxmasj.backend.core.State;
-import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionContext;
+import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.core.Tuples.Tuple2;
 import com.github.thxmasj.backend.core.Tuples.Tuple3;
 import com.github.thxmasj.backend.core.Validated;
@@ -21,14 +21,32 @@ import com.github.thxmasj.backend.core.http.HttpDataType;
 import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
 import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
 import com.github.thxmasj.backend.http.inbox.Authorization.Refused;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
+/// The HTTP inbox of an application: the [HttpInboxRequest]s it receives, and the `RequestRouting` entity model
+/// routing a received request to the inbox request matching it.
 public interface HttpInbox {
 
-  record RouteId(int metaDataRoute, int contentRoute) {}
+  /// Routes every received request to the inbox request matching it, and answers the request with the response the
+  /// inbox request gives it. A request matching no inbox request is answered with 400 Bad Request.
+  EntityModel RequestRouting = EntityModel.of("RequestRouting", UUID.fromString("20755705-fc81-4228-a1a7-5e13d6e3c153"));
+
+  /// Any inbox request, which an application responds to by triggering a [ResponseEventType] such as
+  /// [#RequestCompleted] on it, identified by the session, without knowing which inbox request it is:
+  ///
+  /// ```java
+  /// .trigger(RequestCompleted).with(d -> tuple("Done", d)).on(HttpInbox.Request).identifiedBy(entityIdFromSession())
+  /// ```
+  EntityModelGroup Request = EntityModelGroup.of(
+      "Request",
+      UUID.fromString("0f3b6e2a-9c41-4d7e-8a15-6b2f9d4c3e71"),
+      model -> model instanceof HttpInboxRequest<?>
+  );
 
   EventType<HttpRequestMessage, Void> RequestReceived = BasicEventType.of(
       "Request received",
@@ -37,11 +55,31 @@ public interface HttpInbox {
       DataType.none()
   );
 
+  /// Triggers a received request on a new `RequestRouting` entity
   EventTrigger<HttpRequestMessage, HttpRequestMessage, ?> TRIGGER = new EventTrigger<>(
       new EventSpec<>(RequestReceived, Function.identity()),
       List.of(newEntityId()),
       RequestRouting,
       false
+  );
+
+  /// The request is routed to the inbox request matching it
+  EventType<HttpRequestMessage, HttpRequestMessage> RequestRouted = BasicEventType.of(
+      "Request routed",
+      UUID.fromString("5b0d7e3c-2a6f-4f81-9c4e-7d1a8b2e6f39"),
+      HttpDataType.forRequest()
+  );
+  EventType<HttpRequestMessage, Void> RollbackRequestReceived = BasicEventType.of(
+      "Rollback request received",
+      UUID.fromString("c2e94f17-6b3a-4d58-a0e1-3f7c5b9d2a84"),
+      HttpDataType.forRequest(),
+      DataType.none()
+  );
+  EventType<RoutedRequest<?>, Void> RequestDispatched = BasicEventType.of(
+      "Request dispatched",
+      UUID.fromString("8a6c2d4f-1e3b-4a97-b5d8-0c9e7f2a1b63"),
+      DataType.unknown(),
+      DataType.none()
   );
   EventType<Tuple3<String, UUID, HttpRequestMessage>, HttpRequestMessage> RequestRejected = BasicEventType.of(
       "Request rejected",
@@ -104,15 +142,16 @@ public interface HttpInbox {
       DataType.string(),
       DataType.none()
   );
-  EventType<Refused, Void> RequestRejectedAsUnauthorized = BasicEventType.of(
+  /// The request's body, message id or entity id is invalid
+  EventType<String, HttpResponseMessage> RequestRejectedAsInvalid = BasicEventType.of(
+      "Request rejected as invalid",
+      UUID.fromString("e7a1c94b-3d2f-4b86-9f05-2a8d6c1e7b40"),
+      DataType.string(),
+      HttpDataType.forResponse()
+  );
+  EventType<Refused, HttpResponseMessage> RequestRejectedAsUnauthorized = BasicEventType.of(
       "Request rejected as unauthorized",
       UUID.fromString("3a204b0b-2740-4b61-bdfa-4149c819be04"),
-      DataType.json(Refused.class),
-      DataType.none()
-  );
-  EventType<Refused, HttpResponseMessage> RefusalResponseCreated = BasicEventType.of(
-      "Refusal response created",
-      UUID.fromString("4cdff19a-ab84-4888-88e6-de7c4bed5907"),
       DataType.json(Refused.class),
       HttpDataType.forResponse()
   );
@@ -138,13 +177,43 @@ public interface HttpInbox {
       UUID.fromString("58cafda3-1818-4015-8f97-3d9f3bd2856f"),
       new MessageIdDataType()
   );
-  /// Ids of the requests, by the entity id of their RequestDispatching
+  /// Ids of the requests, by the entity id of their inbox request
   IdEntityModel MessageIds = IdEntityModel.of(
       "MessageIds",
       UUID.fromString("3c8e1f5a-7b2d-4e9c-a6f0-8d4b2e7c1a95"),
       MessageIdClaimed,
       RollbackMessageIdClaimed
   );
+
+  /// The transitions of the application with its inbox, to create the state machine with: those of the application,
+  /// and of `RequestRouting`, routing to the inbox requests, of the inbox requests and of `MessageIds`.
+  ///
+  /// Every inbox request is checked to take the responses its own processes may give. From the event of each process,
+  /// the transitions taken on it in any state, with all the transitions they may choose, and the transitions of the
+  /// events they trigger at once on other entities, in the same session, are followed. The event types they trigger on
+  /// [#Request] must be [#RequestCompleted], [#InvalidRequestCompleted], [#FailedRequestCompleted] or one the request
+  /// has a `response` for. Delayed and conditional triggers and actions, e.g. outbox requests, are not followed, as
+  /// what they lead to is calculated later, so a response given that way is checked only when it is given.
+  ///
+  /// @param application the transitions of the entity models of the application, e.g. those of the processes
+  /// @throws IllegalArgumentException if an inbox request doesn't take a response its processes may give
+  static Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions(
+      List<HttpInboxRequest<?>> requests,
+      Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> application
+  ) {
+    var transitions = new HashMap<>(application);
+    transitions.put(RequestRouting, requestRoutingTransitions(requests));
+    for (HttpInboxRequest<?> request : requests)
+      transitions.put(request, request.transitions());
+    transitions.put(MessageIds, MessageIds.transitions());
+    TransitionModels.checkResponses(requests, transitions);
+    return transitions;
+  }
+
+  /// The transitions of `RequestRouting`, routing a request to the first of the inbox requests matching it
+  static Map<State, List<TransitionModel<?, ?>>> requestRoutingTransitions(List<HttpInboxRequest<?>> requests) {
+    return TransitionModels.requestRoutingTransitions(requests);
+  }
 
   static <T> Function<HttpRequestMessage, Validated<T>> jsonParser(Class<T> contentType) {
     return new JsonRequestValidator<>(contentType, true);
@@ -154,7 +223,7 @@ public interface HttpInbox {
     return new JsonRequestValidator<>(contentType, validate);
   }
 
-  /// An authorizer for routes requiring a bearer token, RFC 6750, verified by the verifier and with the given scopes.
+  /// An authorizer for requests requiring a bearer token, RFC 6750, verified by the verifier and with the given scopes.
   /// The authorized subject is the `sub` of the token. A request is refused as section 3 of RFC 6750 says: with 401
   /// and the challenge `Bearer` if it has no bearer token, with 401 and the error `invalid_token` if the token is
   /// invalid or expired, and with 403 and the error `insufficient_scope` if the token lacks one of the scopes.
@@ -189,37 +258,26 @@ public interface HttpInbox {
     );
   }
 
-  enum EntityModels implements EntityModel {
-        RequestDispatching {
-            private final static UUID id = UUID.fromString("9711bee2-b42b-45ba-8d5e-7f891995a9c9");
-
-            @Override
-            public UUID id() {return id;}
-        },
-        RequestRouting {
-            private final static UUID id = UUID.fromString("20755705-fc81-4228-a1a7-5e13d6e3c153");
-
-            @Override
-            public UUID id() {return id;}
-
-        }
-    }
-
-    enum States implements State {
-        Routed,
-        Completed,
-        Rejected,
-        RollingBack,
-        RolledBack,
-        Dispatched,
-        RejectedRollbackFromCompleted,
-        RejectedRollbackFromDispatched
-    }
+  enum States implements State {
+    Routed,
+    Completed,
+    Rejected,
+    RollingBack,
+    RolledBack,
+    Dispatched,
+    RejectedRollbackFromCompleted,
+    RejectedRollbackFromDispatched
+  }
 
   record MessageId(String clientId, String value) {}
 
+  /// A request routed to an inbox request and found valid by it
+  ///
+  /// @param body the parsed body of the request
+  /// @param messageId the id of the request, by which a retried request is recognised, if it has one
+  /// @param authorizedSubject the subject the request is authorized for, if the inbox request has an authorizer
+  /// @param processSelector the entity of the application the request triggers an event on
   record RoutedRequest<T>(
-      RouteId routeId,
       HttpRequestMessage request,
       T body,
       MessageId messageId,
@@ -227,8 +285,4 @@ public interface HttpInbox {
       EntitySelector processSelector
   ) {}
 
-  record CustomResponse<I>(
-      ResponseEventType<I> event,
-      Function<TransitionContext<I>, HttpResponseMessage> messageCreator
-  ) {}
 }

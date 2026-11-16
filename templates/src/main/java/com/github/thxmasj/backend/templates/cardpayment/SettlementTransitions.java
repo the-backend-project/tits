@@ -10,7 +10,7 @@ import static com.github.thxmasj.backend.core.State.Intermediate;
 import static com.github.thxmasj.backend.core.TransitionModelBuilder.WithEvent.onEvent;
 import static com.github.thxmasj.backend.core.Tuples.tuple;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.RequestCompleted;
-import static com.github.thxmasj.backend.http.inbox.HttpInbox.EntityModels.RequestDispatching;
+import static com.github.thxmasj.backend.http.inbox.HttpInbox.Request;
 import static com.github.thxmasj.backend.http.outbox.HttpOutboxRequest.BatchReferenced;
 import static com.github.thxmasj.backend.templates.cardpayment.Aggregate.Settlement;
 import static com.github.thxmasj.backend.templates.cardpayment.Identifiers.AcquirerBatchNumberClaimed;
@@ -256,7 +256,7 @@ public class SettlementTransitions {
             .on(reconciliation.outbox())
             .identifiedBy(newEntityId())
             .trigger(SettlementEvent.SettlementOpened).with(d -> new Opened(d.t1().t2().next(), d.t1().t3().next())).on(Settlement).identifiedBy(newEntityId())
-            .trigger(RequestCompleted).with(d -> tuple("", d.t1().t1().t4())).on(RequestDispatching).identifiedBy(entityIdFromSession())
+            .trigger(RequestCompleted).with(d -> tuple("", d.t1().t1().t4())).on(Request).identifiedBy(entityIdFromSession())
             .output(d -> d.t1().t1().t1().t1())
     );
   }

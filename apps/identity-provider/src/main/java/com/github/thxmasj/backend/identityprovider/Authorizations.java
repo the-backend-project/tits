@@ -6,7 +6,7 @@ import static com.github.thxmasj.backend.core.EntitySelector.idEvent;
 import static com.github.thxmasj.backend.core.EntitySelector.newEntityId;
 import static com.github.thxmasj.backend.core.TransitionModelBuilder.WithEvent.onEvent;
 import static com.github.thxmasj.backend.core.Tuples.tuple;
-import static com.github.thxmasj.backend.http.inbox.HttpInbox.EntityModels.RequestDispatching;
+import static com.github.thxmasj.backend.http.inbox.HttpInbox.Request;
 import static com.github.thxmasj.backend.identityprovider.Clients.Client;
 import static com.github.thxmasj.backend.identityprovider.Clients.ClientIdClaimed;
 
@@ -184,7 +184,7 @@ public interface Authorizations {
                         onEvent(AuthorizationStarted).to(States.Authenticating)
                             .assemble(c -> tuple(c.input(), c.log().entityId()))
                             // The edge redirects the user to the upstream provider, with the authorization as state
-                            .trigger(Inbox.ReplyCreated).with(d -> Reply.json(200, Map.of("authorization", d.t2().toString()))).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                            .trigger(Inbox.ReplyCreated).with(d -> Reply.json(200, Map.of("authorization", d.t2().toString()))).on(Request).identifiedBy(entityIdFromSession())
                             .output(d -> d.t1().t1()),
                         d -> started(d.t1().t1())
                     )
@@ -194,11 +194,11 @@ public interface Authorizations {
                     .assemble(c -> tuple(authenticated(c.input(), c.timestamp().toEpochSecond()), c.log().one(AuthorizationStarted), c.entityId()))
                     .trigger(CodeClaimed).with(d -> d.t1().codeHash()).on(Codes).identifiedBy(d -> newEntityId(d.t3()))
                     // The edge adds the code, which only it knows
-                    .trigger(Inbox.ReplyCreated).with(d -> Reply.json(302, redirect(d.t1().t2().redirectUri(), d.t1().t2().state(), Map.of()))).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                    .trigger(Inbox.ReplyCreated).with(d -> Reply.json(302, redirect(d.t1().t2().redirectUri(), d.t1().t2().state(), Map.of()))).on(Request).identifiedBy(entityIdFromSession())
                     .output(d -> d.t1().t1().t1()),
                 onEvent(UserAuthenticationFailed).to(States.Failed).severity(Severity.Warning)
                     .assemble(c -> tuple(c.input(), c.log().one(AuthorizationStarted)))
-                    .trigger(Inbox.ReplyCreated).with(d -> Reply.json(302, error(d.t2().redirectUri(), d.t2().state(), d.t1().error(), d.t1().description()))).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                    .trigger(Inbox.ReplyCreated).with(d -> Reply.json(302, error(d.t2().redirectUri(), d.t2().state(), d.t1().error(), d.t1().description()))).on(Request).identifiedBy(entityIdFromSession())
                     .output(d -> d.t1().t1())
             ),
             // A code can be redeemed once, whether or not the token request redeeming it succeeds
@@ -220,7 +220,7 @@ public interface Authorizations {
   private static TransitionModel<Refusal, Refusal> refuse() {
     return onEvent(AuthorizationRefused).to(States.Refused).severity(Severity.Warning)
         .assembleInput()
-        .trigger(Inbox.ReplyCreated).with(d -> Reply.error(400, d.error(), d.description())).on(RequestDispatching).identifiedBy(entityIdFromSession())
+        .trigger(Inbox.ReplyCreated).with(d -> Reply.error(400, d.error(), d.description())).on(Request).identifiedBy(entityIdFromSession())
         .output(Tuple2::t1);
   }
 
@@ -228,7 +228,7 @@ public interface Authorizations {
   private static TransitionModel<Refusal, Refusal> returnError() {
     return onEvent(AuthorizationErrorReturned).to(States.Refused)
         .assembleInput()
-        .trigger(Inbox.ReplyCreated).with(d -> Reply.json(302, error(d.redirectUri(), d.state(), d.error(), d.description()))).on(RequestDispatching).identifiedBy(entityIdFromSession())
+        .trigger(Inbox.ReplyCreated).with(d -> Reply.json(302, error(d.redirectUri(), d.state(), d.error(), d.description()))).on(Request).identifiedBy(entityIdFromSession())
         .output(Tuple2::t1);
   }
 

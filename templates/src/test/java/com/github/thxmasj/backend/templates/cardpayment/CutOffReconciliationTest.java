@@ -3,14 +3,8 @@ package com.github.thxmasj.backend.templates.cardpayment;
 import static com.github.thxmasj.backend.core.EntitySelector.idEvent;
 import static com.github.thxmasj.backend.core.Tuples.tuple;
 import static com.github.thxmasj.backend.core.Validated.valid;
-import static com.github.thxmasj.backend.http.inbox.HttpInbox.EntityModels.RequestDispatching;
-import static com.github.thxmasj.backend.http.inbox.HttpInbox.EntityModels.RequestRouting;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.TRIGGER;
-import static com.github.thxmasj.backend.http.inbox.HttpRequestRoute.ContentRoute.anyContent;
-import static com.github.thxmasj.backend.http.inbox.HttpRequestRoute.ContentRoute.newEntity;
-import static com.github.thxmasj.backend.http.inbox.HttpInbox.MessageIds;
-import static com.github.thxmasj.backend.http.inbox.TransitionModels.requestDispatchingTransitions;
-import static com.github.thxmasj.backend.http.inbox.TransitionModels.requestRoutingTransitions;
+import static com.github.thxmasj.backend.http.inbox.HttpInboxRequest.newEntity;
 import static com.github.thxmasj.backend.http.outbox.HttpOutboxRequest.Index;
 import static com.github.thxmasj.backend.core.message.http.HttpRequestMessage.Method.POST;
 import static com.github.thxmasj.backend.templates.cardpayment.Identifiers.BatchNumberClaimed;
@@ -55,8 +49,8 @@ import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.Validated.Valid;
 import com.github.thxmasj.backend.core.http.NettyHttpClient;
 import com.github.thxmasj.backend.core.http.NettyHttpClientBuilder;
-import com.github.thxmasj.backend.http.inbox.HttpInbox.RoutedRequest;
-import com.github.thxmasj.backend.http.inbox.HttpRequestRoute;
+import com.github.thxmasj.backend.http.inbox.HttpInbox;
+import com.github.thxmasj.backend.http.inbox.HttpInboxRequest;
 import com.github.thxmasj.backend.http.outbox.AtLeastOnce;
 import com.github.thxmasj.backend.http.outbox.AtLeastOnceDispatcher;
 import com.github.thxmasj.backend.http.outbox.AtMostOnce;
@@ -209,46 +203,16 @@ public class CutOffReconciliationTest {
     );
     var cutOff = new CutOff(merchantId, 1, AGGREGATOR_ID, "http://localhost");
 
-    List<HttpRequestRoute<?>> routes = List.of(
-        new HttpRequestRoute<>(
-            m -> m.requestLine().matches("POST .*/merchants"),
-            m -> valid(m.body()),
-            List.of(anyContent(
-                null,
-                null,
-                UUID.fromString("c3b0b8a0-6b0f-4a35-9d57-0a5f0f0e0001"),
-                MerchantEvent.MerchantCreated,
-                Aggregate.Merchant,
-                (RoutedRequest<byte[]> _) -> merchant,
-                newEntity()
-            ))
-        ),
-        new HttpRequestRoute<>(
-            m -> m.requestLine().matches("POST .*/payments"),
-            m -> valid(m.body()),
-            List.of(anyContent(
-                null,
-                null,
-                UUID.fromString("c3b0b8a0-6b0f-4a35-9d57-0a5f0f0e0002"),
-                PaymentEvent.PaymentRequested,
-                Aggregate.Payment,
-                (RoutedRequest<byte[]> _) -> tuple(authorisation, new byte[0]),
-                newEntity()
-            ))
-        ),
-        new HttpRequestRoute<>(
-            m -> m.requestLine().matches("POST .*/cutoffs"),
-            m -> valid(m.body()),
-            List.of(anyContent(
-                null,
-                null,
-                UUID.fromString("c3b0b8a0-6b0f-4a35-9d57-0a5f0f0e0003"),
-                SettlementEvent.CutOffRequested,
-                Aggregate.Settlement,
-                (RoutedRequest<byte[]> _) -> cutOff,
-                (_, _) -> new Valid<>(idEvent(BatchNumberClaimed, new BatchNumber(merchantId, 1)))
-            ))
-        )
+    List<HttpInboxRequest<?>> requests = List.of(
+        postRequest("/merchants")
+            .process(MerchantEvent.MerchantCreated, Aggregate.Merchant, _ -> merchant, newEntity())
+            .build("MerchantRequest", UUID.fromString("c3b0b8a0-6b0f-4a35-9d57-0a5f0f0e0001")),
+        postRequest("/payments")
+            .process(PaymentEvent.PaymentRequested, Aggregate.Payment, _ -> tuple(authorisation, new byte[0]), newEntity())
+            .build("PaymentRequest", UUID.fromString("c3b0b8a0-6b0f-4a35-9d57-0a5f0f0e0002")),
+        postRequest("/cutoffs")
+            .process(SettlementEvent.CutOffRequested, Aggregate.Settlement, _ -> cutOff, (_, _) -> new Valid<>(idEvent(BatchNumberClaimed, new BatchNumber(merchantId, 1))))
+            .build("CutOffRequest", UUID.fromString("c3b0b8a0-6b0f-4a35-9d57-0a5f0f0e0003"))
     );
 
     var authentication = HttpOutboxRequest.atMostOnce()
@@ -340,14 +304,12 @@ public class CutOffReconciliationTest {
     transitions.put(Aggregate.Merchant, new MerchantTransitions().transitions());
     transitions.put(Aggregate.Payment, payment.transitions());
     transitions.put(Aggregate.Settlement, settlement.transitions());
-    transitions.put(RequestRouting, requestRoutingTransitions(routes));
-    transitions.put(RequestDispatching, requestDispatchingTransitions(routes, List.of()));
-    transitions.put(MessageIds, MessageIds.transitions());
     transitions.put(Identifiers.Ids, Identifiers.Ids.transitions());
     transitions.put(Identifiers.Index, Identifiers.Index.transitions());
     transitions.put(Index, Index.transitions());
     transitions.putAll(payment.outboxTransitions());
     transitions.putAll(settlement.outboxTransitions());
+    transitions = HttpInbox.transitions(requests, transitions);
 
     return new StateMachine(
         _ -> Mono.empty(),
@@ -399,6 +361,10 @@ public class CutOffReconciliationTest {
         .isAttemptAvailable(_ -> true)
         .backoffAlgorithm(_ -> Duration.ofSeconds(1))
         .build(id.name(), id.id());
+  }
+
+  private static HttpInboxRequest.Builder<byte[]> postRequest(String path) {
+    return HttpInboxRequest.matching(m -> m.requestLine().matches("POST .*" + path)).contentParser(m -> valid(m.body()));
   }
 
 }

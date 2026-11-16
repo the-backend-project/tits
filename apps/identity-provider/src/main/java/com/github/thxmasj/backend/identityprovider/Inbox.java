@@ -2,27 +2,21 @@ package com.github.thxmasj.backend.identityprovider;
 
 import static com.github.thxmasj.backend.core.Validated.invalid;
 import static com.github.thxmasj.backend.core.Validated.valid;
-import static com.github.thxmasj.backend.http.inbox.HttpInbox.EntityModels.RequestDispatching;
-import static com.github.thxmasj.backend.http.inbox.HttpInbox.EntityModels.RequestRouting;
-import static com.github.thxmasj.backend.http.inbox.HttpInbox.MessageIds;
-import static com.github.thxmasj.backend.http.inbox.HttpRequestRoute.ContentRoute.anyContent;
-import static com.github.thxmasj.backend.http.inbox.HttpRequestRoute.ContentRoute.newEntity;
-import static com.github.thxmasj.backend.http.inbox.TransitionModels.requestDispatchingTransitions;
-import static com.github.thxmasj.backend.http.inbox.TransitionModels.requestRoutingTransitions;
+import static com.github.thxmasj.backend.http.inbox.HttpInboxRequest.newEntity;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.TransitionModel;
+import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionContext;
 import com.github.thxmasj.backend.core.Validated;
 import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
 import com.github.thxmasj.backend.core.message.http.HttpRequestMessage.Method;
 import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
 import com.github.thxmasj.backend.http.inbox.Authorization;
-import com.github.thxmasj.backend.http.inbox.HttpInbox.CustomResponse;
-import com.github.thxmasj.backend.http.inbox.HttpRequestRoute;
-import com.github.thxmasj.backend.http.inbox.HttpRequestRoute.ContentRoute;
+import com.github.thxmasj.backend.http.inbox.HttpInbox;
+import com.github.thxmasj.backend.http.inbox.HttpInboxRequest;
 import com.github.thxmasj.backend.http.inbox.ResponseEventType;
 import com.github.thxmasj.backend.identityprovider.Clients.Registration;
 import java.time.Duration;
@@ -94,129 +88,95 @@ public interface Inbox {
       DataType.json(Reply.class)
   );
 
-  List<HttpRequestRoute<?>> routes = List.of(
-      // The edge tells the grants apart by the code, which it replaces by its hash
-      new HttpRequestRoute<>(
-          m -> m.method() == Method.POST && m.uri().getPath().equals("/token") && m.headerValue(CodeHashHeader) != null,
-          Inbox::codeRequest,
-          List.of(anyContent(
-              null,
-              null,
-              UUID.fromString("53b447da-38bc-43d6-a9f2-ea3ed7e1b3fa"),
-              Tokens.CodeRedemptionRequested,
-              Tokens.TokenRequest,
-              r -> r.body(),
-              newEntity()
-          ))
-      ),
-      new HttpRequestRoute<>(
-          m -> m.method() == Method.POST && m.uri().getPath().equals("/token"),
-          Inbox::tokenRequest,
-          List.of(anyContent(
-              null,
-              null,
-              UUID.fromString("d1c8f5a2-3e97-4b06-a4d1-5f2b8e7c9a63"),
-              Tokens.TokenRequested,
-              Tokens.TokenRequest,
-              r -> r.body(),
-              newEntity()
-          ))
-      ),
-      new HttpRequestRoute<>(
-          m -> m.method() == Method.POST && m.uri().getPath().equals("/clients"),
-          Inbox::registration,
-          List.of(anyContent(
-              null,
-              (m, _) -> Authorization.authorizedElse(m.headerValue(RegisteredByHeader), "Unauthenticated"),
-              UUID.fromString("f7a2c6e9-4d15-4b83-9e0a-1c5d8b3f6e24"),
-              Clients.RegistrationRequested,
-              Clients.ClientRegistration,
-              r -> r.body(),
-              newEntity()
-          ))
-      ),
-      new HttpRequestRoute<>(
-          m -> m.method() == Method.GET && m.uri().getPath().equals("/authorize"),
-          Inbox::authorizationRequest,
-          List.of(anyContent(
-              null,
-              null,
-              UUID.fromString("709a9c55-28ab-4aaf-83b6-b5755fc4c50b"),
-              Authorizations.AuthorizationRequested,
-              Authorizations.Authorization,
-              r -> r.body(),
-              newEntity()
-          ))
-      ),
-      // The edge has signed the user in with the upstream provider, and generated the code if the user did
-      new HttpRequestRoute<>(
-          m -> m.method() == Method.POST && m.uri().getPath().equals("/callback") && m.headerValue(CodeHashHeader) != null,
-          Inbox::signIn,
-          List.of(anyContent(
-              null,
-              null,
-              UUID.fromString("0c0f5f0e-4a5d-4b8e-9d6b-2a7c3e1f8d42"),
-              Authorizations.UserAuthenticated,
-              Authorizations.Authorization,
-              r -> r.body(),
-              (m, _) -> ContentRoute.entityId(m.headerValue(AuthorizationIdHeader))
-          ))
-      ),
-      new HttpRequestRoute<>(
-          m -> m.method() == Method.POST && m.uri().getPath().equals("/callback"),
-          r -> json(r, Authorizations.Failure.class),
-          List.of(anyContent(
-              null,
-              null,
-              UUID.fromString("e4a7b2c9-6d1f-4e3a-8b5c-9f0d2e6a1b73"),
-              Authorizations.UserAuthenticationFailed,
-              Authorizations.Authorization,
-              r -> r.body(),
-              (m, _) -> ContentRoute.entityId(m.headerValue(AuthorizationIdHeader))
-          ))
-      ),
-      // The edge has verified the access token
-      new HttpRequestRoute<>(
-          m -> m.method() == Method.GET && m.uri().getPath().equals("/userinfo"),
-          r -> r.headerValue(TokenIdHeader) != null ? valid(r.headerValue(TokenIdHeader)) : invalid("Unauthenticated"),
-          List.of(anyContent(
-              null,
-              null,
-              UUID.fromString("1d6e8f3a-9b2c-4c7d-a5e0-3f8b6d1c9e24"),
-              Tokens.UserInfoRequested,
-              Tokens.TokenRequest,
-              _ -> null,
-              (m, _) -> ContentRoute.entityId(m.headerValue(TokenIdHeader))
-          ))
-      )
+  /// A request redeeming an authorization code, `POST /token` with a code. The edge tells the grants apart by the
+  /// code, which it replaces by its hash.
+  HttpInboxRequest<Tokens.CodeRequest> CodeHttpRequest = HttpInboxRequest
+      .matching(m -> m.method() == Method.POST && m.uri().getPath().equals("/token") && m.headerValue(CodeHashHeader) != null)
+      .contentParser(Inbox::codeRequest)
+      .process(Tokens.CodeRedemptionRequested, Tokens.TokenRequest, r -> r.body(), newEntity())
+      .response(ReplyCreated, Inbox::reply)
+      .build("CodeHttpRequest", UUID.fromString("53b447da-38bc-43d6-a9f2-ea3ed7e1b3fa"));
+
+  /// A token request, `POST /token`
+  HttpInboxRequest<Tokens.Request> TokenHttpRequest = HttpInboxRequest
+      .matching(m -> m.method() == Method.POST && m.uri().getPath().equals("/token"))
+      .contentParser(Inbox::tokenRequest)
+      .process(Tokens.TokenRequested, Tokens.TokenRequest, r -> r.body(), newEntity())
+      .response(ReplyCreated, Inbox::reply)
+      .build("TokenHttpRequest", UUID.fromString("d1c8f5a2-3e97-4b06-a4d1-5f2b8e7c9a63"));
+
+  /// A client registration request, `POST /clients`
+  HttpInboxRequest<Registration> RegistrationHttpRequest = HttpInboxRequest
+      .matching(m -> m.method() == Method.POST && m.uri().getPath().equals("/clients"))
+      .contentParser(Inbox::registration)
+      .authorizer((m, _) -> Authorization.authorizedElse(m.headerValue(RegisteredByHeader), "Unauthenticated"))
+      .process(Clients.RegistrationRequested, Clients.ClientRegistration, r -> r.body(), newEntity())
+      .response(ReplyCreated, Inbox::reply)
+      .build("RegistrationHttpRequest", UUID.fromString("f7a2c6e9-4d15-4b83-9e0a-1c5d8b3f6e24"));
+
+  /// An authorization request of a user, `GET /authorize`
+  HttpInboxRequest<Authorizations.Request> AuthorizationHttpRequest = HttpInboxRequest
+      .matching(m -> m.method() == Method.GET && m.uri().getPath().equals("/authorize"))
+      .contentParser(Inbox::authorizationRequest)
+      .process(Authorizations.AuthorizationRequested, Authorizations.Authorization, r -> r.body(), newEntity())
+      .response(ReplyCreated, Inbox::reply)
+      .build("AuthorizationHttpRequest", UUID.fromString("709a9c55-28ab-4aaf-83b6-b5755fc4c50b"));
+
+  /// The user returning from the upstream provider, signed in: the edge has signed the user in, and generated the code
+  HttpInboxRequest<Authorizations.SignIn> SignInHttpRequest = HttpInboxRequest
+      .matching(m -> m.method() == Method.POST && m.uri().getPath().equals("/callback") && m.headerValue(CodeHashHeader) != null)
+      .contentParser(Inbox::signIn)
+      .process(Authorizations.UserAuthenticated, Authorizations.Authorization, r -> r.body(), (m, _) -> HttpInboxRequest.entityId(m.headerValue(AuthorizationIdHeader)))
+      .response(ReplyCreated, Inbox::reply)
+      .build("SignInHttpRequest", UUID.fromString("0c0f5f0e-4a5d-4b8e-9d6b-2a7c3e1f8d42"));
+
+  /// The user returning from the upstream provider without signing in
+  HttpInboxRequest<Authorizations.Failure> SignInFailureHttpRequest = HttpInboxRequest
+      .matching(m -> m.method() == Method.POST && m.uri().getPath().equals("/callback"))
+      .contentParser(r -> json(r, Authorizations.Failure.class))
+      .process(Authorizations.UserAuthenticationFailed, Authorizations.Authorization, r -> r.body(), (m, _) -> HttpInboxRequest.entityId(m.headerValue(AuthorizationIdHeader)))
+      .response(ReplyCreated, Inbox::reply)
+      .build("SignInFailureHttpRequest", UUID.fromString("e4a7b2c9-6d1f-4e3a-8b5c-9f0d2e6a1b73"));
+
+  /// A UserInfo request, `GET /userinfo`, whose access token the edge has verified
+  HttpInboxRequest<String> UserInfoHttpRequest = HttpInboxRequest
+      .matching(m -> m.method() == Method.GET && m.uri().getPath().equals("/userinfo"))
+      .contentParser(r -> r.headerValue(TokenIdHeader) != null ? valid(r.headerValue(TokenIdHeader)) : invalid("Unauthenticated"))
+      .process(Tokens.UserInfoRequested, Tokens.TokenRequest, (m, _) -> HttpInboxRequest.entityId(m.headerValue(TokenIdHeader)))
+      .response(ReplyCreated, Inbox::reply)
+      .build("UserInfoHttpRequest", UUID.fromString("1d6e8f3a-9b2c-4c7d-a5e0-3f8b6d1c9e24"));
+
+  /// In the order they are matched in, as the first matching one takes a request
+  List<HttpInboxRequest<?>> requests = List.of(
+      CodeHttpRequest,
+      TokenHttpRequest,
+      RegistrationHttpRequest,
+      AuthorizationHttpRequest,
+      SignInHttpRequest,
+      SignInFailureHttpRequest,
+      UserInfoHttpRequest
   );
 
-  List<CustomResponse<?>> customResponses = List.of(
-      new CustomResponse<>(
-          ReplyCreated,
-          c -> new HttpResponseMessage(
-              c.input().status(),
-              reasonPhrase(c.input().status()),
-              Map.of(
-                  "Content-Type", "application/json;charset=UTF-8",
-                  // Responses with credentials must not be cached, RFC 6749 section 5.1
-                  "Cache-Control", "no-store",
-                  "X-Correlation-Id", c.correlationId()
-              ),
-              c.input().body().getBytes(UTF_8)
-          )
-      )
-  );
+  private static HttpResponseMessage reply(TransitionContext<Reply> c) {
+    return new HttpResponseMessage(
+        c.input().status(),
+        reasonPhrase(c.input().status()),
+        Map.of(
+            "Content-Type", "application/json;charset=UTF-8",
+            // Responses with credentials must not be cached, RFC 6749 section 5.1
+            "Cache-Control", "no-store",
+            "X-Correlation-Id", c.correlationId()
+        ),
+        c.input().body().getBytes(UTF_8)
+    );
+  }
 
   static Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions(Duration tokenLifetime) {
-    var transitions = new HashMap<EntityModel, Map<State, List<TransitionModel<?, ?>>>>();
-    transitions.putAll(Clients.transitions());
-    transitions.putAll(Tokens.transitions(tokenLifetime));
-    transitions.putAll(Authorizations.transitions());
-    transitions.put(RequestRouting, requestRoutingTransitions(routes));
-    transitions.put(RequestDispatching, requestDispatchingTransitions(routes, customResponses));
-    transitions.put(MessageIds, MessageIds.transitions());
-    return transitions;
+    var application = new HashMap<EntityModel, Map<State, List<TransitionModel<?, ?>>>>();
+    application.putAll(Clients.transitions());
+    application.putAll(Tokens.transitions(tokenLifetime));
+    application.putAll(Authorizations.transitions());
+    return HttpInbox.transitions(requests, application);
   }
 
   /// The form is validated by the edge, which also authenticates the client

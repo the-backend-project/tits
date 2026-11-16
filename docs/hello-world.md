@@ -10,8 +10,8 @@ executable which boots in a few tens of milliseconds, and is packaged in a conta
 |---|---|
 | `Greeting` | A greeting, created for every `GET /`. Its transition to `Greeted` responds with a page saying hello, showing the greeting's entity id. |
 
-The request itself is an entity of the [HTTP inbox](http-inbox.md): the transition of the greeting triggers the
-response on the `RequestDispatching` entity of the request, which the listener sends to the client.
+The request itself is an entity of the [HTTP inbox](http-inbox.md), of the inbox request `GreetingRequest`: the
+transition of the greeting triggers the response on the request, which the listener sends to the client.
 
 The [state diagram](diagrams.md) is generated from the model. Hover over the name of an event for its details.
 
@@ -180,7 +180,7 @@ work around.
 ### HTTP
 
 - **Unroutable requests are bad requests.** The HTTP inbox responds with `400 Bad Request` to requests not matching
-  any route, where `404 Not Found` or `405 Method Not Allowed` would be expected for a web page.
+  any inbox request, where `404 Not Found` or `405 Method Not Allowed` would be expected for a web page.
 - **No readiness check.** Whether the state machine can reach its database is not exposed, so the demo's health check
   only tells whether the process serves HTTP. The demo implements it with an HTTP inbox listener filter, so it does not
   write to the database.

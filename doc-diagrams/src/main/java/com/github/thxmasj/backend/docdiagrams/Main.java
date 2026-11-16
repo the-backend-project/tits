@@ -1,23 +1,26 @@
 package com.github.thxmasj.backend.docdiagrams;
 
-import static com.github.thxmasj.backend.http.inbox.HttpInbox.EntityModels.RequestDispatching;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.MessageIds;
-import static com.github.thxmasj.backend.http.inbox.HttpInbox.EntityModels.RequestRouting;
-import static com.github.thxmasj.backend.http.inbox.TransitionModels.requestDispatchingTransitions;
-import static com.github.thxmasj.backend.http.inbox.TransitionModels.requestRoutingTransitions;
+import static com.github.thxmasj.backend.http.inbox.HttpInbox.RequestRouting;
+import static com.github.thxmasj.backend.http.inbox.HttpInboxRequest.newEntity;
+import static com.github.thxmasj.backend.http.inbox.HttpInboxRequest.parseMessageId;
 import static com.github.thxmasj.backend.templates.cardpayment.Aggregate.Payment;
 import static com.github.thxmasj.backend.templates.cardpayment.Aggregate.Settlement;
 import static com.github.thxmasj.backend.templates.cardpayment.DummyTransitions.atLeastOnce;
 import static com.github.thxmasj.backend.templates.cardpayment.DummyTransitions.atMostOnce;
 import static com.github.thxmasj.backend.templates.cardpayment.Identifiers.Ids;
 
+import com.github.thxmasj.backend.core.BasicEventType;
 import com.github.thxmasj.backend.core.EntityModel;
+import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.Identifiable;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.diagram.ERDiagramFormatter;
 import com.github.thxmasj.backend.diagram.PlantUMLFormatter;
 import com.github.thxmasj.backend.helloworld.Greetings;
+import com.github.thxmasj.backend.http.inbox.HttpInbox;
+import com.github.thxmasj.backend.http.inbox.HttpInboxRequest;
 import com.github.thxmasj.backend.http.outbox.HttpOutboxRequest;
 import com.github.thxmasj.backend.identityprovider.Authorizations;
 import com.github.thxmasj.backend.identityprovider.Clients;
@@ -59,9 +62,20 @@ public class Main {
     stateDiagram(atMostOnce, atMostOnce.transitions());
   }
 
+  /// An example inbox request, which places an order and can be rolled back by its message id
   private static void httpInbox() throws IOException {
-    stateDiagram(RequestRouting, requestRoutingTransitions(List.of()));
-    stateDiagram(RequestDispatching, requestDispatchingTransitions(List.of(), List.of()));
+    var order = EntityModel.of("Order", UUID.randomUUID());
+    EventType<Void, Void> orderPlaced = BasicEventType.of("Order placed", UUID.randomUUID());
+    var placeOrder = HttpInboxRequest
+        .matching(m -> m.requestLine().matches("PUT /orders/.*"))
+        .noContent()
+        .messageIdParser(parseMessageId("PUT /orders/(.*)", 1))
+        .process(orderPlaced, order, newEntity())
+        .rollback(m -> m.requestLine().matches("DELETE /orders/.*"), parseMessageId("DELETE /orders/(.*)", 1))
+        .build("PlaceOrder", UUID.randomUUID());
+    var name = "com.github.thxmasj.backend.http.inbox";
+    stateDiagram(name + ".RequestRouting", RequestRouting, Map.of(RequestRouting, HttpInbox.requestRoutingTransitions(List.of(placeOrder))));
+    stateDiagram(name + ".HttpInboxRequest", placeOrder, Map.of(placeOrder, placeOrder.transitions()));
     stateDiagram(MessageIds, MessageIds.transitions());
   }
 
@@ -76,9 +90,6 @@ public class Main {
     cardPayments.put(Aggregate.Merchant, new MerchantTransitions().transitions());
     cardPayments.put(Payment, payment);
     cardPayments.put(Settlement, settlement);
-    cardPayments.put(RequestRouting, requestRoutingTransitions(List.of()));
-    cardPayments.put(RequestDispatching, requestDispatchingTransitions(List.of(), List.of()));
-    cardPayments.put(MessageIds, MessageIds.transitions());
     cardPayments.put(Ids, Ids.transitions());
     cardPayments.put(Identifiers.Index, Identifiers.Index.transitions());
     cardPayments.put(HttpOutboxRequest.Index, HttpOutboxRequest.Index.transitions());

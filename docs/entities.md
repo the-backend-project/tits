@@ -13,7 +13,7 @@ type, assembles data from the event and the entity's event log, and can trigger 
 ```java
 onEvent(GreetingRequested).to(States.Greeted)
     .assemble(c -> c.log().entityId().toString())
-    .trigger(GreetingResponseCreated).with(id -> id).on(RequestDispatching).identifiedBy(entityIdFromSession())
+    .trigger(GreetingResponseCreated).with(id -> id).on(Request).identifiedBy(entityIdFromSession())
     .output()
 ```
 

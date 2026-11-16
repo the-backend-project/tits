@@ -11,29 +11,29 @@ import static com.github.thxmasj.backend.core.Tuples.tuple;
 import static com.github.thxmasj.backend.core.Validated.invalid;
 import static com.github.thxmasj.backend.core.Validated.valid;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.FailedRequestCompleted;
+import static com.github.thxmasj.backend.http.inbox.HttpInbox.InvalidRequestCompleted;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.RequestCompleted;
-import static com.github.thxmasj.backend.http.inbox.HttpInbox.EntityModels.RequestDispatching;
-import static com.github.thxmasj.backend.http.inbox.HttpInbox.EntityModels.RequestRouting;
+import static com.github.thxmasj.backend.http.inbox.HttpInbox.RequestRouting;
+import static com.github.thxmasj.backend.http.inbox.HttpInbox.Request;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.TRIGGER;
 import static com.github.thxmasj.backend.http.inbox.HttpInboxTest.Entities.Lamp;
 import static com.github.thxmasj.backend.http.inbox.HttpInboxTest.States.Off;
 import static com.github.thxmasj.backend.http.inbox.HttpInboxTest.States.On;
 import static com.github.thxmasj.backend.http.inbox.HttpInboxTest.States.Processing;
 import static com.github.thxmasj.backend.http.inbox.HttpInboxTest.States.Unreachable;
-import static com.github.thxmasj.backend.http.inbox.HttpRequestRoute.ContentRoute.anyContent;
-import static com.github.thxmasj.backend.http.inbox.HttpRequestRoute.ContentRoute.newEntity;
-import static com.github.thxmasj.backend.http.inbox.HttpRequestRoute.ContentRoute.parseEntityId;
-import static com.github.thxmasj.backend.http.inbox.HttpRequestRoute.ContentRoute.parseMessageId;
-import static com.github.thxmasj.backend.http.inbox.HttpInbox.MessageIds;
-import static com.github.thxmasj.backend.http.inbox.TransitionModels.requestDispatchingTransitions;
-import static com.github.thxmasj.backend.http.inbox.TransitionModels.requestRoutingTransitions;
+import static com.github.thxmasj.backend.http.inbox.HttpInboxRequest.newEntity;
+import static com.github.thxmasj.backend.http.inbox.HttpInboxRequest.parseEntityId;
+import static com.github.thxmasj.backend.http.inbox.HttpInboxRequest.parseMessageId;
+import static com.github.thxmasj.backend.http.inbox.HttpInboxRequest.when;
 import static com.github.thxmasj.backend.http.outbox.HttpOutboxRequest.Index;
 import static com.github.thxmasj.backend.core.message.http.HttpRequestMessage.Method.DELETE;
 import static com.github.thxmasj.backend.core.message.http.HttpRequestMessage.Method.POST;
 import static com.github.thxmasj.backend.core.message.http.HttpRequestMessage.Method.PUT;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -42,9 +42,11 @@ import com.github.thxmasj.backend.core.BasicEventType.Rollback.Data;
 import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.DelaySpecification;
 import com.github.thxmasj.backend.core.EntityModel;
+import com.github.thxmasj.backend.core.EntitySelector;
 import com.github.thxmasj.backend.core.Event;
 import com.github.thxmasj.backend.core.EventTrigger;
 import com.github.thxmasj.backend.core.EventType;
+import com.github.thxmasj.backend.core.database.Mappers;
 import com.github.thxmasj.backend.core.test.Init;
 import com.github.thxmasj.backend.diagram.PlantUMLFormatter;
 import com.github.thxmasj.backend.core.Severity;
@@ -68,7 +70,9 @@ import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.gen.RSAKeyGenerator;
 import com.sun.net.httpserver.HttpServer;
+import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.net.URI;
 import java.time.Clock;
 import java.time.Duration;
@@ -116,7 +120,7 @@ public class HttpInboxTest {
                 .assemble(TransitionContext::eventReference)
                 .trigger(Process0Outbox.requestDispatched()).with(_ -> requestMessage("/process/0")).on(Process0Outbox).identifiedBy(newEntityId())
                 //.trigger(new ProcessRequest(0)).with(_ -> null).to(DeviceListener).guaranteed()
-                .trigger(RequestCompleted).with(d -> tuple("Light is on! " + random.nextLong(), d.t1())).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                .trigger(RequestCompleted).with(d -> tuple("Light is on! " + random.nextLong(), d.t1())).on(Request).identifiedBy(entityIdFromSession())
                 .output(),
             onEvent(ComplexInternalProcessingRequested).to(Processing)
                 .assemble(d -> d)
@@ -138,7 +142,7 @@ public class HttpInboxTest {
                 .output(),
             onEvent(SubsystemUnavailableProcessingRequested).to(Unreachable)
                 .assemble(TransitionContext::eventReference)
-                .trigger(FailedRequestCompleted).with(d -> tuple("Subsystem unavailable", d)).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                .trigger(FailedRequestCompleted).with(d -> tuple("Subsystem unavailable", d)).on(Request).identifiedBy(entityIdFromSession())
                 .output(),
             onEvent(LampSwitchedOn).to(On).output()
         ),
@@ -147,11 +151,11 @@ public class HttpInboxTest {
             onEvent(LampSwitchedOff).to(Off).output(),
             onEvent(ProcessingCancelled).toSelf()
                 .assemble(c -> tuple(c.input(), c.eventReference()))
-                .trigger(RequestCompleted).with(d -> tuple("Cancelled", d.t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                .trigger(RequestCompleted).with(d -> tuple("Cancelled", d.t2())).on(Request).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t1()),
             onEvent(ZeroProcessingRequested).toSelf()
                 .assemble(c -> tuple(c.input(), c.eventReference()))
-                .trigger(RequestCompleted).with(d -> tuple("Complete", d.t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                .trigger(RequestCompleted).with(d -> tuple("Complete", d.t2())).on(Request).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t1())
         ),
         Off, List.of(
@@ -159,7 +163,7 @@ public class HttpInboxTest {
                 .assemble(TransitionContext::eventReference)
                 .trigger(Process0Outbox.requestDispatched()).with(_ -> requestMessage("/process/0")).on(Process0Outbox).identifiedBy(newEntityId())
                 //.trigger(new ProcessRequest(0)).with(_ -> null).to(DeviceListener).guaranteed()
-                .trigger(RequestCompleted).with(d -> tuple("Light is on! " + random.nextLong(), d.t1())).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                .trigger(RequestCompleted).with(d -> tuple("Light is on! " + random.nextLong(), d.t1())).on(Request).identifiedBy(entityIdFromSession())
                 .output(),
             onEvent(ComplexInternalProcessingRequested).to(Processing)
                 .assemble(d -> d)
@@ -185,11 +189,11 @@ public class HttpInboxTest {
             onEvent(EventsRolledBack).toSelf().assembleInput().output(d -> d),
             onEvent(ComplexInternalProcessingCompleted).to(On)
                 .assemble(TransitionContext::eventReference)
-                .trigger(RequestCompleted).with(d -> tuple("Phew! Light is switched on! " + random.nextLong(), d)).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                .trigger(RequestCompleted).with(d -> tuple("Phew! Light is switched on! " + random.nextLong(), d)).on(Request).identifiedBy(entityIdFromSession())
                 .output(),
             onEvent(ExternalProcessingCompleted).to(On)
                 .assemble(TransitionContext::eventReference)
-                .trigger(RequestCompleted).with(d -> tuple("Light is externally switched on! " + random.nextLong(), d)).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                .trigger(RequestCompleted).with(d -> tuple("Light is externally switched on! " + random.nextLong(), d)).on(Request).identifiedBy(entityIdFromSession())
                 .output()
         ),
         Unreachable, List.of(
@@ -253,96 +257,94 @@ public class HttpInboxTest {
 
   static AccessTokenVerifier verifier = verifier();
 
-  static List<HttpRequestRoute<?>> routes = List.of(
-      new HttpRequestRoute<>(
-          m -> m.requestLine().matches("PUT .*/protected/.*"),
-          m -> valid(m.body()),
-          List.of(anyContent(null, HttpInbox.bearerToken(verifier, "payments"), UUID.fromString("0b6f3c1e-8a4d-4f27-9c5e-2d7a1b3e6f84"), InternalProcessingRequested, Lamp, (RoutedRequest<byte[]> _) -> null, newEntity()))
-      ),
-      new HttpRequestRoute<>(
-          m -> m.requestLine().matches("PUT .*/zero/.*"),
-          m -> valid(m.body()),
-          List.of(anyContent(null, null, UUID.fromString("7e2c5175-a65d-4795-a285-b0d75e704f5a"), ZeroProcessingRequested, Lamp, (RoutedRequest<byte[]> _) -> new Zero("Hey!"), parseEntityId("PUT .*/zero/(.*)", 1)))
-      ),
-      new HttpRequestRoute<>(
-          m -> m.requestLine().matches("PUT .*/internal/.*"),
-          m -> valid(m.body()),
-          List.of(anyContent(parseMessageId("PUT .*/internal/(.*)", 1), null, UUID.fromString("3afa1f14-d4e3-49c4-b6ad-05a733f0b22d"), InternalProcessingRequested, Lamp, (RoutedRequest<byte[]> _) -> null, newEntity()))
-      ),
-      new HttpRequestRoute<>(
-          m -> m.requestLine().matches("PUT .*/handledunknown/.*"),
-          m -> valid(m.body()),
-          List.of(anyContent(null, null, UUID.fromString("b411fd45-6c87-43aa-a511-df930d654ec7"), InternalProcessingRequested, Lamp, (RoutedRequest<byte[]> _) -> null, (_, _) -> new Valid<>(entityId(UUID.randomUUID())))) // Unknown id
-      ),
-      new HttpRequestRoute<>(
-          m -> m.requestLine().matches("PUT .*/handledreject/.*"),
-          m -> valid(m.body()),
-          List.of(anyContent(null, null, UUID.fromString("00f910e2-8c22-4403-835d-15e112ac3080"), AlwaysRejectedEventSubmitted, Lamp, (RoutedRequest<byte[]> _) -> null, newEntity()))
-      ),
-      new HttpRequestRoute<>(
-          m -> m.requestLine().matches("PUT .*/unavailable/.*"),
-          m -> valid(m.body()),
-          List.of(anyContent(parseMessageId("PUT .*/unavailable/(.*)", 1), null, UUID.fromString("29d91ea2-3011-47d5-8e68-51e593a5fe3d"), SubsystemUnavailableProcessingRequested, Lamp, (RoutedRequest<byte[]> _) -> null, newEntity()))
-      ),
-      new HttpRequestRoute<>(
-          m -> m.requestLine().matches("PUT .*/complexinternal/.*"),
-          m -> valid(m.body()),
-          List.of(anyContent(parseMessageId("PUT .*/complexinternal/(.*)", 1), null, UUID.fromString("84164954-ad85-4b44-9de6-079bf4805df7"), ComplexInternalProcessingRequested, Lamp, (RoutedRequest<byte[]> _) -> null, newEntity()))
-      ),
-      new HttpRequestRoute<>(
-          m -> m.requestLine().matches("PUT .*/external/.*"),
-          m -> valid(m.body()),
-          List.of(anyContent(parseMessageId("PUT .*/external/(.*)", 1), null, UUID.fromString("415cfd95-6feb-4106-8d47-fcf41ddcb3d1"), ExternalProcessingRequested, Lamp, (RoutedRequest<byte[]> _) -> null, newEntity()))
-      ),
-      new HttpRequestRoute<>(
-          m -> m.requestLine().matches("PUT .*/long-external/.*"),
-          m -> valid(m.body()),
-          List.of(anyContent(null, null, UUID.fromString("721fedb2-e715-4c4d-a8fb-e2cdb16f86e5"), LongExternalProcessingRequested, Lamp, (RoutedRequest<byte[]> _) -> null, newEntity()))
-      ),
-      new HttpRequestRoute<>(
-          m -> m.requestLine().matches("PUT .*/rejected/.*"),
-          m -> valid(m.body()),
-          List.of(anyContent(parseMessageId("PUT .*/rejected/(.*)", 1), null, UUID.fromString("e58f3910-0b01-4f8b-bbf3-c7fde4980197"), AlwaysRejectedEventSubmitted, Lamp, (RoutedRequest<byte[]> _) -> null, newEntity()))
-      ),
-      new HttpRequestRoute<>(
-          m -> m.requestLine().matches("DELETE .*/internal/.*"),
-          _ -> valid(null),
-          List.of(anyContent(
-              null,
-              null,
-              UUID.fromString("f5ef4720-c6bc-4686-be8b-85eeb0fdc372"),
-              EventsRolledBack,
-              Lamp,
-              _ -> new Data(0, "Cancel"),
-              parseEntityId("DELETE .*/internal/(.*)", 1)
-          ))
-      ),
-      new HttpRequestRoute<>(
-          m -> m.requestLine().matches("DELETE .*/lamps/messages/.*"),
-          _ -> valid(null),
-          List.of(anyContent(
-              parseMessageId("DELETE .*/lamps/messages/(.*)", 1),
-              null,
-              UUID.fromString("56829b3a-78ce-40e4-9006-a6c4d3b6dc23"),
-              EventsRolledBack,
-              Lamp,
-              _ -> null,
-              null
-          ))
+  private static HttpInboxRequest.Builder<byte[]> withBody(String requestLinePattern) {
+    return HttpInboxRequest.matching(m -> m.requestLine().matches(requestLinePattern)).contentParser(m -> valid(m.body()));
+  }
+
+  /// Can be rolled back by its message id
+  static HttpInboxRequest<byte[]> InternalRequest = withBody("PUT .*/internal/.*")
+      .messageIdParser(parseMessageId("PUT .*/internal/(.*)", 1))
+      .process(InternalProcessingRequested, Lamp, newEntity())
+      .rollback(m -> m.requestLine().matches("DELETE .*/lamps/messages/.*"), parseMessageId("DELETE .*/lamps/messages/(.*)", 1))
+      .build("InternalRequest", UUID.fromString("3afa1f14-d4e3-49c4-b6ad-05a733f0b22d"));
+
+  /// One endpoint, whose requests trigger different events by their content, with different inputs and selectors
+  static HttpInboxRequest<InternalProcess> ContentRequest = HttpInboxRequest
+      .matching(m -> m.requestLine().matches("PUT .*/content/.*"))
+      .contentParser(HttpInbox.jsonParser(InternalProcess.class, false))
+      .messageIdParser(parseMessageId("PUT .*/content/(.*)", 1))
+      .process(when("a == internal", p -> p.a().equals("internal")), InternalProcessingRequested, Lamp, newEntity())
+      .process(when("a == unavailable", p -> p.a().equals("unavailable")), SubsystemUnavailableProcessingRequested, Lamp, newEntity())
+      .process(when("a == zero", p -> p.a().equals("zero")), ZeroProcessingRequested, Lamp, r -> new Zero(r.body().a()), parseEntityId("PUT .*/content/(.*)", 1))
+      .build("ContentRequest", UUID.fromString("a3c94e1d-5f27-4b80-9d6e-1b8f2c7a4e53"));
+
+  /// Authorized by its body, which a rollback doesn't have, so the rollback has an authorizer of its own
+  static HttpInboxRequest<InternalProcess> OwnedRequest = HttpInboxRequest
+      .matching(m -> m.requestLine().matches("PUT .*/owned/.*"))
+      .contentParser(HttpInbox.jsonParser(InternalProcess.class, false))
+      .messageIdParser(parseMessageId("PUT .*/owned/(.*)", 1))
+      .authorizer((_, body) -> Authorization.authorized(body.a()))
+      .process(InternalProcessingRequested, Lamp, newEntity())
+      .rollback(
+          m -> m.requestLine().matches("DELETE .*/owned/messages/.*"),
+          parseMessageId("DELETE .*/owned/messages/(.*)", 1),
+          (m, _) -> Authorization.authorizedElse(m.headerValue("X-Owner"), "Owner missing")
       )
+      .build("OwnedRequest", UUID.fromString("e2b7d14c-6a93-4f08-8c5e-3d9a1f6b2c47"));
+
+  static List<HttpInboxRequest<?>> requests = List.of(
+      ContentRequest,
+      OwnedRequest,
+      withBody("PUT .*/protected/.*")
+          .authorizer(HttpInbox.bearerToken(verifier, "payments"))
+          .process(InternalProcessingRequested, Lamp, newEntity())
+          .build("ProtectedRequest", UUID.fromString("0b6f3c1e-8a4d-4f27-9c5e-2d7a1b3e6f84")),
+      withBody("PUT .*/zero/.*")
+          .process(ZeroProcessingRequested, Lamp, _ -> new Zero("Hey!"), parseEntityId("PUT .*/zero/(.*)", 1))
+          .build("ZeroRequest", UUID.fromString("7e2c5175-a65d-4795-a285-b0d75e704f5a")),
+      InternalRequest,
+      withBody("PUT .*/other-internal/.*")
+          .process(InternalProcessingRequested, Lamp, newEntity())
+          .build("OtherInternalRequest", UUID.fromString("6d1f4a92-3b7e-4c05-8e29-a4f6b1d7c3e8")),
+      withBody("PUT .*/handledunknown/.*")
+          .process(InternalProcessingRequested, Lamp, (_, _) -> valid(entityId(UUID.randomUUID()))) // Unknown id
+          .build("HandledUnknownRequest", UUID.fromString("b411fd45-6c87-43aa-a511-df930d654ec7")),
+      withBody("PUT .*/handledreject/.*")
+          .process(AlwaysRejectedEventSubmitted, Lamp, newEntity())
+          .build("HandledRejectRequest", UUID.fromString("00f910e2-8c22-4403-835d-15e112ac3080")),
+      withBody("PUT .*/unavailable/.*")
+          .messageIdParser(parseMessageId("PUT .*/unavailable/(.*)", 1))
+          .process(SubsystemUnavailableProcessingRequested, Lamp, newEntity())
+          .build("UnavailableRequest", UUID.fromString("29d91ea2-3011-47d5-8e68-51e593a5fe3d")),
+      withBody("PUT .*/complexinternal/.*")
+          .messageIdParser(parseMessageId("PUT .*/complexinternal/(.*)", 1))
+          .process(ComplexInternalProcessingRequested, Lamp, newEntity())
+          .build("ComplexInternalRequest", UUID.fromString("84164954-ad85-4b44-9de6-079bf4805df7")),
+      withBody("PUT .*/external/.*")
+          .messageIdParser(parseMessageId("PUT .*/external/(.*)", 1))
+          .process(ExternalProcessingRequested, Lamp, _ -> null, newEntity())
+          .build("ExternalRequest", UUID.fromString("415cfd95-6feb-4106-8d47-fcf41ddcb3d1")),
+      withBody("PUT .*/long-external/.*")
+          .process(LongExternalProcessingRequested, Lamp, _ -> null, newEntity())
+          .build("LongExternalRequest", UUID.fromString("721fedb2-e715-4c4d-a8fb-e2cdb16f86e5")),
+      withBody("PUT .*/rejected/.*")
+          .messageIdParser(parseMessageId("PUT .*/rejected/(.*)", 1))
+          .process(AlwaysRejectedEventSubmitted, Lamp, newEntity())
+          .build("RejectedRequest", UUID.fromString("e58f3910-0b01-4f8b-bbf3-c7fde4980197")),
+      HttpInboxRequest.matching(m -> m.requestLine().matches("DELETE .*/internal/.*"))
+          .noContent()
+          .process(EventsRolledBack, Lamp, _ -> new Data(0, "Cancel"), parseEntityId("DELETE .*/internal/(.*)", 1))
+          .build("CancelRequest", UUID.fromString("f5ef4720-c6bc-4686-be8b-85eeb0fdc372"))
   );
 
   private static StateMachine createStateMachine(
       EntityModel entityModel,
       Map<State, List<TransitionModel<?, ?>>> processTransitions,
-      List<HttpRequestRoute<?>> routes,
+      List<HttpInboxRequest<?>> requests,
       List<HttpOutboxRequest<?>> outboxes
   ) {
     Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions = new HashMap<>();
     transitions.put(entityModel, processTransitions);
-    transitions.put(RequestRouting, requestRoutingTransitions(routes));
-    transitions.put(RequestDispatching, requestDispatchingTransitions(routes, List.of()));
-    transitions.put(MessageIds, MessageIds.transitions());
     for (var outbox : outboxes) {
       transitions.put(outbox, outbox.transitions());
       if (outbox instanceof AtMostOnce<?, ?> amo) {
@@ -353,7 +355,7 @@ public class HttpInboxTest {
       }
     }
     transitions.put(Index, Index.transitions());
-    return Init.stateMachine(transitions);
+    return Init.stateMachine(HttpInbox.transitions(requests, transitions));
   }
 
   private static TypedHttpRequest<Void> requestMessage(String path) {
@@ -423,7 +425,7 @@ public class HttpInboxTest {
     stateMachine = createStateMachine(
         Lamp,
         lampTransitions(),
-        routes,
+        requests,
         List.of(Process0Outbox, Process3Outbox)
     );
   }
@@ -636,7 +638,7 @@ public class HttpInboxTest {
   /// A response of 500 is an error for monitoring
   @Test
   public void failedRequestIsCompletedWithSeverityError() {
-    TransitionModel<?, ?> completion = requestDispatchingTransitions(routes, List.of()).get(HttpInbox.States.Dispatched).stream()
+    TransitionModel<?, ?> completion = requests.getFirst().transitions().get(HttpInbox.States.Dispatched).stream()
         .filter(transition -> transition.eventType() == FailedRequestCompleted)
         .findFirst()
         .orElseThrow();
@@ -752,9 +754,313 @@ public class HttpInboxTest {
     assertEquals("Rolled back", ProblemDetail.parse(response.body()).detail());
   }
 
+  /// The same process event is triggered by two inbox requests, and the response triggered on the group goes to the
+  /// inbox request of the session
+  @Test
+  public void responseOnRequestGroupGoesToInboxRequestOfSession() throws IOException {
+    HttpResponseMessage internal = HttpMessageParser.parseResponse(onInternalRequest(UUID.randomUUID().toString(), new InternalProcess("A", 1)).data());
+    assertEquals(201, internal.statusCode());
+    HttpResponseMessage other = HttpMessageParser.parseResponse(onRequest(PUT, URI.create("/other-internal/" + UUID.randomUUID()), null).data());
+    assertEquals(201, other.statusCode());
+    assertTrue(ProblemDetail.parse(other.body()).detail().startsWith("Light is on!"));
+  }
+
+  @Test
+  public void requestGroupIncludesInboxRequestsOnly() {
+    assertTrue(Request.includes(InternalRequest));
+    assertFalse(Request.includes(Lamp));
+    assertFalse(Request.includes(RequestRouting));
+  }
+
+  /// A group has no entities of its own, so it gets no event types, while each inbox request has the response event
+  /// types triggered on the group
+  @Test
+  public void eventTypesAreRegisteredForInboxRequestsNotForTheGroup() {
+    var eventTypes = Mappers.eventTypesByEntityModel(HttpInbox.transitions(requests, Map.of(Lamp, lampTransitions())));
+    assertFalse(eventTypes.containsKey(Request));
+    for (HttpInboxRequest<?> request : requests)
+      assertThat(eventTypes.get(request)).contains(RequestCompleted, FailedRequestCompleted, InvalidRequestCompleted);
+  }
+
+  @Test
+  public void entityCanNotBeCreatedInGroup() {
+    var trigger = new EventTrigger<HttpRequestMessage, HttpRequestMessage, Void>(
+        new EventTrigger.EventSpec<>(HttpInbox.RequestReceived, d -> d),
+        List.of(newEntityId()),
+        Request,
+        true
+    );
+    assertThatThrownBy(() -> stateMachine.onEvent(UUID.randomUUID().toString(), trigger, new HttpRequestMessage(PUT, URI.create("/x"), Map.of(), null)).blockLast(Duration.ofSeconds(5)))
+        .hasMessageContaining("can't be created in the group Request");
+  }
+
+  @Test
+  public void entityOfGroupCanOnlyBeIdentifiedBySession() {
+    var trigger = new EventTrigger<HttpRequestMessage, HttpRequestMessage, Void>(
+        new EventTrigger.EventSpec<>(HttpInbox.RequestReceived, d -> d),
+        List.of(_ -> EntitySelector.entityId(UUID.randomUUID())),
+        Request,
+        false
+    );
+    assertThatThrownBy(() -> stateMachine.onEvent(UUID.randomUUID().toString(), trigger, new HttpRequestMessage(PUT, URI.create("/x"), Map.of(), null)).blockLast(Duration.ofSeconds(5)))
+        .hasMessageContaining("can only be identified by the session");
+  }
+
+  @Test
+  public void whenContentMatchesProcessThenItsEventIsTriggered() throws IOException {
+    HttpResponseMessage internal = onContentRequest(UUID.randomUUID().toString(), "internal");
+    assertEquals(201, internal.statusCode());
+    assertTrue(ProblemDetail.parse(internal.body()).detail().startsWith("Light is on!"));
+    HttpResponseMessage unavailable = onContentRequest(UUID.randomUUID().toString(), "unavailable");
+    assertEquals(500, unavailable.statusCode());
+    assertEquals("Subsystem unavailable", ProblemDetail.parse(unavailable.body()).detail());
+  }
+
+  /// The processes of an endpoint have their own input and selector: `zero` switches the existing lamp of the path
+  @Test
+  public void whenContentMatchesProcessThenItsInputAndSelectorAreUsed() throws IOException {
+    HttpResponseMessage created = onContentRequest(UUID.randomUUID().toString(), "internal");
+    UUID lamp = UUID.fromString(ProblemDetail.parse(created.body()).entityId());
+    HttpResponseMessage zeroed = onContentRequest(lamp.toString(), "zero");
+    assertEquals(201, zeroed.statusCode());
+    assertEquals("Complete", ProblemDetail.parse(zeroed.body()).detail());
+  }
+
+  @Test
+  public void whenContentMatchesNoProcessThenBadRequest() throws IOException {
+    HttpResponseMessage response = onContentRequest(UUID.randomUUID().toString(), "other");
+    assertEquals(400, response.statusCode());
+    assertEquals("No process for the content", ProblemDetail.parse(response.body()).detail());
+  }
+
+  @Test
+  public void diagramOfContentRequestShowsTheChoiceOfProcess() throws IOException {
+    File file = new PlantUMLFormatter(ContentRequest, ContentRequest.transitions()).formatToImage(Files.createTempDirectory("inbox").toString());
+    assertThat(Files.readString(file.toPath()))
+        .contains("Request dispatched [a == internal]", "Request dispatched [a == unavailable]", "Request dispatched [a == zero]");
+  }
+
+  @Test
+  public void processWithoutContentPredicateMustBeLast() {
+    assertThatThrownBy(() -> HttpInboxRequest.matching(_ -> true).noContent()
+        .process(InternalProcessingRequested, Lamp, newEntity())
+        .process(when("any", _ -> true), LampSwitchedOn, Lamp, newEntity())
+        .build("Invalid", UUID.randomUUID()))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("must be the last one");
+  }
+
+  @Test
+  public void processesOfRequestWithRollbackMustHaveTheSameEntityModel() {
+    assertThatThrownBy(() -> HttpInboxRequest.matching(_ -> true).noContent()
+        .process(when("one", _ -> true), InternalProcessingRequested, Lamp, newEntity())
+        .process(InternalProcessingRequested, EntityModel.of("Other", UUID.randomUUID()), newEntity())
+        .rollback(_ -> false, parseMessageId("(.*)", 1))
+        .build("Invalid", UUID.randomUUID()))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("must have the same entity model");
+  }
+
+  /// A client using the message id of a request of one type for a request of another type gets 400 Conflict, as for
+  /// another request of the same type
+  @Test
+  public void whenSameMessageIdForAnotherRequestTypeThenConflict() throws IOException {
+    String messageId = UUID.randomUUID().toString();
+    HttpResponseMessage first = HttpMessageParser.parseResponse(onInternalRequest(messageId, new InternalProcess("A", 1)).data());
+    assertEquals(201, first.statusCode());
+    HttpResponseMessage second = HttpMessageParser.parseResponse(onRequest(PUT, URI.create("/complexinternal/" + messageId), "Hello!".getBytes()).data());
+    assertEquals(400, second.statusCode());
+    assertEquals("Conflict", ProblemDetail.parse(second.body()).detail());
+  }
+
+  /// The first request with the message id was rejected by the application, so it has no accepted request to compare with
+  @Test
+  public void whenSameMessageIdAsRejectedRequestOfAnotherTypeThenConflict() throws IOException {
+    String messageId = UUID.randomUUID().toString();
+    HttpResponseMessage first = HttpMessageParser.parseResponse(onRequest(PUT, URI.create("/rejected/" + messageId), "Hello!".getBytes()).data());
+    assertEquals(422, first.statusCode());
+    HttpResponseMessage second = HttpMessageParser.parseResponse(onInternalRequest(messageId, new InternalProcess("A", 1)).data());
+    assertEquals(400, second.statusCode());
+    assertEquals("Conflict", ProblemDetail.parse(second.body()).detail());
+  }
+
+  @Test
+  public void whenRejectedRequestIsRepeatedThenRespondWithSameResponse() throws IOException {
+    String messageId = UUID.randomUUID().toString();
+    HttpResponseMessage first = HttpMessageParser.parseResponse(onRequest(PUT, URI.create("/rejected/" + messageId), "Hello!".getBytes()).data());
+    assertEquals(422, first.statusCode());
+    HttpResponseMessage second = HttpMessageParser.parseResponse(onRequest(PUT, URI.create("/rejected/" + messageId), "Hello!".getBytes()).data());
+    assertEquals(422, second.statusCode());
+    assertArrayEquals(first.body(), second.body());
+  }
+
+  private HttpResponseMessage onContentRequest(String id, String a) throws IOException {
+    return HttpMessageParser.parseResponse(onRequest(PUT, URI.create("/content/" + id), asJson(new InternalProcess(a, 0))).data());
+  }
+
+  @Test
+  public void whenRollbackBeforeRequestIsRepeatedThenRespondWithSameResponse() throws IOException {
+    String messageId = UUID.randomUUID().toString();
+    HttpResponseMessage first = HttpMessageParser.parseResponse(onRollbackRequest(messageId).data());
+    assertEquals("Nothing to roll back", ProblemDetail.parse(first.body()).detail());
+    // A retry, e.g. with another correlation id
+    HttpResponseMessage second = HttpMessageParser.parseResponse(onRequest(TRIGGER, new HttpRequestMessage(
+        DELETE,
+        URI.create("/lamps/messages/" + messageId),
+        Map.of("X-Correlation-Id", "retry"),
+        null
+    )).data());
+    assertEquals(201, second.statusCode());
+    assertArrayEquals(first.body(), second.body());
+  }
+
+  @Test
+  public void whenRollbackAfterRequestIsRepeatedThenRespondWithSameResponse() throws IOException {
+    String messageId = UUID.randomUUID().toString();
+    onInternalRequest(messageId, new InternalProcess("Hello!", 100));
+    HttpResponseMessage first = HttpMessageParser.parseResponse(onRollbackRequest(messageId).data());
+    assertEquals("Rolled back", ProblemDetail.parse(first.body()).detail());
+    HttpResponseMessage second = HttpMessageParser.parseResponse(onRollbackRequest(messageId).data());
+    assertEquals(201, second.statusCode());
+    assertArrayEquals(first.body(), second.body());
+  }
+
+  @Test
+  public void whenRollbackOfRequestAuthorizedByBodyThenRollbackIsAuthorizedByItsOwnAuthorizer() throws IOException {
+    String messageId = UUID.randomUUID().toString();
+    HttpResponseMessage request = HttpMessageParser.parseResponse(onRequest(PUT, URI.create("/owned/" + messageId), asJson(new InternalProcess("alice", 1))).data());
+    assertEquals(201, request.statusCode());
+    HttpResponseMessage rollback = onOwnedRollback(messageId, Map.of("X-Owner", "alice"));
+    assertEquals(201, rollback.statusCode());
+    assertEquals("Rolled back", ProblemDetail.parse(rollback.body()).detail());
+  }
+
+  @Test
+  public void whenRollbackIsRefusedByItsAuthorizerThenRefusalResponse() throws IOException {
+    HttpResponseMessage rollback = onOwnedRollback(UUID.randomUUID().toString(), Map.of());
+    assertEquals(400, rollback.statusCode());
+    assertEquals("Owner missing", ProblemDetail.parse(rollback.body()).detail());
+  }
+
+  /// A message id is the authorized subject's, so another subject's rollback has nothing to roll back
+  @Test
+  public void whenRollbackByAnotherSubjectThenNothingToRollBack() throws IOException {
+    String messageId = UUID.randomUUID().toString();
+    onRequest(PUT, URI.create("/owned/" + messageId), asJson(new InternalProcess("alice", 1)));
+    HttpResponseMessage rollback = onOwnedRollback(messageId, Map.of("X-Owner", "bob"));
+    assertEquals(201, rollback.statusCode());
+    assertEquals("Nothing to roll back", ProblemDetail.parse(rollback.body()).detail());
+  }
+
+  @Test
+  public void rollbackOfRequestWithAuthorizerNeedsAnAuthorizer() {
+    assertThatThrownBy(() -> HttpInboxRequest.matching(_ -> true).noContent()
+        .authorizer((_, _) -> Authorization.authorized("alice"))
+        .process(InternalProcessingRequested, Lamp, newEntity())
+        .rollback(_ -> false, parseMessageId("(.*)", 1))
+        .build("Invalid", UUID.randomUUID()))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("needs an authorizer");
+  }
+
+  @Test
+  public void rollbackOfRequestWithoutAuthorizerCanNotHaveAnAuthorizer() {
+    assertThatThrownBy(() -> HttpInboxRequest.matching(_ -> true).noContent()
+        .process(InternalProcessingRequested, Lamp, newEntity())
+        .rollback(_ -> false, parseMessageId("(.*)", 1), (_, _) -> Authorization.authorized("alice"))
+        .build("Invalid", UUID.randomUUID()))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("can't have an authorizer");
+  }
+
+  static final EntityModel Bell = EntityModel.of("Bell", UUID.fromString("4c1e8a2f-7d36-4b95-a0f8-9e2d5b7c3a16"));
+  static final EntityModel Chime = EntityModel.of("Chime", UUID.fromString("b8d3f6a1-2e47-4c09-9b5a-6f1c8e4d2a73"));
+  static final EventType<Void, Void> BellRung = BasicEventType.of("Bell rung", UUID.fromString("d6f2a9c4-1b85-4e37-8a0d-3c7e5f9b1a26"));
+  static final EventType<Void, Void> ChimeRung = BasicEventType.of("Chime rung", UUID.fromString("7a4c2e9f-5d18-4b63-b1e0-8f6d3a2c9e54"));
+  static final ResponseEventType<String> Rang = new ResponseEventType<>(
+      "Rang",
+      UUID.fromString("2f9b6d3e-8c41-4a75-9e0b-5d7a1c4f8e62"),
+      DataType.string()
+  );
+
+  static final EventType<Void, Void> BellPolished = BasicEventType.of("Bell polished", UUID.fromString("5e8a3c1f-9b26-4d70-a4e3-1c7f2b9d6e08"));
+  static final EventType<Void, Void> BellScheduled = BasicEventType.of("Bell scheduled", UUID.fromString("c9f1b4e7-3a62-4d8c-8e05-7b2d6a9c1f34"));
+
+  /// The bell responds itself, or through the chime it rings, when it is rung. When it is polished it gives no
+  /// response, and when it is scheduled it is rung later, in another session.
+  private static Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> bellTransitions(boolean throughChime) {
+    return Map.of(
+        Bell, Map.of(Begin, List.of(
+            throughChime ?
+                onEvent(BellRung).toSelf().trigger(ChimeRung).on(Chime).identifiedBy(newEntityId()).output() :
+                onEvent(BellRung).toSelf().trigger(Rang).with(_ -> "Ding").on(Request).identifiedBy(entityIdFromSession()).output(),
+            onEvent(BellPolished).toSelf().output(),
+            onEvent(BellScheduled).toSelf().assembleInput().trigger(BellRung).after(_ -> Duration.ofMinutes(1)).output()
+        )),
+        Chime, Map.of(Begin, List.of(
+            onEvent(ChimeRung).toSelf().trigger(Rang).with(_ -> "Dong").on(Request).identifiedBy(entityIdFromSession()).output()
+        ))
+    );
+  }
+
+  private static HttpInboxRequest.Builder<Void> bellRequest() {
+    return HttpInboxRequest.matching(m -> m.requestLine().matches("PUT /bell")).noContent().process(BellRung, Bell, newEntity());
+  }
+
+  @Test
+  public void responseGivenByProcessMustBeTakenByTheRequest() {
+    var request = bellRequest().build("BellRequest", UUID.randomUUID());
+    assertThatThrownBy(() -> HttpInbox.transitions(List.of(request), bellTransitions(false)))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("The inbox request BellRequest doesn't take the response Rang, which Bell rung on Bell triggers on Request");
+  }
+
+  @Test
+  public void responseGivenByEntityModelTheProcessTriggersMustBeTakenByTheRequest() {
+    var request = bellRequest().build("BellRequest", UUID.randomUUID());
+    assertThatThrownBy(() -> HttpInbox.transitions(List.of(request), bellTransitions(true)))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("The inbox request BellRequest doesn't take the response Rang, which Chime rung on Chime triggers on Request");
+  }
+
+  /// Two requests on the bell, where only ringing it gives a custom response: only the request ringing it takes it
+  @Test
+  public void requestTakesOnlyTheResponsesOfItsOwnProcesses() {
+    var ring = bellRequest().response(Rang, _ -> new HttpResponseMessage(200, "OK")).build("RingRequest", UUID.randomUUID());
+    var polish = HttpInboxRequest.matching(m -> m.requestLine().matches("PUT /bell/polish")).noContent()
+        .process(BellPolished, Bell, newEntity())
+        .build("PolishRequest", UUID.randomUUID());
+    assertThat(HttpInbox.transitions(List.of(polish, ring), bellTransitions(true))).containsKeys(ring, polish, Bell);
+  }
+
+  /// Ringing the bell later is in another session, which the check doesn't follow
+  @Test
+  public void delayedTriggerIsNotFollowed() {
+    var schedule = HttpInboxRequest.matching(m -> m.requestLine().matches("PUT /bell/schedule")).noContent()
+        .process(BellScheduled, Bell, newEntity())
+        .build("ScheduleRequest", UUID.randomUUID());
+    assertThat(HttpInbox.transitions(List.of(schedule), bellTransitions(false))).containsKeys(schedule, Bell);
+  }
+
+  @Test
+  public void responseTakenByTheRequestPassesTheCheck() {
+    var request = bellRequest().response(Rang, _ -> new HttpResponseMessage(200, "OK")).build("BellRequest", UUID.randomUUID());
+    assertThat(HttpInbox.transitions(List.of(request), bellTransitions(true))).containsKeys(request, Bell, Chime);
+  }
+
+  private HttpResponseMessage onOwnedRollback(String messageId, Map<String, String> headers) throws IOException {
+    return HttpMessageParser.parseResponse(onRequest(TRIGGER, new HttpRequestMessage(
+        DELETE,
+        URI.create("/owned/messages/" + messageId),
+        headers,
+        null
+    )).data());
+  }
+
   @Test
   public void formatModel() throws IOException {
-    System.out.println(new PlantUMLFormatter(RequestDispatching, requestDispatchingTransitions(routes, List.of())).formatToImage("/tmp"));
+    System.out.println(new PlantUMLFormatter(RequestRouting, HttpInbox.requestRoutingTransitions(requests)).formatToImage("/tmp"));
+    System.out.println(new PlantUMLFormatter(InternalRequest, InternalRequest.transitions()).formatToImage("/tmp"));
   }
 
   @JsonIgnoreProperties(ignoreUnknown = true)
