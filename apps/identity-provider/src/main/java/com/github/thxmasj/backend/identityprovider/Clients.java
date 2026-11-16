@@ -18,6 +18,8 @@ import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.core.Tuples.Tuple2;
 import com.github.thxmasj.backend.identityprovider.Inbox.Reply;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -27,6 +29,9 @@ import java.util.regex.Pattern;
 /// The clients of the identity provider. A client is registered by a client with the registration scope, and is
 /// identified by its unique client id. A client may have a subject, which is the `sub` of its tokens instead of its
 /// client id, for services which identify their callers by values a client id can't hold, e.g. URLs.
+///
+/// A client has the grant types it may use: the client credentials grant, to get tokens for itself, and the
+/// authorization code grant, to sign users in with OpenID Connect at the redirect URIs it has registered.
 ///
 /// Every registration request is an entity of its own, which records who requested what, and whether the client id
 /// was taken. Only accepted requests create a client.
@@ -44,10 +49,32 @@ public interface Clients {
     Rejected
   }
 
+  String ClientCredentials = "client_credentials";
+  String AuthorizationCode = "authorization_code";
+  List<String> grantTypes = List.of(ClientCredentials, AuthorizationCode);
+
   /// @param subject      the `sub` of the client's tokens, or null for its client id
   /// @param secretHash   the hash of the client's secret. The secret itself is never seen by the state machine.
   /// @param registeredBy the client id of the client which registered the client
-  record Registration(String clientId, String subject, String secretHash, List<String> scopes, String registeredBy) {}
+  /// @param grantTypes   the grant types the client may use. Clients registered before there was a choice have the
+  ///                     client credentials grant.
+  /// @param redirectUris the URIs users may be redirected to with an authorization code, compared exactly
+  record Registration(
+      String clientId,
+      String subject,
+      String secretHash,
+      List<String> scopes,
+      String registeredBy,
+      List<String> grantTypes,
+      List<String> redirectUris
+  ) {
+
+    public Registration {
+      grantTypes = grantTypes != null ? List.copyOf(grantTypes) : List.of(ClientCredentials);
+      redirectUris = redirectUris != null ? List.copyOf(redirectUris) : List.of();
+    }
+
+  }
 
   EventType<String, String> ClientIdClaimed = BasicEventType.of(
       "Client id claimed",
@@ -103,6 +130,41 @@ public interface Clients {
         && subject.codePoints().noneMatch(Character::isISOControl);
   }
 
+  int maxRedirectUriLength = 2000;
+
+  /// A redirect URI is an absolute https URI without a fragment, RFC 6749 section 3.1.2. Plain http is allowed only to
+  /// the local host, for development.
+  static boolean isValidRedirectUri(String value) {
+    if (value == null || value.isEmpty() || value.length() > maxRedirectUriLength)
+      return false;
+    URI uri;
+    try {
+      uri = new URI(value);
+    } catch (URISyntaxException e) {
+      return false;
+    }
+    if (uri.getHost() == null || uri.getRawFragment() != null || uri.getRawUserInfo() != null)
+      return false;
+    return "https".equals(uri.getScheme())
+        || "http".equals(uri.getScheme()) && List.of("localhost", "127.0.0.1", "[::1]").contains(uri.getHost());
+  }
+
+  /// The grant types and redirect URIs of a registration: the authorization code grant requires redirect URIs, and
+  /// redirect URIs are only for the authorization code grant
+  ///
+  /// @return why they are invalid, or null if they are valid
+  static String invalidGrant(List<String> grantTypes, List<String> redirectUris) {
+    if (grantTypes.isEmpty() || !Clients.grantTypes.containsAll(grantTypes))
+      return "grant_types must be one or both of " + String.join(", ", Clients.grantTypes);
+    if (redirectUris.stream().anyMatch(uri -> !isValidRedirectUri(uri)))
+      return "redirect_uris must be absolute https URIs without fragments, or http URIs of the local host, of at most " + maxRedirectUriLength + " characters";
+    if (grantTypes.contains(AuthorizationCode) && redirectUris.isEmpty())
+      return "redirect_uris are required for the authorization_code grant";
+    if (!grantTypes.contains(AuthorizationCode) && !redirectUris.isEmpty())
+      return "redirect_uris are only for the authorization_code grant";
+    return null;
+  }
+
   static Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions() {
     return Map.of(
         Client, Map.of(
@@ -151,7 +213,11 @@ public interface Clients {
       response.put("subject", registration.subject());
     response.put("client_id_issued_at", issuedAt);
     response.put("scope", Scopes.format(registration.scopes()));
-    response.put("grant_types", List.of("client_credentials"));
+    response.put("grant_types", registration.grantTypes());
+    if (registration.grantTypes().contains(AuthorizationCode)) {
+      response.put("response_types", List.of("code"));
+      response.put("redirect_uris", registration.redirectUris());
+    }
     response.put("token_endpoint_auth_method", "client_secret_basic");
     return response;
   }

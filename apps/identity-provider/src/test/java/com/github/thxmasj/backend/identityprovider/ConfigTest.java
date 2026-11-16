@@ -91,14 +91,17 @@ public class ConfigTest {
         [
           {"client_id": "a", "secret_hash": "%s", "subject": "https://wallet.example.com/provider/example", "scope": "x y", "client_name": "A"},
           {"client_id": "b", "secret_hash": "%s", "scope": ""},
-          {"client_id": "c", "secret_hash": "%s", "subject": null}
+          {"client_id": "c", "secret_hash": "%s", "subject": null},
+          {"client_id": "d", "secret_hash": "%s", "grant_types": ["authorization_code"], "redirect_uris": ["https://app.example.com/callback"]}
         ]
-        """.formatted(hash, hash.replace("$2a$", "$2b$"), hash.replace("$2a$", "$2y$"));
+        """.formatted(hash, hash.replace("$2a$", "$2b$"), hash.replace("$2a$", "$2y$"), hash);
     var inline = Config.fromEnvironment(clients(json)).clients();
+    var clientCredentials = List.of(Clients.ClientCredentials);
     assertThat(inline).containsExactly(
-        new ImportedClient("a", hash, "https://wallet.example.com/provider/example", "x y", "A"),
-        new ImportedClient("b", hash.replace("$2a$", "$2b$"), null, "", null),
-        new ImportedClient("c", hash.replace("$2a$", "$2y$"), null, "", null)
+        new ImportedClient("a", hash, "https://wallet.example.com/provider/example", "x y", "A", clientCredentials, List.of()),
+        new ImportedClient("b", hash.replace("$2a$", "$2b$"), null, "", null, clientCredentials, List.of()),
+        new ImportedClient("c", hash.replace("$2a$", "$2y$"), null, "", null, clientCredentials, List.of()),
+        new ImportedClient("d", hash, null, "", null, List.of(Clients.AuthorizationCode), List.of("https://app.example.com/callback"))
     );
     Path file = Files.createTempFile("clients", ".json");
     try {
@@ -127,6 +130,11 @@ public class ConfigTest {
         "[{\"client_id\": \"a\", \"secret_hash\": \"%s\", \"scope\": \"a  b\"}]".formatted(hash),
         "[{\"client_id\": \"a\", \"secret_hash\": \"%s\", \"scope\": [\"a\"]}]".formatted(hash),
         "[{\"client_id\": \"a\", \"secret_hash\": \"%s\", \"secret\": \"s\"}]".formatted(hash),
+        "[{\"client_id\": \"a\", \"secret_hash\": \"%s\", \"grant_types\": [\"password\"]}]".formatted(hash),
+        "[{\"client_id\": \"a\", \"secret_hash\": \"%s\", \"grant_types\": \"authorization_code\"}]".formatted(hash),
+        "[{\"client_id\": \"a\", \"secret_hash\": \"%s\", \"grant_types\": [\"authorization_code\"]}]".formatted(hash),
+        "[{\"client_id\": \"a\", \"secret_hash\": \"%s\", \"grant_types\": [\"authorization_code\"], \"redirect_uris\": [\"http://app.example.com/callback\"]}]".formatted(hash),
+        "[{\"client_id\": \"a\", \"secret_hash\": \"%s\", \"redirect_uris\": [\"https://app.example.com/callback\"]}]".formatted(hash),
         "[{\"client_id\": \"a\", \"secret_hash\": \"%s\"}, {\"client_id\": \"a\", \"secret_hash\": \"%s\"}]".formatted(hash, hash)
     ))
       assertThatThrownBy(() -> Config.fromEnvironment(clients(json))).as(json).isInstanceOf(IllegalArgumentException.class);
@@ -142,6 +150,32 @@ public class ConfigTest {
     assertThatThrownBy(() -> Config.fromEnvironment(env(
         "DATABASE_USER", "u", "DATABASE_PASSWORD", "p", "CLIENTS", json, "BOOTSTRAP_CLIENT_ID", "admin", "BOOTSTRAP_CLIENT_SECRET", "A_bootstrap_secret_of_32_characters"
     ))).hasMessageContaining("bootstrap");
+  }
+
+  @Test
+  public void whenUpstreamIsGivenThenItIsConfiguredWithDefaultScope() {
+    var upstream = Config.fromEnvironment(env(
+        "DATABASE_USER", "u", "DATABASE_PASSWORD", "p",
+        "UPSTREAM_ISSUER", "https://login.example.com/tenant/v2.0", "UPSTREAM_CLIENT_ID", "idp", "UPSTREAM_CLIENT_SECRET", "s"
+    )).upstream();
+    assertThat(upstream.issuer().toString()).isEqualTo("https://login.example.com/tenant/v2.0");
+    assertThat(upstream.clientId()).isEqualTo("idp");
+    assertThat(upstream.scope()).isEqualTo("openid email profile");
+    assertThat(Config.fromEnvironment(env("DATABASE_USER", "u", "DATABASE_PASSWORD", "p")).upstream()).isNull();
+  }
+
+  @Test
+  public void whenUpstreamIsIncompleteOrInvalidThenFails() {
+    assertThatThrownBy(() -> Config.fromEnvironment(env("DATABASE_USER", "u", "DATABASE_PASSWORD", "p", "UPSTREAM_ISSUER", "https://login.example.com")))
+        .hasMessageContaining("UPSTREAM_CLIENT_ID");
+    assertThatThrownBy(() -> Config.fromEnvironment(env(
+        "DATABASE_USER", "u", "DATABASE_PASSWORD", "p",
+        "UPSTREAM_ISSUER", "login.example.com", "UPSTREAM_CLIENT_ID", "idp", "UPSTREAM_CLIENT_SECRET", "s"
+    ))).hasMessageContaining("UPSTREAM_ISSUER");
+    assertThatThrownBy(() -> Config.fromEnvironment(env(
+        "DATABASE_USER", "u", "DATABASE_PASSWORD", "p",
+        "UPSTREAM_ISSUER", "https://login.example.com", "UPSTREAM_CLIENT_ID", "idp", "UPSTREAM_CLIENT_SECRET", "s", "UPSTREAM_SCOPE", "email"
+    ))).hasMessageContaining("UPSTREAM_SCOPE");
   }
 
   @Test

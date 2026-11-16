@@ -24,8 +24,9 @@ import java.util.List;
 import java.util.Map;
 import reactor.netty.DisposableServer;
 
-/// An OAuth 2.0 authorization server for the client credentials grant, built with the HTTP inbox and the state
-/// machine. Clients are registered by other clients, and the first one is bootstrapped from the configuration.
+/// An OAuth 2.0 authorization server for the client credentials grant, and an OpenID Connect provider for the
+/// authorization code flow, built with the HTTP inbox and the state machine. Clients are registered by other clients,
+/// and the first one is bootstrapped from the configuration. Users sign in with an upstream OpenID Connect provider.
 ///
 /// Usage:
 ///
@@ -63,7 +64,8 @@ public final class IdentityProvider {
           if (config.bootstrapClient() != null)
             bootstrap(stateMachine, config.bootstrapClient());
           importClients(stateMachine, config.clients());
-          server = serve(stateMachine, keys, config.port(), config.clients());
+          Upstream upstream = config.upstream() != null ? new Upstream(config.upstream(), config.issuer()) : null;
+          server = serve(stateMachine, keys, upstream, config.port(), config.clients());
         } catch (RuntimeException e) {
           // The workers of the state machine would keep the process running without serving
           e.printStackTrace();
@@ -124,9 +126,10 @@ public final class IdentityProvider {
     return new Keys(config.signingKeys(), config.issuer(), config.audience(), clock);
   }
 
-  public static DisposableServer serve(StateMachine stateMachine, Keys keys, int port, List<ImportedClient> importedClients) {
+  /// @param upstream the provider users sign in with, or null if users can't sign in
+  static DisposableServer serve(StateMachine stateMachine, Keys keys, Upstream upstream, int port, List<ImportedClient> importedClients) {
     var importedSecretHashes = importedClients.stream().collect(toMap(ImportedClient::clientId, ImportedClient::secretHash));
-    return new HttpInboxListener(stateMachine).filter(new Edge(keys, importedSecretHashes)).listen(port);
+    return new HttpInboxListener(stateMachine).filter(new Edge(keys, upstream, importedSecretHashes)).listen(port);
   }
 
   /// Registers the bootstrap client with the registration scope, unless its client id is taken. A taken client id is
@@ -148,12 +151,15 @@ public final class IdentityProvider {
   static void importClients(StateMachine stateMachine, List<ImportedClient> clients) {
     int registered = 0;
     for (ImportedClient client : clients) {
-      var body = new LinkedHashMap<String, String>();
+      var body = new LinkedHashMap<String, Object>();
       body.put("client_id", client.clientId());
       if (!client.scope().isEmpty())
         body.put("scope", client.scope());
       if (client.subject() != null)
         body.put("subject", client.subject());
+      body.put("grant_types", client.grantTypes());
+      if (!client.redirectUris().isEmpty())
+        body.put("redirect_uris", client.redirectUris());
       HttpResponseMessage response = register(stateMachine, "import", body, ImportedClients.Registrar, ImportedClients.secretHash(client));
       String name = client.clientId() + (client.name() != null ? " (" + client.name() + ")" : "");
       switch (response.statusCode()) {
@@ -169,7 +175,7 @@ public final class IdentityProvider {
   }
 
   /// Registers a client as the registrar, outside the edge
-  private static HttpResponseMessage register(StateMachine stateMachine, String correlationId, Map<String, String> body, String registrar, String secretHash) {
+  private static HttpResponseMessage register(StateMachine stateMachine, String correlationId, Map<String, ?> body, String registrar, String secretHash) {
     var request = Edge.registration(
         Map.of("Content-Type", "application/json"),
         registrar,

@@ -21,7 +21,8 @@ import java.time.Instant;
 import java.util.Date;
 import java.util.Optional;
 
-/// The keys the access tokens are signed with. Access tokens are JWTs as profiled by RFC 9068, signed with RS256.
+/// The keys the tokens are signed with. Access tokens are JWTs as profiled by RFC 9068, and ID tokens those of OpenID
+/// Connect Core section 2, both signed with RS256.
 final class Keys {
 
   /// The `typ` of an access token, RFC 9068 section 2.1
@@ -91,6 +92,43 @@ final class Keys {
       throw new IllegalStateException("Failed to sign access token", e);
     }
     return jwt.serialize();
+  }
+
+  String sign(Tokens.IdToken token) {
+    var claims = new JWTClaimsSet.Builder()
+        .issuer(issuer.toString())
+        .subject(token.subject())
+        .audience(token.audience())
+        .issueTime(Date.from(Instant.ofEpochSecond(token.issuedAt())))
+        .expirationTime(Date.from(Instant.ofEpochSecond(token.expiresAt())))
+        .claim("auth_time", token.authTime());
+    if (token.nonce() != null)
+      claims.claim("nonce", token.nonce());
+    if (token.email() != null) {
+      claims.claim("email", token.email());
+      claims.claim("email_verified", token.emailVerified());
+    }
+    if (token.name() != null)
+      claims.claim("name", token.name());
+    var jwt = new SignedJWT(
+        new JWSHeader.Builder(JWSAlgorithm.RS256).type(JOSEObjectType.JWT).keyID(signingKey.getKeyID()).build(),
+        claims.build()
+    );
+    try {
+      jwt.sign(new RSASSASigner(signingKey));
+    } catch (JOSEException e) {
+      throw new IllegalStateException("Failed to sign ID token", e);
+    }
+    return jwt.serialize();
+  }
+
+  /// The `jti` of an access token which [#verify(String)] has found valid
+  static Optional<String> tokenId(String token) {
+    try {
+      return Optional.ofNullable(SignedJWT.parse(token).getJWTClaimsSet().getJWTID());
+    } catch (ParseException e) {
+      return Optional.empty();
+    }
   }
 
   /// The claims of an access token issued by this identity provider, if it is valid. The audience is not checked, as

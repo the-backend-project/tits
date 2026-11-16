@@ -261,6 +261,12 @@
                 <version>10.10</version>
             </dependency>
             <dependency>
+                <!-- A standard OpenID Connect client, which the identity provider is tested with -->
+                <groupId>com.nimbusds</groupId>
+                <artifactId>oauth2-oidc-sdk</artifactId>
+                <version>11.39</version>
+            </dependency>
+            <dependency>
                 <groupId>io.projectreactor</groupId>
                 <artifactId>reactor-test</artifactId>
                 <version>${reactor.version}</version>

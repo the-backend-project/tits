@@ -19,6 +19,7 @@ import com.github.thxmasj.backend.diagram.ERDiagramFormatter;
 import com.github.thxmasj.backend.diagram.PlantUMLFormatter;
 import com.github.thxmasj.backend.helloworld.Greetings;
 import com.github.thxmasj.backend.http.outbox.HttpOutboxRequest;
+import com.github.thxmasj.backend.identityprovider.Authorizations;
 import com.github.thxmasj.backend.identityprovider.Clients;
 import com.github.thxmasj.backend.identityprovider.Inbox;
 import com.github.thxmasj.backend.identityprovider.Tokens;
@@ -94,6 +95,7 @@ public class Main {
     stateDiagram(name + ".Client", Clients.Client, transitions);
     stateDiagram(name + ".ClientRegistration", Clients.ClientRegistration, transitions);
     stateDiagram(name + ".TokenRequest", Tokens.TokenRequest, transitions);
+    stateDiagram(name + ".Authorization", Authorizations.Authorization, transitions);
     erDiagram(name, transitions);
   }
 

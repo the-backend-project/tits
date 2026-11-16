@@ -20,7 +20,30 @@ import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
+import com.nimbusds.jose.JWSAlgorithm;
+import com.nimbusds.oauth2.sdk.AuthorizationCodeGrant;
+import com.nimbusds.oauth2.sdk.AuthorizationResponse;
+import com.nimbusds.oauth2.sdk.ResponseType;
+import com.nimbusds.oauth2.sdk.Scope;
+import com.nimbusds.oauth2.sdk.TokenRequest;
+import com.nimbusds.oauth2.sdk.auth.ClientSecretBasic;
+import com.nimbusds.oauth2.sdk.auth.Secret;
+import com.nimbusds.oauth2.sdk.id.Audience;
+import com.nimbusds.oauth2.sdk.id.ClientID;
+import com.nimbusds.oauth2.sdk.id.Issuer;
+import com.nimbusds.oauth2.sdk.id.State;
+import com.nimbusds.oauth2.sdk.pkce.CodeChallengeMethod;
+import com.nimbusds.oauth2.sdk.pkce.CodeVerifier;
+import com.nimbusds.openid.connect.sdk.AuthenticationRequest;
+import com.nimbusds.openid.connect.sdk.Nonce;
+import com.nimbusds.openid.connect.sdk.OIDCTokenResponse;
+import com.nimbusds.openid.connect.sdk.OIDCTokenResponseParser;
+import com.nimbusds.openid.connect.sdk.UserInfoRequest;
+import com.nimbusds.openid.connect.sdk.UserInfoResponse;
+import com.nimbusds.openid.connect.sdk.op.OIDCProviderMetadata;
+import com.nimbusds.openid.connect.sdk.validators.IDTokenValidator;
 import java.io.IOException;
+import java.net.ServerSocket;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
@@ -46,11 +69,19 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import reactor.netty.DisposableServer;
 import tools.jackson.databind.JsonNode;
 
-/// Runs the identity provider against the test database, with a bootstrapped client registering the other clients.
+/// Runs the identity provider against the test database, with a bootstrapped client registering the other clients,
+/// and users signing in to web apps with a stub upstream provider.
 @Tag("database")
 public class IdentityProviderTest {
 
-  private static final URI issuer = URI.create("https://idp.example.com");
+  /// The URL the identity provider is served at, so the OpenID Connect client finds it by discovery
+  private static URI issuer;
+  private static final URI appRedirectUri = URI.create("https://app.example.com/callback");
+  private static UpstreamStub upstream;
+  /// The values of the cookies the identity provider has set, to check that they don't enter the event log
+  private static final List<String> cookieValues = new java.util.concurrent.CopyOnWriteArrayList<>();
+  /// The authorization codes and tokens of the users signed in, to check that they don't enter the event log
+  private static final List<String> userCredentials = new java.util.concurrent.CopyOnWriteArrayList<>();
   private static final String adminId = "admin";
   private static final String adminSecret = "the-secret-of-the-bootstrap-client";
   private static final Duration tokenLifetime = Duration.ofMinutes(5);
@@ -77,13 +108,21 @@ public class IdentityProviderTest {
     assertThat(partnerHash).startsWith("$2a$10$");
     importedClients = importedClients(partnerHash);
     IdentityProvider.importClients(stateMachine, importedClients);
-    server = IdentityProvider.serve(stateMachine, new Keys(Keys.generate(), issuer, null, Clock.systemUTC()), 0, importedClients);
+    upstream = new UpstreamStub();
+    int port;
+    try (var socket = new ServerSocket(0)) {
+      port = socket.getLocalPort();
+    }
+    issuer = URI.create("http://localhost:" + port);
+    var upstreamConfig = new Upstream.Config(URI.create(upstream.issuer()), UpstreamStub.clientId, UpstreamStub.clientSecret, "openid email profile");
+    server = IdentityProvider.serve(stateMachine, new Keys(Keys.generate(), issuer, null, Clock.systemUTC()), new Upstream(upstreamConfig, issuer), port, importedClients);
     adminToken = json(token(adminId, adminSecret, "grant_type=client_credentials")).get("access_token").asString();
   }
 
   @AfterAll
   public static void tearDown() throws Exception {
     server.disposeNow();
+    upstream.close();
     stateMachine.close();
   }
 
@@ -245,8 +284,25 @@ public class IdentityProviderTest {
   public void credentialsAreNotInTheEventLog() throws Exception {
     String secret = register("discreet", "a");
     String token = json(token("discreet", secret, "grant_type=client_credentials")).get("access_token").asString();
+    String webAppSecret = registerWebApp("discreet-app");
+    String verifier = Secrets.generate();
+    String code = signIn("discreet-app", "openid email profile", verifier);
+    JsonNode userTokens = json(redeem("discreet-app", webAppSecret, code, verifier));
+    assertThat(userInfo(userTokens.get("access_token").asString()).statusCode()).isEqualTo(200);
 
     String eventLog = eventLog();
+
+    // The claims of the user are there
+    assertThat(eventLog).contains("ada@example.com");
+    for (String credential : List.of(code, verifier, webAppSecret, userTokens.get("access_token").asString(), userTokens.get("id_token").asString(), UpstreamStub.clientSecret))
+      assertThat(eventLog).doesNotContain(credential);
+    assertThat(cookieValues).isNotEmpty();
+    for (String credential : cookieValues)
+      assertThat(eventLog).doesNotContain(credential);
+    for (String credential : upstream.issuedCodes)
+      assertThat(eventLog).doesNotContain(credential);
+    for (String credential : userCredentials)
+      assertThat(eventLog).doesNotContain(credential);
 
     // The event log is readable: the hash of the secret is there
     assertThat(eventLog).contains(Secrets.hash(secret));
@@ -396,6 +452,232 @@ public class IdentityProviderTest {
   }
 
   @Test
+  public void whenUserSignsInWithOpenIdConnectClientThenItGetsIdTokenAndUserInfo() throws Exception {
+    var clientId = new ClientID("webapp");
+    var secret = new Secret(registerWebApp(clientId.getValue()));
+    upstream.signInAs(new UpstreamStub.User("upstream-ada", "ada@example.com", "Ada Lovelace"));
+    // The client is configured with the issuer only, and finds the endpoints by discovery
+    var provider = OIDCProviderMetadata.resolve(new Issuer(issuer));
+    var state = new State();
+    var nonce = new Nonce();
+    var verifier = new CodeVerifier();
+    var authenticationRequest = new AuthenticationRequest.Builder(ResponseType.CODE, new Scope("openid", "email", "profile"), clientId, appRedirectUri)
+        .endpointURI(provider.getAuthorizationEndpointURI())
+        .state(state)
+        .nonce(nonce)
+        .codeChallenge(verifier, CodeChallengeMethod.S256)
+        .build();
+
+    URI redirect = browse(authenticationRequest.toURI()).location();
+
+    var authorizationResponse = AuthorizationResponse.parse(redirect);
+    assertThat(authorizationResponse.indicatesSuccess()).as(redirect.toString()).isTrue();
+    assertThat(authorizationResponse.getState()).isEqualTo(state);
+    var code = authorizationResponse.toSuccessResponse().getAuthorizationCode();
+    var tokenRequest = new TokenRequest.Builder(provider.getTokenEndpointURI(), new ClientSecretBasic(clientId, secret), new AuthorizationCodeGrant(code, appRedirectUri, verifier)).build();
+    var tokenResponse = OIDCTokenResponseParser.parse(tokenRequest.toHTTPRequest().send());
+    assertThat(tokenResponse.indicatesSuccess()).as(() -> tokenResponse.toErrorResponse().getErrorObject().toString()).isTrue();
+    var tokens = ((OIDCTokenResponse) tokenResponse.toSuccessResponse()).getOIDCTokens();
+    var idTokenValidator = new IDTokenValidator(provider.getIssuer(), clientId, JWSAlgorithm.RS256, provider.getJWKSetURI().toURL());
+    var claims = idTokenValidator.validate(tokens.getIDToken(), nonce);
+    var userInfoResponse = UserInfoResponse.parse(new UserInfoRequest(provider.getUserInfoEndpointURI(), tokens.getBearerAccessToken()).toHTTPRequest().send());
+    userCredentials.addAll(List.of(code.getValue(), tokens.getIDTokenString(), tokens.getAccessToken().getValue()));
+
+    assertThat(claims.getSubject().getValue()).isEqualTo("upstream-ada");
+    assertThat(claims.getAudience()).containsExactly(new Audience(clientId));
+    assertThat(claims.getAuthenticationTime()).isNotNull();
+    assertThat(claims.getStringClaim("email")).isEqualTo("ada@example.com");
+    assertThat(claims.getStringClaim("name")).isEqualTo("Ada Lovelace");
+    assertThat(userInfoResponse.indicatesSuccess()).isTrue();
+    var userInfo = userInfoResponse.toSuccessResponse().getUserInfo();
+    assertThat(userInfo.getSubject().getValue()).isEqualTo("upstream-ada");
+    assertThat(userInfo.getEmailAddress()).isEqualTo("ada@example.com");
+    assertThat(userInfo.getEmailVerified()).isTrue();
+    assertThat(userInfo.getName()).isEqualTo("Ada Lovelace");
+    assertThat(SignedJWT.parse(tokens.getAccessToken().getValue()).getJWTClaimsSet().getStringClaim("scope")).isEqualTo("openid email profile");
+  }
+
+  @Test
+  public void whenOnlyOpenidIsRequestedThenUserHasOnlySubject() throws Exception {
+    String secret = registerWebApp("subject-only");
+
+    JsonNode tokens = json(redeem("subject-only", secret, signIn("subject-only", "openid", null), null));
+
+    JWTClaimsSet idToken = SignedJWT.parse(tokens.get("id_token").asString()).getJWTClaimsSet();
+    assertThat(idToken.getClaims()).doesNotContainKeys("email", "email_verified", "name");
+    JsonNode userInfo = json(userInfo(tokens.get("access_token").asString()));
+    assertThat(userInfo.propertyNames()).containsExactly("sub");
+  }
+
+  @Test
+  public void whenCodeIsRedeemedTwiceThenInvalidGrant() throws Exception {
+    String secret = registerWebApp("twice");
+    String code = signIn("twice", "openid email", null);
+
+    assertThat(redeem("twice", secret, code, null).statusCode()).isEqualTo(200);
+    assertInvalidGrant(redeem("twice", secret, code, null));
+  }
+
+  @Test
+  public void whenCodeVerifierIsWrongOrMissingThenInvalidGrantAndCodeIsUsedUp() throws Exception {
+    String secret = registerWebApp("pkce");
+    String verifier = Secrets.generate();
+
+    String code = signIn("pkce", "openid", verifier);
+    assertInvalidGrant(redeem("pkce", secret, code, Secrets.generate()));
+    assertInvalidGrant(redeem("pkce", secret, code, verifier));
+
+    String another = signIn("pkce", "openid", verifier);
+    assertInvalidGrant(redeem("pkce", secret, another, null));
+  }
+
+  @Test
+  public void whenCodeIsRedeemedByAnotherClientOrRedirectUriThenInvalidGrant() throws Exception {
+    String secret = registerWebApp("owner");
+    String otherSecret = registerWebApp("thief");
+
+    assertInvalidGrant(redeem("thief", otherSecret, signIn("owner", "openid", null), null));
+    var response = post(
+        "/token",
+        Map.of("Content-Type", "application/x-www-form-urlencoded", "Authorization", basic("owner", secret)),
+        "grant_type=authorization_code&code=" + signIn("owner", "openid", null) + "&redirect_uri=" + URLEncoder.encode("https://app.example.com/other", UTF_8)
+    );
+    assertInvalidGrant(response);
+  }
+
+  @Test
+  public void whenCodeIsRedeemedWithWrongSecretThenInvalidClientAndCodeIsKept() throws Exception {
+    String secret = registerWebApp("careful");
+    String code = signIn("careful", "openid", null);
+
+    assertInvalidClient(redeem("careful", "wrong-secret", code, null));
+    assertThat(redeem("careful", secret, code, null).statusCode()).isEqualTo(200);
+  }
+
+  @Test
+  public void whenClientOrRedirectUriIsInvalidThenErrorPageWithoutRedirect() throws Exception {
+    registerWebApp("strict");
+
+    for (URI request : List.of(
+        authorizeUri("unknown-client", appRedirectUri.toString(), "openid", "s", null),
+        authorizeUri("strict", "https://evil.example.com/callback", "openid", "s", null),
+        authorizeUri("strict", null, "openid", "s", null),
+        URI.create(issuer + "/authorize?response_type=code&redirect_uri=" + URLEncoder.encode(appRedirectUri.toString(), UTF_8))
+    )) {
+      Landing landing = browse(request);
+      assertThat(landing.location()).as(request.toString()).isNull();
+      assertThat(landing.page().statusCode()).as(request.toString()).isEqualTo(400);
+      assertThat(landing.page().body()).startsWith("Sign-in failed");
+    }
+  }
+
+  @Test
+  public void whenRequestIsInvalidThenClientIsRedirectedWithError() throws Exception {
+    registerWebApp("redirected");
+    register("no-sign-in", "a");
+
+    assertRedirectedWithError(authorizeUri("redirected", appRedirectUri.toString(), "email", "s1", null), "invalid_scope", "s1");
+    assertRedirectedWithError(URI.create(authorizeUri("redirected", appRedirectUri.toString(), "openid", "s2", null) + "&code_challenge=abc&code_challenge_method=plain"), "invalid_request", "s2");
+    assertRedirectedWithError(URI.create(authorizeUri("redirected", appRedirectUri.toString(), "openid", "s3", null) + "&prompt=none"), "login_required", "s3");
+    assertRedirectedWithError(URI.create(authorizeUri("redirected", appRedirectUri.toString(), "openid", "s4", null).toString().replace("response_type=code", "response_type=token")), "unsupported_response_type", "s4");
+  }
+
+  @Test
+  public void whenClientMayNotUseAGrantThenUnauthorizedClient() throws Exception {
+    String webAppSecret = registerWebApp("web-only");
+    HttpResponse<String> registered = post(
+        "/clients",
+        Map.of("Content-Type", "application/json", "Authorization", "Bearer " + adminToken),
+        "{\"client_id\":\"service-and-app\",\"grant_types\":[\"client_credentials\"],\"redirect_uris\":[]}"
+    );
+    assertThat(registered.statusCode()).as(registered.body()).isEqualTo(201);
+
+    var response = token("web-only", webAppSecret, "grant_type=client_credentials");
+    assertThat(response.statusCode()).isEqualTo(400);
+    assertThat(json(response).get("error").asString()).isEqualTo("unauthorized_client");
+    // A client of the client credentials grant can't sign users in, which it is told at its redirect URI only if it
+    // has one, which it doesn't
+    Landing landing = browse(authorizeUri("service-and-app", appRedirectUri.toString(), "openid", "s", null));
+    assertThat(landing.page().statusCode()).isEqualTo(400);
+  }
+
+  @Test
+  public void whenUserCancelsAtUpstreamThenClientIsRedirectedWithAccessDenied() throws Exception {
+    registerWebApp("cancelled");
+    upstream.failWith("access_denied");
+
+    assertRedirectedWithError(authorizeUri("cancelled", appRedirectUri.toString(), "openid", "s", null), "access_denied", "s");
+  }
+
+  @Test
+  public void whenCallbackHasNoCookieThenErrorPage() throws Exception {
+    registerWebApp("cookieless");
+    // The upstream provider redirects to the callback, which is called by another browser, without the cookie
+    var first = send(HttpRequest.newBuilder(authorizeUri("cookieless", appRedirectUri.toString(), "openid", "s", null)).GET().build());
+    assertThat(first.statusCode()).isEqualTo(302);
+    var atUpstream = send(HttpRequest.newBuilder(URI.create(first.headers().firstValue("Location").orElseThrow())).GET().build());
+    var callback = URI.create(atUpstream.headers().firstValue("Location").orElseThrow());
+
+    var response = send(HttpRequest.newBuilder(callback).GET().build());
+
+    assertThat(response.statusCode()).isEqualTo(400);
+    assertThat(response.body()).contains("another browser");
+  }
+
+  @Test
+  public void whenUserInfoIsRequestedWithTokenOfNoUserThenRefused() throws Exception {
+    assertThat(userInfo(adminToken).statusCode()).isEqualTo(403);
+    String secret = register("openid-service", "openid");
+    String serviceToken = json(token("openid-service", secret, "grant_type=client_credentials")).get("access_token").asString();
+    var response = userInfo(serviceToken);
+    assertThat(response.statusCode()).isEqualTo(401);
+    assertThat(response.headers().firstValue("WWW-Authenticate")).hasValueSatisfying(v -> assertThat(v).contains("invalid_token"));
+    assertThat(send(HttpRequest.newBuilder(uri("/userinfo")).GET().build()).statusCode()).isEqualTo(401);
+  }
+
+  @Test
+  public void whenWebAppIsRegisteredThenItsGrantAndRedirectUrisAreValidated() throws Exception {
+    HttpResponse<String> registered = post(
+        "/clients",
+        Map.of("Content-Type", "application/json", "Authorization", "Bearer " + adminToken),
+        "{\"client_id\":\"described\",\"grant_types\":[\"authorization_code\"],\"redirect_uris\":[\"https://app.example.com/callback\"]}"
+    );
+    assertThat(registered.statusCode()).as(registered.body()).isEqualTo(201);
+    JsonNode body = json(registered);
+    assertThat(body.get("grant_types").toString()).isEqualTo("[\"authorization_code\"]");
+    assertThat(body.get("response_types").toString()).isEqualTo("[\"code\"]");
+    assertThat(body.get("redirect_uris").toString()).isEqualTo("[\"https://app.example.com/callback\"]");
+
+    for (String invalid : List.of(
+        "{\"client_id\":\"invalid-grant\",\"grant_types\":[\"authorization_code\"]}",
+        "{\"client_id\":\"invalid-grant\",\"grant_types\":[\"password\"]}",
+        "{\"client_id\":\"invalid-grant\",\"grant_types\":[],\"redirect_uris\":[]}",
+        "{\"client_id\":\"invalid-grant\",\"redirect_uris\":[\"https://app.example.com/callback\"]}",
+        "{\"client_id\":\"invalid-grant\",\"grant_types\":[\"authorization_code\"],\"redirect_uris\":[\"http://app.example.com/callback\"]}",
+        "{\"client_id\":\"invalid-grant\",\"grant_types\":[\"authorization_code\"],\"redirect_uris\":[\"https://app.example.com/callback#fragment\"]}",
+        "{\"client_id\":\"invalid-grant\",\"grant_types\":[\"authorization_code\"],\"redirect_uris\":[\"/callback\"]}",
+        "{\"client_id\":\"invalid-grant\",\"grant_types\":\"authorization_code\",\"redirect_uris\":[\"https://app.example.com/callback\"]}"
+    ))
+      assertThat(post("/clients", Map.of("Content-Type", "application/json", "Authorization", "Bearer " + adminToken), invalid).statusCode()).as(invalid).isEqualTo(400);
+    assertThat(post(
+        "/clients",
+        Map.of("Content-Type", "application/json", "Authorization", "Bearer " + adminToken),
+        "{\"client_id\":\"local-app\",\"grant_types\":[\"authorization_code\"],\"redirect_uris\":[\"http://localhost:3000/callback\"]}"
+    ).statusCode()).isEqualTo(201);
+  }
+
+  @Test
+  public void whenOpenIdConfigurationRequestedThenItDescribesTheProvider() throws Exception {
+    JsonNode metadata = json(get("/.well-known/openid-configuration"));
+    assertThat(metadata.get("issuer").asString()).isEqualTo(issuer.toString());
+    assertThat(metadata.get("authorization_endpoint").asString()).isEqualTo(issuer + "/authorize");
+    assertThat(metadata.get("userinfo_endpoint").asString()).isEqualTo(issuer + "/userinfo");
+    assertThat(metadata.get("response_types_supported").toString()).isEqualTo("[\"code\"]");
+    assertThat(metadata.get("code_challenge_methods_supported").toString()).isEqualTo("[\"S256\"]");
+    assertThat(json(get("/.well-known/oauth-authorization-server"))).isEqualTo(metadata);
+  }
+
+  @Test
   public void whenHealthRequestedThenOk() throws Exception {
     assertThat(get("/health").statusCode()).isEqualTo(200);
   }
@@ -404,6 +686,97 @@ public class IdentityProviderTest {
   public void whenUnknownPathOrMethodThenNotFoundOrNotAllowed() throws Exception {
     assertThat(get("/unknown").statusCode()).isEqualTo(404);
     assertThat(get("/token").statusCode()).isEqualTo(405);
+  }
+
+  /// Registers a web app which signs users in at the redirect URI, and returns its secret
+  private static String registerWebApp(String clientId) throws IOException, InterruptedException {
+    var body = Map.of("client_id", clientId, "grant_types", List.of("authorization_code"), "redirect_uris", List.of(appRedirectUri.toString()));
+    HttpResponse<String> response = post("/clients", Map.of("Content-Type", "application/json", "Authorization", "Bearer " + adminToken), DataType.objectMapper.writeValueAsString(body));
+    assertThat(response.statusCode()).as(response.body()).isEqualTo(201);
+    return json(response).get("client_secret").asString();
+  }
+
+  private static URI authorizeUri(String clientId, String redirectUri, String scope, String state, String verifier) {
+    var parameters = new LinkedHashMap<String, String>();
+    parameters.put("response_type", "code");
+    parameters.put("client_id", clientId);
+    if (redirectUri != null)
+      parameters.put("redirect_uri", redirectUri);
+    parameters.put("scope", scope);
+    parameters.put("state", state);
+    parameters.put("nonce", "n-" + state);
+    if (verifier != null) {
+      parameters.put("code_challenge", Secrets.hash(verifier));
+      parameters.put("code_challenge_method", "S256");
+    }
+    return URI.create(issuer + "/authorize?" + Upstream.form(parameters));
+  }
+
+  /// Signs the user in to the client, and returns the code the client gets
+  private static String signIn(String clientId, String scope, String verifier) throws IOException, InterruptedException {
+    Landing landing = browse(authorizeUri(clientId, appRedirectUri.toString(), scope, "a-state", verifier));
+    assertThat(landing.location()).as(() -> landing.page().body()).isNotNull();
+    Map<String, String> parameters = Form.parse(landing.location().getRawQuery().getBytes(UTF_8));
+    assertThat(parameters).containsEntry("state", "a-state").containsKey("code");
+    userCredentials.add(parameters.get("code"));
+    return parameters.get("code");
+  }
+
+  private static HttpResponse<String> redeem(String clientId, String secret, String code, String verifier) throws IOException, InterruptedException {
+    String form = "grant_type=authorization_code&code=" + code + "&redirect_uri=" + URLEncoder.encode(appRedirectUri.toString(), UTF_8)
+        + (verifier != null ? "&code_verifier=" + verifier : "");
+    return token(clientId, secret, form);
+  }
+
+  private static HttpResponse<String> userInfo(String token) throws IOException, InterruptedException {
+    return send(HttpRequest.newBuilder(uri("/userinfo")).header("Authorization", "Bearer " + token).GET().build());
+  }
+
+  private static void assertInvalidGrant(HttpResponse<String> response) {
+    assertThat(response.statusCode()).as(response.body()).isEqualTo(400);
+    assertThat(json(response).get("error").asString()).isEqualTo("invalid_grant");
+  }
+
+  private static void assertRedirectedWithError(URI request, String error, String state) throws IOException, InterruptedException {
+    Landing landing = browse(request);
+    assertThat(landing.location()).as(request.toString()).isNotNull();
+    assertThat(landing.location().toString()).startsWith(appRedirectUri.toString());
+    Map<String, String> parameters = Form.parse(landing.location().getRawQuery().getBytes(UTF_8));
+    assertThat(parameters).containsEntry("error", error).containsEntry("state", state).doesNotContainKey("code");
+  }
+
+  /// Where a browser ends up: redirected to the app, or shown a page
+  private record Landing(URI location, HttpResponse<String> page) {}
+
+  /// Follows the redirects from the URI as a browser does, with the cookies of the identity provider, until it is
+  /// redirected to the app or shown a page
+  private static Landing browse(URI uri) throws IOException, InterruptedException {
+    var cookies = new LinkedHashMap<String, String>();
+    for (int hops = 0; hops < 10; hops++) {
+      var request = HttpRequest.newBuilder(uri).GET();
+      if (uri.getPort() == issuer.getPort() && !cookies.isEmpty())
+        request.header("Cookie", String.join("; ", cookies.entrySet().stream().map(e -> e.getKey() + "=" + e.getValue()).toList()));
+      HttpResponse<String> response = send(request.build());
+      for (String setCookie : response.headers().allValues("Set-Cookie")) {
+        String pair = setCookie.split(";")[0];
+        String name = pair.substring(0, pair.indexOf('='));
+        String value = pair.substring(pair.indexOf('=') + 1);
+        assertThat(setCookie).contains("HttpOnly").contains("SameSite=Lax").contains("Path=/callback");
+        if (setCookie.contains("Max-Age=0")) {
+          cookies.remove(name);
+        } else {
+          cookies.put(name, value);
+          cookieValues.add(value);
+        }
+      }
+      if (response.statusCode() != 302)
+        return new Landing(null, response);
+      URI location = uri.resolve(response.headers().firstValue("Location").orElseThrow());
+      if (location.getHost().equals(appRedirectUri.getHost()))
+        return new Landing(location, null);
+      uri = location;
+    }
+    throw new AssertionError("Too many redirects");
   }
 
   private static List<ImportedClient> importedClients(String partnerHash) {

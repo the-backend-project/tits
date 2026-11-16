@@ -149,8 +149,9 @@ curl -u "admin:$(pulumi config get --path secretEnvironment.BOOTSTRAP_CLIENT_SEC
   -d grant_type=client_credentials "$(pulumi stack output url)token"
 ```
 
-Other settings of the identity provider, such as `TOKEN_AUDIENCE`, are set in `environment`, and clients to import in
-`CLIENTS`, as the function app has no file for `CLIENTS_FILE`. The bootstrap client id is not secret, but is in
+Other settings of the identity provider, such as `TOKEN_AUDIENCE` and `UPSTREAM_ISSUER`, are set in `environment`,
+secrets such as `UPSTREAM_CLIENT_SECRET` in `secretEnvironment`, and clients to import in `CLIENTS`, as the function app
+has no file for `CLIENTS_FILE`. The bootstrap client id is not secret, but is in
 `secretEnvironment` along with its secret, as the identity provider requires both or none, also when it migrates. To rotate the signing keys, set `SIGNING_KEYS` again and
 run `pulumi up`, which restarts the identity provider with the new keys.
 

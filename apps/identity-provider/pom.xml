@@ -126,6 +126,12 @@
       <scope>test</scope>
     </dependency>
     <dependency>
+      <!-- A standard OpenID Connect client, which users sign in to in the tests -->
+      <groupId>com.nimbusds</groupId>
+      <artifactId>oauth2-oidc-sdk</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter</artifactId>
       <scope>test</scope>

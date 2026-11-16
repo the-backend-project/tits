@@ -19,6 +19,7 @@ import java.util.Map;
 /// @param audience        the `aud` of the access tokens, if any
 /// @param bootstrapClient a client registered at startup, which can register other clients
 /// @param clients         the clients imported at startup, with the BCrypt hashes of their secrets
+/// @param upstream        the OpenID Connect provider users sign in with, or null if users can't sign in
 public record Config(
     int port,
     String database,
@@ -30,7 +31,8 @@ public record Config(
     Duration tokenLifetime,
     String audience,
     BootstrapClient bootstrapClient,
-    List<ImportedClient> clients
+    List<ImportedClient> clients,
+    Upstream.Config upstream
 ) {
 
   public record BootstrapClient(String id, String secret) {}
@@ -48,8 +50,26 @@ public record Config(
         Duration.ofSeconds(Long.parseLong(env.getOrDefault("TOKEN_LIFETIME_SECONDS", "300"))),
         env.get("TOKEN_AUDIENCE"),
         bootstrapClient(env),
-        importedClients(env)
+        importedClients(env),
+        upstream(env)
     );
+  }
+
+  private static Upstream.Config upstream(Map<String, String> env) {
+    String issuer = env.get("UPSTREAM_ISSUER");
+    String clientId = env.get("UPSTREAM_CLIENT_ID");
+    String secret = env.get("UPSTREAM_CLIENT_SECRET");
+    if (issuer == null && clientId == null && secret == null)
+      return null;
+    if (issuer == null || clientId == null || secret == null)
+      throw new IllegalArgumentException("Environment variables UPSTREAM_ISSUER, UPSTREAM_CLIENT_ID and UPSTREAM_CLIENT_SECRET must be given together");
+    URI uri = URI.create(issuer);
+    if (!"https".equals(uri.getScheme()) && !"http".equals(uri.getScheme()) || uri.getHost() == null || uri.getQuery() != null || uri.getFragment() != null)
+      throw new IllegalArgumentException("Environment variable UPSTREAM_ISSUER must be an http(s) URL without query and fragment");
+    String scope = env.getOrDefault("UPSTREAM_SCOPE", "openid email profile");
+    if (!Scopes.isValid(scope) || !Scopes.parse(scope).contains("openid"))
+      throw new IllegalArgumentException("Environment variable UPSTREAM_SCOPE must be a space separated list of scopes with openid");
+    return new Upstream.Config(uri, clientId, secret, scope);
   }
 
   private static List<ImportedClient> importedClients(Map<String, String> env) {
