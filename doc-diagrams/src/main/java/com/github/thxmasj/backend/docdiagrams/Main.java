@@ -10,6 +10,7 @@ import static com.github.thxmasj.backend.templates.cardpayment.DummyTransitions.
 import static com.github.thxmasj.backend.templates.cardpayment.DummyTransitions.atMostOnce;
 import static com.github.thxmasj.backend.templates.cardpayment.Identifiers.Ids;
 
+import com.github.thxmasj.backend.backoffice.Backoffice;
 import com.github.thxmasj.backend.core.BasicEventType;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.EventType;
@@ -49,6 +50,7 @@ public class Main {
     cardPayments();
     identityProvider();
     helloWorld();
+    backoffice();
   }
 
   private static void httpOutbox() throws IOException {
@@ -115,6 +117,10 @@ public class Main {
     var name = "com.github.thxmasj.backend.helloworld";
     stateDiagram(name + ".Greeting", Greetings.Greeting, transitions);
     erDiagram(name, transitions);
+  }
+
+  private static void backoffice() throws IOException {
+    stateDiagram("com.github.thxmasj.backend.backoffice.BackofficeSession", Backoffice.sessionModel(), Backoffice.transitions());
   }
 
   private static void stateDiagram(EntityModel model, Map<State, List<TransitionModel<?, ?>>> transitions) throws IOException {

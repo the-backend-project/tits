@@ -33,6 +33,7 @@ The entity models, with those of the HTTP inbox, and how they relate through tri
 |---|---|
 | `GET /` | Creates a greeting and responds with a page saying hello. |
 | `GET /health` | Responds `200 OK` as long as the process is able to serve HTTP. It does not involve the database. |
+| `/backoffice/` | The [backoffice](backoffice.md), where the greetings and the requests creating them are looked up, if `BACKOFFICE_ISSUER` is set. |
 
 ## Running
 
@@ -95,6 +96,7 @@ The demo is configured by environment variables:
 | `DATABASE_QUERY_TIMEOUT_SECONDS` | `10` | Query timeout |
 | `DATABASE_SCHEMA` | `hello_world` | Schema holding the state machine's tables |
 | `DATABASE_ROLE` | | Role to grant access to the schema. Required by `migrate` only. |
+| `BACKOFFICE_*` | | The [backoffice](backoffice.md#configuration). Without `BACKOFFICE_ISSUER` there is no backoffice. |
 
 `DATABASE_AUTHENTICATION` is one of:
 

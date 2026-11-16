@@ -134,6 +134,14 @@ of the request the same subject sent: another subject's rollback with the messag
 inbox request: the message id of another type of request has nothing to roll back. The processes of an inbox request
 with a rollback must have the same entity model, which the rollback rolls the events back on.
 
+## The requests of an entity
+
+An accepted request is indexed by the entity of the application its event was triggered on: the inbox request gets an
+index event `Process referenced` of the index entity model `RequestIndex`, `HttpInbox.Index`, with the entity id of the
+application's entity as key. The inbox requests of an entity are thereby found by its entity id, as its
+[outbox requests](http-outbox.md) are by the `Process referenced` of the outbox, e.g. by the
+[backoffice](backoffice.md). `HttpInbox.transitions` adds the transitions of `Index` along with those of `MessageIds`.
+
 ## Access tokens
 
 Inbox requests requiring an access token, e.g. one issued by the [identity provider](identity-provider.md), take

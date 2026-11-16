@@ -60,7 +60,7 @@ jobs:
           echo "$files"
           if grep -qvE '^(docs/|zensical\.toml$)|\.md$' <<< "$files"; then code=true; else code=false; fi
           echo "code=$code" | tee -a "$GITHUB_OUTPUT"
-          shared='^(pom\.xml|\.mvn/|\.dockerignore|\.github/workflows/build-verify\.yml|core/|database-[^/]+/|http-inbox/|http-outbox/|diagram/)'
+          shared='^(pom\.xml|\.mvn/|\.dockerignore|\.github/workflows/build-verify\.yml|core/|database-[^/]+/|http-inbox/|http-outbox/|backoffice/|diagram/)'
           for app in hello-world:apps/hello-world/ identity-provider:apps/identity-provider/; do
             if grep -qE "$shared|^${app#*:}" <<< "$files"; then affected=true; else affected=false; fi
             echo "${app%%:*}=$affected" | tee -a "$GITHUB_OUTPUT"
@@ -119,6 +119,15 @@ jobs:
             -d '{"client_id": "ci", "scope": "a b"}' localhost:8080/clients | jq -er .client_secret)
           curl -sf -u "ci:$secret" -d grant_type=client_credentials -d scope=a localhost:8080/token | jq -e '.scope == "a"'
           curl -sf localhost:8080/.well-known/jwks.json | jq -e '.keys | length == 1'
+      # Without an upstream provider no user can sign in, but the sign-in starts and the files of the backoffice are
+      # served, which checks the reachability metadata of the backoffice
+      - name: Check that the backoffice starts signing in
+        working-directory: apps/identity-provider
+        run: |
+          curl -sf localhost:8080/backoffice/static/htmx.min.js | grep -q htmx
+          test "$(curl -s -o /dev/null -w '%{http_code}' localhost:8080/backoffice/)" = 502
+          docker compose logs --no-log-prefix app \
+            | jq -Rce 'fromjson? | objects | select(.eventType == "Sign-in started")'
       # jq fails if no line is the event
       - name: Check that it warns of a refused token request
         working-directory: apps/identity-provider

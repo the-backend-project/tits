@@ -73,6 +73,10 @@ The [apps](apps) are applications built with the HTTP inbox and the state machin
 * The [hello world demo](apps/hello-world) is a web application following the principles of the twelve-factor app. See
   [Hello world demo](docs/hello-world.md).
 
+Both serve the [backoffice](backoffice), a web application built with htmx in which users signed in with OpenID Connect
+look up the entities of the application and follow the graph of an entity, with its inbox and outbox requests. See
+[Backoffice](docs/backoffice.md).
+
 The [deploy](deploy) module deploys either of them, or any application built the same way, to Azure Functions with a
 serverless Azure SQL database. See [Deploying to Azure Functions](docs/azure-functions.md).
 

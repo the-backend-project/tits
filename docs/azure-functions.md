@@ -175,6 +175,10 @@ Other environment variables are set with `environment`, secret ones with `secret
 hold the URL of the application with `urlEnvironment`. Use one stack per application and environment, and pick a
 `name` for each, as names of Azure SQL servers and function apps must be globally unique. Pulumi adds a random suffix.
 
+The [backoffice](backoffice.md) of an application is configured with `environment` and `secretEnvironment`, with
+`BACKOFFICE_URL` in `urlEnvironment`, e.g. `pulumi config set --path 'urlEnvironment[1]' BACKOFFICE_URL`, and the
+redirect URI `<url>/backoffice/callback` registered at the provider. The identity provider takes its `ISSUER`.
+
 A Pulumi program of your own can also use the `FunctionsApp` component directly, depending on the `deploy` module.
 
 ## Microsoft Entra authentication

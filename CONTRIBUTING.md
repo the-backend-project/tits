@@ -26,6 +26,7 @@ The project aims for stable, robust and long-lived systems, and it judges change
 | [core](core)                                        | The state machine, `TransitionModelBuilder` and the interface of the databases   |
 | [database-mssql](database-mssql), `database-pgsql-*` | The SQL and driver of each database, and the tests of core that need a database  |
 | [http-inbox](http-inbox), [http-outbox](http-outbox) | Receiving and sending HTTP requests as entities                                  |
+| [backoffice](backoffice)                            | The web application for looking into the entities of an application              |
 | [test-api](test-api)                                | The API for tests to look into and manipulate the database of a state machine    |
 | [diagram](diagram)                                  | State diagrams and ER diagrams generated from a model                            |
 | [doc-diagrams](doc-diagrams)                        | Generates the diagrams of the documentation, from the templates and the apps     |

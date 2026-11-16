@@ -71,3 +71,15 @@ services:
       SIGNING_KEYS: ${SIGNING_KEYS}
       BOOTSTRAP_CLIENT_ID: admin
       BOOTSTRAP_CLIENT_SECRET: A_local_bootstrap_secret_of_32_characters
+      # The backoffice, at http://localhost:8080/backoffice/, signs its users in with the identity provider itself as
+      # the imported client below, and lets in those with the email addresses of BACKOFFICE_USERS. Users sign in with
+      # an upstream provider, so add UPSTREAM_ISSUER, UPSTREAM_CLIENT_ID and UPSTREAM_CLIENT_SECRET to sign in.
+      BACKOFFICE_ISSUER: http://localhost:8080
+      BACKOFFICE_CLIENT_ID: backoffice
+      BACKOFFICE_CLIENT_SECRET: A_fixed_secret_of_an_imported_client
+      BACKOFFICE_CLAIM: email
+      BACKOFFICE_CLAIM_VALUES: ${BACKOFFICE_USERS:-admin@example.com}
+      # The BCrypt hash of BACKOFFICE_CLIENT_SECRET, for local use only
+      CLIENTS: >-
+        [{"client_id": "backoffice", "secret_hash": "$$2a$$10$$Uekj8xXissq6Wy3fUSUOW.epdfkVAf3.uY6/DkL8L43gfnvmTrB82",
+        "grant_types": ["authorization_code"], "redirect_uris": ["http://localhost:8080/backoffice/callback"]}]

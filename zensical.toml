@@ -38,6 +38,7 @@ nav = [
     { "Overview" = "apps.md" },
     { "Identity provider" = "identity-provider.md" },
     { "Hello world demo" = "hello-world.md" },
+    { "Backoffice" = "backoffice.md" },
     { "Deploying to Azure Functions" = "azure-functions.md" },
   ] },
 ]
