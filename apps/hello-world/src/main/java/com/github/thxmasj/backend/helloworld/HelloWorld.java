@@ -1,5 +1,6 @@
 package com.github.thxmasj.backend.helloworld;
 
+import com.github.thxmasj.backend.backoffice.Backoffice;
 import com.github.thxmasj.backend.core.JsonLinesListener;
 import com.github.thxmasj.backend.core.StateMachine;
 import com.github.thxmasj.backend.core.database.Database;
@@ -12,6 +13,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.Map;
+import javax.sql.DataSource;
 import reactor.core.publisher.Mono;
 import reactor.netty.DisposableServer;
 
@@ -34,8 +36,10 @@ public final class HelloWorld {
     Config config = Config.fromEnvironment(System.getenv());
     switch (args.length == 0 ? "serve" : args[0]) {
       case "serve" -> {
-        StateMachine stateMachine = stateMachine(config);
-        DisposableServer server = serve(stateMachine, config.port());
+        DataSource dataSource = dataSource(config);
+        StateMachine stateMachine = stateMachine(config, dataSource);
+        var backoffice = new Backoffice(config.backoffice(), dataSource, config.schema(), Greetings.transitions());
+        DisposableServer server = serve(stateMachine, config.port(), backoffice);
         System.out.println("Listening on port " + server.port() + " after " + Duration.ofNanos(System.nanoTime() - t0).toMillis() + " ms");
         // A container runtime stops the process with SIGTERM, which runs the shutdown hooks
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
@@ -71,10 +75,19 @@ public final class HelloWorld {
   }
 
   public static StateMachine stateMachine(Config config) {
+    return stateMachine(config, dataSource(config));
+  }
+
+  /// The pool of connections to the database, which the state machine and the backoffice share
+  public static DataSource dataSource(Config config) {
+    return new DataSourceBuilder(database, config.database()).buildPooled();
+  }
+
+  public static StateMachine stateMachine(Config config, DataSource dataSource) {
     return new StateMachine(
         null,
         Greetings.transitions(),
-        new DataSourceBuilder(database, config.database()).buildPooled(),
+        dataSource,
         null, // The schema is created by the migrate admin process
         config.schema(),
         null,
@@ -86,10 +99,15 @@ public final class HelloWorld {
   }
 
   public static DisposableServer serve(StateMachine stateMachine, int port) {
+    return serve(stateMachine, port, Backoffice.none());
+  }
+
+  public static DisposableServer serve(StateMachine stateMachine, int port, Backoffice backoffice) {
     return new HttpInboxListener(stateMachine)
         .filter((request, next) -> isHealthCheck(request.method(), request.uri().getPath())
             ? Mono.just(new HttpResponseMessage(200, "OK", Map.of("Content-Type", "text/plain"), "OK".getBytes(StandardCharsets.UTF_8)))
             : next.apply(request))
+        .filter(backoffice)
         .listen(port);
   }
 

@@ -13,9 +13,11 @@ import static com.github.thxmasj.backend.http.inbox.HttpInbox.BadRequestResponse
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.DuplicateRequestRejected;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.DuplicatedRequestCompleted;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.FailedRequestCompleted;
+import static com.github.thxmasj.backend.http.inbox.HttpInbox.Index;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.InvalidRequestCompleted;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.MessageIdClaimed;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.MessageIds;
+import static com.github.thxmasj.backend.http.inbox.HttpInbox.ProcessReferenced;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.RejectedRequestCompleted;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.RequestAccepted;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.RequestCompleted;
@@ -460,21 +462,24 @@ interface TransitionModels {
         )
         .when(_ -> process.eventType() instanceof BasicEventType.Rollback).then(
             onEvent(RequestAccepted).to(Dispatched)
-                .assemble((input, log) -> tuple(input.t1(), input.t2(), log.entityId()))
-                .trigger(RequestCompleted).with(d -> tuple("Cancelled", d.t2())).on(request).identifiedBy(entityIdFromSession())
-                .output(d -> tuple(d.t1().t1().request(), d.t1().t2())),
+                .assemble(c -> tuple(c.input().t1(), c.input().t2(), c.entityId()))
+                .trigger(ProcessReferenced).with(d -> d.t2().entityId()).on(Index).identifiedBy(d -> entityId(d.t3(), CreateIfNotExists))
+                .trigger(RequestCompleted).with(d -> tuple("Cancelled", d.t1().t2())).on(request).identifiedBy(entityIdFromSession())
+                .output(d -> tuple(d.t1().t1().t1().request(), d.t1().t1().t2())),
             d -> tuple(d.t1(), new EventReference(d.t2().accepted().event().entityId(), d.t2().accepted().event().eventNumber()))
         )
         .when(d -> d.t2().isAccepted()).then(
             onEvent(RequestAccepted).to(Dispatched)
-                .assemble((input, log) -> tuple(input.t1(), input.t2(), log.entityId()))
-                .output(d -> tuple(d.t1().request(), d.t2())),
+                .assemble(c -> tuple(c.input().t1(), c.input().t2(), c.entityId()))
+                .trigger(ProcessReferenced).with(d -> d.t2().entityId()).on(Index).identifiedBy(d -> entityId(d.t3(), CreateIfNotExists))
+                .output(d -> tuple(d.t1().t1().request(), d.t1().t2())),
             d -> tuple(d.t1(), new EventReference(d.t2().accepted().event().entityId(), d.t2().accepted().event().eventNumber()))
         )
         .when(d -> d.t2().isCompleted()).then(
             onEvent(RequestAccepted).to(Dispatched)
-                .assemble((input, log) -> tuple(input.t1(), input.t2(), log.entityId()))
-                .output(d -> tuple(d.t1().request(), d.t2())),
+                .assemble(c -> tuple(c.input().t1(), c.input().t2(), c.entityId()))
+                .trigger(ProcessReferenced).with(d -> d.t2().entityId()).on(Index).identifiedBy(d -> entityId(d.t3(), CreateIfNotExists))
+                .output(d -> tuple(d.t1().t1().request(), d.t1().t2())),
             d -> tuple(d.t1(), new EventReference(d.t2().completed().entityId(), d.t2().completed().eventNumber()))
         )
         .when(d -> d.t2() instanceof ProcessResult.Pending<?, ?, ?> p && p.exception().entityModel().equals(RequestRouting)).then(
@@ -487,8 +492,9 @@ interface TransitionModels {
         .otherwise(
             // TODO: How to handle unknown process result? ("should never happen")
             onEvent(RequestAccepted).to(Dispatched)
-                .assemble((input, log) -> tuple(input.t1(), input.t2(), log.entityId()))
-                .output(d -> tuple(d.t1().request(), d.t2())),
+                .assemble(c -> tuple(c.input().t1(), c.input().t2(), c.entityId()))
+                .trigger(ProcessReferenced).with(d -> d.t2().entityId()).on(Index).identifiedBy(d -> entityId(d.t3(), CreateIfNotExists))
+                .output(d -> tuple(d.t1().t1().request(), d.t1().t2())),
             d -> tuple(d.t1(), new EventReference(d.t2().accepted().event().entityId(), d.t2().accepted().event().eventNumber()))
         );
   }
@@ -651,7 +657,7 @@ interface TransitionModels {
   }
 
   private static boolean isInboxModel(EntityModel model) {
-    return model instanceof HttpInboxRequest<?> || model.equals(RequestRouting) || model.equals(MessageIds);
+    return model instanceof HttpInboxRequest<?> || model.equals(RequestRouting) || model.equals(MessageIds) || model.equals(Index);
   }
 
   /// The triggers of the transition and of the transitions it may choose, which trigger their events at once. A

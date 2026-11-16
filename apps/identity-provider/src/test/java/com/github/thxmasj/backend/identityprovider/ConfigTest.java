@@ -179,6 +179,28 @@ public class ConfigTest {
   }
 
   @Test
+  public void whenBackofficeIsGivenThenItIsAtTheIssuerWithDefaults() {
+    var backoffice = Config.fromEnvironment(env(
+        "DATABASE_USER", "u", "DATABASE_PASSWORD", "p", "ISSUER", "https://idp.example.com/",
+        "BACKOFFICE_ISSUER", "https://idp.example.com", "BACKOFFICE_CLIENT_ID", "backoffice", "BACKOFFICE_CLIENT_SECRET", "s",
+        "BACKOFFICE_CLAIM", "email", "BACKOFFICE_CLAIM_VALUES", "ada@example.com, bob@example.com"
+    )).backoffice();
+    assertThat(backoffice.url().toString()).isEqualTo("https://idp.example.com");
+    assertThat(backoffice.scope()).isEqualTo("openid email profile");
+    assertThat(backoffice.claimValues()).containsExactlyInAnyOrder("ada@example.com", "bob@example.com");
+    assertThat(backoffice.sessionLifetime()).isEqualTo(java.time.Duration.ofHours(8));
+    assertThat(Config.fromEnvironment(env("DATABASE_USER", "u", "DATABASE_PASSWORD", "p")).backoffice()).isNull();
+  }
+
+  @Test
+  public void whenBackofficeIsIncompleteThenFails() {
+    assertThatThrownBy(() -> Config.fromEnvironment(env(
+        "DATABASE_USER", "u", "DATABASE_PASSWORD", "p", "ISSUER", "https://idp.example.com",
+        "BACKOFFICE_ISSUER", "https://idp.example.com", "BACKOFFICE_CLIENT_ID", "backoffice"
+    ))).hasMessageContaining("BACKOFFICE_CLAIM");
+  }
+
+  @Test
   public void whenEntraIdThenMssqlDataSourceUsesIt() {
     var config = Config.fromEnvironment(env("DATABASE_AUTHENTICATION", "ActiveDirectoryManagedIdentity", "DATABASE_USER", "client-id")).databaseConfig();
     var dataSource = (com.microsoft.sqlserver.jdbc.SQLServerDataSource) new com.github.thxmasj.backend.database.mssql.MssqlDatabase().dataSource(config);

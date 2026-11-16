@@ -12,6 +12,7 @@ import com.github.thxmasj.backend.core.EventTrigger;
 import com.github.thxmasj.backend.core.EventTrigger.EventSpec;
 import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.IdEntityModel;
+import com.github.thxmasj.backend.core.IndexEntityModel;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.core.Tuples.Tuple2;
@@ -185,8 +186,21 @@ public interface HttpInbox {
       RollbackMessageIdClaimed
   );
 
+  /// The entity of the application an accepted request triggered its event on, indexed by the entity id of the
+  /// request, so that the requests of an entity are found by its entity id, like the outbox requests of an entity
+  EventType<UUID, UUID> ProcessReferenced = IndexEntityModel.referenceEventType(
+      "Process referenced",
+      UUID.fromString("b8d2f4e6-3a1c-4e7b-9f05-6c8a2d4e1b39")
+  );
+  /// The entities of the application the requests triggered their events on, by the entity id of the request
+  IndexEntityModel Index = IndexEntityModel.of(
+      "RequestIndex",
+      UUID.fromString("e1a7c3d9-5b2f-4a86-8c4e-0d9f6b3a7e52"),
+      ProcessReferenced
+  );
+
   /// The transitions of the application with its inbox, to create the state machine with: those of the application,
-  /// and of `RequestRouting`, routing to the inbox requests, of the inbox requests and of `MessageIds`.
+  /// and of `RequestRouting`, routing to the inbox requests, of the inbox requests, of `MessageIds` and of `Index`.
   ///
   /// Every inbox request is checked to take the responses its own processes may give. From the event of each process,
   /// the transitions taken on it in any state, with all the transitions they may choose, and the transitions of the
@@ -206,6 +220,7 @@ public interface HttpInbox {
     for (HttpInboxRequest<?> request : requests)
       transitions.put(request, request.transitions());
     transitions.put(MessageIds, MessageIds.transitions());
+    transitions.put(Index, Index.transitions());
     TransitionModels.checkResponses(requests, transitions);
     return transitions;
   }

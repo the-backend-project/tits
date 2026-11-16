@@ -4,6 +4,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 
+import com.github.thxmasj.backend.backoffice.Backoffice;
 import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.Severity;
@@ -60,6 +61,7 @@ import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -93,6 +95,8 @@ public class IdentityProviderTest {
   private static final String legacyHash = "$2a$10$Uekj8xXissq6Wy3fUSUOW.epdfkVAf3.uY6/DkL8L43gfnvmTrB82";
   private static final String legacySubject = "https://wallet.example.com/provider/example";
 
+  /// The client of the backoffice of the identity provider, at the identity provider itself
+  private static final String backofficeClientId = "backoffice";
   private static final String schema = UUID.randomUUID().toString();
   private static StateMachine stateMachine;
   private static DisposableServer server;
@@ -102,6 +106,11 @@ public class IdentityProviderTest {
 
   @BeforeAll
   public static void setUp() throws Exception {
+    int port;
+    try (var socket = new ServerSocket(0)) {
+      port = socket.getLocalPort();
+    }
+    issuer = URI.create("http://localhost:" + port);
     stateMachine = Init.stateMachine(schema, Inbox.transitions(tokenLifetime));
     IdentityProvider.bootstrap(stateMachine, new BootstrapClient(adminId, adminSecret));
     partnerHash = new BCryptPasswordEncoder().encode(partnerSecret);
@@ -109,13 +118,15 @@ public class IdentityProviderTest {
     importedClients = importedClients(partnerHash);
     IdentityProvider.importClients(stateMachine, importedClients);
     upstream = new UpstreamStub();
-    int port;
-    try (var socket = new ServerSocket(0)) {
-      port = socket.getLocalPort();
-    }
-    issuer = URI.create("http://localhost:" + port);
     var upstreamConfig = new Upstream.Config(URI.create(upstream.issuer()), UpstreamStub.clientId, UpstreamStub.clientSecret, "openid email profile");
-    server = IdentityProvider.serve(stateMachine, new Keys(Keys.generate(), issuer, null, Clock.systemUTC()), new Upstream(upstreamConfig, issuer), port, importedClients);
+    // The backoffice signs its users in with the identity provider itself, which permits Ada by her email address
+    var backoffice = new Backoffice(
+        new Backoffice.Config(issuer, issuer, backofficeClientId, legacySecret, "openid email profile", "email", Set.of("ada@example.com"), Duration.ofHours(1)),
+        Init.client(),
+        schema,
+        Inbox.transitions(tokenLifetime)
+    );
+    server = IdentityProvider.serve(stateMachine, new Keys(Keys.generate(), issuer, null, Clock.systemUTC()), new Upstream(upstreamConfig, issuer), port, importedClients, backoffice);
     adminToken = json(token(adminId, adminSecret, "grant_type=client_credentials")).get("access_token").asString();
   }
 
@@ -688,6 +699,57 @@ public class IdentityProviderTest {
     assertThat(get("/token").statusCode()).isEqualTo(405);
   }
 
+  @Test
+  public void whenUserSignsInToBackofficeWithIdentityProviderThenSheSeesItsEntities() throws Exception {
+    upstream.signInAs(new UpstreamStub.User("upstream-user-ada", "ada@example.com", "Ada Lovelace"));
+    var cookies = new LinkedHashMap<String, String>();
+    HttpResponse<String> page = browseBackoffice(uri("/backoffice/"), cookies);
+    assertThat(page.statusCode()).as(page.body()).isEqualTo(200);
+    assertThat(page.body()).contains("Ada Lovelace", "Sign out", ">Client<", ">Authorization<", ">BackofficeSession<");
+    var clients = browseBackoffice(uri("/backoffice/search?q=" + adminId), cookies);
+    assertThat(clients.body()).contains("Client id claimed");
+  }
+
+  @Test
+  public void whenUserIsNotPermittedThenBackofficeRefusesHer() throws Exception {
+    upstream.signInAs(new UpstreamStub.User("upstream-user-eve", "eve@example.com", "Eve"));
+    HttpResponse<String> page = browseBackoffice(uri("/backoffice/"), new LinkedHashMap<>());
+    assertThat(page.statusCode()).isEqualTo(403);
+    upstream.signInAs(new UpstreamStub.User("upstream-user-1", "ada@example.com", "Ada Lovelace"));
+  }
+
+  /// The paths of the cookies of the backoffice, by name
+  private static final Map<String, String> cookiePaths = new java.util.concurrent.ConcurrentHashMap<>();
+
+  /// Follows the redirects from the URI as a browser does, with the cookies of the identity provider and its
+  /// backoffice, until it is shown a page
+  private static HttpResponse<String> browseBackoffice(URI uri, Map<String, String> cookies) throws IOException, InterruptedException {
+    for (int hops = 0; hops < 10; hops++) {
+      var request = HttpRequest.newBuilder(uri).GET();
+      String path = uri.getPath();
+      boolean atIssuer = uri.getPort() == issuer.getPort();
+      var sent = cookies.entrySet().stream()
+          .filter(e -> atIssuer && path.startsWith(cookiePaths.get(e.getKey())))
+          .map(e -> e.getKey() + "=" + e.getValue())
+          .toList();
+      if (!sent.isEmpty())
+        request.header("Cookie", String.join("; ", sent));
+      HttpResponse<String> response = send(request.build());
+      for (String setCookie : response.headers().allValues("Set-Cookie")) {
+        String pair = setCookie.split(";")[0];
+        String name = pair.substring(0, pair.indexOf('='));
+        cookies.put(name, pair.substring(pair.indexOf('=') + 1));
+        cookiePaths.put(name, setCookie.replaceAll(".*Path=([^;]*).*", "$1"));
+        if (!cookies.get(name).isEmpty())
+          cookieValues.add(cookies.get(name));
+      }
+      if (response.statusCode() != 302 && response.statusCode() != 303)
+        return response;
+      uri = uri.resolve(response.headers().firstValue("Location").orElseThrow());
+    }
+    throw new AssertionError("Too many redirects");
+  }
+
   /// Registers a web app which signs users in at the redirect URI, and returns its secret
   private static String registerWebApp(String clientId) throws IOException, InterruptedException {
     var body = Map.of("client_id", clientId, "grant_types", List.of("authorization_code"), "redirect_uris", List.of(appRedirectUri.toString()));
@@ -782,7 +844,8 @@ public class IdentityProviderTest {
   private static List<ImportedClient> importedClients(String partnerHash) {
     var clients = List.of(
         Map.of("client_id", "partner", "secret_hash", partnerHash, "subject", partnerSubject, "scope", "payments:read payments:write", "client_name", "A partner"),
-        Map.of("client_id", "legacy", "secret_hash", legacyHash, "subject", legacySubject)
+        Map.of("client_id", "legacy", "secret_hash", legacyHash, "subject", legacySubject),
+        Map.of("client_id", backofficeClientId, "secret_hash", legacyHash, "grant_types", List.of("authorization_code"), "redirect_uris", List.of(issuer + "/backoffice/callback"))
     );
     return ImportedClients.parse(DataType.objectMapper.writeValueAsString(clients), "test");
   }

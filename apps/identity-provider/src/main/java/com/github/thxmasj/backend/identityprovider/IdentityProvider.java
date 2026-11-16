@@ -3,6 +3,7 @@ package com.github.thxmasj.backend.identityprovider;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.stream.Collectors.toMap;
 
+import com.github.thxmasj.backend.backoffice.Backoffice;
 import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.JsonLinesListener;
 import com.github.thxmasj.backend.core.StateMachine;
@@ -22,6 +23,7 @@ import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import javax.sql.DataSource;
 import reactor.netty.DisposableServer;
 
 /// An OAuth 2.0 authorization server for the client credentials grant, and an OpenID Connect provider for the
@@ -58,14 +60,16 @@ public final class IdentityProvider {
       case "serve" -> {
         // Invalid keys fail before connecting to the database
         Keys keys = keys(config.requireServing(), Clock.systemUTC());
-        StateMachine stateMachine = stateMachine(config);
+        DataSource dataSource = dataSource(config);
+        StateMachine stateMachine = stateMachine(config, dataSource);
         DisposableServer server;
         try {
           if (config.bootstrapClient() != null)
             bootstrap(stateMachine, config.bootstrapClient());
           importClients(stateMachine, config.clients());
           Upstream upstream = config.upstream() != null ? new Upstream(config.upstream(), config.issuer()) : null;
-          server = serve(stateMachine, keys, upstream, config.port(), config.clients());
+          var backoffice = new Backoffice(config.backoffice(), dataSource, config.schema(), Inbox.transitions(config.tokenLifetime()));
+          server = serve(stateMachine, keys, upstream, config.port(), config.clients(), backoffice);
         } catch (RuntimeException e) {
           // The workers of the state machine would keep the process running without serving
           e.printStackTrace();
@@ -108,11 +112,19 @@ public final class IdentityProvider {
   }
 
   public static StateMachine stateMachine(Config config) {
-    Database database = Database.named(config.database());
+    return stateMachine(config, dataSource(config));
+  }
+
+  /// The pool of connections to the database, which the state machine and the backoffice share
+  static DataSource dataSource(Config config) {
+    return new DataSourceBuilder(Database.named(config.database()), config.databaseConfig()).buildPooled();
+  }
+
+  static StateMachine stateMachine(Config config, DataSource dataSource) {
     return new StateMachine(
         null,
         Inbox.transitions(config.tokenLifetime()),
-        new DataSourceBuilder(database, config.databaseConfig()).buildPooled(),
+        dataSource,
         null, // The schema is created by the migrate admin process
         config.schema(),
         null,
@@ -128,8 +140,13 @@ public final class IdentityProvider {
 
   /// @param upstream the provider users sign in with, or null if users can't sign in
   static DisposableServer serve(StateMachine stateMachine, Keys keys, Upstream upstream, int port, List<ImportedClient> importedClients) {
+    return serve(stateMachine, keys, upstream, port, importedClients, Backoffice.none());
+  }
+
+  /// @param backoffice the backoffice, in front of the edge as it signs its users in by itself
+  static DisposableServer serve(StateMachine stateMachine, Keys keys, Upstream upstream, int port, List<ImportedClient> importedClients, Backoffice backoffice) {
     var importedSecretHashes = importedClients.stream().collect(toMap(ImportedClient::clientId, ImportedClient::secretHash));
-    return new HttpInboxListener(stateMachine).filter(new Edge(keys, upstream, importedSecretHashes)).listen(port);
+    return new HttpInboxListener(stateMachine).filter(backoffice).filter(new Edge(keys, upstream, importedSecretHashes)).listen(port);
   }
 
   /// Registers the bootstrap client with the registration scope, unless its client id is taken. A taken client id is

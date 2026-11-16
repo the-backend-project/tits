@@ -18,6 +18,7 @@
         <module>database-pgsql-vertx</module>
         <module>http-inbox</module>
         <module>http-outbox</module>
+        <module>backoffice</module>
         <module>test-api</module>
         <module>diagram</module>
         <module>templates</module>

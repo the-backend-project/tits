@@ -1,0 +1,60 @@
+{
+  "reflection": [
+    {
+      "type": "com.github.thxmasj.backend.backoffice.Sessions$Start",
+      "allDeclaredFields": true,
+      "allDeclaredMethods": true,
+      "allDeclaredConstructors": true
+    },
+    {
+      "type": "com.github.thxmasj.backend.backoffice.Sessions$User",
+      "allDeclaredFields": true,
+      "allDeclaredMethods": true,
+      "allDeclaredConstructors": true
+    },
+    {
+      "type": "com.github.thxmasj.backend.backoffice.Sessions$SignIn",
+      "allDeclaredFields": true,
+      "allDeclaredMethods": true,
+      "allDeclaredConstructors": true
+    },
+    {
+      "type": "com.github.thxmasj.backend.backoffice.Sessions$SignedIn",
+      "allDeclaredFields": true,
+      "allDeclaredMethods": true,
+      "allDeclaredConstructors": true
+    },
+    {
+      "type": "com.github.thxmasj.backend.backoffice.Sessions$Refusal",
+      "allDeclaredFields": true,
+      "allDeclaredMethods": true,
+      "allDeclaredConstructors": true
+    },
+    {
+      "type": "com.github.thxmasj.backend.backoffice.Sessions$Failure",
+      "allDeclaredFields": true,
+      "allDeclaredMethods": true,
+      "allDeclaredConstructors": true
+    },
+    {
+      "type": "com.github.thxmasj.backend.backoffice.Sessions$View",
+      "allDeclaredFields": true,
+      "allDeclaredMethods": true,
+      "allDeclaredConstructors": true
+    },
+    {
+      "type": "com.github.thxmasj.backend.backoffice.Sessions$Reply",
+      "allDeclaredFields": true,
+      "allDeclaredMethods": true,
+      "allDeclaredConstructors": true
+    }
+  ],
+  "resources": [
+    {
+      "glob": "com/github/thxmasj/backend/backoffice/htmx.min.js"
+    },
+    {
+      "glob": "com/github/thxmasj/backend/backoffice/backoffice.css"
+    }
+  ]
+}

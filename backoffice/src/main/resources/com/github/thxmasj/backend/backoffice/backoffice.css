@@ -1,0 +1,37 @@
+/* The styles of the backoffice. Pages have no inline styles, which the Content-Security-Policy forbids. */
+:root {
+  color-scheme: light dark;
+  --accent: #3559c7;
+  --muted: #6b7280;
+  --line: #d6d9e0;
+  --code: #f3f4f7;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --accent: #8aa4ff; --muted: #9aa1ad; --line: #3a3f4a; --code: #1f232b; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .6rem 1.5rem; border-bottom: 1px solid var(--line); }
+header .home { font-weight: 600; text-decoration: none; }
+header .user { display: flex; align-items: center; gap: .6rem; color: var(--muted); }
+main { padding: 1rem 1.5rem 3rem; max-width: 1400px; }
+a { color: var(--accent); }
+h1 { font-size: 1.4rem; margin: .5rem 0 .2rem; }
+h2 { font-size: 1.05rem; margin: 1.5rem 0 .5rem; }
+code, pre { font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+pre { margin: 0; padding: .4rem .5rem; background: var(--code); border-radius: 4px; white-space: pre-wrap; word-break: break-all; max-height: 30rem; overflow: auto; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; vertical-align: top; padding: .35rem .5rem; border-bottom: 1px solid var(--line); }
+th { font-weight: 600; color: var(--muted); }
+td.number { text-align: right; width: 3rem; }
+table.events td:nth-child(2) { white-space: nowrap; width: 13rem; }
+table.events td:nth-child(3) { width: 16rem; }
+.subtitle, .empty, .by { color: var(--muted); }
+.search { display: flex; gap: .5rem; margin: .5rem 0 1rem; }
+.search input { flex: 1; max-width: 40rem; padding: .45rem .6rem; font: inherit; }
+button { font: inherit; padding: .35rem .8rem; cursor: pointer; }
+ul.models { columns: 3 16rem; padding-left: 1.2rem; }
+details.related { margin: .3rem 0; border: 1px solid var(--line); border-radius: 4px; }
+details.related > summary { padding: .4rem .6rem; cursor: pointer; }
+details.related > .body { padding: 0 .8rem .6rem; border-top: 1px solid var(--line); }
+.message { max-width: 40rem; margin: 3rem auto; }

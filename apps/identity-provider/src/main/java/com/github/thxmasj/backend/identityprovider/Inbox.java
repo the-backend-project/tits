@@ -5,6 +5,7 @@ import static com.github.thxmasj.backend.core.Validated.valid;
 import static com.github.thxmasj.backend.http.inbox.HttpInboxRequest.newEntity;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
+import com.github.thxmasj.backend.backoffice.Backoffice;
 import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.State;
@@ -176,7 +177,10 @@ public interface Inbox {
     application.putAll(Clients.transitions());
     application.putAll(Tokens.transitions(tokenLifetime));
     application.putAll(Authorizations.transitions());
-    return HttpInbox.transitions(requests, application);
+    application.putAll(Backoffice.transitions());
+    var all = new ArrayList<HttpInboxRequest<?>>(requests);
+    all.addAll(Backoffice.requests());
+    return HttpInbox.transitions(all, application);
   }
 
   /// The form is validated by the edge, which also authenticates the client

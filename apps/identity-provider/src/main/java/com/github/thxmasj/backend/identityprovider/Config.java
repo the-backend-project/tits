@@ -1,9 +1,11 @@
 package com.github.thxmasj.backend.identityprovider;
 
+import com.github.thxmasj.backend.backoffice.Backoffice;
 import com.github.thxmasj.backend.core.database.DatabaseClient;
 import com.github.thxmasj.backend.identityprovider.ImportedClients.ImportedClient;
 import java.net.URI;
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -20,6 +22,7 @@ import java.util.Map;
 /// @param bootstrapClient a client registered at startup, which can register other clients
 /// @param clients         the clients imported at startup, with the BCrypt hashes of their secrets
 /// @param upstream        the OpenID Connect provider users sign in with, or null if users can't sign in
+/// @param backoffice      how users sign in to the backoffice, or null if it has none
 public record Config(
     int port,
     String database,
@@ -32,7 +35,8 @@ public record Config(
     String audience,
     BootstrapClient bootstrapClient,
     List<ImportedClient> clients,
-    Upstream.Config upstream
+    Upstream.Config upstream,
+    Backoffice.Config backoffice
 ) {
 
   public record BootstrapClient(String id, String secret) {}
@@ -51,8 +55,17 @@ public record Config(
         env.get("TOKEN_AUDIENCE"),
         bootstrapClient(env),
         importedClients(env),
-        upstream(env)
+        upstream(env),
+        backoffice(env)
     );
+  }
+
+  /// The backoffice is at the issuer, unless `BACKOFFICE_URL` tells otherwise
+  private static Backoffice.Config backoffice(Map<String, String> env) {
+    var withUrl = new HashMap<>(env);
+    if (env.get("BACKOFFICE_URL") == null && env.get("ISSUER") != null)
+      withUrl.put("BACKOFFICE_URL", env.get("ISSUER"));
+    return Backoffice.Config.fromEnvironment(withUrl);
   }
 
   private static Upstream.Config upstream(Map<String, String> env) {
