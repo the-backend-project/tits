@@ -7,7 +7,9 @@ import com.github.thxmasj.backend.core.TransitionStep.RejectedStep;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Set;
 import java.util.function.Supplier;
 import reactor.core.publisher.Mono;
 
@@ -25,6 +27,9 @@ public final class Calculation {
   // The steps executed, in order
   private final List<Step> steps = new ArrayList<>();
   private final List<IdExists<?>> existingIds = new ArrayList<>();
+  // The failures told the listener, by identity, as a failure passes through the transitions triggering the one it was
+  // thrown in, and may be recorded for a step and given again when the changes are calculated again
+  private final Set<Throwable> failures = Collections.newSetFromMap(new IdentityHashMap<>());
   // The number of steps taken by the ongoing calculation. The steps recorded from here on are those of the previous
   // calculation that are not executed again.
   private int position;
@@ -107,6 +112,12 @@ public final class Calculation {
   private static boolean isSameId(Event<?> idEvent, Event<?> other) {
     return idEvent.type().id().equals(other.type().id())
         && Arrays.equals(idEvent.getMarshalledData(), other.getMarshalledData());
+  }
+
+
+  /// Whether the failure is new to the calculation, which it is the first time it is given
+  boolean isNewFailure(Throwable failure) {
+    return failures.add(failure);
   }
 
 }

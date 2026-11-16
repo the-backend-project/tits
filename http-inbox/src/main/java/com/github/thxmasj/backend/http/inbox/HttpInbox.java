@@ -33,8 +33,7 @@ import java.util.function.Function;
 public interface HttpInbox {
 
   /// Routes every received request to the inbox request matching it, and answers the request with the response the
-  /// inbox request gives it. A request matching no inbox request is answered with 400 Bad Request, and one whose
-  /// matching failed, as the matcher of an inbox request threw an exception, with 500 Internal Server Error.
+  /// inbox request gives it. A request matching no inbox request is answered with 400 Bad Request.
   EntityModel RequestRouting = EntityModel.of("RequestRouting", UUID.fromString("20755705-fc81-4228-a1a7-5e13d6e3c153"));
 
   /// Any inbox request, which an application responds to by triggering a [ResponseEventType] such as
@@ -147,14 +146,6 @@ public interface HttpInbox {
   EventType<String, HttpResponseMessage> RequestRejectedAsInvalid = BasicEventType.of(
       "Request rejected as invalid",
       UUID.fromString("e7a1c94b-3d2f-4b86-9f05-2a8d6c1e7b40"),
-      DataType.string(),
-      HttpDataType.forResponse()
-  );
-  /// A function the application gave the inbox request, e.g. its content parser or normalizer, threw an exception.
-  /// The data tells which function failed and why, and the request is answered with 500 Internal Server Error.
-  EventType<String, HttpResponseMessage> RequestFailed = BasicEventType.of(
-      "Request failed",
-      UUID.fromString("b3f0d6a2-58c4-4e1b-9a7d-2c6e8f41d905"),
       DataType.string(),
       HttpDataType.forResponse()
   );

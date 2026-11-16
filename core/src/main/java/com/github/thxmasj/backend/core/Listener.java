@@ -75,6 +75,18 @@ public interface Listener {
 
   default void processNextDelayedTriggerFailed(Throwable t) {}
 
+  /// The transition of the event on the entity failed, as a function of it, e.g. an assembler, guard or data adapter,
+  /// threw an exception, so nothing of the change is stored. It is told once, for the transition the exception was
+  /// thrown in, also if that one was triggered by another. The exception is passed on to the one who triggered the
+  /// event.
+  default void transitionFailed(
+      String correlationId,
+      EntityModel entityModel,
+      UUID entityId,
+      EventType<?, ?> eventType,
+      Throwable failure
+  ) {}
+
   default void forwardingAttempt(
       UUID requestId,
       EntityModel entityModel,

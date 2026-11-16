@@ -532,6 +532,19 @@ public class StateMachine implements AutoCloseable {
     ));
   }
 
+  /// Tells the listener that the transition from the input step failed, unless it was told of the failure already, by
+  /// the transition triggered by this one which it was thrown in
+  void transitionFailed(InputStep<?> inputStep, Throwable failure) {
+    if (listener != null && inputStep.calculation().isNewFailure(failure))
+      listener.transitionFailed(
+          inputStep.correlationId(),
+          inputStep.log().entityModel(),
+          inputStep.log().entityId(),
+          inputStep.transitionModel().eventType(),
+          failure
+      );
+  }
+
   /// Calculates the changes of the transition from its input step and stores them. If an id of the changes is
   /// found to exist, the changes are calculated again from the first trigger of the id, with the id existing as the
   /// result of triggering it. The steps before the trigger are not executed again, as the calculation has their results.

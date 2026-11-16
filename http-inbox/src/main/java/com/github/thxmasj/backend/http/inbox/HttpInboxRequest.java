@@ -53,10 +53,6 @@ import java.util.regex.Pattern;
 ///     .build("EnrolmentResult", UUID.fromString("..."));
 /// ```
 ///
-/// If one of the functions given to the inbox request throws an exception, e.g. the content parser or the normalizer,
-/// the request fails with the event [HttpInbox#RequestFailed], which is an error, and is answered with 500 Internal
-/// Server Error.
-///
 /// @param <T> the type of the body of the request
 public final class HttpInboxRequest<T> implements EntityModel {
 
