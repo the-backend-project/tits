@@ -29,7 +29,7 @@ covers the rest:
   of new dependencies,
 * [previewing this documentation](https://github.com/the-backend-project/tits/blob/main/CONTRIBUTING.md#documentation)
   locally, and
-* [working on issues with an agentic workflow](https://github.com/the-backend-project/tits/blob/main/CONTRIBUTING.md#working-on-issues-with-claude-code).
+* [working on issues with an agentic workflow](https://github.com/the-backend-project/tits/blob/main/CONTRIBUTING.md#working-on-issues-with-a-coding-agent).
 
 The conventions for code, documentation and Git are in
 [AGENTS.md](https://github.com/the-backend-project/tits/blob/main/AGENTS.md). Coding agents follow them, and so do

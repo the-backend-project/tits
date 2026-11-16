@@ -1,7 +1,7 @@
 # Conventions for coding agents
 
-This file holds the conventions every contributor's coding agent follows in this repository. Claude Code reads it through
-[CLAUDE.md](CLAUDE.md). Building, testing and the rest of the contributor workflow are described in
+This file holds the conventions every contributor's coding agent follows in this repository. Mistral Vibe reads it
+directly, and Claude Code reads it through [CLAUDE.md](CLAUDE.md). Building, testing and the rest of the contributor workflow are described in
 [CONTRIBUTING.md](CONTRIBUTING.md); read it before building or testing. Keep personal setup out of this file, such as the
 GitHub account an agent uses, how tools get on the PATH, or Podman instead of Docker. It belongs in the agent's
 user-level instructions or memory.
@@ -34,8 +34,8 @@ user-level instructions or memory.
 
 ## Git and GitHub
 
-- Work on an issue in a worktree of its own under `.claude/worktrees` (ignored by git), never by switching branches in
-  the main checkout. The branch is named `issue-N-<slug>` after the issue.
+- Work on an issue in a worktree of its own under `.worktrees` (ignored by git), never by switching branches in the
+  main checkout. The branch is named `issue-N-<slug>` after the issue.
 - Rebase onto `main` before the first push, and merge `main` into the branch after that. Don't force-push a branch that
   has been pushed.
 - Don't add `Co-Authored-By` trailers for coding agents to commit messages.
@@ -48,8 +48,10 @@ user-level instructions or memory.
 
 ## Skills
 
-Claude Code has two skills for this repository in [.claude/skills](.claude/skills):
+The repository has two skills in [.agents/skills](.agents/skills), which Claude Code finds through the symbolic link
+`.claude/skills`. Keep them free of features only one agent has, such as argument placeholders or tool names.
 
 - `/fix N` takes issue N from the board to a pull request, following the conventions above. See
-  [Working on issues with Claude Code](CONTRIBUTING.md#working-on-issues-with-claude-code).
-- `/serve-docs` serves the documentation with live reload, or does a strict build with `--build`.
+  [Working on issues with a coding agent](CONTRIBUTING.md#working-on-issues-with-a-coding-agent).
+- `/serve-docs` serves the documentation with live reload, or does a strict build with `--build`. An agent that can't
+  run commands in the background, such as Mistral Vibe, only does the build.
