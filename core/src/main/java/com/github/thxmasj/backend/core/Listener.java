@@ -1,7 +1,5 @@
 package com.github.thxmasj.backend.core;
 
-import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
-import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -86,72 +84,4 @@ public interface Listener {
       EventType<?, ?> eventType,
       Throwable failure
   ) {}
-
-  default void forwardingAttempt(
-      UUID requestId,
-      EntityModel entityModel,
-      String queue,
-      UUID entityId,
-      int eventNumber,
-      ZonedDateTime enqueuedAt,
-      int attempt,
-      String correlationId
-  ) {}
-
-  default void forwardingCompleted(
-      UUID requestId,
-      EntityModel entityModel,
-      String queue,
-      UUID entityId,
-      int eventNumber,
-      ZonedDateTime enqueuedAt,
-      int attempt,
-      String correlationId,
-      HttpResponseMessage receipt,
-      String reason
-  ) {}
-
-  default void forwardingBackedOff(
-      UUID requestId,
-      EntityModel entityModel,
-      String queue,
-      UUID entityId,
-      int eventNumber,
-      ZonedDateTime enqueuedAt,
-      int attempt,
-      String correlationId,
-      String reason,
-      ZonedDateTime nextAttemptAt,
-      Duration backoff
-  ) {}
-
-  default void forwardingDead(
-      UUID requestId,
-      EntityModel entityModel,
-      String queue,
-      UUID entityId,
-      int eventNumber,
-      ZonedDateTime enqueuedAt,
-      int attempt,
-      String correlationId,
-      String reason
-  ) {}
-
-  default void forwardingDeadByExhaustion(
-      UUID requestId,
-      EntityModel entityModel,
-      String queue,
-      UUID entityId,
-      int eventNumber,
-      ZonedDateTime enqueuedAt,
-      int attempt,
-      String correlationId,
-      String reason
-  ) {}
-
-  default void forwardingDeadlock(String queue) {}
-
-  default void forwardingError(String queue, Throwable error) {}
-
-  default void forwardingEmptyQueue(String queue) {}
 }
