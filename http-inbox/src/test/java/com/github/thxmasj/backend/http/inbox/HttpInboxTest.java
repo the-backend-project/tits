@@ -24,6 +24,7 @@ import static com.github.thxmasj.backend.http.inbox.HttpInboxTest.States.Unreach
 import static com.github.thxmasj.backend.http.inbox.HttpInboxRequest.newEntity;
 import static com.github.thxmasj.backend.http.inbox.HttpInboxRequest.parseEntityId;
 import static com.github.thxmasj.backend.http.inbox.HttpInboxRequest.parseMessageId;
+import static com.github.thxmasj.backend.http.inbox.HttpInboxRequest.when;
 import static com.github.thxmasj.backend.http.outbox.HttpOutboxRequest.Index;
 import static com.github.thxmasj.backend.core.message.http.HttpRequestMessage.Method.DELETE;
 import static com.github.thxmasj.backend.core.message.http.HttpRequestMessage.Method.POST;
@@ -69,7 +70,9 @@ import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.gen.RSAKeyGenerator;
 import com.sun.net.httpserver.HttpServer;
+import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.net.URI;
 import java.time.Clock;
 import java.time.Duration;
@@ -265,7 +268,18 @@ public class HttpInboxTest {
       .rollback(m -> m.requestLine().matches("DELETE .*/lamps/messages/.*"), parseMessageId("DELETE .*/lamps/messages/(.*)", 1))
       .build("InternalRequest", UUID.fromString("3afa1f14-d4e3-49c4-b6ad-05a733f0b22d"));
 
+  /// One endpoint, whose requests trigger different events by their content, with different inputs and selectors
+  static HttpInboxRequest<InternalProcess> ContentRequest = HttpInboxRequest
+      .matching(m -> m.requestLine().matches("PUT .*/content/.*"))
+      .contentParser(HttpInbox.jsonParser(InternalProcess.class, false))
+      .messageIdParser(parseMessageId("PUT .*/content/(.*)", 1))
+      .process(when("a == internal", p -> p.a().equals("internal")), InternalProcessingRequested, Lamp, _ -> null, newEntity())
+      .process(when("a == unavailable", p -> p.a().equals("unavailable")), SubsystemUnavailableProcessingRequested, Lamp, _ -> null, newEntity())
+      .process(when("a == zero", p -> p.a().equals("zero")), ZeroProcessingRequested, Lamp, r -> new Zero(r.body().a()), parseEntityId("PUT .*/content/(.*)", 1))
+      .build("ContentRequest", UUID.fromString("a3c94e1d-5f27-4b80-9d6e-1b8f2c7a4e53"));
+
   static List<HttpInboxRequest<?>> requests = List.of(
+      ContentRequest,
       withBody("PUT .*/protected/.*")
           .authorizer(HttpInbox.bearerToken(verifier, "payments"))
           .process(InternalProcessingRequested, Lamp, _ -> null, newEntity())
@@ -775,6 +789,98 @@ public class HttpInboxTest {
     );
     assertThatThrownBy(() -> stateMachine.onEvent(UUID.randomUUID().toString(), trigger, new HttpRequestMessage(PUT, URI.create("/x"), Map.of(), null)).blockLast(Duration.ofSeconds(5)))
         .hasMessageContaining("can only be identified by the session");
+  }
+
+  @Test
+  public void whenContentMatchesProcessThenItsEventIsTriggered() throws IOException {
+    HttpResponseMessage internal = onContentRequest(UUID.randomUUID().toString(), "internal");
+    assertEquals(201, internal.statusCode());
+    assertTrue(ProblemDetail.parse(internal.body()).detail().startsWith("Light is on!"));
+    HttpResponseMessage unavailable = onContentRequest(UUID.randomUUID().toString(), "unavailable");
+    assertEquals(500, unavailable.statusCode());
+    assertEquals("Subsystem unavailable", ProblemDetail.parse(unavailable.body()).detail());
+  }
+
+  /// The processes of an endpoint have their own input and selector: `zero` switches the existing lamp of the path
+  @Test
+  public void whenContentMatchesProcessThenItsInputAndSelectorAreUsed() throws IOException {
+    HttpResponseMessage created = onContentRequest(UUID.randomUUID().toString(), "internal");
+    UUID lamp = UUID.fromString(ProblemDetail.parse(created.body()).entityId());
+    HttpResponseMessage zeroed = onContentRequest(lamp.toString(), "zero");
+    assertEquals(201, zeroed.statusCode());
+    assertEquals("Complete", ProblemDetail.parse(zeroed.body()).detail());
+  }
+
+  @Test
+  public void whenContentMatchesNoProcessThenBadRequest() throws IOException {
+    HttpResponseMessage response = onContentRequest(UUID.randomUUID().toString(), "other");
+    assertEquals(400, response.statusCode());
+    assertEquals("No process for the content", ProblemDetail.parse(response.body()).detail());
+  }
+
+  @Test
+  public void diagramOfContentRequestShowsTheChoiceOfProcess() throws IOException {
+    File file = new PlantUMLFormatter(ContentRequest, ContentRequest.transitions()).formatToImage(Files.createTempDirectory("inbox").toString());
+    assertThat(Files.readString(file.toPath()))
+        .contains("Request dispatched [a == internal]", "Request dispatched [a == unavailable]", "Request dispatched [a == zero]");
+  }
+
+  @Test
+  public void processWithoutContentPredicateMustBeLast() {
+    assertThatThrownBy(() -> HttpInboxRequest.matching(_ -> true).noContent()
+        .process(InternalProcessingRequested, Lamp, _ -> null, newEntity())
+        .process(when("any", _ -> true), LampSwitchedOn, Lamp, _ -> null, newEntity())
+        .build("Invalid", UUID.randomUUID()))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("must be the last one");
+  }
+
+  @Test
+  public void processesOfRequestWithRollbackMustHaveTheSameEntityModel() {
+    assertThatThrownBy(() -> HttpInboxRequest.matching(_ -> true).noContent()
+        .process(when("one", _ -> true), InternalProcessingRequested, Lamp, _ -> null, newEntity())
+        .process(InternalProcessingRequested, EntityModel.of("Other", UUID.randomUUID()), _ -> null, newEntity())
+        .rollback(_ -> false, parseMessageId("(.*)", 1))
+        .build("Invalid", UUID.randomUUID()))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("must have the same entity model");
+  }
+
+  /// A client using the message id of a request of one type for a request of another type gets 400 Conflict, as for
+  /// another request of the same type
+  @Test
+  public void whenSameMessageIdForAnotherRequestTypeThenConflict() throws IOException {
+    String messageId = UUID.randomUUID().toString();
+    HttpResponseMessage first = HttpMessageParser.parseResponse(onInternalRequest(messageId, new InternalProcess("A", 1)).data());
+    assertEquals(201, first.statusCode());
+    HttpResponseMessage second = HttpMessageParser.parseResponse(onRequest(PUT, URI.create("/complexinternal/" + messageId), "Hello!".getBytes()).data());
+    assertEquals(400, second.statusCode());
+    assertEquals("Conflict", ProblemDetail.parse(second.body()).detail());
+  }
+
+  /// The first request with the message id was rejected by the application, so it has no accepted request to compare with
+  @Test
+  public void whenSameMessageIdAsRejectedRequestOfAnotherTypeThenConflict() throws IOException {
+    String messageId = UUID.randomUUID().toString();
+    HttpResponseMessage first = HttpMessageParser.parseResponse(onRequest(PUT, URI.create("/rejected/" + messageId), "Hello!".getBytes()).data());
+    assertEquals(422, first.statusCode());
+    HttpResponseMessage second = HttpMessageParser.parseResponse(onInternalRequest(messageId, new InternalProcess("A", 1)).data());
+    assertEquals(400, second.statusCode());
+    assertEquals("Conflict", ProblemDetail.parse(second.body()).detail());
+  }
+
+  @Test
+  public void whenRejectedRequestIsRepeatedThenRespondWithSameResponse() throws IOException {
+    String messageId = UUID.randomUUID().toString();
+    HttpResponseMessage first = HttpMessageParser.parseResponse(onRequest(PUT, URI.create("/rejected/" + messageId), "Hello!".getBytes()).data());
+    assertEquals(422, first.statusCode());
+    HttpResponseMessage second = HttpMessageParser.parseResponse(onRequest(PUT, URI.create("/rejected/" + messageId), "Hello!".getBytes()).data());
+    assertEquals(422, second.statusCode());
+    assertArrayEquals(first.body(), second.body());
+  }
+
+  private HttpResponseMessage onContentRequest(String id, String a) throws IOException {
+    return HttpMessageParser.parseResponse(onRequest(PUT, URI.create("/content/" + id), asJson(new InternalProcess(a, 0))).data());
   }
 
   @Test

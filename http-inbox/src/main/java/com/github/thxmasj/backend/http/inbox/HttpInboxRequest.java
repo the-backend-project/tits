@@ -26,9 +26,9 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /// An inbox request: an entity model whose entities are the requests of one type the application receives, with a
-/// body of type `T`, which trigger one event type on one entity model of the application. `RequestRouting` routes a
-/// received request to the first inbox request matching it, which validates it, dispatches it to the application and
-/// waits for the application to respond by triggering a [ResponseEventType] on it (see [HttpInbox#Request]).
+/// body of type `T`, which trigger an event on an entity of the application. `RequestRouting` routes a received request
+/// to the first inbox request matching it, which validates it, dispatches it to the application and waits for the
+/// application to respond by triggering a [ResponseEventType] on it (see [HttpInbox#Request]).
 ///
 /// ```java
 /// HttpInboxRequest<Order> PlaceOrder = HttpInboxRequest
@@ -37,6 +37,20 @@ import java.util.regex.Pattern;
 ///     .authorizer(HttpInbox.bearerToken(verifier, "orders"))
 ///     .process(OrderPlaced, Orders, RoutedRequest::body, newEntity())
 ///     .build("PlaceOrder", UUID.fromString("..."));
+/// ```
+///
+/// The event can depend on the content of the request: with several processes, each chosen by a predicate on the
+/// parsed body ([#when(String, Predicate)]), the first one whose predicate matches is taken, and a request matching
+/// none is answered with 400 Bad Request:
+///
+/// ```java
+/// HttpInboxRequest<Enrolment> EnrolmentResult = HttpInboxRequest
+///     .matching(m -> m.requestLine().matches("POST /enrolments"))
+///     .contentParser(HttpInbox.jsonParser(Enrolment.class))
+///     .messageIdParser((_, enrolment) -> valid(enrolment.messageId()))
+///     .process(when("status == Accepted", e -> e.status() == ACCEPTED), Activate, Tokens, RoutedRequest::body, tokenOf())
+///     .process(when("status == Rejected", e -> e.status() == REJECTED), Reject, Tokens, RoutedRequest::body, tokenOf())
+///     .build("EnrolmentResult", UUID.fromString("..."));
 /// ```
 ///
 /// @param <T> the type of the body of the request
@@ -48,7 +62,7 @@ public final class HttpInboxRequest<T> implements EntityModel {
   private final Function<HttpRequestMessage, Validated<T>> contentParser;
   private final BiFunction<HttpRequestMessage, T, Validated<String>> messageIdParser;
   private final BiFunction<HttpRequestMessage, T, Authorization> authorizer;
-  private final Process<T, ?> process;
+  private final List<Process<T, ?>> processes;
   private final Function<HttpRequestMessage, HttpRequestMessage> normalizer;
   private final List<Response<?>> responses;
   private final Rollback rollback;
@@ -61,10 +75,18 @@ public final class HttpInboxRequest<T> implements EntityModel {
     this.contentParser = builder.contentParser;
     this.messageIdParser = builder.messageIdParser;
     this.authorizer = builder.authorizer;
-    this.process = Objects.requireNonNull(builder.process, "The process of the request is missing");
+    this.processes = List.copyOf(builder.processes);
+    if (processes.isEmpty())
+      throw new IllegalArgumentException("The process of the request " + name + " is missing");
+    for (int i = 0; i < processes.size() - 1; i++) {
+      if (processes.get(i).content() == null)
+        throw new IllegalArgumentException("A process of the request " + name + " without a content predicate must be the last one");
+    }
     this.normalizer = builder.normalizer;
     this.responses = List.copyOf(builder.responses);
     this.rollback = builder.rollback;
+    if (rollback != null && processes.stream().map(Process::entityModel).distinct().count() > 1)
+      throw new IllegalArgumentException("The processes of the request " + name + ", which can be rolled back, must have the same entity model");
     this.transitions = TransitionModels.requestTransitions(this);
   }
 
@@ -116,7 +138,7 @@ public final class HttpInboxRequest<T> implements EntityModel {
 
   BiFunction<HttpRequestMessage, T, Authorization> authorizer() {return authorizer;}
 
-  Process<T, ?> process() {return process;}
+  List<Process<T, ?>> processes() {return processes;}
 
   Function<HttpRequestMessage, HttpRequestMessage> normalizer() {return normalizer;}
 
@@ -124,13 +146,34 @@ public final class HttpInboxRequest<T> implements EntityModel {
 
   Rollback rollback() {return rollback;}
 
+  /// A predicate on the parsed body of a request, choosing the process of the request
+  ///
+  /// @param description describes the predicate in the diagram of the inbox request, e.g. `status == Accepted`
+  public record Content<T>(String description, Predicate<T> predicate) {
+
+    public Content {
+      Objects.requireNonNull(description);
+      Objects.requireNonNull(predicate);
+    }
+
+  }
+
+  /// A predicate on the parsed body of a request, choosing the process of the request
+  ///
+  /// @param description describes the predicate in the diagram of the inbox request, e.g. `status == Accepted`
+  public static <T> Content<T> when(String description, Predicate<T> predicate) {
+    return new Content<>(description, predicate);
+  }
+
   /// The event triggered on the application for a request
   ///
+  /// @param content chooses the process by the body of the request, or null for any body
   /// @param eventType the event type triggered
   /// @param entityModel the entity model of the entity the event is triggered on
   /// @param input creates the data of the event from the request
   /// @param selector selects the entity the event is triggered on
   record Process<T, U>(
+      Content<T> content,
       EventType<U, ?> eventType,
       EntityModel entityModel,
       Function<RoutedRequest<T>, U> input,
@@ -164,14 +207,14 @@ public final class HttpInboxRequest<T> implements EntityModel {
 
   }
 
-  /// Builds an inbox request. The process is required, the rest is optional.
+  /// Builds an inbox request. A process is required, the rest is optional.
   public static final class Builder<T> {
 
     private final Predicate<HttpRequestMessage> matcher;
     private final Function<HttpRequestMessage, Validated<T>> contentParser;
     private BiFunction<HttpRequestMessage, T, Validated<String>> messageIdParser;
     private BiFunction<HttpRequestMessage, T, Authorization> authorizer;
-    private Process<T, ?> process;
+    private final List<Process<T, ?>> processes = new ArrayList<>();
     private Function<HttpRequestMessage, HttpRequestMessage> normalizer = Function.identity();
     private final List<Response<?>> responses = new ArrayList<>();
     private Rollback rollback;
@@ -196,7 +239,8 @@ public final class HttpInboxRequest<T> implements EntityModel {
       return this;
     }
 
-    /// The event a request triggers on the application
+    /// The event a request triggers on the application, whatever its content. With processes chosen by the content
+    /// before it, it is taken when none of them matches.
     ///
     /// @param eventType the event type triggered
     /// @param entityModel the entity model of the entity the event is triggered on
@@ -208,12 +252,42 @@ public final class HttpInboxRequest<T> implements EntityModel {
         Function<RoutedRequest<T>, U> input,
         BiFunction<HttpRequestMessage, T, ? extends Validated<? extends EntitySelector>> selector
     ) {
-      this.process = new Process<>(
+      return addProcess(null, eventType, entityModel, input, selector);
+    }
+
+    /// The event a request with the content triggers on the application. The processes are tried in the order they
+    /// are given, the first one whose content matches is taken, and a request matching none is answered with 400 Bad
+    /// Request. The message id parser, the authorizer and the normalizer are the same for all of them.
+    ///
+    /// @param content the predicate on the parsed body choosing the process, see [HttpInboxRequest#when(String, Predicate)]
+    /// @param eventType the event type triggered
+    /// @param entityModel the entity model of the entity the event is triggered on
+    /// @param input creates the data of the event from the request
+    /// @param selector selects the entity the event is triggered on, e.g. [#newEntity()] or [#parseEntityId(String, int)]
+    public <U> Builder<T> process(
+        Content<T> content,
+        EventType<U, ?> eventType,
+        EntityModel entityModel,
+        Function<RoutedRequest<T>, U> input,
+        BiFunction<HttpRequestMessage, T, ? extends Validated<? extends EntitySelector>> selector
+    ) {
+      return addProcess(Objects.requireNonNull(content), eventType, entityModel, input, selector);
+    }
+
+    private <U> Builder<T> addProcess(
+        Content<T> content,
+        EventType<U, ?> eventType,
+        EntityModel entityModel,
+        Function<RoutedRequest<T>, U> input,
+        BiFunction<HttpRequestMessage, T, ? extends Validated<? extends EntitySelector>> selector
+    ) {
+      processes.add(new Process<>(
+          content,
           Objects.requireNonNull(eventType),
           Objects.requireNonNull(entityModel),
           Objects.requireNonNull(input),
           Objects.requireNonNull(selector)
-      );
+      ));
       return this;
     }
 
@@ -236,7 +310,8 @@ public final class HttpInboxRequest<T> implements EntityModel {
 
     /// Requests the matcher matches roll back the request with the message id the parser gives, by rolling back the
     /// events the request caused on the application. A rollback of a request not received yet makes a later request
-    /// with the message id rejected.
+    /// with the message id rejected. The processes of a request which can be rolled back must have the same entity
+    /// model.
     public Builder<T> rollback(
         Predicate<HttpRequestMessage> matcher,
         BiFunction<HttpRequestMessage, Void, Validated<String>> messageIdParser

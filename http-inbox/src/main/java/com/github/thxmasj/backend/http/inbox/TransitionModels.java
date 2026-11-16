@@ -42,10 +42,12 @@ import static com.github.thxmasj.backend.http.inbox.HttpInbox.States.Routed;
 
 import com.github.thxmasj.backend.core.BasicEventType;
 import com.github.thxmasj.backend.core.BasicEventType.Rollback.Data;
+import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.EntitySelector;
 import com.github.thxmasj.backend.core.EntitySelector.ById;
 import com.github.thxmasj.backend.core.EntitySelector.ByIdEvent;
 import com.github.thxmasj.backend.core.EntitySelector.ByIdFromSession;
+import com.github.thxmasj.backend.core.EventLog;
 import com.github.thxmasj.backend.core.EventReference;
 import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.GuardedTransition;
@@ -69,6 +71,7 @@ import com.github.thxmasj.backend.http.inbox.HttpInbox.RoutedRequest;
 import com.github.thxmasj.backend.http.inbox.HttpInboxRequest.Process;
 import com.github.thxmasj.backend.http.inbox.HttpInboxRequest.Response;
 import jakarta.annotation.Nullable;
+import java.nio.charset.StandardCharsets;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -131,15 +134,19 @@ interface TransitionModels {
         newEntity();
   }
 
-  /// A received request, which is invalid, refused or routed
-  record Validation<T>(String invalidReason, Refused refused, RoutedRequest<T> routedRequest) {
+  /// A received request, which is invalid, refused or routed, to the process with the index if it is a request
+  record Validation<T>(String invalidReason, Refused refused, RoutedRequest<T> routedRequest, int process) {
 
     static <T> Validation<T> invalid(String reason) {
-      return new Validation<>(reason, null, null);
+      return new Validation<>(reason, null, null, -1);
     }
 
     static <T> Validation<T> refusal(Refused refused) {
-      return new Validation<>(null, refused, null);
+      return new Validation<>(null, refused, null, -1);
+    }
+
+    Dispatch<T> dispatch() {
+      return new Dispatch<>(routedRequest, process);
     }
 
     boolean isInvalid() {
@@ -150,6 +157,20 @@ interface TransitionModels {
       return refused != null;
     }
 
+  }
+
+  /// A valid request to dispatch to the process with the index
+  record Dispatch<T>(RoutedRequest<T> routedRequest, int process) {}
+
+  /// The index of the first process whose content matches the body, or -1 if none does
+  private static <T> int process(HttpInboxRequest<T> request, T content) {
+    var processes = request.processes();
+    for (int i = 0; i < processes.size(); i++) {
+      var predicate = processes.get(i).content();
+      if (predicate == null || predicate.predicate().test(content))
+        return i;
+    }
+    return -1;
   }
 
   private static <T> Validation<T> validate(HttpInboxRequest<T> request, HttpRequestMessage message) {
@@ -163,7 +184,11 @@ interface TransitionModels {
     Authorization authorization = request.authorizer() != null ? request.authorizer().apply(message, content) : null;
     if (authorization != null && authorization.isRefused())
       return Validation.refusal(authorization.refused());
-    Validated<? extends EntitySelector> selector = request.process().selector().apply(message, content);
+    int processIndex = process(request, content);
+    if (processIndex < 0)
+      return Validation.invalid("No process for the content");
+    Process<T, ?> process = request.processes().get(processIndex);
+    Validated<? extends EntitySelector> selector = process.selector().apply(message, content);
     if (selector.isInvalid())
       return Validation.invalid("Unable to parse process selector: " + selector.invalidReason());
     String clientId = authorization != null ? authorization.subject() : "N/A";
@@ -180,12 +205,13 @@ interface TransitionModels {
         default -> null;
       };
       if (entity != null)
-        messageId = new MessageId(clientId, request.process().eventType().id() + "/" + entity);
+        messageId = new MessageId(clientId, process.eventType().id() + "/" + entity);
     }
     return new Validation<>(
         null,
         null,
-        new RoutedRequest<>(message, content, messageId, authorization != null ? authorization.subject() : null, processSelector)
+        new RoutedRequest<>(message, content, messageId, authorization != null ? authorization.subject() : null, processSelector),
+        processIndex
     );
   }
 
@@ -206,7 +232,8 @@ interface TransitionModels {
             new MessageId(subject != null ? subject : "N/A", messageIdValue.validValue()),
             subject,
             null
-        )
+        ),
+        -1
     );
   }
 
@@ -286,7 +313,7 @@ interface TransitionModels {
         .assemble(c -> validate(request, c.input()))
         .when(Validation::isInvalid).then(rejectedAsInvalid(), Validation::invalidReason)
         .when(Validation::isRefused).then(rejectedAsUnauthorized(), Validation::refused)
-        .otherwise(dispatchChoiceTransition(request), Validation::routedRequest);
+        .otherwise(dispatchChoiceTransition(request), Validation::dispatch);
   }
 
   private static TransitionModel<String, HttpResponseMessage> rejectedAsInvalid() {
@@ -304,19 +331,59 @@ interface TransitionModels {
   }
 
   @SuppressWarnings({"unchecked", "rawtypes"})
-  private static <T> EventType<RoutedRequest<T>, Void> requestDispatched() {
+  private static <D> EventType<D, Void> requestDispatched() {
     return (EventType) HttpInbox.RequestDispatched;
   }
 
-  private static <T> boolean isSameRequest(HttpRequestMessage newRequest, HttpRequestMessage oldRequest, HttpInboxRequest<T> request) {
-    return request.normalizer().apply(newRequest).equals(request.normalizer().apply(oldRequest));
+  /// Whether the request is a repeat of the request of the entity which has its message id, accepted or rejected by
+  /// the application, so that it gets the same response. An entity of another inbox request has another request, and
+  /// one whose request is still being dispatched has no response yet, so the request is no repeat of them.
+  private static <T> boolean isSameRequest(HttpRequestMessage newRequest, EventLog existing, HttpInboxRequest<T> request) {
+    if (!existing.entityModel().equals(request) || !hasResponse(existing))
+      return false;
+    return existing.oneIfExists(RequestAccepted).map(Tuple2::t1)
+        .or(() -> existing.oneIfExists(RequestRejected))
+        .map(original -> request.normalizer().apply(newRequest).equals(request.normalizer().apply(original)))
+        .orElse(false);
+  }
+
+  private static boolean hasResponse(EventLog log) {
+    return log.effectiveEvents().stream().anyMatch(e -> ResponseEventType.outputDataType.equals(e.type().outputDataType()));
+  }
+
+  /// Dispatches the request to the process chosen by its content, of several processes
+  private static <T> TransitionModel<Dispatch<T>, Void> contentChoiceTransition(HttpInboxRequest<T> request) {
+    int last = request.processes().size() - 1;
+    var choices = new ArrayList<GuardedTransition<Dispatch<T>, RoutedRequest<T>, ?>>();
+    for (int i = 0; i < last; i++) {
+      int process = i;
+      choices.add(new GuardedTransition<>(d -> d.process() == process, dispatchTransition(request, process), Dispatch::routedRequest));
+    }
+    return onEvent(TransitionModels.<Dispatch<T>>requestDispatched()).to(Dispatched)
+        .assembleInput()
+        .choice(choices)
+        .otherwise(dispatchTransition(request, last), Dispatch::routedRequest);
+  }
+
+  /// The event of the dispatch to the process, named after its content predicate if it has one. It is never stored,
+  /// as one of the outcomes of the dispatch always is.
+  private static <T> EventType<RoutedRequest<T>, Void> dispatchedTo(HttpInboxRequest<T> request, int process) {
+    var content = request.processes().get(process).content();
+    if (content == null)
+      return requestDispatched();
+    return BasicEventType.of(
+        "Request dispatched [" + content.description() + "]",
+        UUID.nameUUIDFromBytes((request.id() + "/" + process).getBytes(StandardCharsets.UTF_8)),
+        DataType.unknown(),
+        DataType.none()
+    );
   }
 
   /// Claims the message id of the request, and dispatches it unless the id is taken by an earlier request
-  private static <T> TransitionModel<RoutedRequest<T>, Void> dispatchChoiceTransition(HttpInboxRequest<T> request) {
-    return onEvent(TransitionModels.<T>requestDispatched()).to(Dispatched)
+  private static <T> TransitionModel<Dispatch<T>, Void> dispatchChoiceTransition(HttpInboxRequest<T> request) {
+    var claimed = onEvent(TransitionModels.<Dispatch<T>>requestDispatched()).to(Dispatched)
         .assemble(c -> tuple(c.input(), c.entityId()))
-        .trigger(MessageIdClaimed).with(d -> d.t1().messageId()).on(MessageIds).identifiedBy(d -> entityId(d.t2(), CreateIfNotExists))
+        .trigger(MessageIdClaimed).with(d -> d.t1().routedRequest().messageId()).on(MessageIds).identifiedBy(d -> entityId(d.t2(), CreateIfNotExists))
         .when(d -> d.t2().isIdExists() && d.t2().idExists().log().oneIfExists(RollbackRequestAccepted).isPresent()).then(
             onEvent(RequestRejected).to(Rejected)
                 .assemble(c -> tuple(
@@ -328,15 +395,15 @@ interface TransitionModels {
                 ))
                 .trigger(RejectedRequestCompleted).with(d -> unprocessableEntity(d.t1(), d.t4(), d.t5())).on(request).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t3()),
-            d -> tuple("Rolled back", d.t2().idExists().log().entityId(), d.t1().t1().request())
+            d -> tuple("Rolled back", d.t2().idExists().log().entityId(), d.t1().t1().routedRequest().request())
         )
-        .when(d -> d.t2().isIdExists() && isSameRequest(d.t1().t1().request(), d.t2().idExists().log().one(RequestAccepted).t1(), request)).then(
+        .when(d -> d.t2().isIdExists() && isSameRequest(d.t1().t1().routedRequest().request(), d.t2().idExists().log(), request)).then(
             onEvent(DuplicateRequestRejected).to(Rejected)
                 .assembleInput()
                 .trigger(DuplicatedRequestCompleted).with(Tuple2::t2).on(request).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t1()),
             d -> tuple(
-                d.t1().t1().request(),
+                d.t1().t1().routedRequest().request(),
                 d.t2().idExists().log().one(ResponseEventType.outputDataType).t1()
             )
         )
@@ -351,16 +418,18 @@ interface TransitionModels {
                 ))
                 .trigger(RejectedRequestCompleted).with(d -> badRequest(d.t1(), d.t4(), d.t5())).on(request).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t3()),
-            d -> tuple("Conflict", d.t2().idExists().log().entityId(), d.t1().t1().request())
-        )
-        .otherwise(dispatchTransition(request), d -> d.t1().t1());
+            d -> tuple("Conflict", d.t2().idExists().log().entityId(), d.t1().t1().routedRequest().request())
+        );
+    return request.processes().size() == 1 ?
+        claimed.otherwise(dispatchTransition(request, 0), d -> d.t1().t1().routedRequest()) :
+        claimed.otherwise(contentChoiceTransition(request), d -> d.t1().t1());
   }
 
-  /// Triggers the event of the request on the application
-  private static <T, U> TransitionModel<RoutedRequest<T>, Void> dispatchTransition(HttpInboxRequest<T> request) {
+  /// Triggers the event of the process of the request on the application
+  private static <T, U> TransitionModel<RoutedRequest<T>, Void> dispatchTransition(HttpInboxRequest<T> request, int processIndex) {
     @SuppressWarnings("unchecked")
-    Process<T, U> process = (Process<T, U>) request.process();
-    return onEvent(TransitionModels.<T>requestDispatched()).to(Dispatched)
+    Process<T, U> process = (Process<T, U>) request.processes().get(processIndex);
+    return onEvent(dispatchedTo(request, processIndex)).to(Dispatched)
         .assembleInput()
         .trigger(process.eventType()).with(process.input()).on(process.entityModel()).identifiedBy(RoutedRequest::processSelector)
         .when(d -> d.t2().isRejected()).then(
@@ -438,7 +507,7 @@ interface TransitionModels {
   private static <T> TransitionModel<?, ?> rollbackTransition(HttpInboxRequest<T> request, State rejectedState) {
     return onEvent(RollbackRequestReceived).to(RollingBack)
         .assemble((input, log) -> tuple(validateRollback(request, input).routedRequest(), log.entityId(), log.one(RequestAccepted).t2(), log.one(ResponseEventType.outputDataType).t2()))
-        .trigger(EventsRolledBack).with(d -> new Data(d.t3().eventNumber() - 1, "HTTP request")).on(request.process().entityModel()).identifiedBy(d -> entityId(d.t3().entityId()))
+        .trigger(EventsRolledBack).with(d -> new Data(d.t3().eventNumber() - 1, "HTTP request")).on(request.processes().getFirst().entityModel()).identifiedBy(d -> entityId(d.t3().entityId()))
         .when(d -> d.t2().isRejected()).then(
             onEvent(RequestRejected).to(rejectedState)
                 .assembleInput()

@@ -21,7 +21,7 @@ HttpInboxRequest<Order> PlaceOrder = HttpInboxRequest
 |-------------------|----------|--------------------------------------------------------------------------------------------------|
 | `matching`        | Yes      | Tells which requests are of this type, e.g. by method and path                                    |
 | `contentParser`   | Yes      | Parses the body, or `noContent()` to ignore it. An invalid body is answered with 400              |
-| `process`         | Yes      | The event type the request triggers, the entity model and the entity, e.g. `newEntity()` or `parseEntityId(...)`, and the event's data |
+| `process`         | Yes      | The event type the request triggers, the entity model and the entity, e.g. `newEntity()` or `parseEntityId(...)`, and the event's data. Repeated with a content predicate for [content routing](#content-routing) |
 | `messageIdParser` | No       | The id of the request, by which a retried request is recognised                                   |
 | `authorizer`      | No       | Authorizes the request, e.g. with a bearer token (see [access tokens](#access-tokens))           |
 | `response`        | No       | A response of the application of its own, made from a `ResponseEventType` the application triggers |
@@ -50,13 +50,48 @@ machine takes it to the inbox request of the session:
 The response goes back to the `RequestRouting` entity, which the listener sends to the client.
 
 Requests carrying a message id are deduplicated through the `MessageIds` id entity model: a retried request gets the
-response of the first one, without triggering anything again. A request with the message id of an earlier request it
-differs from is answered with 400 Bad Request. A request without a message id that triggers an event on an existing
-entity is identified by the event type and the entity. Filters on the listener can authenticate, log or rewrite
-requests before they reach the inbox.
+response of the first one, also if the application rejected it, without triggering anything again. A message id is
+the client's: the authorized subject and the id, or the id alone without an authorizer. All inbox requests share
+`MessageIds`, so a client can use a message id once, for one request of one type. A request with the message id of an
+earlier request it differs from, of the same or another inbox request, is answered with 400 Bad Request and the detail
+`Conflict`, and so is a request with the message id of a request still being dispatched. A request without a message
+id that triggers an event on an existing entity is identified by the event type and the entity. Filters on the
+listener can authenticate, log or rewrite requests before they reach the inbox.
 
 A response of 500 Internal Server Error, which the application triggers with `FailedRequestCompleted`, is an event of
 [severity](monitoring.md#severity) `Error`.
+
+## Content routing
+
+The requests to one endpoint can trigger different events, by their content. An inbox request then has several
+processes, each chosen by a predicate on the parsed body, given with `when(description, predicate)`. The body is parsed
+once, the processes are tried in the order they are given, and the first one whose predicate matches is taken. A
+request matching none is answered with 400 Bad Request and the detail `No process for the content`. A process without
+a predicate takes any content, so it can only be the last one, as a default.
+
+Each process has its own event type, entity model, input and entity selector, while the message id parser, the
+authorizer and the normalizer are those of the endpoint. Here the result of an enrolment activates the payment token
+it is about, or rejects it, by its status:
+
+```java
+HttpInboxRequest<EnrolmentResult> EnrolmentResultReceived = HttpInboxRequest
+    .matching(m -> m.requestLine().matches("POST /enrolments"))
+    .contentParser(HttpInbox.jsonParser(EnrolmentResult.class))
+    .messageIdParser((_, result) -> valid(result.messageId()))
+    .process(
+        when("status == Accepted", result -> result.status() == EnrolmentStatus.ACCEPTED),
+        Activate, PaymentToken, RoutedRequest::body, (_, result) -> entityId(result.tokenReference())
+    )
+    .process(
+        when("status == Rejected", result -> result.status() == EnrolmentStatus.REJECTED),
+        Reject, PaymentToken, _ -> null, (_, result) -> entityId(result.tokenReference())
+    )
+    .build("EnrolmentResultReceived", UUID.fromString("..."));
+```
+
+The diagram of the inbox request shows the choice: a `Request dispatched [status == Accepted]` and a
+`Request dispatched [status == Rejected]`, each triggering its event. A single process can have a predicate too, e.g.
+to answer an authentication response with an error with 400 Bad Request.
 
 ## Rollback
 
@@ -66,7 +101,8 @@ which rolls back the events the request caused on the application and responds 2
 rollback repeated gets the response of the first one. A rollback of a request not received yet is answered with
 `Nothing to roll back`, and takes the message id, so that the request is rejected with 422 Unprocessable Entity if it
 arrives later. The message ids of all inbox requests share `MessageIds`, but a rollback only finds requests of its own
-inbox request: the message id of another type of request has nothing to roll back.
+inbox request: the message id of another type of request has nothing to roll back. The processes of an inbox request
+with a rollback must have the same entity model, which the rollback rolls the events back on.
 
 ## Access tokens
 
