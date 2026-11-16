@@ -80,12 +80,7 @@ class ERDiagramFormatterTest {
         }
         """,
         """
-        entity "Ids" as E3 <<id>> {
-          {field} Name claimed : string → string
-        }
-        """,
-        """
-        entity "Speed" as E4 {
+        entity "Speed" as E3 {
           {field} Speed increased
           {field} Speed decreased
         }
@@ -108,10 +103,15 @@ class ERDiagramFormatterTest {
   void triggersRelateEntities() {
     String diagram = new ERDiagramFormatter("Test", model()).format();
     assertThat(diagram).contains(
-        "E1 --> E4 : Car started ↪ Speed increased\\n<color:#7A0000>Car started ↪ Speed decreased</color>\\nCar stopped ↪ Speed decreased\n",
+        "E1 --> E3 : Car started ↪ Speed increased\\n<color:#7A0000>Car started ↪ Speed decreased</color>\\nCar stopped ↪ Speed decreased\n",
         "E1 --> E2 : Car stopped ↪ Car stopped\n"
     );
-    assertThat(diagram).doesNotContain("E3 -->", "E4 -->");
+    assertThat(diagram).doesNotContain("E2 -->", "E3 -->");
+  }
+
+  @Test
+  void idAndIndexEntitiesAreLeftOut() {
+    assertThat(new ERDiagramFormatter("Test", model()).format()).doesNotContain("Ids", "Name claimed", "E4");
   }
 
   @Test
@@ -120,8 +120,7 @@ class ERDiagramFormatterTest {
     assertThat(diagram).contains(
         "entity \"Car\" as E1 {\n}\n",
         "entity \"Engine\" as E2 {\n}\n",
-        "entity \"Ids\" as E3 <<id>> {\n}\n",
-        "entity \"Speed\" as E4 {\n}\n",
+        "entity \"Speed\" as E3 {\n}\n",
         "E1 --> E2 : Car stopped ↪ Car stopped\n"
     );
     assertThat(diagram).doesNotContain("{field}");
@@ -138,7 +137,7 @@ class ERDiagramFormatterTest {
   void rendersToSvg(@TempDir Path directory) throws IOException {
     File file = new ERDiagramFormatter("Test", model()).formatToImage(directory.toString());
     assertThat(file.getName()).isEqualTo("Test.er.svg");
-    assertThat(Files.readString(file.toPath())).startsWith("<svg").contains("Car", "Speed", "Engine", "Ids")
+    assertThat(Files.readString(file.toPath())).startsWith("<svg").contains("Car", "Speed", "Engine")
         // Drawn in the colour scheme of the page, so dark mode doesn't put it on an opaque background
         .contains("svg{color-scheme:light dark}");
   }

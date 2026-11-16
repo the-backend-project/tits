@@ -29,7 +29,8 @@ import net.sourceforge.plantuml.SourceStringReader;
 /// An ER diagram of a state machine's complete model, i.e. the transitions of all its entity models, as given to the
 /// state machine. Each entity model is an entity listing the event types it accepts, and the entity models are related
 /// through the triggers of their transitions: an arrow from one entity to another tells that an event on the first
-/// triggers an event on the other. Triggers of reversals are red.
+/// triggers an event on the other. Triggers of reversals are red. Id and index entities are left out, with the triggers
+/// of events on them, as they take much space and tell little about how the entities relate.
 public class ERDiagramFormatter {
 
   private final String name;
@@ -85,6 +86,7 @@ public class ERDiagramFormatter {
     Map<EntityModel, Set<EventType<?, ?>>> eventTypes = new LinkedHashMap<>();
     Set<Relation> relations = new LinkedHashSet<>();
     transitions.entrySet().stream()
+        .filter(entry -> shown(entry.getKey()))
         .sorted(comparing(entry -> entry.getKey().name()))
         .forEach(entry -> {
           eventTypes.computeIfAbsent(entry.getKey(), _ -> new LinkedHashSet<>());
@@ -146,6 +148,7 @@ public class ERDiagramFormatter {
   ) {
     for (EventTrigger<?, ?, ?> trigger : triggers) {
       EntityModel target = trigger.entityModel() != null ? trigger.entityModel() : entity;
+      if (!shown(target)) continue;
       EventType<?, ?> triggered = trigger.eventSpec().eventType();
       eventTypes.computeIfAbsent(target, _ -> new LinkedHashSet<>()).add(triggered);
       String label = eventType.name() + " ↪ " + triggered.name();
@@ -164,13 +167,12 @@ public class ERDiagramFormatter {
         .toList();
   }
 
+  private static boolean shown(EntityModel entity) {
+    return !(entity instanceof IdEntityModel) && !(entity instanceof IndexEntityModel);
+  }
+
   private String entity(EntityModel entity, String alias, Set<EventType<?, ?>> eventTypes) {
-    String declaration = String.format(
-        "entity \"%s\" as %s%s",
-        entity.name(),
-        alias,
-        entity instanceof IdEntityModel ? " <<id>>" : entity instanceof IndexEntityModel ? " <<index>>" : ""
-    );
+    String declaration = String.format("entity \"%s\" as %s", entity.name(), alias);
     // An entity without a body would make PlantUML take it as a participant of a sequence diagram
     if (compact) return declaration + " {\n}\n";
     return String.format(
