@@ -20,41 +20,36 @@ it shows the data and triggers of an event when the mouse hovers over its name.
 <td>
 
 ```java
-ClientRegistration, Map.of(
-  Begin, List.of(
-    onEvent(RegistrationRequested).to(Accepted)
-      .assemble(c -> tuple(c.input(), EntityId.newId()))
-      // Claim the client id, unless it is taken
-      .trigger(ClientIdClaimed).with(d -> d.t1().clientId())
-        .on(ClientIds).identifiedBy(d -> newEntityId(d.t2()))
-      .when(d -> d.t2().isIdExists()).then(
-        onEvent(RegistrationRejected).to(Rejected)
-          .assembleInput()
-          .trigger(ReplyCreated).with(d -> Reply.error(409, ...))
-            .on(Request).identifiedBy(entityIdFromSession())
-          .output(Tuple2::t1),
-        d -> d.t1().t1()
-      )
-      .otherwise(
-        onEvent(RegistrationAccepted).to(Accepted)
-          .assemble(...)
-          .trigger(ClientRegistered).with(...)
-            .on(Client).identifiedBy(...)
-          .trigger(ReplyCreated).with(d -> Reply.json(201, ...))
-            .on(Request).identifiedBy(entityIdFromSession())
-          .output(...),
-        Tuple2::t1
-      )
-  ),
-  Accepted, List.of(),
-  Rejected, List.of()
-)
+Begin, List.of(
+  onEvent(RegistrationRequested)
+    .to(Accepted)
+    .trigger(ClientIdClaimed)
+      .on(ClientIds)
+    .when(clientIdTaken).then(
+      onEvent(RegistrationRejected)
+        .to(Rejected)
+        .trigger(ReplyCreated)
+          .with(d -> error(409, ...))
+          .on(Request)
+    )
+    .otherwise(
+      onEvent(RegistrationAccepted)
+        .to(Accepted)
+        .trigger(ClientRegistered)
+          .on(Client)
+        .trigger(ReplyCreated)
+          .with(d -> json(201, ...))
+          .on(Request)
+    )
+),
+Accepted, List.of(),
+Rejected, List.of()
 ```
 
 </td>
 <td>
 
-<img alt="State diagram of a client registration: a registration request is accepted, or rejected if the client id is taken" src="https://the-backend-project.github.io/tits/images/com.github.thxmasj.backend.identityprovider.ClientRegistration.svg">
+<img width="444" alt="State diagram of a client registration: a registration request is accepted, or rejected if the client id is taken" src="https://the-backend-project.github.io/tits/images/com.github.thxmasj.backend.identityprovider.ClientRegistration.svg">
 
 </td>
 </tr>
