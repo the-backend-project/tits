@@ -31,15 +31,17 @@ final class ImportedClients {
   static final String Mismatch = "(mismatch)";
 
   private static final Pattern bcryptHash = Pattern.compile("\\$2[aby]\\$(0[4-9]|[12][0-9]|3[01])\\$[./A-Za-z0-9]{53}");
-  private static final Set<String> fields = Set.of("client_id", "secret_hash", "subject", "scope", "client_name");
+  private static final Set<String> fields = Set.of("client_id", "secret_hash", "subject", "scope", "client_name", "grant_types", "redirect_uris");
 
   private ImportedClients() {}
 
   /// @param secretHash the BCrypt hash of the client's secret
   /// @param subject    the `sub` of the client's tokens, or null for its client id
   /// @param scope      the space separated scopes of the client, possibly empty
-  /// @param name       a name for people, which is only logged
-  record ImportedClient(String clientId, String secretHash, String subject, String scope, String name) {}
+  /// @param name         a name for people, which is only logged
+  /// @param grantTypes   the grant types of the client, the client credentials grant if not given
+  /// @param redirectUris the redirect URIs of the client, for the authorization code grant
+  record ImportedClient(String clientId, String secretHash, String subject, String scope, String name, List<String> grantTypes, List<String> redirectUris) {}
 
   /// The clients of the environment variable CLIENTS_FILE, a path to a JSON array of clients, or of CLIENTS, the JSON
   /// array itself
@@ -100,7 +102,30 @@ final class ImportedClients {
     String scope = string(node, "scope", source);
     if (scope != null && !scope.isEmpty() && !Scopes.isValid(scope))
       throw new IllegalArgumentException(source + ": scope of " + clientId + " must be a space separated list of scopes");
-    return new ImportedClient(clientId, secretHash, subject, scope != null ? scope : "", string(node, "client_name", source));
+    List<String> grantTypes = strings(node, "grant_types", source);
+    List<String> redirectUris = strings(node, "redirect_uris", source);
+    grantTypes = grantTypes != null ? grantTypes.stream().distinct().toList() : List.of(Clients.ClientCredentials);
+    redirectUris = redirectUris != null ? redirectUris.stream().distinct().toList() : List.of();
+    String invalidGrant = Clients.invalidGrant(grantTypes, redirectUris);
+    if (invalidGrant != null)
+      throw new IllegalArgumentException(source + ": " + invalidGrant + ", for " + clientId);
+    return new ImportedClient(clientId, secretHash, subject, scope != null ? scope : "", string(node, "client_name", source), grantTypes, redirectUris);
+  }
+
+  /// The strings of an array field, or null if it is absent or null
+  private static List<String> strings(JsonNode node, String field, String source) {
+    JsonNode value = node.get(field);
+    if (value == null || value.isNull())
+      return null;
+    if (!value.isArray())
+      throw new IllegalArgumentException(source + ": " + field + " must be an array of strings");
+    var strings = new ArrayList<String>();
+    for (JsonNode element : value) {
+      if (!element.isString())
+        throw new IllegalArgumentException(source + ": " + field + " must be an array of strings");
+      strings.add(element.asString());
+    }
+    return strings;
   }
 
   /// The string value of a field, or null if it is absent or null

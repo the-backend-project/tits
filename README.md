@@ -15,7 +15,8 @@ Documentation is available at https://the-backend-project.github.io/tits/:
 The [apps](apps) are applications built with the HTTP inbox and the state machine, compiled to native executables:
 
 * The [identity provider](apps/identity-provider) is an OAuth 2.0 authorization server for the client credentials
-  grant. See [Identity provider](docs/identity-provider.md).
+  grant, and an OpenID Connect provider for web apps to sign users in with. See
+  [Identity provider](docs/identity-provider.md).
 * The [hello world demo](apps/hello-world) is a web application following the principles of the twelve-factor app. See
   [Hello world demo](docs/hello-world.md).
 
