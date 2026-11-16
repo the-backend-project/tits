@@ -1,13 +1,85 @@
 {
   "reflection": [
     {
+      "type": "com.github.thxmasj.backend.identityprovider.Authorizations$Authenticated",
+      "allDeclaredFields": true,
+      "allDeclaredMethods": true,
+      "allDeclaredConstructors": true
+    },
+    {
+      "type": "com.github.thxmasj.backend.identityprovider.Authorizations$Failure",
+      "allDeclaredFields": true,
+      "allDeclaredMethods": true,
+      "allDeclaredConstructors": true
+    },
+    {
+      "type": "com.github.thxmasj.backend.identityprovider.Authorizations$Granted",
+      "allDeclaredFields": true,
+      "allDeclaredMethods": true,
+      "allDeclaredConstructors": true
+    },
+    {
+      "type": "com.github.thxmasj.backend.identityprovider.Authorizations$Redemption",
+      "allDeclaredFields": true,
+      "allDeclaredMethods": true,
+      "allDeclaredConstructors": true
+    },
+    {
+      "type": "com.github.thxmasj.backend.identityprovider.Authorizations$Refusal",
+      "allDeclaredFields": true,
+      "allDeclaredMethods": true,
+      "allDeclaredConstructors": true
+    },
+    {
+      "type": "com.github.thxmasj.backend.identityprovider.Authorizations$Request",
+      "allDeclaredFields": true,
+      "allDeclaredMethods": true,
+      "allDeclaredConstructors": true
+    },
+    {
+      "type": "com.github.thxmasj.backend.identityprovider.Authorizations$SignIn",
+      "allDeclaredFields": true,
+      "allDeclaredMethods": true,
+      "allDeclaredConstructors": true
+    },
+    {
+      "type": "com.github.thxmasj.backend.identityprovider.Authorizations$Started",
+      "allDeclaredFields": true,
+      "allDeclaredMethods": true,
+      "allDeclaredConstructors": true
+    },
+    {
+      "type": "com.github.thxmasj.backend.identityprovider.Authorizations$User",
+      "allDeclaredFields": true,
+      "allDeclaredMethods": true,
+      "allDeclaredConstructors": true
+    },
+    {
       "type": "com.github.thxmasj.backend.identityprovider.Clients$Registration",
       "allDeclaredFields": true,
       "allDeclaredMethods": true,
       "allDeclaredConstructors": true
     },
     {
+      "type": "com.github.thxmasj.backend.identityprovider.Inbox$Redirect",
+      "allDeclaredFields": true,
+      "allDeclaredMethods": true,
+      "allDeclaredConstructors": true
+    },
+    {
       "type": "com.github.thxmasj.backend.identityprovider.Inbox$Reply",
+      "allDeclaredFields": true,
+      "allDeclaredMethods": true,
+      "allDeclaredConstructors": true
+    },
+    {
+      "type": "com.github.thxmasj.backend.identityprovider.Tokens$CodeRequest",
+      "allDeclaredFields": true,
+      "allDeclaredMethods": true,
+      "allDeclaredConstructors": true
+    },
+    {
+      "type": "com.github.thxmasj.backend.identityprovider.Tokens$IdToken",
       "allDeclaredFields": true,
       "allDeclaredMethods": true,
       "allDeclaredConstructors": true
@@ -26,6 +98,12 @@
     },
     {
       "type": "com.github.thxmasj.backend.identityprovider.Tokens$Request",
+      "allDeclaredFields": true,
+      "allDeclaredMethods": true,
+      "allDeclaredConstructors": true
+    },
+    {
+      "type": "com.github.thxmasj.backend.identityprovider.Tokens$UserTokens",
       "allDeclaredFields": true,
       "allDeclaredMethods": true,
       "allDeclaredConstructors": true
