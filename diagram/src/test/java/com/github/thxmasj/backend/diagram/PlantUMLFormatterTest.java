@@ -7,12 +7,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.github.thxmasj.backend.core.BasicEventType;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.EventType;
+import com.github.thxmasj.backend.core.Severity;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.TransitionModel;
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class PlantUMLFormatterTest {
 
@@ -42,6 +48,44 @@ class PlantUMLFormatterTest {
     String diagram = new PlantUMLFormatter(Request, transitions).format();
     String refusedId = States.Refused.name() + States.Refused.hashCode();
     assertThat(diagram).contains("Choice1 --> " + refusedId + ": Refused\\nWithdrawn\n");
+  }
+
+  @Test
+  void selfTransitionsOfAStateAreStackedOnOneLoop() {
+    Map<State, List<TransitionModel<?, ?>>> transitions = Map.of(
+        Begin, List.of(onEvent(Requested).to(States.Accepted).output()),
+        States.Accepted, List.of(
+            onEvent(Refused).toSelf().output(),
+            onEvent(Withdrawn).toSelf().output()
+        )
+    );
+    String diagram = new PlantUMLFormatter(Request, transitions).format();
+    String acceptedId = States.Accepted.name() + States.Accepted.hashCode();
+    assertThat(diagram).contains(acceptedId + " --> " + acceptedId + ": Refused\\nWithdrawn\n");
+  }
+
+  @Test
+  void eventNameIsColouredAfterTheSeverityOfItsTransition(@TempDir Path directory) throws IOException {
+    Map<State, List<TransitionModel<?, ?>>> transitions = Map.of(
+        Begin, List.of(
+            onEvent(Requested).to(States.Accepted).output(),
+            onEvent(Refused).to(States.Refused).severity(Severity.Warning).output()
+        ),
+        States.Accepted, List.of(onEvent(Withdrawn).to(States.Refused).severity(Severity.Critical).output()),
+        States.Refused, List.of()
+    );
+    var formatter = new PlantUMLFormatter(Request, transitions);
+    assertThat(formatter.format())
+        .contains(": Requested\n")
+        .contains(": <color:#7A5200><b>\u26a0 Refused</b></color>\n")
+        .contains(": <color:#B00000><b>\u203c Withdrawn</b></color>\n");
+    String svg = Files.readString(formatter.formatToImage(new File(directory.toFile(), "Request.svg")).toPath());
+    assertThat(svg)
+        .containsPattern("<text [^>]*fill=\"#000\"[^>]*>Requested</text>")
+        .containsPattern("<text [^>]*fill=\"#7A5200\"[^>]*font-weight=\"700\">\u26a0 Refused</text>")
+        .containsPattern("<text [^>]*fill=\"#B00000\"[^>]*font-weight=\"700\">\u203c Withdrawn</text>")
+        .contains("g.link text[fill=\"#7A5200\"]{fill:#F2C94C}")
+        .doesNotContain("Warning", "Critical");
   }
 
 }
