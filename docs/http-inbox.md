@@ -1,24 +1,76 @@
 # HTTP inboxes
 
-An inbox is a set of entity models whose entities are the requests the application receives, drawn in the same kind
-of state diagram as those of the application (see the [state diagrams](#state-diagrams)).
+An inbox is the set of requests an application receives. Each type of request is an `HttpInboxRequest`: an entity
+model whose entities are the requests of that type, with a body of one type, which trigger one event type on one entity
+model of the application. Like an [outbox](http-outbox.md) request, every request has a state and an event log of its
+own, drawn in the same kind of state diagram as the entities of the application (see the
+[state diagrams](#state-diagrams)).
 
-The `HttpInboxListener` receives HTTP requests with reactor-netty and passes them to the entity models of the inbox.
-A `RequestRouting` entity is created for every request, and matches it against the routes of the application. A route
-validates the request, and gives the event type and entity it triggers. A `RequestDispatching` entity is created for
-every routed request, which triggers the event on the application's entity and waits for it to respond. The response
-is an event on the `RequestDispatching` entity, of a `ResponseEventType`, which the listener sends to the client.
+```java
+HttpInboxRequest<Order> PlaceOrder = HttpInboxRequest
+    .matching(m -> m.method() == Method.PUT && m.uri().getPath().startsWith("/orders/"))
+    .contentParser(HttpInbox.jsonParser(Order.class))
+    .messageIdParser(parseMessageId("PUT /orders/(.*)", 1))
+    .authorizer(HttpInbox.bearerToken(verifier, "orders"))
+    .process(OrderPlaced, Orders, RoutedRequest::body, newEntity())
+    .rollback(m -> m.method() == Method.DELETE, parseMessageId("DELETE /orders/(.*)", 1))
+    .build("PlaceOrder", UUID.fromString("..."));
+```
+
+| Setting           | Required | What it does                                                                                     |
+|-------------------|----------|--------------------------------------------------------------------------------------------------|
+| `matching`        | Yes      | Tells which requests are of this type, e.g. by method and path                                    |
+| `contentParser`   | Yes      | Parses the body, or `noContent()` to ignore it. An invalid body is answered with 400              |
+| `process`         | Yes      | The event type the request triggers, the entity model and the entity, e.g. `newEntity()` or `parseEntityId(...)`, and the event's data |
+| `messageIdParser` | No       | The id of the request, by which a retried request is recognised                                   |
+| `authorizer`      | No       | Authorizes the request, e.g. with a bearer token (see [access tokens](#access-tokens))           |
+| `response`        | No       | A response of the application of its own, made from a `ResponseEventType` the application triggers |
+| `normalizer`      | No       | Normalizes a request before it is compared with an earlier request with the same message id       |
+| `rollback`        | No       | Requests rolling back a request by its message id, see [rollback](#rollback)                       |
+
+`HttpInbox.transitions(requests)` gives the transitions of the inbox requests, of `RequestRouting` and of `MessageIds`,
+to which the transitions of the application are added to create the state machine.
+
+The `HttpInboxListener` receives HTTP requests with reactor-netty and passes them to the inbox. A `RequestRouting` entity
+is created for every request, and routes it to a new entity of the first inbox request matching it. A request no inbox
+request matches is answered with 400 Bad Request. The inbox request validates the request: its body, message id,
+authorization and the entity it selects. If it is valid, the inbox request triggers the event on the application's
+entity and waits for the application to respond.
+
+The application responds by triggering an event of a `ResponseEventType` on the inbox request, e.g. `RequestCompleted`,
+which responds 201 Created, `InvalidRequestCompleted` (400) or `FailedRequestCompleted` (500), or one the inbox request
+has a `response` for. It doesn't know which inbox request triggered it, since several can trigger the same event, so
+it triggers the response on `HttpInbox.Request`, the group of all inbox requests, identified by the session. The state
+machine takes it to the inbox request of the session:
+
+```java
+.trigger(RequestCompleted).with(d -> tuple("Order placed", d)).on(HttpInbox.Request).identifiedBy(entityIdFromSession())
+```
+
+The response goes back to the `RequestRouting` entity, which the listener sends to the client.
 
 Requests carrying a message id are deduplicated through the `MessageIds` id entity model: a retried request gets the
-response of the first one, without triggering anything again. Filters on the listener can authenticate, log or rewrite
+response of the first one, without triggering anything again. A request with the message id of an earlier request it
+differs from is answered with 400 Bad Request. A request without a message id that triggers an event on an existing
+entity is identified by the event type and the entity. Filters on the listener can authenticate, log or rewrite
 requests before they reach the inbox.
 
 A response of 500 Internal Server Error, which the application triggers with `FailedRequestCompleted`, is an event of
 [severity](monitoring.md#severity) `Error`.
 
+## Rollback
+
+An inbox request with a `rollback` takes the requests its matcher matches as rollbacks of the request with the message
+id its parser gives, e.g. a `DELETE` with the id of an earlier `PUT`. A rollback goes to the entity of that request,
+which rolls back the events the request caused on the application and responds 201 Created with `Rolled back`. A
+rollback repeated gets the response of the first one. A rollback of a request not received yet is answered with
+`Nothing to roll back`, and takes the message id, so that the request is rejected with 422 Unprocessable Entity if it
+arrives later. The message ids of all inbox requests share `MessageIds`, but a rollback only finds requests of its own
+inbox request: the message id of another type of request has nothing to roll back.
+
 ## Access tokens
 
-Routes requiring an access token, e.g. one issued by the [identity provider](identity-provider.md), take
+Inbox requests requiring an access token, e.g. one issued by the [identity provider](identity-provider.md), take
 `HttpInbox.bearerToken(verifier, scopes...)` as their authorizer, which authorizes the `sub` of the bearer token if the
 verifier finds it valid and it has the scopes. The `AccessTokenVerifier` is given the keys of the issuer, its issuer
 URI and optionally the audience the tokens must have:
@@ -45,10 +97,26 @@ issuer has added since.
 
 ## State diagrams
 
+`RequestRouting` routes a request to the inbox request matching it. The diagram is of an inbox with one inbox request,
+`PlaceOrder`, which can be rolled back:
+
 <object data="../images/com.github.thxmasj.backend.http.inbox.RequestRouting.svg" type="image/svg+xml"></object>
 
 [Open the RequestRouting diagram in full size](images/com.github.thxmasj.backend.http.inbox.RequestRouting.svg)
 
-<object data="../images/com.github.thxmasj.backend.http.inbox.RequestDispatching.svg" type="image/svg+xml"></object>
+The `PlaceOrder` inbox request, from receiving the request to its response, and its rollback:
 
-[Open the RequestDispatching diagram in full size](images/com.github.thxmasj.backend.http.inbox.RequestDispatching.svg)
+<object data="../images/com.github.thxmasj.backend.http.inbox.HttpInboxRequest.svg" type="image/svg+xml"></object>
+
+[Open the PlaceOrder diagram in full size](images/com.github.thxmasj.backend.http.inbox.HttpInboxRequest.svg)
+
+| State         | Meaning                                                                                                   |
+|---------------|-----------------------------------------------------------------------------------------------------------|
+| `Dispatched`  | The request is dispatched to the application, which hasn't responded yet                                   |
+| `Rejected`    | The application rejected the request, or the message id is taken by another or a rolled back request       |
+| `Completed`   | The request is answered, also if it was invalid or refused                                                 |
+| `RollingBack` | A rollback of the request is received, and its events on the application are being rolled back             |
+| `RolledBack`  | The request is rolled back                                                                                 |
+| `RejectedRollbackFromDispatched`, `RejectedRollbackFromCompleted` | The application rejected the rollback                  |
+
+The rollback states are only there for an inbox request with a `rollback`.

@@ -9,6 +9,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.github.thxmasj.backend.core.BasicEventType;
 import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.EntityModel;
+import com.github.thxmasj.backend.core.EntityModelGroup;
 import com.github.thxmasj.backend.core.EntitySelector;
 import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.IdEntityModel;
@@ -139,6 +140,42 @@ class ERDiagramFormatterTest {
     File file = new ERDiagramFormatter("Test", model()).formatToImage(directory.toString());
     assertThat(file.getName()).isEqualTo("Test.er.svg");
     assertThat(Files.readString(file.toPath())).startsWith("<svg").contains("Car", "Speed", "Engine", "Ids");
+  }
+
+  static final EntityModel Garage = EntityModel.of("Garage", UUID.randomUUID());
+  static final EntityModel Workshop = EntityModel.of("Workshop", UUID.randomUUID());
+  static final EntityModelGroup Places = EntityModelGroup.of("Places", UUID.randomUUID(), m -> m == Garage || m == Workshop);
+  static final EventType<Void, Void> CarParked = BasicEventType.of("Car parked", UUID.randomUUID());
+
+  /// A model where the car triggers an event on whichever place of the session it is in
+  static Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> modelWithGroup() {
+    return Map.of(
+        Car, Map.of(
+            Begin, List.of(
+                onEvent(CarStopped).to(States.Stopped)
+                    .trigger(CarParked).on(Places).identifiedBy(EntitySelector.entityIdFromSession())
+                    .output()
+            ),
+            States.Stopped, List.of()
+        ),
+        Garage, Map.of(Begin, List.of(onEvent(CarParked).toSelf().output())),
+        Workshop, Map.of(Begin, List.of(onEvent(CarParked).toSelf().output()))
+    );
+  }
+
+  @Test
+  void triggerOnGroupRelatesToEachEntityOfTheGroup() {
+    String diagram = new ERDiagramFormatter("Test", modelWithGroup()).format();
+    assertThat(diagram)
+        .contains("E1 --> E2 : Car stopped ↪ Car parked\n", "E1 --> E3 : Car stopped ↪ Car parked\n")
+        .contains("entity \"Garage\" as E2", "entity \"Workshop\" as E3")
+        .doesNotContain("Places");
+  }
+
+  @Test
+  void triggerOnGroupIsDrawnInStateDiagram(@TempDir Path directory) throws IOException {
+    File file = new PlantUMLFormatter(Car, modelWithGroup().get(Car)).formatToImage(directory.resolve("Car.svg").toFile());
+    assertThat(Files.readString(file.toPath())).contains("Car parked@Places");
   }
 
 }

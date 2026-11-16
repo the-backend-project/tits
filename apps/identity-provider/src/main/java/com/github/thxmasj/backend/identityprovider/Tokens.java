@@ -5,7 +5,7 @@ import static com.github.thxmasj.backend.core.EntitySelector.entityIdFromSession
 import static com.github.thxmasj.backend.core.EntitySelector.idEvent;
 import static com.github.thxmasj.backend.core.TransitionModelBuilder.WithEvent.onEvent;
 import static com.github.thxmasj.backend.core.Tuples.tuple;
-import static com.github.thxmasj.backend.http.inbox.HttpInbox.EntityModels.RequestDispatching;
+import static com.github.thxmasj.backend.http.inbox.HttpInbox.Request;
 import static com.github.thxmasj.backend.identityprovider.Clients.Client;
 import static com.github.thxmasj.backend.identityprovider.Clients.ClientIdClaimed;
 
@@ -88,7 +88,7 @@ public interface Tokens {
                     .otherwise(
                         onEvent(TokenIssued).to(States.Issued)
                             .assembleInput()
-                            .trigger(Inbox.ReplyCreated).with(d -> Reply.json(200, d)).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                            .trigger(Inbox.ReplyCreated).with(d -> Reply.json(200, d)).on(Request).identifiedBy(entityIdFromSession())
                             .output(Tuple2::t1),
                         d -> issue(d.t1(), registration(d.t2()), lifetime)
                     )
@@ -103,7 +103,7 @@ public interface Tokens {
   private static TransitionModel<Refusal, Refusal> refuse() {
     return onEvent(TokenRefused).to(States.Refused).severity(Severity.Warning)
         .assembleInput()
-        .trigger(Inbox.ReplyCreated).with(Tokens::reply).on(RequestDispatching).identifiedBy(entityIdFromSession())
+        .trigger(Inbox.ReplyCreated).with(Tokens::reply).on(Request).identifiedBy(entityIdFromSession())
         .output(Tuple2::t1);
   }
 

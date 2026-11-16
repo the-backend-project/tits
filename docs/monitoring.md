@@ -37,7 +37,7 @@ warns of the token requests it refuses:
 ```java
 onEvent(TokenRefused).to(States.Refused).severity(Severity.Warning)
     .assembleInput()
-    .trigger(Inbox.ReplyCreated).with(Tokens::reply).on(RequestDispatching).identifiedBy(entityIdFromSession())
+    .trigger(Inbox.ReplyCreated).with(Tokens::reply).on(Request).identifiedBy(entityIdFromSession())
     .output(Tuple2::t1)
 ```
 
@@ -71,7 +71,7 @@ These transitions have a severity of their own:
 | Model                                      | Events                                                    | Severity  |
 |--------------------------------------------|-----------------------------------------------------------|-----------|
 | `AtLeastOnce` [outbox requests](http-outbox.md#atleastonce) | The events leading to `Dead`: the attempts are exhausted, or the request is rejected permanently | `Error` |
-| `RequestDispatching` of the [HTTP inbox](http-inbox.md) | `Failed request completed`, which responds 500 Internal Server Error | `Error` |
+| Inbox requests of the [HTTP inbox](http-inbox.md) | `Failed request completed`, which responds 500 Internal Server Error | `Error` |
 | `Token request` of the [identity provider](identity-provider.md) | `Token refused`, as many of them may be an attempt to guess a secret | `Warning` |
 | `Settlement` of the [card payment template](cardpayments.md) | `Imbalance detected` and `Settlement timed out`, which leave the settlement in `Error` | `Error` |
 

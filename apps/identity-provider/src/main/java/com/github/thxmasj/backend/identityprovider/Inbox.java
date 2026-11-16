@@ -2,26 +2,21 @@ package com.github.thxmasj.backend.identityprovider;
 
 import static com.github.thxmasj.backend.core.Validated.invalid;
 import static com.github.thxmasj.backend.core.Validated.valid;
-import static com.github.thxmasj.backend.http.inbox.HttpInbox.EntityModels.RequestDispatching;
-import static com.github.thxmasj.backend.http.inbox.HttpInbox.EntityModels.RequestRouting;
-import static com.github.thxmasj.backend.http.inbox.HttpInbox.MessageIds;
-import static com.github.thxmasj.backend.http.inbox.HttpRequestRoute.ContentRoute.anyContent;
-import static com.github.thxmasj.backend.http.inbox.HttpRequestRoute.ContentRoute.newEntity;
-import static com.github.thxmasj.backend.http.inbox.TransitionModels.requestDispatchingTransitions;
-import static com.github.thxmasj.backend.http.inbox.TransitionModels.requestRoutingTransitions;
+import static com.github.thxmasj.backend.http.inbox.HttpInboxRequest.newEntity;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.TransitionModel;
+import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionContext;
 import com.github.thxmasj.backend.core.Validated;
 import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
 import com.github.thxmasj.backend.core.message.http.HttpRequestMessage.Method;
 import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
 import com.github.thxmasj.backend.http.inbox.Authorization;
-import com.github.thxmasj.backend.http.inbox.HttpInbox.CustomResponse;
-import com.github.thxmasj.backend.http.inbox.HttpRequestRoute;
+import com.github.thxmasj.backend.http.inbox.HttpInbox;
+import com.github.thxmasj.backend.http.inbox.HttpInboxRequest;
 import com.github.thxmasj.backend.http.inbox.ResponseEventType;
 import com.github.thxmasj.backend.identityprovider.Clients.Registration;
 import java.time.Duration;
@@ -67,59 +62,43 @@ public interface Inbox {
       DataType.json(Reply.class)
   );
 
-  List<HttpRequestRoute<?>> routes = List.of(
-      new HttpRequestRoute<>(
-          m -> m.method() == Method.POST && m.uri().getPath().equals("/token"),
-          Inbox::tokenRequest,
-          List.of(anyContent(
-              null,
-              null,
-              UUID.fromString("d1c8f5a2-3e97-4b06-a4d1-5f2b8e7c9a63"),
-              Tokens.TokenRequested,
-              Tokens.TokenRequest,
-              r -> r.body(),
-              newEntity()
-          ))
-      ),
-      new HttpRequestRoute<>(
-          m -> m.method() == Method.POST && m.uri().getPath().equals("/clients"),
-          Inbox::registration,
-          List.of(anyContent(
-              null,
-              (m, _) -> Authorization.authorizedElse(m.headerValue(RegisteredByHeader), "Unauthenticated"),
-              UUID.fromString("f7a2c6e9-4d15-4b83-9e0a-1c5d8b3f6e24"),
-              Clients.RegistrationRequested,
-              Clients.ClientRegistration,
-              r -> r.body(),
-              newEntity()
-          ))
-      )
-  );
+  /// A token request, `POST /token`
+  HttpInboxRequest<Tokens.Request> TokenHttpRequest = HttpInboxRequest
+      .matching(m -> m.method() == Method.POST && m.uri().getPath().equals("/token"))
+      .contentParser(Inbox::tokenRequest)
+      .process(Tokens.TokenRequested, Tokens.TokenRequest, r -> r.body(), newEntity())
+      .response(ReplyCreated, Inbox::reply)
+      .build("TokenHttpRequest", UUID.fromString("d1c8f5a2-3e97-4b06-a4d1-5f2b8e7c9a63"));
 
-  List<CustomResponse<?>> customResponses = List.of(
-      new CustomResponse<>(
-          ReplyCreated,
-          c -> new HttpResponseMessage(
-              c.input().status(),
-              reasonPhrase(c.input().status()),
-              Map.of(
-                  "Content-Type", "application/json;charset=UTF-8",
-                  // Responses with credentials must not be cached, RFC 6749 section 5.1
-                  "Cache-Control", "no-store",
-                  "X-Correlation-Id", c.correlationId()
-              ),
-              c.input().body().getBytes(UTF_8)
-          )
-      )
-  );
+  /// A client registration request, `POST /clients`
+  HttpInboxRequest<Registration> RegistrationHttpRequest = HttpInboxRequest
+      .matching(m -> m.method() == Method.POST && m.uri().getPath().equals("/clients"))
+      .contentParser(Inbox::registration)
+      .authorizer((m, _) -> Authorization.authorizedElse(m.headerValue(RegisteredByHeader), "Unauthenticated"))
+      .process(Clients.RegistrationRequested, Clients.ClientRegistration, r -> r.body(), newEntity())
+      .response(ReplyCreated, Inbox::reply)
+      .build("RegistrationHttpRequest", UUID.fromString("f7a2c6e9-4d15-4b83-9e0a-1c5d8b3f6e24"));
+
+  List<HttpInboxRequest<?>> requests = List.of(TokenHttpRequest, RegistrationHttpRequest);
+
+  private static HttpResponseMessage reply(TransitionContext<Reply> c) {
+    return new HttpResponseMessage(
+        c.input().status(),
+        reasonPhrase(c.input().status()),
+        Map.of(
+            "Content-Type", "application/json;charset=UTF-8",
+            // Responses with credentials must not be cached, RFC 6749 section 5.1
+            "Cache-Control", "no-store",
+            "X-Correlation-Id", c.correlationId()
+        ),
+        c.input().body().getBytes(UTF_8)
+    );
+  }
 
   static Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions(Duration tokenLifetime) {
-    var transitions = new HashMap<EntityModel, Map<State, List<TransitionModel<?, ?>>>>();
+    var transitions = new HashMap<>(HttpInbox.transitions(requests));
     transitions.putAll(Clients.transitions());
     transitions.putAll(Tokens.transitions(tokenLifetime));
-    transitions.put(RequestRouting, requestRoutingTransitions(routes));
-    transitions.put(RequestDispatching, requestDispatchingTransitions(routes, customResponses));
-    transitions.put(MessageIds, MessageIds.transitions());
     return transitions;
   }
 

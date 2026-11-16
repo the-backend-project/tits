@@ -2,7 +2,7 @@ package com.github.thxmasj.backend.templates.cardpayment;
 
 import static com.github.thxmasj.backend.core.EntityModel.Begin;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.RequestCompleted;
-import static com.github.thxmasj.backend.http.inbox.HttpInbox.EntityModels.RequestDispatching;
+import static com.github.thxmasj.backend.http.inbox.HttpInbox.Request;
 import static com.github.thxmasj.backend.core.EntitySelector.entityIdFromSession;
 import static com.github.thxmasj.backend.core.EntitySelector.newEntityId;
 import static com.github.thxmasj.backend.core.EntitySelector.CreationMode.CreateIfNotExists;
@@ -42,36 +42,36 @@ public class MerchantTransitions {
                 .assemble(c -> tuple(c.input(), c.eventReference(), c.entityId()))
                 .trigger(MerchantIdClaimed).with(d -> d.t1().id()).on(Ids).identifiedBy(d -> entityId(d.t3(), CreateIfNotExists))
                 .trigger(InitialSettlementOpened).with(d -> new com.github.thxmasj.backend.templates.cardpayment.MerchantId(d.t1().t1().id())).on(Settlement).identifiedBy(newEntityId())
-                .trigger(RequestCompleted).with(d -> tuple("", d.t1().t1().t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                .trigger(RequestCompleted).with(d -> tuple("", d.t1().t1().t2())).on(Request).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t1().t1().t1())
         ),
         Active, List.of(
             onEvent(MerchantSuspended).to(Suspended)
                 .assemble(TransitionContext::eventReference)
-                .trigger(RequestCompleted).with(d -> tuple("", d)).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                .trigger(RequestCompleted).with(d -> tuple("", d)).on(Request).identifiedBy(entityIdFromSession())
                 .output(),
             onEvent(MerchantDeleted).to(Deleted)
                 .assemble(TransitionContext::eventReference)
-                .trigger(RequestCompleted).with(d -> tuple("", d)).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                .trigger(RequestCompleted).with(d -> tuple("", d)).on(Request).identifiedBy(entityIdFromSession())
                 .output(),
             onEvent(MerchantUpdated).toSelf()
                 .assemble(c -> tuple(merge(c.log().last(DataType.json(Merchant.class)), c.input()), c.eventReference()))
-                .trigger(RequestCompleted).with(d -> tuple("", d.t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                .trigger(RequestCompleted).with(d -> tuple("", d.t2())).on(Request).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t1()),
             onEvent(MerchantLookedUp).toSelf().assemble((_, log) -> log.last(DataType.json(Merchant.class))).output(d -> d)
         ),
         Suspended, List.of(
             onEvent(MerchantResumed).to(Active)
                 .assemble(TransitionContext::eventReference)
-                .trigger(RequestCompleted).with(d -> tuple("", d)).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                .trigger(RequestCompleted).with(d -> tuple("", d)).on(Request).identifiedBy(entityIdFromSession())
                 .output(),
             onEvent(MerchantUpdated).toSelf()
                 .assemble(c -> tuple(merge(c.log().last(DataType.json(Merchant.class)), c.input()), c.eventReference()))
-                .trigger(RequestCompleted).with(d -> tuple("", d.t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                .trigger(RequestCompleted).with(d -> tuple("", d.t2())).on(Request).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t1()),
             onEvent(MerchantDeleted).to(Deleted)
                 .assemble(TransitionContext::eventReference)
-                .trigger(RequestCompleted).with(d -> tuple("", d)).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                .trigger(RequestCompleted).with(d -> tuple("", d)).on(Request).identifiedBy(entityIdFromSession())
                 .output()
         ),
         Deleted, List.of()

@@ -2,7 +2,7 @@ package com.github.thxmasj.backend.http.inbox;
 
 import jakarta.annotation.Nullable;
 
-/// The outcome of a route's authorizer: the subject a request is authorized for, or why it is refused
+/// The outcome of an inbox request's authorizer: the subject a request is authorized for, or why it is refused
 public sealed interface Authorization {
 
   /// @param subject the subject the request is authorized for, e.g. the client sending it

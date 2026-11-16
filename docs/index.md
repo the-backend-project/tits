@@ -101,7 +101,7 @@ A greeting is created by every `GET /`, and its transition to the `Greeted` stat
 ```java
 onEvent(GreetingRequested).to(States.Greeted)
     .assemble(c -> c.log().entityId().toString())
-    .trigger(GreetingResponseCreated).with(id -> id).on(RequestDispatching).identifiedBy(entityIdFromSession())
+    .trigger(GreetingResponseCreated).with(id -> id).on(Request).identifiedBy(entityIdFromSession())
     .output()
 ```
 

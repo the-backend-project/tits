@@ -690,6 +690,8 @@ public class StateMachine implements AutoCloseable {
       T inputData,
       TransitionStep<?> transitionStep
   ) {
+    if (eventTrigger.createEntity() && eventTrigger.entityModel() instanceof EntityModelGroup)
+      throw new IllegalArgumentException("An entity can't be created in the group " + eventTrigger.entityModel().name());
     return eventTrigger.createEntity() ?
         Mono.just(emptyEventLog(eventTrigger.entityModel())) :
         eventLog(eventTrigger.entitySelectors().getFirst().apply(inputData), eventTrigger.entityModel(), transitionStep);
@@ -700,12 +702,16 @@ public class StateMachine implements AutoCloseable {
       EntityModel entityModel,
       @Nullable TransitionStep<?> transitionStep
   ) {
+    if (entityModel instanceof EntityModelGroup && !(entitySelector instanceof ByIdFromSession))
+      throw new IllegalArgumentException("An entity of the group " + entityModel.name() + " can only be identified by the session");
     return switch (entitySelector) {
       case EntitySelector.ByIdFromSession _ -> {
         EventLog log = logFromSteps(transitionStep, entityModel);
+        // The model of the session's entity, which is not the target if that is a group
+        EntityModel model = log.entityModel();
         UUID id = log.entityId();
-        log = logFromNestedChanges(id, entityModel, transitionStep);
-        if (log == null) yield eventLogByEntityId(entityModel, id);
+        log = logFromNestedChanges(id, model, transitionStep);
+        if (log == null) yield eventLogByEntityId(model, id);
         else yield Mono.just(log);
       }
       case ById s -> {
@@ -758,7 +764,7 @@ public class StateMachine implements AutoCloseable {
 
   private EventLog logFromSteps(TransitionStep<?> context, EntityModel entityModel) {
     for (var c = context; c != null; c = c.previous()) {
-      if (c instanceof InputStep<?> i && i.log().entityModel().equals(entityModel)) {
+      if (c instanceof InputStep<?> i && EntityModelGroup.targets(entityModel, i.log().entityModel())) {
         return i.log();
       }
     }
@@ -767,7 +773,7 @@ public class StateMachine implements AutoCloseable {
       if (c instanceof InputStep<?> i) initial = i;
     }
     for (var c = initial.stage1(); c != null; c = c.previous()) {
-      if (c instanceof InputStep<?> i && i.log().entityModel().equals(entityModel)) {
+      if (c instanceof InputStep<?> i && EntityModelGroup.targets(entityModel, i.log().entityModel())) {
         return i.log();
       }
     }
@@ -837,20 +843,25 @@ public class StateMachine implements AutoCloseable {
     if (idExists != null)
       return Mono.just(idExists);
     return Mono.deferContextual(ctx -> {
-          UUID entityId = switch (eventTrigger.entitySelectors().getFirst().apply(data)) {
+          // The entity model of the entity, which for a trigger on a group is the model of the session's entity
+          EntityModel entityModel = eventTrigger.entityModel();
+          UUID entityId = null;
+          switch (eventTrigger.entitySelectors().getFirst().apply(data)) {
             case ByIdFromSession _ -> {
               try {
-                yield logFromSteps(tail, eventTrigger.entityModel()).entityId();
+                EventLog sessionLog = logFromSteps(tail, entityModel);
+                entityModel = sessionLog.entityModel();
+                entityId = sessionLog.entityId();
               } catch (NoSuchElementException e) {
                 throw new RuntimeException(e.getMessage() + "\nFound in Reactor context:\n" +
                     ctx.stream().map(x -> x.toString()).collect(joining("\n")));
               }
             }
-            case ById s -> s.id();
-            default -> null;
-          };
+            case ById s -> entityId = s.id();
+            default -> {}
+          }
           if (!skipCircularCheck && entityId != null) {
-            checkCircular(tail, eventTrigger.entityModel(), entityId, new InputEvent<>(eventTrigger.eventSpec().eventType(), adaptedData));
+            checkCircular(tail, entityModel, entityId, new InputEvent<>(eventTrigger.eventSpec().eventType(), adaptedData));
           }
           return Mono.just(ctx);
         }

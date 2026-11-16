@@ -52,7 +52,7 @@ before the id entity is created, so that it can create the client with it later 
 ```
 
 An existing entity is selected by any UUID with `entityId(id)`, so entities created with random UUIDs before the ids
-were time-ordered can still be found. An HTTP route's `parseEntityId` only selects existing entities, as its id comes
+were time-ordered can still be found. An HTTP inbox request's `parseEntityId` only selects existing entities, as its id comes
 from the request.
 
 ## Why not random UUIDs

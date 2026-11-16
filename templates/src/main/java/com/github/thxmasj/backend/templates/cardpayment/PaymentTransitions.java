@@ -17,7 +17,7 @@ import static com.github.thxmasj.backend.core.Tuples.tuple;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.FailedRequestCompleted;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.InvalidRequestCompleted;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.RequestCompleted;
-import static com.github.thxmasj.backend.http.inbox.HttpInbox.EntityModels.RequestDispatching;
+import static com.github.thxmasj.backend.http.inbox.HttpInbox.Request;
 import static com.github.thxmasj.backend.http.outbox.EventTypes.InvalidResponseReceived;
 import static com.github.thxmasj.backend.http.outbox.EventTypes.ServiceFoundUnavailable;
 import static com.github.thxmasj.backend.templates.cardpayment.Aggregate.Settlement;
@@ -299,7 +299,7 @@ public class PaymentTransitions {
                             .assemble(c -> tuple(c.input(), c.eventReference()))
                             .trigger(InvalidRequestCompleted)
                             .with(d -> tuple("Unknown merchant " + d.t1().value(), d.t2()))
-                            .on(RequestDispatching).identifiedBy(entityIdFromSession())
+                            .on(Request).identifiedBy(entityIdFromSession())
                             .output(d -> d.t1().t1()),
                         d -> new MerchantId(d.t1().t1().merchantId())
                     )
@@ -308,7 +308,7 @@ public class PaymentTransitions {
                             .assemble(c -> tuple(c.input(), c.eventReference()))
                             .trigger(InvalidRequestCompleted)
                             .with(d -> tuple("Inactive merchant " + d.t1().value(), d.t2()))
-                            .on(RequestDispatching).identifiedBy(entityIdFromSession())
+                            .on(Request).identifiedBy(entityIdFromSession())
                             .output(d -> d.t1().t1()),
                         d -> new MerchantId(d.t1().t1().merchantId())
                     )
@@ -317,7 +317,7 @@ public class PaymentTransitions {
                             .assemble(c -> tuple(c.input(), c.eventReference()))
                             .trigger(InvalidRequestCompleted)
                             .with(d -> tuple("Unauthorized access to merchant " + d.t1().value(), d.t2()))
-                            .on(RequestDispatching).identifiedBy(entityIdFromSession())
+                            .on(Request).identifiedBy(entityIdFromSession())
                             .output(d -> d.t1().t1()),
                         d -> new MerchantId(d.t1().t1().merchantId())
                     )
@@ -326,7 +326,7 @@ public class PaymentTransitions {
                             .assemble(c -> tuple(c.input(), c.eventReference()))
                             .trigger(InvalidRequestCompleted)
                             .with(d -> tuple("Insufficient details for merchant provided", d.t2()))
-                            .on(RequestDispatching).identifiedBy(entityIdFromSession())
+                            .on(Request).identifiedBy(entityIdFromSession())
                             .output(),
                         _ -> null
                     )
@@ -335,7 +335,7 @@ public class PaymentTransitions {
                             .assemble(c -> tuple(c.input(), c.eventReference()))
                             .trigger(InvalidRequestCompleted)
                             .with(d -> tuple(d.t1().error(), d.t2()))
-                            .on(RequestDispatching)
+                            .on(Request)
                             .identifiedBy(entityIdFromSession())
                             .output(d -> d.t1().t1()),
                         d -> d.t1().t3().invalid()
@@ -345,7 +345,7 @@ public class PaymentTransitions {
                             .assemble(c -> tuple(c.input(), c.eventReference()))
                             .trigger(InvalidRequestCompleted)
                             .with(d -> tuple(d.t1().error(), d.t2()))
-                            .on(RequestDispatching)
+                            .on(Request)
                             .identifiedBy(entityIdFromSession())
                             .output(d -> d.t1().t1()),
                         d -> d.t1().t4().invalid()
@@ -363,7 +363,7 @@ public class PaymentTransitions {
                     .assemble(c -> c.eventReference())
                     .trigger(FailedRequestCompleted)
                     .with(d -> tuple("Authentication unavailable", d))
-                    .on(RequestDispatching)
+                    .on(Request)
                     .identifiedBy(entityIdFromSession())
                     .output(),
                 onEvent(PaymentEvent.AuthenticationFailed).to(AuthenticationFailed)
@@ -374,7 +374,7 @@ public class PaymentTransitions {
                             .assemble(c -> c.eventReference())
                             .trigger(InvalidRequestCompleted)
                             .with(d -> tuple("Invalid authentication token", d))
-                            .on(RequestDispatching)
+                            .on(Request)
                             .identifiedBy(entityIdFromSession())
                             .output(),
                         _ -> null
@@ -385,7 +385,7 @@ public class PaymentTransitions {
                             .assemble(c -> c.eventReference())
                             .trigger(InvalidRequestCompleted)
                             .with(d -> tuple("Payment token is inactive", d))
-                            .on(RequestDispatching)
+                            .on(Request)
                             .identifiedBy(entityIdFromSession())
                             .output(),
                         _ -> null
@@ -405,7 +405,7 @@ public class PaymentTransitions {
                             .identifiedBy(newEntityId())
                             .trigger(InvalidRequestCompleted)
                             .with(d -> tuple("Authentication failed", d.t1().t4()))
-                            .on(RequestDispatching)
+                            .on(Request)
                             .identifiedBy(entityIdFromSession())
                             .output(),
                         d -> d.t1()
@@ -426,7 +426,7 @@ public class PaymentTransitions {
                             .identifiedBy(newEntityId())
                             .trigger(InvalidRequestCompleted)
                             .with(d -> tuple("Payment token is not accessible", d.t1().t5()))
-                            .on(RequestDispatching)
+                            .on(Request)
                             .identifiedBy(entityIdFromSession())
                             .output(),
                         d -> d.t1()
@@ -438,7 +438,7 @@ public class PaymentTransitions {
                             .assemble(c -> c.eventReference())
                             .trigger(FailedRequestCompleted)
                             .with(d -> tuple("Unknown authentication status", d))
-                            .on(RequestDispatching)
+                            .on(Request)
                             .identifiedBy(entityIdFromSession())
                             .output(),
                         _ -> null
@@ -467,7 +467,7 @@ public class PaymentTransitions {
                             )))
                             .on(authorisation.outbox())
                             .identifiedBy(newEntityId())
-                            .trigger(RequestCompleted).with(d -> tuple("", d.t1().t1().t3())).on(RequestDispatching)
+                            .trigger(RequestCompleted).with(d -> tuple("", d.t1().t1().t3())).on(Request)
                             .identifiedBy(entityIdFromSession())
                             .reversible(
                                 assembleWithContext((c, rollbackType) -> {
@@ -536,7 +536,7 @@ public class PaymentTransitions {
                             ))
                             .trigger(preauthorisation.requestDispatched()).withReactive(d -> preauthorisation.input(d.t6(), tuple(d.t1(), d.t2(), d.t3(), d.t4()))).on(preauthorisation.outbox()).identifiedBy(newEntityId())
 //                            .trigger(preauthorisation()).with(d -> tuple(d.t1(), d.t2(), d.t3(), d.t4())).to(Acquirer).responseValidator(validatePreauthorisationResponse())
-                            .trigger(RequestCompleted).with(d -> tuple("", d.t1().t5())).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                            .trigger(RequestCompleted).with(d -> tuple("", d.t1().t5())).on(Request).identifiedBy(entityIdFromSession())
                             .reversible(
                                 assembleWithContext((c, rollbackType) -> {
                                   EventLog log = c.log();
@@ -744,7 +744,7 @@ public class PaymentTransitions {
         .then(
             onEvent(UnauthorisedCaptureDeclined).toSelf()
                 .assemble(c -> tuple(c.input(), c.eventReference()))
-                .trigger(InvalidRequestCompleted).with(d -> tuple("Capture amount too large", d.t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                .trigger(InvalidRequestCompleted).with(d -> tuple("Capture amount too large", d.t2())).on(Request).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t1()),
             CaptureRequestData::captureData
         )
@@ -768,7 +768,7 @@ public class PaymentTransitions {
 //                .to(Acquirer).guaranteed()
                 .trigger(InvalidRequestCompleted)
                 .with(d -> tuple("Capture on expired authorisation", d.t1().t6()))
-                .on(RequestDispatching)
+                .on(Request)
                 .identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t1().t4()),
             CaptureRequestData::captureData
@@ -791,7 +791,7 @@ public class PaymentTransitions {
                 )))
                 .on(capture.outbox())
                 .identifiedBy(newEntityId())
-                .trigger(RequestCompleted).with(d -> tuple("", d.t1().t1().t2())).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                .trigger(RequestCompleted).with(d -> tuple("", d.t1().t1().t2())).on(Request).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t1().t1().t1().captureData())
         );
   }
@@ -826,7 +826,7 @@ public class PaymentTransitions {
                         )))
                         .on(refundAuthorisationToAcquirer.outbox())
                         .identifiedBy(newEntityId())
-                        .trigger(RequestCompleted).with(d -> tuple("", d.t1().t1().eventReference())).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                        .trigger(RequestCompleted).with(d -> tuple("", d.t1().t1().eventReference())).on(Request).identifiedBy(entityIdFromSession())
                         .reversible(
                             assemble((log, rollbackType) -> {
                               Tuple2<Authorisation, Merchant> paymentData = log.one(PaymentRequestValidated);
@@ -868,7 +868,7 @@ public class PaymentTransitions {
                         .assemble(c -> tuple(c.input(), c.eventReference()))
                         .trigger(InvalidRequestCompleted)
                         .with(d -> tuple("Refund amount too large", d.t2()))
-                        .on(RequestDispatching)
+                        .on(Request)
                         .identifiedBy(entityIdFromSession())
                         .output(d -> d.t1().t1()),
                     RefundRequestData::refundData

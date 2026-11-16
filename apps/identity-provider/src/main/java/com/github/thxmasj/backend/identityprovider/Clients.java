@@ -5,7 +5,7 @@ import static com.github.thxmasj.backend.core.EntitySelector.entityIdFromSession
 import static com.github.thxmasj.backend.core.EntitySelector.newEntityId;
 import static com.github.thxmasj.backend.core.TransitionModelBuilder.WithEvent.onEvent;
 import static com.github.thxmasj.backend.core.Tuples.tuple;
-import static com.github.thxmasj.backend.http.inbox.HttpInbox.EntityModels.RequestDispatching;
+import static com.github.thxmasj.backend.http.inbox.HttpInbox.Request;
 
 import com.github.thxmasj.backend.core.BasicEventType;
 import com.github.thxmasj.backend.core.BasicEventType.ReadOnly;
@@ -123,7 +123,7 @@ public interface Clients {
                     .when(d -> d.t2().isIdExists()).then(
                         onEvent(RegistrationRejected).to(States.Rejected)
                             .assembleInput()
-                            .trigger(Inbox.ReplyCreated).with(d -> Reply.error(409, "invalid_client_metadata", "Client id " + d.clientId() + " is taken")).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                            .trigger(Inbox.ReplyCreated).with(d -> Reply.error(409, "invalid_client_metadata", "Client id " + d.clientId() + " is taken")).on(Request).identifiedBy(entityIdFromSession())
                             .output(Tuple2::t1),
                         d -> d.t1().t1()
                     )
@@ -131,7 +131,7 @@ public interface Clients {
                         onEvent(RegistrationAccepted).to(States.Accepted)
                             .assemble(c -> tuple(c.input(), c.timestamp().toEpochSecond()))
                             .trigger(ClientRegistered).with(d -> d.t1().t1()).on(Client).identifiedBy(d -> newEntityId(d.t1().t2()))
-                            .trigger(Inbox.ReplyCreated).with(d -> Reply.json(201, registered(d.t1().t1().t1(), d.t1().t2()))).on(RequestDispatching).identifiedBy(entityIdFromSession())
+                            .trigger(Inbox.ReplyCreated).with(d -> Reply.json(201, registered(d.t1().t1().t1(), d.t1().t2()))).on(Request).identifiedBy(entityIdFromSession())
                             .output(d -> d.t1().t1().t1().t1()),
                         Tuple2::t1
                     )

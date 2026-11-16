@@ -5,6 +5,7 @@ import static java.util.stream.Collectors.joining;
 
 import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.EntityModel;
+import com.github.thxmasj.backend.core.EntityModelGroup;
 import com.github.thxmasj.backend.core.EventTrigger;
 import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.IdEntityModel;
@@ -28,7 +29,8 @@ import net.sourceforge.plantuml.SourceStringReader;
 /// An ER diagram of a state machine's complete model, i.e. the transitions of all its entity models, as given to the
 /// state machine. Each entity model is an entity listing the event types it accepts, and the entity models are related
 /// through the triggers of their transitions: an arrow from one entity to another tells that an event on the first
-/// triggers an event on the other. Triggers of reversals are red.
+/// triggers an event on the other. A trigger on an [EntityModelGroup] relates to each entity model of the group in
+/// the model. Triggers of reversals are red.
 public class ERDiagramFormatter {
 
   private final String name;
@@ -144,12 +146,25 @@ public class ERDiagramFormatter {
       Set<Relation> relations
   ) {
     for (EventTrigger<?, ?, ?> trigger : triggers) {
-      EntityModel target = trigger.entityModel() != null ? trigger.entityModel() : entity;
       EventType<?, ?> triggered = trigger.eventSpec().eventType();
-      eventTypes.computeIfAbsent(target, _ -> new LinkedHashSet<>()).add(triggered);
       String label = eventType.name() + " ↪ " + triggered.name();
-      relations.add(new Relation(entity, target, reversal ? "<color:#7a0000>" + label + "</color>" : label));
+      for (EntityModel target : targets(trigger.entityModel() != null ? trigger.entityModel() : entity)) {
+        eventTypes.computeIfAbsent(target, _ -> new LinkedHashSet<>()).add(triggered);
+        relations.add(new Relation(entity, target, reversal ? "<color:#7a0000>" + label + "</color>" : label));
+      }
     }
+  }
+
+  /// The entities a trigger on the target relates to: the entity models of the model in the group, if the target is a
+  /// group with any of them, otherwise the target itself
+  private List<EntityModel> targets(EntityModel target) {
+    if (!(target instanceof EntityModelGroup group))
+      return List.of(target);
+    List<EntityModel> members = transitions.keySet().stream()
+        .filter(group::includes)
+        .sorted(comparing(EntityModel::name))
+        .toList();
+    return members.isEmpty() ? List.of(target) : members;
   }
 
   // Combines the relations between the same pair of entities into one arrow with the labels stacked, as parallel
