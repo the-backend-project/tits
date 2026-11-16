@@ -357,10 +357,18 @@ public class PlantUMLFormatter {
     );
   }
 
-  // Events of transitions with a severity above Info are named in bold, in the colour of their severity
+  // Events of transitions with a severity above Info are named in bold, after a symbol for their severity, in the colour
+  // of their severity. The symbols have a text presentation by default, so they are drawn in that colour rather than as
+  // emoji.
   private static String eventName(EventType<?, ?> eventType, Severity severity) {
-    DiagramColours.Colour colour = DiagramColours.of(severity);
-    return colour == null ? eventType.name() : "<color:" + colour.light() + "><b>" + eventType.name() + "</b></color>";
+    String symbol = switch (severity) {
+      case Info -> null;
+      case Warning -> "\u26a0";
+      case Error -> "\u2716";
+      case Critical -> "\u203c";
+    };
+    if (symbol == null) return eventType.name();
+    return "<color:" + DiagramColours.of(severity).light() + "><b>" + symbol + " " + eventType.name() + "</b></color>";
   }
 
   private String state(State state) {
