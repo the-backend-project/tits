@@ -79,6 +79,13 @@ listener can authenticate, log or rewrite requests before they reach the inbox.
 A response of 500 Internal Server Error, which the application triggers with `FailedRequestCompleted`, is an event of
 [severity](monitoring.md#severity) `Error`.
 
+If a function the inbox request is given throws an exception, e.g. its content parser, or its normalizer when a
+retried request is compared with the first one, the transition fails and nothing of it is stored. The listener answers
+the request with 500 Internal Server Error, and the state machine tells its `Listener` of the
+[failed transition](monitoring.md#the-lines), which `JsonLinesListener` writes as an error. The same goes for a
+transition of the application the request triggers. A request the client got wrong is better answered with an invalid
+`Validated` or a refused `Authorization`, which give 4xx and the reason.
+
 ## Content routing
 
 The requests to one endpoint can trigger different events, by their content. An inbox request then has several

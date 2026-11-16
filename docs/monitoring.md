@@ -8,7 +8,7 @@ severity. Locally that is the terminal, and on Azure it is Application Insights 
 ```mermaid
 flowchart LR
     transition["Transition with<br>a severity"] --> sm[State machine]
-    sm -- "Accepted events" --> listener[JsonLinesListener]
+    sm -- "Accepted events,<br>failed transitions" --> listener[JsonLinesListener]
     listener -- "Lines of JSON" --> stdout([stdout])
     stdout --> local["Terminal,<br>docker compose logs"]
     stdout --> host
@@ -110,10 +110,16 @@ Every accepted event is a line of JSON, here an outbox request which is given up
   event log does not have them.
 * **The events of a transaction are written together**, after it is committed, with those of an entity in the order
   of their numbers. They are written whether or not the one who triggered them still waits for them.
+* **A failed transition** is written as a line of severity `ERROR`. A transition fails when one of its functions
+  throws an exception, e.g. an assembler, a guard, the data of a trigger, or a function an
+  [inbox request](http-inbox.md) is given. Nothing of the change is stored, and the exception is passed on to the
+  one who triggered the event. The line has the entity model, entity id, event type and correlation id of the
+  transition the exception was thrown in, also when that one was triggered by another, but no `eventNumber`, as no
+  event was stored. The message ends with the exception, which may have data.
 * **A failure to process a delayed trigger** is written as a line of severity `ERROR` with only `time`, `severity`
   and `message`, as there is no event to tell about. The message is the failure as it is, which may have data, e.g.
-  the parameters of a query which failed. The worker tries again. No other failure is written, see the
-  [limits](#limits).
+  the parameters of a query which failed. The worker tries again. If the transition of the delayed event failed, it
+  is written as a failed transition too. No other failure is written, see the [limits](#limits).
 * **The other output can't pass for events.** The debug output of the libraries goes to stdout as well (see the
   [gaps](hello-world.md#logs) of the demo), and it has data which anyone can send, such as whole requests. So that no
   such data makes up a line of its own, every line after the first of a text is marked with `  | `. An application
@@ -210,11 +216,11 @@ collected, so keep an eye on the size of the logs of an application with more th
 
 * **The alerts are only as good as the severities.** An event of a transition with no severity is `Info`, and raises
   nothing.
-* **Only events are monitored**, and the failures to process a delayed trigger. Other failures raise no alert
-  ([#216](https://github.com/the-backend-project/tits/issues/216)). A request failing without an event, e.g. on an
-  exception, is answered with 500 by the HTTP inbox listener and is among the `requests` of Application Insights. A
-  failure of the work in the background is in the debug output at best: a conditional trigger failing to fire, an
-  action failing, or the event an action results in failing to be processed. The same goes for a delayed trigger
+* **Only events are monitored**, and failed transitions and failures to process a delayed trigger. Other failures
+  raise no alert ([#216](https://github.com/the-backend-project/tits/issues/216)). A request failing outside a
+  transition, e.g. as the database is unavailable, is answered with 500 by the HTTP inbox listener and is among the
+  `requests` of Application Insights. A failure of the work in the background, other than a failed transition, is in
+  the debug output at best: a conditional trigger failing to fire, or an action failing. The same goes for a delayed trigger
   which can't be read from the database, e.g. as its event type is no longer in the code.
 * **Background work stops when the app scales to zero**, see the [limitations](azure-functions.md#limitations) of
   the deployment. Its events, and their alerts, wait with it.

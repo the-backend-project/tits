@@ -63,7 +63,8 @@ public class TransitionModel<I, O> {
 
   public Mono<OutputStep<O>> calculate(InputStep<I> inputStep) {
     log(modelContext, "calculate [" + eventType().name() + "] on [" + inputStep.log().entityModel().name() + ":" + inputStep.log().entityId() + "] (input: " + inputStep.input() + ")");
-    return chain.apply(Mono.just(inputStep));
+    return chain.apply(Mono.just(inputStep))
+        .doOnError(e -> inputStep.stateMachine().transitionFailed(inputStep, e));
   }
 
   Mono<OutputStep<O>> calculateReverse(Mono<InputStep<I>> initial) {

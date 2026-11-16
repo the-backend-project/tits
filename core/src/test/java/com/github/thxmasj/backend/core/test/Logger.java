@@ -2,9 +2,8 @@ package com.github.thxmasj.backend.core.test;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.github.thxmasj.backend.core.EntityModel;
+import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.Listener;
-import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
-import java.time.*;
 import java.util.*;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -38,101 +37,13 @@ public class Logger implements Listener {
   }
 
   @Override
+  public void transitionFailed(String correlationId, EntityModel entityModel, UUID entityId, EventType<?, ?> eventType, Throwable failure) {
+    log(header(entityId, correlationId) + " " + eventType.name() + " on " + entityModel.name() + " failed: " + failure);
+  }
+
+  @Override
   public void processNextDelayedTriggerFailed(Throwable t) {
     t.printStackTrace();
     log("Process next delayed trigger failed: " + t.toString());
   }
-
-  @Override
-  public void forwardingAttempt(
-      UUID requestId,
-      EntityModel entityModel,
-      String queue,
-      UUID entityId,
-      int eventNumber,
-      ZonedDateTime enqueuedAt,
-      int attempt,
-      String correlationId
-  ) {
-    log("Forwarding attempt: " + requestId);
-  }
-
-  @Override
-  public void forwardingCompleted(
-      UUID requestId,
-      EntityModel entityModel,
-      String queue,
-      UUID entityId,
-      int eventNumber,
-      ZonedDateTime enqueuedAt,
-      int attempt,
-      String correlationId,
-      HttpResponseMessage receipt,
-      String reason
-  ) {
-    log("Forwarding completed: " + requestId);
-  }
-
-  @Override
-  public void forwardingBackedOff(
-      UUID requestId,
-      EntityModel entityModel,
-      String queue,
-      UUID entityId,
-      int eventNumber,
-      ZonedDateTime enqueuedAt,
-      int attempt,
-      String correlationId,
-      String reason,
-      ZonedDateTime nextAttemptAt,
-      Duration backoff
-  ) {
-    log(header(entityId, correlationId) + " Forwarding backed off: " + requestId +", Reason: " + reason);
-  }
-
-  @Override
-  public void forwardingDead(
-      UUID requestId,
-      EntityModel entityModel,
-      String queue,
-      UUID entityId,
-      int eventNumber,
-      ZonedDateTime enqueuedAt,
-      int attempt,
-      String correlationId,
-      String reason
-  ) {
-    log(header(entityId, correlationId) + " Forwarding failed: " + requestId + ", Reason: " + reason);
-  }
-
-  @Override
-  public void forwardingDeadByExhaustion(
-      UUID requestId,
-      EntityModel entityModel,
-      String queue,
-      UUID entityId,
-      int eventNumber,
-      ZonedDateTime enqueuedAt,
-      int attempt,
-      String correlationId,
-      String reason
-  ) {
-    log(header(entityId, correlationId) + " Forwarding failed after maximum attempt time: " + requestId + ", Reason: " + reason);
-  }
-
-  @Override
-  public void forwardingDeadlock(String queue) {
-    log("Forwarding deadlock");
-  }
-
-  @Override
-  public void forwardingError(String queue, Throwable error) {
-    log("Forwarding error for queue " + queue + ": " + error.toString());
-  }
-
-  @Override
-  public void forwardingEmptyQueue(String queue) {
-    log("Forwarding from " + queue + ": empty");
-  }
-
 }

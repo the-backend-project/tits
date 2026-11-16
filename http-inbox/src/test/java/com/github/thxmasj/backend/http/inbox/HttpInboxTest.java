@@ -292,8 +292,20 @@ public class HttpInboxTest {
       )
       .build("OwnedRequest", UUID.fromString("e2b7d14c-6a93-4f08-8c5e-3d9a1f6b2c47"));
 
+  /// Its normalizer expects a header, which a retried request may lack
+  static HttpInboxRequest<byte[]> NormalizedRequest = withBody("PUT .*/normalized/.*")
+      .messageIdParser(parseMessageId("PUT .*/normalized/(.*)", 1))
+      .normalizer(m -> {
+        if (m.headerValue("X-Version") == null)
+          throw new IllegalStateException("X-Version missing");
+        return m;
+      })
+      .process(InternalProcessingRequested, Lamp, newEntity())
+      .build("NormalizedRequest", UUID.fromString("5c2e8b17-4d9a-4f36-b0e1-7a3d6c9f2e58"));
+
   static List<HttpInboxRequest<?>> requests = List.of(
       ContentRequest,
+      NormalizedRequest,
       OwnedRequest,
       withBody("PUT .*/protected/.*")
           .authorizer(HttpInbox.bearerToken(verifier, "payments"))
@@ -496,6 +508,25 @@ public class HttpInboxTest {
           .block(Duration.ofSeconds(5));
       assertEquals(201, response.statusCode());
       return response;
+    } finally {
+      listener.disposeNow();
+    }
+  }
+
+  /// A function of the inbox request which throws, here the normalizer comparing a retried request with the first one,
+  /// fails the transition, and the request is answered with 500 Internal Server Error
+  @Test
+  public void whenNormalizerThrowsOnRetriedRequestOverHttpThenInternalServerError() {
+    DisposableServer listener = new HttpInboxListener(stateMachine).listen(0);
+    try {
+      var client = new NettyHttpClient(new NettyHttpClientBuilder().build());
+      URI uri = URI.create("http://localhost:" + listener.port() + "/normalized/" + UUID.randomUUID());
+      HttpResponseMessage first = client.exchange(new HttpRequestMessage(PUT, uri, Map.of("X-Version", "1"), "Hello!".getBytes()))
+          .block(Duration.ofSeconds(5));
+      assertEquals(201, first.statusCode());
+      HttpResponseMessage retried = client.exchange(new HttpRequestMessage(PUT, uri, Map.of(), "Hello!".getBytes()))
+          .block(Duration.ofSeconds(5));
+      assertEquals(500, retried.statusCode());
     } finally {
       listener.disposeNow();
     }
