@@ -166,7 +166,7 @@ public class PlantUMLFormatter {
 
   private static String detailHtml(String detail) {
     String html = detail
-        .replace("<&share>", "\u21aa ").replace("<&bolt>", "\u26a1 ").replace("<&warning>", "\u26a0 ")
+        .replace("<&share>", "\u21aa ").replace("<&bolt>", "\u26a1 ")
         .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     return html.contains("&lt;color:red&gt;")
         ? "<span style=\"color:#7a0000\">" + html.replace("&lt;color:red&gt;", "") + "</span>"
@@ -348,14 +348,24 @@ public class PlantUMLFormatter {
         sourceState.equals(Begin) && !targetState.equals(Begin) ? "-right->" : "-->",
         stateId(targetState),
         Stream.of(
-            String.format("%s", eventType.name()),
-            transition.severity() != Severity.Info ? "<&warning>" + transition.severity() : "",
+            eventName(eventType, transition.severity()),
             eventType.inputDataType().equals(DataType.none()) && eventType.outputDataType().equals(DataType.none()) ? "" : "f: " + eventType.inputDataType().name() + " → " + eventType.outputDataType().name(),
             transition.triggers().stream().map(t -> "<&share>" + t.eventSpec().eventType().name() + "@" + ofNullable(t.entityModel()).map(m -> m.name()).orElse("???")).collect(joining("\\n")),
             transition.actions().stream().map(a -> "<&bolt>" + a.name()).collect(joining("\\n")),
             transition.reverseModel() != null ? transition.reverseModel().triggers().stream().map(t -> "<&share><color:red>" + t.eventSpec().eventType().name() + "@" + ofNullable(t.entityModel()).map(m -> m.name()).orElse("???")).collect(joining("\\n")) : ""
         ).filter(not(String::isEmpty)).collect(joining("\\n"))
     );
+  }
+
+  // Events of transitions with a severity above Info are named in bold, in the colour of their severity
+  private static String eventName(EventType<?, ?> eventType, Severity severity) {
+    String colour = switch (severity) {
+      case Info -> null;
+      case Warning -> "#b8860b";
+      case Error -> "#e65c00";
+      case Critical -> "#d40000";
+    };
+    return colour == null ? eventType.name() : "<color:" + colour + "><b>" + eventType.name() + "</b></color>";
   }
 
   private String state(State state) {

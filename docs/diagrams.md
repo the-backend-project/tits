@@ -8,5 +8,6 @@ The diagrams in this documentation, of the [card payment template](cardpayments.
 `doc-diagrams` module. It is the only module depending on the diagram module, so PlantUML is never a dependency of the
 libraries or the apps.
 
-A state diagram shows the details of an event when the mouse hovers over its name: its data, the events and actions
-it triggers, and the [severity](monitoring.md#severity) of its transition if it has one.
+A state diagram shows the details of an event when the mouse hovers over its name: its data and the events and actions
+it triggers. An event whose transition has a [severity](monitoring.md#severity) above `Info` is named in bold, in a colour
+for its severity: dark yellow for `Warning`, orange for `Error` and red for `Critical`.

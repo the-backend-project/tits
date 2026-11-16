@@ -76,7 +76,7 @@ These transitions have a severity of their own:
 | `Authorization` of the [identity provider](identity-provider.md) | `Authorization refused`, for an unknown client or redirect URI, and `User authentication failed` | `Warning` |
 | `Settlement` of the [card payment template](cardpayments.md) | `Imbalance detected` and `Settlement timed out`, which leave the settlement in `Error` | `Error` |
 
-The [state diagrams](diagrams.md) show the severity of a transition among the details of its event.
+The [state diagrams](diagrams.md) show the severity of a transition in the colour of its event's name.
 
 ## The lines
 
