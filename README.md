@@ -20,30 +20,32 @@ it shows the data and triggers of an event when the mouse hovers over its name.
 <td>
 
 ```java
-Begin, List.of(
-  onEvent(RegistrationRequested)
-    .to(Accepted)
-    .trigger(ClientIdClaimed)
-      .on(ClientIds)
-    .when(clientIdTaken).then(
-      onEvent(RegistrationRejected)
-        .to(Rejected)
-        .trigger(ReplyCreated)
-          .with(d -> error(409, ...))
-          .on(Request)
-    )
-    .otherwise(
-      onEvent(RegistrationAccepted)
-        .to(Accepted)
-        .trigger(ClientRegistered)
-          .on(Client)
-        .trigger(ReplyCreated)
-          .with(d -> json(201, ...))
-          .on(Request)
-    )
-),
-Accepted, List.of(),
-Rejected, List.of()
+var transitions = Map.of(
+  Begin, List.of(
+    onEvent(RegistrationRequested)
+      .to(Accepted)
+      .trigger(ClientIdClaimed)
+        .on(ClientIds)
+      .when(clientIdTaken).then(
+        onEvent(RegistrationRejected)
+          .to(Rejected)
+          .trigger(ReplyCreated)
+            .with(d -> error(409, ...))
+            .on(Request)
+      )
+      .otherwise(
+        onEvent(RegistrationAccepted)
+          .to(Accepted)
+          .trigger(ClientRegistered)
+            .on(Client)
+          .trigger(ReplyCreated)
+            .with(d -> json(201, ...))
+            .on(Request)
+      )
+  ),
+  Accepted, List.of(),
+  Rejected, List.of()
+);
 ```
 
 </td>
