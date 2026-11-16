@@ -1,6 +1,7 @@
 package com.github.thxmasj.backend.diagram;
 
 import static java.util.Comparator.comparing;
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.stream.Collectors.joining;
 
 import com.github.thxmasj.backend.core.DataType;
@@ -12,7 +13,7 @@ import com.github.thxmasj.backend.core.IndexEntityModel;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.TransitionModel;
 import java.io.File;
-import java.io.FileOutputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.ArrayList;
@@ -64,9 +65,9 @@ public class ERDiagramFormatter {
 
   public File formatToImage(String directory) throws IOException {
     File file = file(directory, "svg");
-    try (var out = new FileOutputStream(file)) {
-      new SourceStringReader(format()).outputImage(out, new FileFormatOption(FileFormat.SVG));
-    }
+    var svg = new ByteArrayOutputStream();
+    new SourceStringReader(format()).outputImage(svg, new FileFormatOption(FileFormat.SVG));
+    Files.writeString(file.toPath(), DiagramColours.addStyle(svg.toString(UTF_8)));
     return file;
   }
 
@@ -148,7 +149,7 @@ public class ERDiagramFormatter {
       EventType<?, ?> triggered = trigger.eventSpec().eventType();
       eventTypes.computeIfAbsent(target, _ -> new LinkedHashSet<>()).add(triggered);
       String label = eventType.name() + " ↪ " + triggered.name();
-      relations.add(new Relation(entity, target, reversal ? "<color:#7a0000>" + label + "</color>" : label));
+      relations.add(new Relation(entity, target, reversal ? "<color:" + DiagramColours.REVERSAL.light() + ">" + label + "</color>" : label));
     }
   }
 

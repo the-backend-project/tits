@@ -10,4 +10,7 @@ libraries or the apps.
 
 A state diagram shows the details of an event when the mouse hovers over its name: its data and the events and actions
 it triggers. An event whose transition has a [severity](monitoring.md#severity) above `Info` is named in bold, in a colour
-for its severity: dark yellow for `Warning`, orange for `Error` and red for `Critical`.
+for its severity: amber for `Warning`, orange for `Error` and red for `Critical`.
+
+The diagrams follow the colour scheme of the page. In dark mode, their arrows and the text on them are drawn in light
+colours.

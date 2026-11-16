@@ -108,7 +108,7 @@ class ERDiagramFormatterTest {
   void triggersRelateEntities() {
     String diagram = new ERDiagramFormatter("Test", model()).format();
     assertThat(diagram).contains(
-        "E1 --> E4 : Car started ↪ Speed increased\\n<color:#7a0000>Car started ↪ Speed decreased</color>\\nCar stopped ↪ Speed decreased\n",
+        "E1 --> E4 : Car started ↪ Speed increased\\n<color:#7A0000>Car started ↪ Speed decreased</color>\\nCar stopped ↪ Speed decreased\n",
         "E1 --> E2 : Car stopped ↪ Car stopped\n"
     );
     assertThat(diagram).doesNotContain("E3 -->", "E4 -->");
@@ -138,7 +138,9 @@ class ERDiagramFormatterTest {
   void rendersToSvg(@TempDir Path directory) throws IOException {
     File file = new ERDiagramFormatter("Test", model()).formatToImage(directory.toString());
     assertThat(file.getName()).isEqualTo("Test.er.svg");
-    assertThat(Files.readString(file.toPath())).startsWith("<svg").contains("Car", "Speed", "Engine", "Ids");
+    assertThat(Files.readString(file.toPath())).startsWith("<svg").contains("Car", "Speed", "Engine", "Ids")
+        // Drawn in the colour scheme of the page, so dark mode doesn't put it on an opaque background
+        .contains("svg{color-scheme:light dark}");
   }
 
 }

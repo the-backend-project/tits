@@ -63,13 +63,14 @@ class PlantUMLFormatterTest {
     var formatter = new PlantUMLFormatter(Request, transitions);
     assertThat(formatter.format())
         .contains(": Requested\n")
-        .contains(": <color:#b8860b><b>Refused</b></color>\n")
-        .contains(": <color:#d40000><b>Withdrawn</b></color>\n");
+        .contains(": <color:#7A5200><b>Refused</b></color>\n")
+        .contains(": <color:#B00000><b>Withdrawn</b></color>\n");
     String svg = Files.readString(formatter.formatToImage(new File(directory.toFile(), "Request.svg")).toPath());
     assertThat(svg)
         .containsPattern("<text [^>]*fill=\"#000\"[^>]*>Requested</text>")
-        .containsPattern("<text [^>]*fill=\"#B8860B\"[^>]*font-weight=\"700\">Refused</text>")
-        .containsPattern("<text [^>]*fill=\"#D40000\"[^>]*font-weight=\"700\">Withdrawn</text>")
+        .containsPattern("<text [^>]*fill=\"#7A5200\"[^>]*font-weight=\"700\">Refused</text>")
+        .containsPattern("<text [^>]*fill=\"#B00000\"[^>]*font-weight=\"700\">Withdrawn</text>")
+        .contains("g.link text[fill=\"#7A5200\"]{fill:#F2C94C}")
         .doesNotContain("Warning", "Critical");
   }
 

@@ -77,7 +77,7 @@ public class PlantUMLFormatter {
     var svg = new ByteArrayOutputStream();
     new SourceStringReader(diagram.source()).outputImage(svg, new FileFormatOption(FileFormat.SVG));
     try (var out = new FileOutputStream(file)) {
-      out.write(addDetailPopups(svg.toString(UTF_8), diagram.labelsBySourceLine()).getBytes(UTF_8));
+      out.write(DiagramColours.addStyle(addDetailPopups(svg.toString(UTF_8), diagram.labelsBySourceLine())).getBytes(UTF_8));
     }
     return file;
   }
@@ -359,13 +359,8 @@ public class PlantUMLFormatter {
 
   // Events of transitions with a severity above Info are named in bold, in the colour of their severity
   private static String eventName(EventType<?, ?> eventType, Severity severity) {
-    String colour = switch (severity) {
-      case Info -> null;
-      case Warning -> "#b8860b";
-      case Error -> "#e65c00";
-      case Critical -> "#d40000";
-    };
-    return colour == null ? eventType.name() : "<color:" + colour + "><b>" + eventType.name() + "</b></color>";
+    DiagramColours.Colour colour = DiagramColours.of(severity);
+    return colour == null ? eventType.name() : "<color:" + colour.light() + "><b>" + eventType.name() + "</b></color>";
   }
 
   private String state(State state) {
