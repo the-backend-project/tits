@@ -80,6 +80,8 @@ data. The PSR puts more emphasis on this than PSD2 did.
 
 * Every payment is tied to a registered merchant (`Aggregate.Merchant`) that has a display name, location and
   merchant category code. Payments for unknown merchants are rejected (`UnknownMerchantDetected`).
+* A merchant id identifies one merchant. A request to create a merchant with a merchant id another merchant has is
+  answered with 400 Bad Request, and the new merchant is rejected without a settlement (`DuplicateMerchantIdDetected`).
 * Payments for suspended or deleted merchants are rejected (`InactiveMerchantDetected`).
 * An aggregator can only submit payments for its own merchants (`IllegalMerchantDetected`).
 * For a super merchant, the sub-merchant's display name, category code and city are required on every payment
