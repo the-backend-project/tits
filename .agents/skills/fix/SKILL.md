@@ -81,8 +81,10 @@ git remote -v
    exclude `.worktrees` so other issues' worktrees don't show up.
 
 6. **Plan, and confirm the plan if it needs it.** Tell the user the branch name
-   and your plan: what you will change, where, and how you will test it. Then
-   decide whether the plan needs confirmation before you spend effort on it:
+   and the absolute path of the worktree, on a line of their own before any
+   question, so they can open it in their editor. Then give your plan: what
+   you will change, where, and how you will test it. Then decide whether the
+   plan needs confirmation before you spend effort on it:
 
    - **Ask first** when the task is large or the plan is not obvious: it touches
      several modules or public API, changes the database schema or behaviour users
@@ -139,8 +141,10 @@ git remote -v
    `--head <fork-owner>:issue-N-<slug>` to `gh pr create`.
 
    Include `Closes #N` in the body so that merging closes the issue. Tell the user
-   the PR's URL. If the fix is not complete, for example because a question is still
-   open or tests fail, don't open a PR. Tell the user what is left instead.
+   the PR's URL and the absolute path of the worktree again, since this is the
+   message they read at the end. If the fix is not complete, for example
+   because a question is still open or tests fail, don't open a PR. Tell the
+   user what is left instead.
 
    Leave the worktree in place after opening the PR, since review changes are
    made there. Once the PR is merged, remove it and the local branch from the
