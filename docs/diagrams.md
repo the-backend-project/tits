@@ -2,8 +2,8 @@
 
 The diagram module draws the state diagram of an entity model with PlantUML, and an ER diagram of a state machine's
 complete model, where the entity models are related through the triggers of their transitions. The ER diagram leaves
-out [id](data-model.md#idevent) and [index](data-model.md#indexevent) entities, with the triggers of events on them, as they take much space and tell
-little about how the entities relate.
+out [id](data-model.md#idevent) and [index](data-model.md#indexevent) entities, with the triggers of events on them,
+as they take much space and tell little about how the entities relate.
 
 The diagrams in this documentation, of the [card payment template](cardpayments.md), the [apps](apps.md) and the
 [HTTP inboxes](http-inbox.md) and [outboxes](http-outbox.md), are generated when the documentation is built, by the
