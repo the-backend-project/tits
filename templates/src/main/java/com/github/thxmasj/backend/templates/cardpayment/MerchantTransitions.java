@@ -1,6 +1,7 @@
 package com.github.thxmasj.backend.templates.cardpayment;
 
 import static com.github.thxmasj.backend.core.EntityModel.Begin;
+import static com.github.thxmasj.backend.http.inbox.HttpInbox.InvalidRequestCompleted;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.RequestCompleted;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.Request;
 import static com.github.thxmasj.backend.core.EntitySelector.entityIdFromSession;
@@ -12,6 +13,8 @@ import static com.github.thxmasj.backend.core.Tuples.tuple;
 import static com.github.thxmasj.backend.templates.cardpayment.Aggregate.Settlement;
 import static com.github.thxmasj.backend.templates.cardpayment.Identifiers.Ids;
 import static com.github.thxmasj.backend.templates.cardpayment.Identifiers.MerchantIdClaimed;
+import static com.github.thxmasj.backend.templates.cardpayment.MerchantEvent.DuplicateMerchantIdDetected;
+import static com.github.thxmasj.backend.templates.cardpayment.MerchantEvent.MerchantActivated;
 import static com.github.thxmasj.backend.templates.cardpayment.MerchantEvent.MerchantCreated;
 import static com.github.thxmasj.backend.templates.cardpayment.MerchantEvent.MerchantDeleted;
 import static com.github.thxmasj.backend.templates.cardpayment.MerchantEvent.MerchantLookedUp;
@@ -20,6 +23,7 @@ import static com.github.thxmasj.backend.templates.cardpayment.MerchantEvent.Mer
 import static com.github.thxmasj.backend.templates.cardpayment.MerchantEvent.MerchantUpdated;
 import static com.github.thxmasj.backend.templates.cardpayment.MerchantState.Active;
 import static com.github.thxmasj.backend.templates.cardpayment.MerchantState.Deleted;
+import static com.github.thxmasj.backend.templates.cardpayment.MerchantState.Rejected;
 import static com.github.thxmasj.backend.templates.cardpayment.MerchantState.Suspended;
 import static com.github.thxmasj.backend.templates.cardpayment.SettlementEvent.InitialSettlementOpened;
 import static java.util.Optional.ofNullable;
@@ -38,12 +42,28 @@ public class MerchantTransitions {
   public Map<State, List<TransitionModel<?, ?>>> transitions() {
     return Map.of(
         Begin, List.of(
+            // The merchant id is claimed for the merchant. If another merchant has claimed it already, the merchant is
+            // rejected, and gets no settlement.
             onEvent(MerchantCreated).to(Active)
-                .assemble(c -> tuple(c.input(), c.eventReference(), c.entityId()))
-                .trigger(MerchantIdClaimed).with(d -> d.t1().id()).on(Ids).identifiedBy(d -> entityId(d.t3(), CreateIfNotExists))
-                .trigger(InitialSettlementOpened).with(d -> new com.github.thxmasj.backend.templates.cardpayment.MerchantId(d.t1().t1().id())).on(Settlement).identifiedBy(newEntityId())
-                .trigger(RequestCompleted).with(d -> tuple("", d.t1().t1().t2())).on(Request).identifiedBy(entityIdFromSession())
-                .output(d -> d.t1().t1().t1().t1())
+                .assemble(c -> tuple(c.input(), c.entityId()))
+                .trigger(MerchantIdClaimed).with(d -> d.t1().id()).on(Ids).identifiedBy(d -> entityId(d.t2(), CreateIfNotExists))
+                .when(d -> d.t2().isIdExists()).then(
+                    onEvent(DuplicateMerchantIdDetected).to(Rejected)
+                        .assemble(c -> tuple(c.input(), c.eventReference()))
+                        .trigger(InvalidRequestCompleted)
+                        .with(d -> tuple("Merchant id " + d.t1() + " is taken", d.t2()))
+                        .on(Request).identifiedBy(entityIdFromSession())
+                        .output(d -> d.t1().t1()),
+                    d -> d.t1().t1().id()
+                )
+                .otherwise(
+                    onEvent(MerchantActivated).to(Active)
+                        .assemble(c -> tuple(c.input(), c.eventReference()))
+                        .trigger(InitialSettlementOpened).with(d -> new MerchantId(d.t1().id())).on(Settlement).identifiedBy(newEntityId())
+                        .trigger(RequestCompleted).with(d -> tuple("", d.t1().t2())).on(Request).identifiedBy(entityIdFromSession())
+                        .output(d -> d.t1().t1().t1()),
+                    d -> d.t1().t1()
+                )
         ),
         Active, List.of(
             onEvent(MerchantSuspended).to(Suspended)
@@ -74,7 +94,8 @@ public class MerchantTransitions {
                 .trigger(RequestCompleted).with(d -> tuple("", d)).on(Request).identifiedBy(entityIdFromSession())
                 .output()
         ),
-        Deleted, List.of()
+        Deleted, List.of(),
+        Rejected, List.of()
     );
   }
 
