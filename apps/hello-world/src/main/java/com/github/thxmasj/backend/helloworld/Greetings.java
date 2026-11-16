@@ -17,7 +17,6 @@ import com.github.thxmasj.backend.http.inbox.HttpInboxRequest;
 import com.github.thxmasj.backend.http.inbox.ResponseEventType;
 import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
 import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -43,7 +42,7 @@ public interface Greetings {
   HttpInboxRequest<Void> GreetingRequest = HttpInboxRequest
       .matching(m -> m.requestLine().matches("GET /(\\?.*)?"))
       .noContent()
-      .process(GreetingRequested, Greeting, _ -> null, newEntity())
+      .process(GreetingRequested, Greeting, newEntity())
       .response(
           GreetingResponseCreated,
           c -> new HttpResponseMessage(
@@ -56,8 +55,7 @@ public interface Greetings {
       .build("GreetingRequest", UUID.fromString("5e3d4a8c-0f2b-4c6e-b1d7-9a8f7e6d5c4b"));
 
   static Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions() {
-    var transitions = new HashMap<>(HttpInbox.transitions(List.of(GreetingRequest)));
-    transitions.put(
+    return HttpInbox.transitions(List.of(GreetingRequest), Map.of(
         Greeting, Map.of(
             Begin, List.of(
                 onEvent(GreetingRequested).to(States.Greeted)
@@ -67,8 +65,7 @@ public interface Greetings {
             ),
             States.Greeted, List.of()
         )
-    );
-    return transitions;
+    ));
   }
 
   private static String page(String greetingId, String correlationId) {

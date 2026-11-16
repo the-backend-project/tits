@@ -39,16 +39,20 @@ import static com.github.thxmasj.backend.http.inbox.HttpInbox.States.RejectedRol
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.States.RolledBack;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.States.RollingBack;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.States.Routed;
+import static java.util.stream.Collectors.toSet;
 
 import com.github.thxmasj.backend.core.BasicEventType;
 import com.github.thxmasj.backend.core.BasicEventType.Rollback.Data;
 import com.github.thxmasj.backend.core.DataType;
+import com.github.thxmasj.backend.core.EntityModel;
+import com.github.thxmasj.backend.core.EntityModelGroup;
 import com.github.thxmasj.backend.core.EntitySelector;
 import com.github.thxmasj.backend.core.EntitySelector.ById;
 import com.github.thxmasj.backend.core.EntitySelector.ByIdEvent;
 import com.github.thxmasj.backend.core.EntitySelector.ByIdFromSession;
 import com.github.thxmasj.backend.core.EventLog;
 import com.github.thxmasj.backend.core.EventReference;
+import com.github.thxmasj.backend.core.EventTrigger;
 import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.GuardedTransition;
 import com.github.thxmasj.backend.core.Severity;
@@ -73,10 +77,13 @@ import com.github.thxmasj.backend.http.inbox.HttpInboxRequest.Response;
 import jakarta.annotation.Nullable;
 import java.nio.charset.StandardCharsets;
 import java.time.ZonedDateTime;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /// The transitions of `RequestRouting` and of the inbox requests
@@ -219,7 +226,9 @@ interface TransitionModels {
     Validated<String> messageIdValue = request.rollback().messageIdParser().apply(message, null);
     if (messageIdValue.isInvalid())
       return Validation.invalid("Unable to parse message id: " + messageIdValue.invalidReason());
-    Authorization authorization = request.authorizer() != null ? request.authorizer().apply(message, null) : null;
+    // The rollback's own authorizer, as the request's may read the body, which a rollback doesn't have
+    var authorizer = request.rollback().authorizer();
+    Authorization authorization = authorizer != null ? authorizer.apply(message, null) : null;
     if (authorization != null && authorization.isRefused())
       return Validation.refusal(authorization.refused());
     String subject = authorization != null ? authorization.subject() : null;
@@ -530,7 +539,8 @@ interface TransitionModels {
         .output();
   }
 
-  /// A rollback repeated after the request is rolled back gets the response of the first one
+  /// A rollback repeated after the request is rolled back, or found to have nothing to roll back, gets the response of
+  /// the first one
   private static <T> TransitionModel<?, ?> repeatedRollbackTransition(HttpInboxRequest<T> request) {
     return onEvent(RollbackRequestReceived).to(RollingBack)
         .assemble(c -> tuple(
@@ -539,7 +549,8 @@ interface TransitionModels {
             c.log().one(RollbackRequestCompleted),
             c.log().entityId()
         ))
-        .when(d -> d.t1().request().equals(request.normalizer().apply(d.t2()))).then(
+        // A rollback is told by its request line, as a retry may differ in headers such as the correlation id
+        .when(d -> d.t1().request().requestLine().equals(d.t2().requestLine())).then(
             onEvent(DuplicateRequestRejected).to(RollingBack)
                 .assembleInput()
                 .trigger(DuplicatedRequestCompleted).with(Tuple2::t2).on(request).identifiedBy(entityIdFromSession())
@@ -559,6 +570,80 @@ interface TransitionModels {
                 .output(d -> d.t1().t3()),
             d -> tuple("Conflict", d.t4(), d.t1().request())
         );
+  }
+
+  /// Checks that every inbox request takes the responses its processes may give, which are the event types triggered on
+  /// the group of inbox requests by the entity models of its processes, or by the entity models they trigger events on,
+  /// in any state. An entity model reached from several inbox requests may only give a response on the way from one of
+  /// them, but the check can't tell the ways apart, so all of them must take it.
+  static void checkResponses(
+      List<HttpInboxRequest<?>> requests,
+      Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions
+  ) {
+    for (HttpInboxRequest<?> request : requests) {
+      Set<EventType<?, ?>> taken = request.transitions().get(Dispatched).stream()
+          .map(TransitionModel::eventType)
+          .collect(toSet());
+      for (Process<?, ?> process : request.processes()) {
+        for (var given : responsesGiven(process.entityModel(), transitions, request)) {
+          if (!taken.contains(given.eventType()))
+            throw new IllegalArgumentException(String.format(
+                "The inbox request %s doesn't take the response %s, which %s triggers on %s on the way from its process " +
+                    "%s on %s. Add it to the request with .response(..)",
+                request.name(),
+                given.eventType().name(),
+                given.entityModel().name(),
+                HttpInbox.Request.name(),
+                process.eventType().name(),
+                process.entityModel().name()
+            ));
+        }
+      }
+    }
+  }
+
+  /// A response triggered on the group of inbox requests by a transition of the entity model
+  record Given(EntityModel entityModel, EventType<?, ?> eventType) {}
+
+  /// The responses triggered on the request by the entity model and the entity models it triggers events on, except the
+  /// inbox's own
+  private static List<Given> responsesGiven(
+      EntityModel start,
+      Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions,
+      HttpInboxRequest<?> request
+  ) {
+    var given = new ArrayList<Given>();
+    var visited = new HashSet<EntityModel>();
+    var toVisit = new ArrayDeque<EntityModel>(List.of(start));
+    while (!toVisit.isEmpty()) {
+      EntityModel model = toVisit.removeFirst();
+      if (!visited.add(model) || !transitions.containsKey(model))
+        continue;
+      for (var transition : transitions.get(model).values().stream().flatMap(List::stream).toList()) {
+        for (var trigger : triggers(transition)) {
+          EntityModel target = trigger.entityModel() != null ? trigger.entityModel() : model;
+          if (target instanceof EntityModelGroup group && group.includes(request))
+            given.add(new Given(model, trigger.eventSpec().eventType()));
+          else if (!(target instanceof EntityModelGroup) && !isInboxModel(target))
+            toVisit.addLast(target);
+        }
+      }
+    }
+    return given;
+  }
+
+  private static boolean isInboxModel(EntityModel model) {
+    return model instanceof HttpInboxRequest<?> || model.equals(RequestRouting) || model.equals(MessageIds);
+  }
+
+  /// The triggers of the transition, of its reversal and of the transitions it may choose
+  private static List<EventTrigger<?, ?, ?>> triggers(TransitionModel<?, ?> transition) {
+    var triggers = new ArrayList<EventTrigger<?, ?, ?>>(transition.triggers());
+    if (transition.reverseModel() != null)
+      triggers.addAll(transition.reverseModel().triggers());
+    for (var filter : transition.filters())
+      triggers.addAll(triggers(filter.alternative().model()));
+    return triggers;
   }
 
   private static <I> TransitionModel<?, ?> customResponse(Response<I> response) {

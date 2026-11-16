@@ -82,7 +82,7 @@ requests and says which event they trigger on which entity, here `GreetingReques
 HttpInboxRequest<Void> GreetingRequest = HttpInboxRequest
     .matching(m -> m.requestLine().matches("GET /(\\?.*)?"))
     .noContent()
-    .process(GreetingRequested, Greeting, _ -> null, newEntity())
+    .process(GreetingRequested, Greeting, newEntity())
     .response(
         GreetingResponseCreated,
         c -> new HttpResponseMessage(
@@ -101,8 +101,7 @@ that is waiting for it, `HttpInbox.Request`, which stands for whichever inbox re
 
 ```java
 static Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions() {
-  var transitions = new HashMap<>(HttpInbox.transitions(List.of(GreetingRequest)));
-  transitions.put(
+  return HttpInbox.transitions(List.of(GreetingRequest), Map.of(
       Greeting, Map.of(
           Begin, List.of(
               onEvent(GreetingRequested).to(States.Greeted)
@@ -112,14 +111,14 @@ static Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions() {
           ),
           States.Greeted, List.of()
       )
-  );
-  return transitions;
+  ));
 }
 ```
 
-`HttpInbox.transitions` gives the entity models of the inbox: the inbox requests, `RequestRouting`, which routes a
-request to the inbox request matching it, and `MessageIds`. They are part of the same map as the greeting. Both are in
-`Greetings.java` in the demo.
+`HttpInbox.transitions` adds the entity models of the inbox to those of the application: the inbox requests,
+`RequestRouting`, which routes a request to the inbox request matching it, and `MessageIds`. It also checks that the
+inbox request takes the response the greeting gives, `GreetingResponseCreated`. Both are in `Greetings.java` in the
+demo.
 
 ## Running it
 

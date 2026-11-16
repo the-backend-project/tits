@@ -264,7 +264,7 @@ public class HttpInboxTest {
   /// Can be rolled back by its message id
   static HttpInboxRequest<byte[]> InternalRequest = withBody("PUT .*/internal/.*")
       .messageIdParser(parseMessageId("PUT .*/internal/(.*)", 1))
-      .process(InternalProcessingRequested, Lamp, _ -> null, newEntity())
+      .process(InternalProcessingRequested, Lamp, newEntity())
       .rollback(m -> m.requestLine().matches("DELETE .*/lamps/messages/.*"), parseMessageId("DELETE .*/lamps/messages/(.*)", 1))
       .build("InternalRequest", UUID.fromString("3afa1f14-d4e3-49c4-b6ad-05a733f0b22d"));
 
@@ -273,37 +273,52 @@ public class HttpInboxTest {
       .matching(m -> m.requestLine().matches("PUT .*/content/.*"))
       .contentParser(HttpInbox.jsonParser(InternalProcess.class, false))
       .messageIdParser(parseMessageId("PUT .*/content/(.*)", 1))
-      .process(when("a == internal", p -> p.a().equals("internal")), InternalProcessingRequested, Lamp, _ -> null, newEntity())
-      .process(when("a == unavailable", p -> p.a().equals("unavailable")), SubsystemUnavailableProcessingRequested, Lamp, _ -> null, newEntity())
+      .process(when("a == internal", p -> p.a().equals("internal")), InternalProcessingRequested, Lamp, newEntity())
+      .process(when("a == unavailable", p -> p.a().equals("unavailable")), SubsystemUnavailableProcessingRequested, Lamp, newEntity())
       .process(when("a == zero", p -> p.a().equals("zero")), ZeroProcessingRequested, Lamp, r -> new Zero(r.body().a()), parseEntityId("PUT .*/content/(.*)", 1))
       .build("ContentRequest", UUID.fromString("a3c94e1d-5f27-4b80-9d6e-1b8f2c7a4e53"));
 
+  /// Authorized by its body, which a rollback doesn't have, so the rollback has an authorizer of its own
+  static HttpInboxRequest<InternalProcess> OwnedRequest = HttpInboxRequest
+      .matching(m -> m.requestLine().matches("PUT .*/owned/.*"))
+      .contentParser(HttpInbox.jsonParser(InternalProcess.class, false))
+      .messageIdParser(parseMessageId("PUT .*/owned/(.*)", 1))
+      .authorizer((_, body) -> Authorization.authorized(body.a()))
+      .process(InternalProcessingRequested, Lamp, newEntity())
+      .rollback(
+          m -> m.requestLine().matches("DELETE .*/owned/messages/.*"),
+          parseMessageId("DELETE .*/owned/messages/(.*)", 1),
+          (m, _) -> Authorization.authorizedElse(m.headerValue("X-Owner"), "Owner missing")
+      )
+      .build("OwnedRequest", UUID.fromString("e2b7d14c-6a93-4f08-8c5e-3d9a1f6b2c47"));
+
   static List<HttpInboxRequest<?>> requests = List.of(
       ContentRequest,
+      OwnedRequest,
       withBody("PUT .*/protected/.*")
           .authorizer(HttpInbox.bearerToken(verifier, "payments"))
-          .process(InternalProcessingRequested, Lamp, _ -> null, newEntity())
+          .process(InternalProcessingRequested, Lamp, newEntity())
           .build("ProtectedRequest", UUID.fromString("0b6f3c1e-8a4d-4f27-9c5e-2d7a1b3e6f84")),
       withBody("PUT .*/zero/.*")
           .process(ZeroProcessingRequested, Lamp, _ -> new Zero("Hey!"), parseEntityId("PUT .*/zero/(.*)", 1))
           .build("ZeroRequest", UUID.fromString("7e2c5175-a65d-4795-a285-b0d75e704f5a")),
       InternalRequest,
       withBody("PUT .*/other-internal/.*")
-          .process(InternalProcessingRequested, Lamp, _ -> null, newEntity())
+          .process(InternalProcessingRequested, Lamp, newEntity())
           .build("OtherInternalRequest", UUID.fromString("6d1f4a92-3b7e-4c05-8e29-a4f6b1d7c3e8")),
       withBody("PUT .*/handledunknown/.*")
-          .process(InternalProcessingRequested, Lamp, _ -> null, (_, _) -> valid(entityId(UUID.randomUUID()))) // Unknown id
+          .process(InternalProcessingRequested, Lamp, (_, _) -> valid(entityId(UUID.randomUUID()))) // Unknown id
           .build("HandledUnknownRequest", UUID.fromString("b411fd45-6c87-43aa-a511-df930d654ec7")),
       withBody("PUT .*/handledreject/.*")
-          .process(AlwaysRejectedEventSubmitted, Lamp, _ -> null, newEntity())
+          .process(AlwaysRejectedEventSubmitted, Lamp, newEntity())
           .build("HandledRejectRequest", UUID.fromString("00f910e2-8c22-4403-835d-15e112ac3080")),
       withBody("PUT .*/unavailable/.*")
           .messageIdParser(parseMessageId("PUT .*/unavailable/(.*)", 1))
-          .process(SubsystemUnavailableProcessingRequested, Lamp, _ -> null, newEntity())
+          .process(SubsystemUnavailableProcessingRequested, Lamp, newEntity())
           .build("UnavailableRequest", UUID.fromString("29d91ea2-3011-47d5-8e68-51e593a5fe3d")),
       withBody("PUT .*/complexinternal/.*")
           .messageIdParser(parseMessageId("PUT .*/complexinternal/(.*)", 1))
-          .process(ComplexInternalProcessingRequested, Lamp, _ -> null, newEntity())
+          .process(ComplexInternalProcessingRequested, Lamp, newEntity())
           .build("ComplexInternalRequest", UUID.fromString("84164954-ad85-4b44-9de6-079bf4805df7")),
       withBody("PUT .*/external/.*")
           .messageIdParser(parseMessageId("PUT .*/external/(.*)", 1))
@@ -314,7 +329,7 @@ public class HttpInboxTest {
           .build("LongExternalRequest", UUID.fromString("721fedb2-e715-4c4d-a8fb-e2cdb16f86e5")),
       withBody("PUT .*/rejected/.*")
           .messageIdParser(parseMessageId("PUT .*/rejected/(.*)", 1))
-          .process(AlwaysRejectedEventSubmitted, Lamp, _ -> null, newEntity())
+          .process(AlwaysRejectedEventSubmitted, Lamp, newEntity())
           .build("RejectedRequest", UUID.fromString("e58f3910-0b01-4f8b-bbf3-c7fde4980197")),
       HttpInboxRequest.matching(m -> m.requestLine().matches("DELETE .*/internal/.*"))
           .noContent()
@@ -328,7 +343,7 @@ public class HttpInboxTest {
       List<HttpInboxRequest<?>> requests,
       List<HttpOutboxRequest<?>> outboxes
   ) {
-    Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions = new HashMap<>(HttpInbox.transitions(requests));
+    Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions = new HashMap<>();
     transitions.put(entityModel, processTransitions);
     for (var outbox : outboxes) {
       transitions.put(outbox, outbox.transitions());
@@ -340,7 +355,7 @@ public class HttpInboxTest {
       }
     }
     transitions.put(Index, Index.transitions());
-    return Init.stateMachine(transitions);
+    return Init.stateMachine(HttpInbox.transitions(requests, transitions));
   }
 
   private static TypedHttpRequest<Void> requestMessage(String path) {
@@ -761,7 +776,7 @@ public class HttpInboxTest {
   /// types triggered on the group
   @Test
   public void eventTypesAreRegisteredForInboxRequestsNotForTheGroup() {
-    var eventTypes = Mappers.eventTypesByEntityModel(HttpInbox.transitions(requests));
+    var eventTypes = Mappers.eventTypesByEntityModel(HttpInbox.transitions(requests, Map.of(Lamp, lampTransitions())));
     assertFalse(eventTypes.containsKey(Request));
     for (HttpInboxRequest<?> request : requests)
       assertThat(eventTypes.get(request)).contains(RequestCompleted, FailedRequestCompleted, InvalidRequestCompleted);
@@ -828,8 +843,8 @@ public class HttpInboxTest {
   @Test
   public void processWithoutContentPredicateMustBeLast() {
     assertThatThrownBy(() -> HttpInboxRequest.matching(_ -> true).noContent()
-        .process(InternalProcessingRequested, Lamp, _ -> null, newEntity())
-        .process(when("any", _ -> true), LampSwitchedOn, Lamp, _ -> null, newEntity())
+        .process(InternalProcessingRequested, Lamp, newEntity())
+        .process(when("any", _ -> true), LampSwitchedOn, Lamp, newEntity())
         .build("Invalid", UUID.randomUUID()))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("must be the last one");
@@ -838,8 +853,8 @@ public class HttpInboxTest {
   @Test
   public void processesOfRequestWithRollbackMustHaveTheSameEntityModel() {
     assertThatThrownBy(() -> HttpInboxRequest.matching(_ -> true).noContent()
-        .process(when("one", _ -> true), InternalProcessingRequested, Lamp, _ -> null, newEntity())
-        .process(InternalProcessingRequested, EntityModel.of("Other", UUID.randomUUID()), _ -> null, newEntity())
+        .process(when("one", _ -> true), InternalProcessingRequested, Lamp, newEntity())
+        .process(InternalProcessingRequested, EntityModel.of("Other", UUID.randomUUID()), newEntity())
         .rollback(_ -> false, parseMessageId("(.*)", 1))
         .build("Invalid", UUID.randomUUID()))
         .isInstanceOf(IllegalArgumentException.class)
@@ -881,6 +896,139 @@ public class HttpInboxTest {
 
   private HttpResponseMessage onContentRequest(String id, String a) throws IOException {
     return HttpMessageParser.parseResponse(onRequest(PUT, URI.create("/content/" + id), asJson(new InternalProcess(a, 0))).data());
+  }
+
+  @Test
+  public void whenRollbackBeforeRequestIsRepeatedThenRespondWithSameResponse() throws IOException {
+    String messageId = UUID.randomUUID().toString();
+    HttpResponseMessage first = HttpMessageParser.parseResponse(onRollbackRequest(messageId).data());
+    assertEquals("Nothing to roll back", ProblemDetail.parse(first.body()).detail());
+    // A retry, e.g. with another correlation id
+    HttpResponseMessage second = HttpMessageParser.parseResponse(onRequest(TRIGGER, new HttpRequestMessage(
+        DELETE,
+        URI.create("/lamps/messages/" + messageId),
+        Map.of("X-Correlation-Id", "retry"),
+        null
+    )).data());
+    assertEquals(201, second.statusCode());
+    assertArrayEquals(first.body(), second.body());
+  }
+
+  @Test
+  public void whenRollbackAfterRequestIsRepeatedThenRespondWithSameResponse() throws IOException {
+    String messageId = UUID.randomUUID().toString();
+    onInternalRequest(messageId, new InternalProcess("Hello!", 100));
+    HttpResponseMessage first = HttpMessageParser.parseResponse(onRollbackRequest(messageId).data());
+    assertEquals("Rolled back", ProblemDetail.parse(first.body()).detail());
+    HttpResponseMessage second = HttpMessageParser.parseResponse(onRollbackRequest(messageId).data());
+    assertEquals(201, second.statusCode());
+    assertArrayEquals(first.body(), second.body());
+  }
+
+  @Test
+  public void whenRollbackOfRequestAuthorizedByBodyThenRollbackIsAuthorizedByItsOwnAuthorizer() throws IOException {
+    String messageId = UUID.randomUUID().toString();
+    HttpResponseMessage request = HttpMessageParser.parseResponse(onRequest(PUT, URI.create("/owned/" + messageId), asJson(new InternalProcess("alice", 1))).data());
+    assertEquals(201, request.statusCode());
+    HttpResponseMessage rollback = onOwnedRollback(messageId, Map.of("X-Owner", "alice"));
+    assertEquals(201, rollback.statusCode());
+    assertEquals("Rolled back", ProblemDetail.parse(rollback.body()).detail());
+  }
+
+  @Test
+  public void whenRollbackIsRefusedByItsAuthorizerThenRefusalResponse() throws IOException {
+    HttpResponseMessage rollback = onOwnedRollback(UUID.randomUUID().toString(), Map.of());
+    assertEquals(400, rollback.statusCode());
+    assertEquals("Owner missing", ProblemDetail.parse(rollback.body()).detail());
+  }
+
+  /// A message id is the authorized subject's, so another subject's rollback has nothing to roll back
+  @Test
+  public void whenRollbackByAnotherSubjectThenNothingToRollBack() throws IOException {
+    String messageId = UUID.randomUUID().toString();
+    onRequest(PUT, URI.create("/owned/" + messageId), asJson(new InternalProcess("alice", 1)));
+    HttpResponseMessage rollback = onOwnedRollback(messageId, Map.of("X-Owner", "bob"));
+    assertEquals(201, rollback.statusCode());
+    assertEquals("Nothing to roll back", ProblemDetail.parse(rollback.body()).detail());
+  }
+
+  @Test
+  public void rollbackOfRequestWithAuthorizerNeedsAnAuthorizer() {
+    assertThatThrownBy(() -> HttpInboxRequest.matching(_ -> true).noContent()
+        .authorizer((_, _) -> Authorization.authorized("alice"))
+        .process(InternalProcessingRequested, Lamp, newEntity())
+        .rollback(_ -> false, parseMessageId("(.*)", 1))
+        .build("Invalid", UUID.randomUUID()))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("needs an authorizer");
+  }
+
+  @Test
+  public void rollbackOfRequestWithoutAuthorizerCanNotHaveAnAuthorizer() {
+    assertThatThrownBy(() -> HttpInboxRequest.matching(_ -> true).noContent()
+        .process(InternalProcessingRequested, Lamp, newEntity())
+        .rollback(_ -> false, parseMessageId("(.*)", 1), (_, _) -> Authorization.authorized("alice"))
+        .build("Invalid", UUID.randomUUID()))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("can't have an authorizer");
+  }
+
+  static final EntityModel Bell = EntityModel.of("Bell", UUID.fromString("4c1e8a2f-7d36-4b95-a0f8-9e2d5b7c3a16"));
+  static final EntityModel Chime = EntityModel.of("Chime", UUID.fromString("b8d3f6a1-2e47-4c09-9b5a-6f1c8e4d2a73"));
+  static final EventType<Void, Void> BellRung = BasicEventType.of("Bell rung", UUID.fromString("d6f2a9c4-1b85-4e37-8a0d-3c7e5f9b1a26"));
+  static final EventType<Void, Void> ChimeRung = BasicEventType.of("Chime rung", UUID.fromString("7a4c2e9f-5d18-4b63-b1e0-8f6d3a2c9e54"));
+  static final ResponseEventType<String> Rang = new ResponseEventType<>(
+      "Rang",
+      UUID.fromString("2f9b6d3e-8c41-4a75-9e0b-5d7a1c4f8e62"),
+      DataType.string()
+  );
+
+  /// The bell responds itself, or through the chime it rings
+  private static Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> bellTransitions(boolean throughChime) {
+    return Map.of(
+        Bell, Map.of(Begin, List.of(throughChime ?
+            onEvent(BellRung).toSelf().trigger(ChimeRung).on(Chime).identifiedBy(newEntityId()).output() :
+            onEvent(BellRung).toSelf().trigger(Rang).with(_ -> "Ding").on(Request).identifiedBy(entityIdFromSession()).output()
+        )),
+        Chime, Map.of(Begin, List.of(
+            onEvent(ChimeRung).toSelf().trigger(Rang).with(_ -> "Dong").on(Request).identifiedBy(entityIdFromSession()).output()
+        ))
+    );
+  }
+
+  private static HttpInboxRequest.Builder<Void> bellRequest() {
+    return HttpInboxRequest.matching(m -> m.requestLine().matches("PUT /bell")).noContent().process(BellRung, Bell, newEntity());
+  }
+
+  @Test
+  public void responseGivenByProcessMustBeTakenByTheRequest() {
+    var request = bellRequest().build("BellRequest", UUID.randomUUID());
+    assertThatThrownBy(() -> HttpInbox.transitions(List.of(request), bellTransitions(false)))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("The inbox request BellRequest doesn't take the response Rang, which Bell triggers");
+  }
+
+  @Test
+  public void responseGivenByEntityModelTheProcessTriggersMustBeTakenByTheRequest() {
+    var request = bellRequest().build("BellRequest", UUID.randomUUID());
+    assertThatThrownBy(() -> HttpInbox.transitions(List.of(request), bellTransitions(true)))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("The inbox request BellRequest doesn't take the response Rang, which Chime triggers");
+  }
+
+  @Test
+  public void responseTakenByTheRequestPassesTheCheck() {
+    var request = bellRequest().response(Rang, _ -> new HttpResponseMessage(200, "OK")).build("BellRequest", UUID.randomUUID());
+    assertThat(HttpInbox.transitions(List.of(request), bellTransitions(true))).containsKeys(request, Bell, Chime);
+  }
+
+  private HttpResponseMessage onOwnedRollback(String messageId, Map<String, String> headers) throws IOException {
+    return HttpMessageParser.parseResponse(onRequest(TRIGGER, new HttpRequestMessage(
+        DELETE,
+        URI.create("/owned/messages/" + messageId),
+        headers,
+        null
+    )).data());
   }
 
   @Test

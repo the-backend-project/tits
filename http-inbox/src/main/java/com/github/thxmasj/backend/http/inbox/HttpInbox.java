@@ -185,14 +185,26 @@ public interface HttpInbox {
       RollbackMessageIdClaimed
   );
 
-  /// The transitions of the inbox: of `RequestRouting`, routing to the inbox requests, of the inbox requests and of
-  /// `MessageIds`. Add the transitions of the application to them to create the state machine.
-  static Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions(List<HttpInboxRequest<?>> requests) {
-    var transitions = new HashMap<EntityModel, Map<State, List<TransitionModel<?, ?>>>>();
+  /// The transitions of the application with its inbox, to create the state machine with: those of the application,
+  /// and of `RequestRouting`, routing to the inbox requests, of the inbox requests and of `MessageIds`.
+  ///
+  /// Every inbox request is checked to take the responses its processes may give: the event types triggered on
+  /// [#Request] by the entity models of its processes, or by entity models they trigger events on, must be
+  /// [#RequestCompleted], [#InvalidRequestCompleted], [#FailedRequestCompleted] or one the request has a `response`
+  /// for. A response it doesn't take would otherwise be rejected when it is given.
+  ///
+  /// @param application the transitions of the entity models of the application, e.g. those of the processes
+  /// @throws IllegalArgumentException if an inbox request doesn't take a response its processes may give
+  static Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions(
+      List<HttpInboxRequest<?>> requests,
+      Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> application
+  ) {
+    var transitions = new HashMap<>(application);
     transitions.put(RequestRouting, requestRoutingTransitions(requests));
     for (HttpInboxRequest<?> request : requests)
       transitions.put(request, request.transitions());
     transitions.put(MessageIds, MessageIds.transitions());
+    TransitionModels.checkResponses(requests, transitions);
     return transitions;
   }
 

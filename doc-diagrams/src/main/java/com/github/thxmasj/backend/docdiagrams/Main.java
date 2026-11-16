@@ -70,7 +70,7 @@ public class Main {
         .matching(m -> m.requestLine().matches("PUT /orders/.*"))
         .noContent()
         .messageIdParser(parseMessageId("PUT /orders/(.*)", 1))
-        .process(orderPlaced, order, _ -> null, newEntity())
+        .process(orderPlaced, order, newEntity())
         .rollback(m -> m.requestLine().matches("DELETE /orders/.*"), parseMessageId("DELETE /orders/(.*)", 1))
         .build("PlaceOrder", UUID.randomUUID());
     var name = "com.github.thxmasj.backend.http.inbox";

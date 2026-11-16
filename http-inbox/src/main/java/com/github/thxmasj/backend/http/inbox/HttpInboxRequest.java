@@ -85,6 +85,10 @@ public final class HttpInboxRequest<T> implements EntityModel {
     this.normalizer = builder.normalizer;
     this.responses = List.copyOf(builder.responses);
     this.rollback = builder.rollback;
+    if (rollback != null && (rollback.authorizer() == null) != (authorizer == null))
+      throw new IllegalArgumentException(authorizer != null ?
+          "The rollback of the request " + name + " needs an authorizer, as the message id of a request is the authorized subject's" :
+          "The rollback of the request " + name + " can't have an authorizer, as the request has none to give its message id a subject");
     if (rollback != null && processes.stream().map(Process::entityModel).distinct().count() > 1)
       throw new IllegalArgumentException("The processes of the request " + name + ", which can be rolled back, must have the same entity model");
     this.transitions = TransitionModels.requestTransitions(this);
@@ -184,7 +188,11 @@ public final class HttpInboxRequest<T> implements EntityModel {
   record Response<I>(ResponseEventType<I> eventType, Function<TransitionContext<I>, HttpResponseMessage> messageCreator) {}
 
   /// A rollback of a request, identified by its message id
-  record Rollback(Predicate<HttpRequestMessage> matcher, BiFunction<HttpRequestMessage, Void, Validated<String>> messageIdParser) {}
+  record Rollback(
+      Predicate<HttpRequestMessage> matcher,
+      BiFunction<HttpRequestMessage, Void, Validated<String>> messageIdParser,
+      BiFunction<HttpRequestMessage, Void, Authorization> authorizer
+  ) {}
 
   /// The step introducing the type of the body of the request
   public static final class ContentStep {
@@ -274,6 +282,36 @@ public final class HttpInboxRequest<T> implements EntityModel {
       return addProcess(Objects.requireNonNull(content), eventType, entityModel, input, selector);
     }
 
+    /// The event, without data, a request triggers on the application, whatever its content. See
+    /// [#process(EventType, EntityModel, Function, BiFunction)].
+    ///
+    /// @param eventType the event type triggered
+    /// @param entityModel the entity model of the entity the event is triggered on
+    /// @param selector selects the entity the event is triggered on, e.g. [#newEntity()] or [#parseEntityId(String, int)]
+    public Builder<T> process(
+        EventType<Void, ?> eventType,
+        EntityModel entityModel,
+        BiFunction<HttpRequestMessage, T, ? extends Validated<? extends EntitySelector>> selector
+    ) {
+      return addProcess(null, eventType, entityModel, _ -> null, selector);
+    }
+
+    /// The event, without data, a request with the content triggers on the application. See
+    /// [#process(Content, EventType, EntityModel, Function, BiFunction)].
+    ///
+    /// @param content the predicate on the parsed body choosing the process, see [HttpInboxRequest#when(String, Predicate)]
+    /// @param eventType the event type triggered
+    /// @param entityModel the entity model of the entity the event is triggered on
+    /// @param selector selects the entity the event is triggered on, e.g. [#newEntity()] or [#parseEntityId(String, int)]
+    public Builder<T> process(
+        Content<T> content,
+        EventType<Void, ?> eventType,
+        EntityModel entityModel,
+        BiFunction<HttpRequestMessage, T, ? extends Validated<? extends EntitySelector>> selector
+    ) {
+      return addProcess(Objects.requireNonNull(content), eventType, entityModel, _ -> null, selector);
+    }
+
     private <U> Builder<T> addProcess(
         Content<T> content,
         EventType<U, ?> eventType,
@@ -311,12 +349,29 @@ public final class HttpInboxRequest<T> implements EntityModel {
     /// Requests the matcher matches roll back the request with the message id the parser gives, by rolling back the
     /// events the request caused on the application. A rollback of a request not received yet makes a later request
     /// with the message id rejected. The processes of a request which can be rolled back must have the same entity
-    /// model.
+    /// model. This is for a request without an authorizer; one with an authorizer needs a rollback with an authorizer
+    /// too.
     public Builder<T> rollback(
         Predicate<HttpRequestMessage> matcher,
         BiFunction<HttpRequestMessage, Void, Validated<String>> messageIdParser
     ) {
-      this.rollback = new Rollback(Objects.requireNonNull(matcher), Objects.requireNonNull(messageIdParser));
+      this.rollback = new Rollback(Objects.requireNonNull(matcher), Objects.requireNonNull(messageIdParser), null);
+      return this;
+    }
+
+    /// Requests the matcher matches, authorized by the authorizer, roll back the request with the message id the
+    /// parser gives, which the same subject sent. A rollback has no body to authorize it by, so the authorizer of the
+    /// request isn't used: it may read the body, which a rollback doesn't have. See [#rollback(Predicate, BiFunction)].
+    public Builder<T> rollback(
+        Predicate<HttpRequestMessage> matcher,
+        BiFunction<HttpRequestMessage, Void, Validated<String>> messageIdParser,
+        BiFunction<HttpRequestMessage, Void, Authorization> authorizer
+    ) {
+      this.rollback = new Rollback(
+          Objects.requireNonNull(matcher),
+          Objects.requireNonNull(messageIdParser),
+          Objects.requireNonNull(authorizer)
+      );
       return this;
     }
 

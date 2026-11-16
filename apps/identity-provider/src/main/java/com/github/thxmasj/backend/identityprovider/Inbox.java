@@ -142,7 +142,7 @@ public interface Inbox {
   HttpInboxRequest<String> UserInfoHttpRequest = HttpInboxRequest
       .matching(m -> m.method() == Method.GET && m.uri().getPath().equals("/userinfo"))
       .contentParser(r -> r.headerValue(TokenIdHeader) != null ? valid(r.headerValue(TokenIdHeader)) : invalid("Unauthenticated"))
-      .process(Tokens.UserInfoRequested, Tokens.TokenRequest, _ -> null, (m, _) -> HttpInboxRequest.entityId(m.headerValue(TokenIdHeader)))
+      .process(Tokens.UserInfoRequested, Tokens.TokenRequest, (m, _) -> HttpInboxRequest.entityId(m.headerValue(TokenIdHeader)))
       .response(ReplyCreated, Inbox::reply)
       .build("UserInfoHttpRequest", UUID.fromString("1d6e8f3a-9b2c-4c7d-a5e0-3f8b6d1c9e24"));
 
@@ -172,11 +172,11 @@ public interface Inbox {
   }
 
   static Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions(Duration tokenLifetime) {
-    var transitions = new HashMap<>(HttpInbox.transitions(requests));
-    transitions.putAll(Clients.transitions());
-    transitions.putAll(Tokens.transitions(tokenLifetime));
-    transitions.putAll(Authorizations.transitions());
-    return transitions;
+    var application = new HashMap<EntityModel, Map<State, List<TransitionModel<?, ?>>>>();
+    application.putAll(Clients.transitions());
+    application.putAll(Tokens.transitions(tokenLifetime));
+    application.putAll(Authorizations.transitions());
+    return HttpInbox.transitions(requests, application);
   }
 
   /// The form is validated by the edge, which also authenticates the client

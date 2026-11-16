@@ -304,12 +304,12 @@ public class CutOffReconciliationTest {
     transitions.put(Aggregate.Merchant, new MerchantTransitions().transitions());
     transitions.put(Aggregate.Payment, payment.transitions());
     transitions.put(Aggregate.Settlement, settlement.transitions());
-    transitions.putAll(HttpInbox.transitions(requests));
     transitions.put(Identifiers.Ids, Identifiers.Ids.transitions());
     transitions.put(Identifiers.Index, Identifiers.Index.transitions());
     transitions.put(Index, Index.transitions());
     transitions.putAll(payment.outboxTransitions());
     transitions.putAll(settlement.outboxTransitions());
+    transitions = HttpInbox.transitions(requests, transitions);
 
     return new StateMachine(
         _ -> Mono.empty(),
