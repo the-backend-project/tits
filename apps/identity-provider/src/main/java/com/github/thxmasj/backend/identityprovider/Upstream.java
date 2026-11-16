@@ -5,15 +5,17 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.identityprovider.Authorizations.User;
 import com.nimbusds.jose.JWSAlgorithm;
+import com.nimbusds.jose.KeySourceException;
+import com.nimbusds.jose.jwk.JWK;
+import com.nimbusds.jose.jwk.JWKSelector;
+import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.source.JWKSource;
-import com.nimbusds.jose.jwk.source.JWKSourceBuilder;
 import com.nimbusds.jose.proc.JWSVerificationKeySelector;
 import com.nimbusds.jose.proc.SecurityContext;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.proc.DefaultJWTClaimsVerifier;
 import com.nimbusds.jwt.proc.DefaultJWTProcessor;
 import java.io.IOException;
-import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
@@ -21,8 +23,10 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpRequest.BodyPublishers;
 import java.net.http.HttpResponse.BodyHandlers;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Base64;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -55,12 +59,7 @@ final class Upstream {
     JsonNode metadata = discover(config.issuer());
     this.authorizationEndpoint = URI.create(required(metadata, "authorization_endpoint"));
     this.tokenEndpoint = URI.create(required(metadata, "token_endpoint"));
-    JWKSource<SecurityContext> keys;
-    try {
-      keys = JWKSourceBuilder.create(URI.create(required(metadata, "jwks_uri")).toURL()).build();
-    } catch (MalformedURLException e) {
-      throw new IllegalArgumentException("The jwks_uri of the upstream provider is not a URL", e);
-    }
+    JWKSource<SecurityContext> keys = new UpstreamKeys(URI.create(required(metadata, "jwks_uri")));
     this.idTokenProcessor = new DefaultJWTProcessor<>();
     idTokenProcessor.setJWSKeySelector(new JWSVerificationKeySelector<>(Set.of(JWSAlgorithm.RS256, JWSAlgorithm.ES256, JWSAlgorithm.PS256), keys));
     idTokenProcessor.setJWTClaimsSetVerifier(new DefaultJWTClaimsVerifier<>(
@@ -137,6 +136,49 @@ final class Upstream {
         claims.getStringClaim("name"),
         authTime instanceof Number number ? number.longValue() : null
     );
+  }
+
+  /// The keys of the upstream provider, fetched with the HTTP client of the JDK rather than by `java.net.URL`, whose
+  /// http and https protocols are not enabled in the native image. They are fetched again for a key id not among them,
+  /// as the upstream provider may have rotated its keys, but at most every 30 seconds.
+  private final class UpstreamKeys implements JWKSource<SecurityContext> {
+
+    private static final Duration minRefetchInterval = Duration.ofSeconds(30);
+
+    private final URI jwksUri;
+    private JWKSet keys;
+    private Instant fetchedAt;
+
+    UpstreamKeys(URI jwksUri) {
+      this.jwksUri = jwksUri;
+    }
+
+    @Override
+    public synchronized List<JWK> get(JWKSelector selector, SecurityContext context) throws KeySourceException {
+      if (keys != null) {
+        List<JWK> selected = selector.select(keys);
+        if (!selected.isEmpty() || Instant.now().isBefore(fetchedAt.plus(minRefetchInterval)))
+          return selected;
+      }
+      keys = fetch();
+      fetchedAt = Instant.now();
+      return selector.select(keys);
+    }
+
+    private JWKSet fetch() throws KeySourceException {
+      try {
+        var response = httpClient.send(HttpRequest.newBuilder(jwksUri).timeout(timeout).header("Accept", "application/json").GET().build(), BodyHandlers.ofString());
+        if (response.statusCode() != 200)
+          throw new KeySourceException("Failed to fetch the keys of the upstream provider from " + jwksUri + ": status " + response.statusCode());
+        return JWKSet.parse(response.body());
+      } catch (IOException | java.text.ParseException e) {
+        throw new KeySourceException("Failed to fetch the keys of the upstream provider from " + jwksUri, e);
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        throw new KeySourceException("Interrupted while fetching the keys of the upstream provider", e);
+      }
+    }
+
   }
 
   /// The PKCE verifier is the secret itself, which is 43 characters of base64url, RFC 7636 section 4.1
