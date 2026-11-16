@@ -88,27 +88,36 @@ This requires Graphviz (`dot`) and Python 3.10 or later in addition to the [buil
 installed into a `.venv` on first run. Set `PYTHON` to choose another interpreter, set `SKIP_DIAGRAMS=1` to reuse the
 diagrams already generated in `docs/images`, or pass `--build` to do a strict build into `site` like CI does.
 
-## Working on issues with Claude Code
+## Working on issues with a coding agent
 
-The [fix](.claude/skills/fix/SKILL.md) skill takes a GitHub issue from the board to a pull request. It needs the
-[GitHub CLI](https://cli.github.com) (`gh`), logged in with your account. Run it in Claude Code with `/fix N` (or say
-"Fix #N"), where N is the number of the issue. Claude then:
+The [fix](.agents/skills/fix/SKILL.md) skill takes a GitHub issue from the board to a pull request. It works with
+[Claude Code](https://claude.com/claude-code) and [Mistral Vibe](https://github.com/mistralai/mistral-vibe), and needs
+the [GitHub CLI](https://cli.github.com) (`gh`), logged in with your account. Run it with `/fix N` (or say "Fix #N"),
+where N is the number of the issue. The agent then:
 
 1. Assigns the issue to you (the user `gh` is logged in as) and moves it to In Progress on the board. Without write
    access to the repository it skips this step, and you work from a fork instead.
-2. Creates the branch `issue-N-<slug>` off `main` in a worktree of its own, `.claude/worktrees/issue-N-<slug>`
-   (ignored by git), so the branch and local changes of the main checkout are left alone and several issues can be
-   worked on at the same time. If a worktree or branch for the issue already exists, it continues there.
+2. Creates the branch `issue-N-<slug>` off `main` in a worktree of its own, `.worktrees/issue-N-<slug>` (ignored by
+   git), so the branch and local changes of the main checkout are left alone and several issues can be worked on at the
+   same time. If a worktree or branch for the issue already exists, it continues there.
 3. Presents its plan. If the task is large or the plan is not obvious, it waits for you to confirm or correct the plan
    before starting the work; a trivial fix goes ahead right away.
 4. Makes the change and runs the tests of the affected modules, and updates `docs`, the README and this guide to match.
 5. Merges or rebases what has landed on main, pushes the branch and opens a pull request that closes the issue.
 
-The worktree stays in place for review changes. Once the pull request is merged, Claude can remove the worktree and the
-local branch. In IntelliJ IDEA, mark `.claude/worktrees` as excluded so the worktrees aren't indexed with the main
+The worktree stays in place for review changes. Once the pull request is merged, the agent can remove the worktree and
+the local branch. In IntelliJ IDEA, mark `.worktrees` as excluded so the worktrees aren't indexed with the main
 checkout.
 
-Claude Code also reads the project's conventions from [AGENTS.md](AGENTS.md) (through [CLAUDE.md](CLAUDE.md)), and
-[.claude/settings.json](.claude/settings.json) allows the common commands without asking: Maven (except deploying),
-the scripts in [bin](bin), and the `git` and `gh` commands that only read. Put your own permissions and other settings
-in `.claude/settings.local.json`, which git ignores.
+The skills are in [.agents/skills](.agents/skills), and both agents read the project's conventions from
+[AGENTS.md](AGENTS.md). The project's settings for each agent allow the common commands without asking: Maven (except
+deploying), the scripts in [bin](bin), and the `git` and `gh` commands that only read.
+
+- **Claude Code** reads AGENTS.md through [CLAUDE.md](CLAUDE.md), finds the skills through the symbolic link
+  `.claude/skills`, and takes its settings from [.claude/settings.json](.claude/settings.json). Put your own
+  permissions and other settings in `.claude/settings.local.json`, which git ignores.
+- **Mistral Vibe** takes its settings from [.vibe/config.toml](.vibe/config.toml), which also lets commands run for
+  up to an hour, because builds with tests take longer than Vibe's default of five minutes. Vibe loads the project's
+  settings and skills only once you trust the folder. Put your own settings in `~/.vibe/config.toml`, and your own
+  instructions, such as how tools get on the PATH, in `~/.vibe/AGENTS.md`. Vibe can't keep the docs server running, so
+  `/serve-docs` only does the strict build there; run `bin/serve-docs.sh` yourself for live reload.

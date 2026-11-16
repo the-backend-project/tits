@@ -4,7 +4,8 @@ description: Start work on a GitHub issue. Use when the user says "Fix #N" (or i
 argument-hint: <issue-number>
 ---
 
-Start work on issue #$ARGUMENTS (or the number given in "Fix #N").
+Start work on the issue whose number the user gave, as in `/fix N` or "Fix #N". Below, N
+stands for that number.
 
 The repo is `the-backend-project/tits`; the board is
 org project 1 ("The Backend"). The skill works for anyone who runs it with their own
@@ -64,12 +65,12 @@ git remote -v
 5. **Branch off `<base>/main` in a new worktree.** Never switch branches in the main
    checkout: the user may have work in progress there, and other issues may be
    worked on at the same time. From the root of the main checkout, create the
-   branch in a worktree under `.claude/worktrees` (ignored by git):
+   branch in a worktree under `.worktrees` (ignored by git):
 
    ```sh
    git fetch <base>
-   git worktree add --no-track -b issue-N-<slug> .claude/worktrees/issue-N-<slug> <base>/main
-   cd .claude/worktrees/issue-N-<slug>
+   git worktree add --no-track -b issue-N-<slug> .worktrees/issue-N-<slug> <base>/main
+   cd .worktrees/issue-N-<slug>
    ```
 
    `<slug>` is the issue title lowercased, non-alphanumerics replaced by `-`,
@@ -77,7 +78,7 @@ git remote -v
 
    Do all the remaining steps in that worktree: edit files under its path and
    run git, Maven and the docs build there. When searching the main checkout,
-   exclude `.claude/worktrees` so other issues' worktrees don't show up.
+   exclude `.worktrees` so other issues' worktrees don't show up.
 
 6. **Plan, and confirm the plan if it needs it.** Tell the user the branch name
    and your plan: what you will change, where, and how you will test it. Then
@@ -87,8 +88,8 @@ git remote -v
      several modules or public API, changes the database schema or behaviour users
      rely on, involves a design choice the issue leaves open, or the issue can be
      read more than one way. Stop and ask the user to confirm or correct the plan
-     (with `AskUserQuestion` when the choice is between concrete alternatives), and
-     don't start the work until they answer.
+     (with the agent's tool for asking the user questions when the choice is between
+     concrete alternatives), and don't start the work until they answer.
    - **Proceed** when the task is trivial and the plan is obvious from the issue,
      for example a small, local fix with one reasonable solution. Say that you are
      going ahead without confirmation.
@@ -146,6 +147,6 @@ git remote -v
    root of the main checkout:
 
    ```sh
-   git worktree remove .claude/worktrees/issue-N-<slug>
+   git worktree remove .worktrees/issue-N-<slug>
    git branch -D issue-N-<slug>
    ```

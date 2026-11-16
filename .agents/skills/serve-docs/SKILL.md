@@ -25,7 +25,9 @@ first run, the script installs Zensical into `.venv`. It also generates the diag
    Don't stop the other server without asking.
 
 4. **Serve.** Arguments after the script's name are passed to `zensical serve`, so `-a localhost:<port>` picks
-   another port. Run the script with `run_in_background: true`, because `zensical serve` doesn't exit:
+   another port. `zensical serve` doesn't exit, so run the script as a background command. If the agent can't run
+   commands in the background, or stops commands after a timeout (Mistral Vibe does both), don't start the server.
+   Tell the user to run the command below in a terminal of their own instead, and stop here:
 
    ```sh
    bin/serve-docs.sh -a localhost:8000
@@ -39,4 +41,4 @@ first run, the script installs Zensical into `.venv`. It also generates the diag
    Python 3.10 or later on the PATH (the script picks the newest `python3.x`, or set `PYTHON`), or a templates build
    failure. A `.venv` made with an older Python is recreated automatically.
 
-To stop the server, stop the background task.
+To stop the server, stop the background command.
