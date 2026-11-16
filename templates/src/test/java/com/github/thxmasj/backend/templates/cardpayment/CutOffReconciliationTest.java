@@ -60,6 +60,7 @@ import com.github.thxmasj.backend.http.outbox.Dispatcher;
 import com.github.thxmasj.backend.http.outbox.HttpOutboxRequest.BatchedRequest;
 import com.github.thxmasj.backend.http.outbox.HttpOutboxRequest;
 import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
+import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
 import com.github.thxmasj.backend.core.message.http.TypedHttpRequest;
 import com.github.thxmasj.backend.core.message.http.TypedHttpResponse;
 import com.github.thxmasj.backend.core.test.Init;
@@ -96,7 +97,7 @@ import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
 
 /// Verifies that a payment with automatic capture, followed by a cut-off request, results in a reconciliation request
-/// being sent to the acquirer.
+/// being sent to the acquirer, and that a merchant can't be created with a merchant id another merchant has.
 public class CutOffReconciliationTest {
 
   private static final String AGGREGATOR_ID = "aggregator";
@@ -153,6 +154,19 @@ public class CutOffReconciliationTest {
         tuple(new BatchNumber(merchantId, 1), new AcquirerBatchNumber(merchantId, 2), merchant(merchantId)),
         reconciliationInput.get()
     );
+  }
+
+  @Test
+  public void merchantWithMerchantIdTakenIsRejected() {
+    var machine = stateMachine(UUID.randomUUID().toString());
+
+    assertEquals(201, responseTo(request(machine, "/merchants")).statusCode());
+    // Another request to create a merchant with the same merchant id
+    assertEquals(400, responseTo(request(machine, "/merchants")).statusCode());
+  }
+
+  private static HttpResponseMessage responseTo(Event<?> event) {
+    return (HttpResponseMessage) event.getUnmarshalledData();
   }
 
   private static String authorisationPath() {
