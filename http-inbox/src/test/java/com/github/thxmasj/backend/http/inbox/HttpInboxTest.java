@@ -983,12 +983,19 @@ public class HttpInboxTest {
       DataType.string()
   );
 
-  /// The bell responds itself, or through the chime it rings
+  static final EventType<Void, Void> BellPolished = BasicEventType.of("Bell polished", UUID.fromString("5e8a3c1f-9b26-4d70-a4e3-1c7f2b9d6e08"));
+  static final EventType<Void, Void> BellScheduled = BasicEventType.of("Bell scheduled", UUID.fromString("c9f1b4e7-3a62-4d8c-8e05-7b2d6a9c1f34"));
+
+  /// The bell responds itself, or through the chime it rings, when it is rung. When it is polished it gives no
+  /// response, and when it is scheduled it is rung later, in another session.
   private static Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> bellTransitions(boolean throughChime) {
     return Map.of(
-        Bell, Map.of(Begin, List.of(throughChime ?
-            onEvent(BellRung).toSelf().trigger(ChimeRung).on(Chime).identifiedBy(newEntityId()).output() :
-            onEvent(BellRung).toSelf().trigger(Rang).with(_ -> "Ding").on(Request).identifiedBy(entityIdFromSession()).output()
+        Bell, Map.of(Begin, List.of(
+            throughChime ?
+                onEvent(BellRung).toSelf().trigger(ChimeRung).on(Chime).identifiedBy(newEntityId()).output() :
+                onEvent(BellRung).toSelf().trigger(Rang).with(_ -> "Ding").on(Request).identifiedBy(entityIdFromSession()).output(),
+            onEvent(BellPolished).toSelf().output(),
+            onEvent(BellScheduled).toSelf().assembleInput().trigger(BellRung).after(_ -> Duration.ofMinutes(1)).output()
         )),
         Chime, Map.of(Begin, List.of(
             onEvent(ChimeRung).toSelf().trigger(Rang).with(_ -> "Dong").on(Request).identifiedBy(entityIdFromSession()).output()
@@ -1005,7 +1012,7 @@ public class HttpInboxTest {
     var request = bellRequest().build("BellRequest", UUID.randomUUID());
     assertThatThrownBy(() -> HttpInbox.transitions(List.of(request), bellTransitions(false)))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("The inbox request BellRequest doesn't take the response Rang, which Bell triggers");
+        .hasMessageContaining("The inbox request BellRequest doesn't take the response Rang, which Bell rung on Bell triggers on Request");
   }
 
   @Test
@@ -1013,7 +1020,26 @@ public class HttpInboxTest {
     var request = bellRequest().build("BellRequest", UUID.randomUUID());
     assertThatThrownBy(() -> HttpInbox.transitions(List.of(request), bellTransitions(true)))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("The inbox request BellRequest doesn't take the response Rang, which Chime triggers");
+        .hasMessageContaining("The inbox request BellRequest doesn't take the response Rang, which Chime rung on Chime triggers on Request");
+  }
+
+  /// Two requests on the bell, where only ringing it gives a custom response: only the request ringing it takes it
+  @Test
+  public void requestTakesOnlyTheResponsesOfItsOwnProcesses() {
+    var ring = bellRequest().response(Rang, _ -> new HttpResponseMessage(200, "OK")).build("RingRequest", UUID.randomUUID());
+    var polish = HttpInboxRequest.matching(m -> m.requestLine().matches("PUT /bell/polish")).noContent()
+        .process(BellPolished, Bell, newEntity())
+        .build("PolishRequest", UUID.randomUUID());
+    assertThat(HttpInbox.transitions(List.of(polish, ring), bellTransitions(true))).containsKeys(ring, polish, Bell);
+  }
+
+  /// Ringing the bell later is in another session, which the check doesn't follow
+  @Test
+  public void delayedTriggerIsNotFollowed() {
+    var schedule = HttpInboxRequest.matching(m -> m.requestLine().matches("PUT /bell/schedule")).noContent()
+        .process(BellScheduled, Bell, newEntity())
+        .build("ScheduleRequest", UUID.randomUUID());
+    assertThat(HttpInbox.transitions(List.of(schedule), bellTransitions(false))).containsKeys(schedule, Bell);
   }
 
   @Test

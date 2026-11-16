@@ -188,10 +188,12 @@ public interface HttpInbox {
   /// The transitions of the application with its inbox, to create the state machine with: those of the application,
   /// and of `RequestRouting`, routing to the inbox requests, of the inbox requests and of `MessageIds`.
   ///
-  /// Every inbox request is checked to take the responses its processes may give: the event types triggered on
-  /// [#Request] by the entity models of its processes, or by entity models they trigger events on, must be
-  /// [#RequestCompleted], [#InvalidRequestCompleted], [#FailedRequestCompleted] or one the request has a `response`
-  /// for. A response it doesn't take would otherwise be rejected when it is given.
+  /// Every inbox request is checked to take the responses its own processes may give. From the event of each process,
+  /// the transitions taken on it in any state, with all the transitions they may choose, and the transitions of the
+  /// events they trigger at once on other entities, in the same session, are followed. The event types they trigger on
+  /// [#Request] must be [#RequestCompleted], [#InvalidRequestCompleted], [#FailedRequestCompleted] or one the request
+  /// has a `response` for. Delayed and conditional triggers and actions, e.g. outbox requests, are not followed, as
+  /// what they lead to is calculated later, so a response given that way is checked only when it is given.
   ///
   /// @param application the transitions of the entity models of the application, e.g. those of the processes
   /// @throws IllegalArgumentException if an inbox request doesn't take a response its processes may give

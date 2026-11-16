@@ -572,27 +572,31 @@ interface TransitionModels {
         );
   }
 
-  /// Checks that every inbox request takes the responses its processes may give, which are the event types triggered on
-  /// the group of inbox requests by the entity models of its processes, or by the entity models they trigger events on,
-  /// in any state. An entity model reached from several inbox requests may only give a response on the way from one of
-  /// them, but the check can't tell the ways apart, so all of them must take it.
+  /// Checks that every inbox request takes the responses its own processes may give. From the event of a process on
+  /// its entity model, the transitions taken on that event in any state are followed, with all the transitions they may
+  /// choose, as which one is taken is decided at runtime. The event types they trigger on the group of inbox requests
+  /// are the responses given. The events they trigger at once on other entities, which are calculated in the same
+  /// session, are followed in the same way. Delayed and conditional triggers, and actions such as sending an outbox
+  /// request, are not followed, as what they lead to is calculated later, so a response given that way is checked when
+  /// it is given.
   static void checkResponses(
       List<HttpInboxRequest<?>> requests,
       Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions
   ) {
     for (HttpInboxRequest<?> request : requests) {
-      Set<EventType<?, ?>> taken = request.transitions().get(Dispatched).stream()
-          .map(TransitionModel::eventType)
+      Set<UUID> taken = request.transitions().get(Dispatched).stream()
+          .map(transition -> transition.eventType().id())
           .collect(toSet());
       for (Process<?, ?> process : request.processes()) {
-        for (var given : responsesGiven(process.entityModel(), transitions, request)) {
-          if (!taken.contains(given.eventType()))
+        for (var given : responsesGiven(new Event(process.entityModel(), process.eventType()), transitions, request)) {
+          if (!taken.contains(given.response().id()))
             throw new IllegalArgumentException(String.format(
-                "The inbox request %s doesn't take the response %s, which %s triggers on %s on the way from its process " +
-                    "%s on %s. Add it to the request with .response(..)",
+                "The inbox request %s doesn't take the response %s, which %s on %s triggers on %s, on the way from " +
+                    "its process %s on %s. Add it to the request with .response(..)",
                 request.name(),
-                given.eventType().name(),
-                given.entityModel().name(),
+                given.response().name(),
+                given.by().eventType().name(),
+                given.by().entityModel().name(),
                 HttpInbox.Request.name(),
                 process.eventType().name(),
                 process.entityModel().name()
@@ -602,30 +606,44 @@ interface TransitionModels {
     }
   }
 
-  /// A response triggered on the group of inbox requests by a transition of the entity model
-  record Given(EntityModel entityModel, EventType<?, ?> eventType) {}
+  /// An event type on an entity model
+  record Event(EntityModel entityModel, EventType<?, ?> eventType) {
 
-  /// The responses triggered on the request by the entity model and the entity models it triggers events on, except the
-  /// inbox's own
+    UUID id() {
+      return eventType.id();
+    }
+
+  }
+
+  /// A response triggered on the group of inbox requests by a transition taken on the event
+  record Given(Event by, EventType<?, ?> response) {}
+
+  /// The responses triggered on the request by the transitions taken on the event, and on the events they trigger at
+  /// once, except on the inbox's own entity models
   private static List<Given> responsesGiven(
-      EntityModel start,
+      Event start,
       Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions,
       HttpInboxRequest<?> request
   ) {
     var given = new ArrayList<Given>();
-    var visited = new HashSet<EntityModel>();
-    var toVisit = new ArrayDeque<EntityModel>(List.of(start));
+    var visited = new HashSet<List<UUID>>();
+    var toVisit = new ArrayDeque<Event>(List.of(start));
     while (!toVisit.isEmpty()) {
-      EntityModel model = toVisit.removeFirst();
-      if (!visited.add(model) || !transitions.containsKey(model))
+      Event event = toVisit.removeFirst();
+      if (!visited.add(List.of(event.entityModel().id(), event.id())) || !transitions.containsKey(event.entityModel()))
         continue;
-      for (var transition : transitions.get(model).values().stream().flatMap(List::stream).toList()) {
-        for (var trigger : triggers(transition)) {
-          EntityModel target = trigger.entityModel() != null ? trigger.entityModel() : model;
+      var taken = transitions.get(event.entityModel()).values().stream()
+          .flatMap(List::stream)
+          .filter(transition -> transition.eventType().id().equals(event.id()))
+          .toList();
+      for (var transition : taken) {
+        for (var trigger : immediateTriggers(transition)) {
+          EntityModel target = trigger.entityModel() != null ? trigger.entityModel() : event.entityModel();
+          EventType<?, ?> triggered = trigger.eventSpec().eventType();
           if (target instanceof EntityModelGroup group && group.includes(request))
-            given.add(new Given(model, trigger.eventSpec().eventType()));
+            given.add(new Given(event, triggered));
           else if (!(target instanceof EntityModelGroup) && !isInboxModel(target))
-            toVisit.addLast(target);
+            toVisit.addLast(new Event(target, triggered));
         }
       }
     }
@@ -636,13 +654,17 @@ interface TransitionModels {
     return model instanceof HttpInboxRequest<?> || model.equals(RequestRouting) || model.equals(MessageIds);
   }
 
-  /// The triggers of the transition, of its reversal and of the transitions it may choose
-  private static List<EventTrigger<?, ?, ?>> triggers(TransitionModel<?, ?> transition) {
-    var triggers = new ArrayList<EventTrigger<?, ?, ?>>(transition.triggers());
-    if (transition.reverseModel() != null)
-      triggers.addAll(transition.reverseModel().triggers());
+  /// The triggers of the transition and of the transitions it may choose, which trigger their events at once. A
+  /// conditional trigger waits for its condition, and a delayed one isn't among the triggers. The triggers of a
+  /// reversal are left out, as it is taken on a later rollback.
+  private static List<EventTrigger<?, ?, ?>> immediateTriggers(TransitionModel<?, ?> transition) {
+    var triggers = new ArrayList<EventTrigger<?, ?, ?>>();
+    for (var trigger : transition.triggers()) {
+      if (trigger.condition() == null)
+        triggers.add(trigger);
+    }
     for (var filter : transition.filters())
-      triggers.addAll(triggers(filter.alternative().model()));
+      triggers.addAll(immediateTriggers(filter.alternative().model()));
     return triggers;
   }
 

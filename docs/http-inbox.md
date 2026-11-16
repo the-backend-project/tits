@@ -29,13 +29,25 @@ HttpInboxRequest<Order> PlaceOrder = HttpInboxRequest
 | `rollback`        | No       | Requests rolling back a request by its message id, with an authorizer of their own if the request has one, see [rollback](#rollback) |
 
 `HttpInbox.transitions(requests, application)` gives the transitions to create the state machine with: those of the
-application, and of the inbox requests, `RequestRouting` and `MessageIds`. It checks that every inbox request takes the
-responses its processes may give: the response event types triggered on `HttpInbox.Request` by the entity models of its
-processes, or by entity models they trigger events on, must be `RequestCompleted`, `InvalidRequestCompleted`,
-`FailedRequestCompleted` or one the request has a `response` for. Otherwise it fails, naming the request and the
-response, rather than leaving the response to be rejected when it is given. As the check can't tell which inbox request
-a response is given on the way from, an entity model the processes of several inbox requests trigger events on makes
-all of them take its responses.
+application, and of the inbox requests, `RequestRouting` and `MessageIds`.
+
+An inbox request declares the custom responses its own processes give, and no others. `HttpInbox.transitions` checks
+this per request. It starts from the event of each process on its entity model, and follows:
+
+- the transitions taken on that event, in any state, with every transition they may choose, as which one is taken is
+  decided at runtime;
+- the events those transitions trigger at once on other entities, which are calculated in the same session, followed
+  in the same way.
+
+The event types triggered on `HttpInbox.Request` along the way are the responses the request may get. Each must be
+`RequestCompleted`, `InvalidRequestCompleted`, `FailedRequestCompleted` or one the request has a `response` for.
+Otherwise the check fails, naming the request, the response and the event giving it, rather than leaving the response
+to be rejected when it is given. A request on an entity model shared with other requests only declares the responses
+its own events lead to.
+
+Delayed triggers (`after(..)`), conditional triggers, reversals and actions such as sending an outbox request are not
+followed, as what they lead to is calculated later. A response given that way, e.g. by the callback of an outbox
+request, is not checked in advance. It is rejected when it is given, if the request doesn't take it.
 
 The `HttpInboxListener` receives HTTP requests with reactor-netty and passes them to the inbox. A `RequestRouting` entity
 is created for every request, and routes it to a new entity of the first inbox request matching it. A request no inbox
