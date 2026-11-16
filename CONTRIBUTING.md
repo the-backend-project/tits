@@ -95,11 +95,13 @@ The [fix](.agents/skills/fix/SKILL.md) skill takes a GitHub issue from the board
 the [GitHub CLI](https://cli.github.com) (`gh`), logged in with your account. Run it with `/fix N` (or say "Fix #N"),
 where N is the number of the issue. The agent then:
 
-1. Assigns the issue to you (the user `gh` is logged in as) and moves it to In Progress on the board. Without write
-   access to the repository it skips this step, and you work from a fork instead.
+1. Assigns the issue to you (the user `gh` is logged in as) and moves it to In Progress on the board. If someone else,
+   such as another agent's account, is already assigned, it asks you first. Without write access to the repository it
+   skips this step, and you work from a fork instead.
 2. Creates the branch `issue-N-<slug>` off `main` in a worktree of its own, `.worktrees/issue-N-<slug>` (ignored by
    git), so the branch and local changes of the main checkout are left alone and several issues can be worked on at the
-   same time. If a worktree or branch for the issue already exists, it continues there.
+   same time. If a worktree or branch for the issue already exists, it asks whether that is your earlier work and
+   continues there only if you say so, since it may belong to another agent working on the issue.
 3. Presents its plan. If the task is large or the plan is not obvious, it waits for you to confirm or correct the plan
    before starting the work; a trivial fix goes ahead right away.
 4. Makes the change and runs the tests of the affected modules, and updates `docs`, the README and this guide to match.
