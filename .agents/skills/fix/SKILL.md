@@ -34,11 +34,18 @@ git remote -v
    git branch --list 'issue-N-*'
    ```
 
-   If one exists, continue in it instead of creating a new one (skip step 5), or
-   ask the user if it is unclear whether that work should be kept.
+   A worktree or branch found here may belong to another agent working on the issue
+   right now, in this checkout or another one. Never continue in it on your own:
+   tell the user what you found (path, branch, last commit, uncommitted changes) and
+   ask whether it is their earlier work. Continue in it (skip step 5) only if they
+   say so. Otherwise leave it untouched and work in a new worktree.
 
-2. **Read the issue:** `gh issue view N --json number,title,body,state,comments`.
-   If it is closed, stop and tell the user.
+2. **Read the issue:**
+   `gh issue view N --json number,title,body,state,comments,assignees`.
+   If it is closed, stop and tell the user. If anyone other than the user `gh` is
+   logged in as (`gh api user --jq .login`) is assigned, such as another person or
+   another agent's account, someone may already be working on it: stop and ask the
+   user whether to go on before assigning it or moving it on the board.
 
 3. **Assign it** to the user `gh` is logged in as:
    `gh issue edit N --add-assignee @me`
@@ -74,7 +81,9 @@ git remote -v
    ```
 
    `<slug>` is the issue title lowercased, non-alphanumerics replaced by `-`,
-   trimmed to a few words (e.g. `issue-136-timeout-rows-not-deleted`).
+   trimmed to a few words (e.g. `issue-136-timeout-rows-not-deleted`). If that
+   branch or worktree already exists and the user did not say it is theirs (step 1),
+   choose a different slug instead of reusing it.
 
    Do all the remaining steps in that worktree: edit files under its path and
    run git, Maven and the docs build there. When searching the main checkout,
