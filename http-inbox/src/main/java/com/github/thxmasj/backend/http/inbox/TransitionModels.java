@@ -345,6 +345,11 @@ interface TransitionModels {
     return (EventType) HttpInbox.RequestDispatched;
   }
 
+  @SuppressWarnings({"unchecked", "rawtypes"})
+  private static <D> EventType<D, Void> requestValidated() {
+    return (EventType) HttpInbox.RequestValidated;
+  }
+
   /// Whether the request is a repeat of the request of the entity which has its message id, accepted or rejected by
   /// the application, so that it gets the same response. An entity of another inbox request has another request, and
   /// one whose request is still being dispatched has no response yet, so the request is no repeat of them.
@@ -391,7 +396,7 @@ interface TransitionModels {
 
   /// Claims the message id of the request, and dispatches it unless the id is taken by an earlier request
   private static <T> TransitionModel<Dispatch<T>, Void> dispatchChoiceTransition(HttpInboxRequest<T> request) {
-    var claimed = onEvent(TransitionModels.<Dispatch<T>>requestDispatched()).to(Dispatched)
+    var claimed = onEvent(TransitionModels.<Dispatch<T>>requestValidated()).to(Dispatched)
         .assemble(c -> tuple(c.input(), c.entityId()))
         .trigger(MessageIdClaimed).with(d -> d.t1().routedRequest().messageId()).on(MessageIds).identifiedBy(d -> entityId(d.t2(), CreateIfNotExists))
         .when(d -> d.t2().isIdExists() && d.t2().idExists().log().oneIfExists(RollbackRequestAccepted).isPresent()).then(

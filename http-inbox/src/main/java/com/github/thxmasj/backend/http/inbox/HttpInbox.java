@@ -75,6 +75,14 @@ public interface HttpInbox {
       HttpDataType.forRequest(),
       DataType.none()
   );
+  /// A valid request of an inbox request with `deduplicateOn`, whose message id is claimed before it is dispatched. It
+  /// is never stored, as one of the outcomes of the claim always is.
+  EventType<RoutedRequest<?>, Void> RequestValidated = BasicEventType.of(
+      "Request validated",
+      UUID.fromString("d4f5f8e7-ab7a-4f20-ac7a-dda94d790c1f"),
+      DataType.unknown(),
+      DataType.none()
+  );
   EventType<RoutedRequest<?>, Void> RequestDispatched = BasicEventType.of(
       "Request dispatched",
       UUID.fromString("8a6c2d4f-1e3b-4a97-b5d8-0c9e7f2a1b63"),
