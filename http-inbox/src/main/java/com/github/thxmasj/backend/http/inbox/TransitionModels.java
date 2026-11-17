@@ -47,9 +47,6 @@ import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.EntityModelGroup;
 import com.github.thxmasj.backend.core.EntitySelector;
-import com.github.thxmasj.backend.core.EntitySelector.ById;
-import com.github.thxmasj.backend.core.EntitySelector.ByIdEvent;
-import com.github.thxmasj.backend.core.EntitySelector.ByIdFromSession;
 import com.github.thxmasj.backend.core.EventLog;
 import com.github.thxmasj.backend.core.EventReference;
 import com.github.thxmasj.backend.core.EventTrigger;
@@ -200,20 +197,8 @@ interface TransitionModels {
       return Validation.invalid("Unable to parse process selector: " + selector.invalidReason());
     String clientId = authorization != null ? authorization.subject() : "N/A";
     EntitySelector processSelector = selector.validValue();
-    MessageId messageId = null;
-    if (messageIdValue != null) {
-      messageId = new MessageId(clientId, messageIdValue.validValue());
-    } else {
-      // A request without a message id is identified by the event it triggers on an existing entity
-      String entity = switch (processSelector) {
-        case ById s -> s.id().toString();
-        case ByIdEvent<?> s -> s.id().toString();
-        case ByIdFromSession _ -> UUID.randomUUID().toString(); // TODO: Use id from session for the process model
-        default -> null;
-      };
-      if (entity != null)
-        messageId = new MessageId(clientId, process.eventType().id() + "/" + entity);
-    }
+    // A request without a message id is not deduplicated, so each one is dispatched
+    MessageId messageId = messageIdValue != null ? new MessageId(clientId, messageIdValue.validValue()) : null;
     return new Validation<>(
         null,
         null,
@@ -316,13 +301,19 @@ interface TransitionModels {
     return Map.copyOf(transitions);
   }
 
-  /// A received request is validated, and dispatched to the application if it is valid
+  /// A received request is validated, and dispatched to the application if it is valid. A request with a message id
+  /// claims it first, so that a retry is recognised, while a request of an inbox request without a message id parser
+  /// is not deduplicated, and is dispatched as it is.
   private static <T> TransitionModel<?, ?> receivedTransition(HttpInboxRequest<T> request) {
-    return onEvent(RequestReceived).to(Dispatched)
+    var validated = onEvent(RequestReceived).to(Dispatched)
         .assemble(c -> validate(request, c.input()))
         .when(Validation::isInvalid).then(rejectedAsInvalid(), Validation::invalidReason)
-        .when(Validation::isRefused).then(rejectedAsUnauthorized(), Validation::refused)
-        .otherwise(dispatchChoiceTransition(request), Validation::dispatch);
+        .when(Validation::isRefused).then(rejectedAsUnauthorized(), Validation::refused);
+    if (request.messageIdParser() != null)
+      return validated.otherwise(dispatchChoiceTransition(request), Validation::dispatch);
+    return request.processes().size() == 1 ?
+        validated.otherwise(dispatchTransition(request, 0), Validation::routedRequest) :
+        validated.otherwise(contentChoiceTransition(request), Validation::dispatch);
   }
 
   private static TransitionModel<String, HttpResponseMessage> rejectedAsInvalid() {

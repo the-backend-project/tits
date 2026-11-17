@@ -77,6 +77,7 @@ import java.net.URI;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -608,6 +609,24 @@ public class HttpInboxTest {
     HttpResponseMessage zeroResponse = HttpMessageParser.parseResponse(zeroResponseEvent.data());
     assertEquals(201, zeroResponse.statusCode());
     assertEquals("Complete", ProblemDetail.parse(zeroResponse.body()).detail());
+  }
+
+  @Test
+  public void whenRequestWithoutMessageIdIsRepeatedOnSameEntityThenItIsProcessedAgain() throws IOException {
+    HttpResponseMessage response = HttpMessageParser.parseResponse(onRequest(
+        PUT,
+        URI.create("/internal/" + UUID.randomUUID()),
+        new ObjectMapper().writeValueAsBytes(new InternalProcess("Hello", 1))
+    ).data());
+    UUID entityId = UUID.fromString(ProblemDetail.parse(response.body()).entityId());
+
+    HttpResponseMessage zero1 = HttpMessageParser.parseResponse(onRequest(PUT, URI.create("/zero/" + entityId), null).data());
+    HttpResponseMessage zero2 = HttpMessageParser.parseResponse(onRequest(PUT, URI.create("/zero/" + entityId), null).data());
+    assertEquals(201, zero1.statusCode());
+    assertEquals(201, zero2.statusCode());
+    assertEquals("Complete", ProblemDetail.parse(zero2.body()).detail());
+    // A response of its own, not the one of the first request
+    assertFalse(Arrays.equals(zero1.body(), zero2.body()));
   }
 
   @Test

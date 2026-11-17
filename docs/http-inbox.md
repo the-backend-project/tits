@@ -22,7 +22,7 @@ HttpInboxRequest<Order> PlaceOrder = HttpInboxRequest
 | `matching`        | Yes      | Tells which requests are of this type, e.g. by method and path                                    |
 | `contentParser`   | Yes      | Parses the body, or `noContent()` to ignore it. An invalid body is answered with 400              |
 | `process`         | Yes      | The event type the request triggers, the entity model and the entity, e.g. `newEntity()` or `parseEntityId(...)`, and the event's data, which an event without data leaves out. Repeated with a content predicate for [content routing](#content-routing) |
-| `messageIdParser` | No       | The id of the request, by which a retried request is recognised                                   |
+| `messageIdParser` | No       | The id of the request, by which a retried request is recognised. Without it, nothing is deduplicated |
 | `authorizer`      | No       | Authorizes the request, e.g. with a bearer token (see [access tokens](#access-tokens))           |
 | `response`        | No       | A response of the application of its own, made from a `ResponseEventType` the application triggers |
 | `normalizer`      | No       | Normalizes a request before it is compared with an earlier request with the same message id       |
@@ -72,9 +72,9 @@ response of the first one, also if the application rejected it, without triggeri
 the client's: the authorized subject and the id, or the id alone without an authorizer. All inbox requests share
 `MessageIds`, so a client can use a message id once, for one request of one type. A request with the message id of an
 earlier request it differs from, of the same or another inbox request, is answered with 400 Bad Request and the detail
-`Conflict`, and so is a request with the message id of a request still being dispatched. A request without a message
-id that triggers an event on an existing entity is identified by the event type and the entity. Filters on the
-listener can authenticate, log or rewrite requests before they reach the inbox.
+`Conflict`, and so is a request with the message id of a request still being dispatched. The requests of an inbox
+request without a `messageIdParser` are not deduplicated: each one is dispatched to the application, also when it
+repeats an earlier one. Filters on the listener can authenticate, log or rewrite requests before they reach the inbox.
 
 A response of 500 Internal Server Error, which the application triggers with `FailedRequestCompleted`, is an event of
 [severity](monitoring.md#severity) `Error`.
