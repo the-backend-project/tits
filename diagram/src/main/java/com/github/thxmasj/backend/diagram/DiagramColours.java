@@ -53,15 +53,21 @@ final class DiagramColours {
           .collect(joining())
       + "}\n";
 
-  /// CSS for the `style` element of an SVG written by Graphviz, whose edges are groups of class `edge`
+  /// Text outside the nodes' boxes in a diagram drawn in Graphviz, such as a heading above a box, which would be dark on
+  /// the dark page. It is the dark primary colour of the page in light mode.
+  static final Colour HEADING = new Colour("#353b16", TEXT);
+
+  /// CSS for the `style` element of an SVG written by Graphviz, whose edges are groups of class `edge` and nodes groups
+  /// of class `node`
   static final String GRAPHVIZ_STYLE = """
       svg{color-scheme:light dark}
       @media (prefers-color-scheme:dark){
       g.edge path{stroke:%1$s}
       g.edge polygon{fill:%1$s;stroke:%1$s}
       g.edge text{fill:%2$s}
+      g.node text[fill="%3$s"]{fill:%4$s}
       }
-      """.formatted(ARROW, TEXT);
+      """.formatted(ARROW, TEXT, HEADING.light(), HEADING.dark());
 
   /// Adds [#GRAPHVIZ_STYLE] to an SVG written by Graphviz, which has no `defs` element
   static String addGraphvizStyle(String svg) {

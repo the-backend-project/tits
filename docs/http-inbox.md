@@ -143,10 +143,10 @@ back`, and takes the message id, so that the request is rejected with 422 Unproc
 
 A rollback finds the request, and the request finds the events to roll back, through the event logs of the entities
 involved. Here a `DELETE /orders/42` rolls back the `PUT /orders/42` of the `PlaceOrder` inbox request, whose process
-placed an order. Each entity is a stack of its events, the oldest on top, under its entity id and entity model, with the
-kind of entity as a stereotype. The entity of `MessageIds` has the same entity id, `p`, as the entity of the inbox
-request. An event in italics, with a dashed border, leads to a choice and is not stored: only the event of the chosen
-transition is. Solid arrows are triggers, and dashed arrows the event references:
+placed an order. Each entity is a stack of its events, the oldest on top, under the name of its entity model, with the
+kind of entity as a stereotype. The `MessageIds` entity has the same entity id as the `PlaceOrder` entity. An event in
+italics, with a dashed border, leads to a choice and is not stored: only the event of the chosen transition is. Solid
+arrows are triggers, and dashed arrows the event references:
 
 <object data="../images/com.github.thxmasj.backend.http.inbox.Rollback.svg" type="image/svg+xml"></object>
 
@@ -156,7 +156,7 @@ transition is. Solid arrows are triggers, and dashed arrows the event references
 2. A valid request claims its message id, the subject and the id its `deduplicateOn` gives, on the `MessageIds` entity
    with the same entity id as the request's own entity, unless an earlier request or rollback has claimed it.
 3. The process of the request triggers its event on the application, here `Order placed` as event `n` of the order.
-   `Request accepted` keeps an `EventReference` to it: the entity id, `o`, and the event number. The application responds by
+   `Request accepted` keeps an `EventReference` to it: the entity id of the order and the event number. The application responds by
    triggering `Request completed`, which gives the response to the `RequestRouting` entity of the request.
 4. A rollback is routed to the entity which claimed the message id its `deduplicateOn` gives, and there takes the
    `EventReference` of `Request accepted`. It triggers `Events rolled back` on the entity referred to, rolling it back

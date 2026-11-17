@@ -18,7 +18,11 @@ class DiagramColoursTest {
     assertThat(styled).contains(
         "xmlns=\"http://www.w3.org/2000/svg\"><style type=\"text/css\">" + DiagramColours.GRAPHVIZ_STYLE + "</style>\n<g id=\"graph0\""
     );
-    assertThat(DiagramColours.GRAPHVIZ_STYLE).contains("prefers-color-scheme:dark", "g.edge path{stroke:");
+    assertThat(DiagramColours.GRAPHVIZ_STYLE).contains(
+        "prefers-color-scheme:dark",
+        "g.edge path{stroke:",
+        "g.node text[fill=\"#353b16\"]{fill:" + DiagramColours.HEADING.dark() + "}"
+    );
   }
 
 }
