@@ -1,6 +1,5 @@
 package com.github.thxmasj.backend.docdiagrams;
 
-import static com.github.thxmasj.backend.core.Validated.valid;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.MessageIds;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.RequestRouting;
 import static com.github.thxmasj.backend.http.inbox.HttpInboxRequest.newEntity;
@@ -74,8 +73,7 @@ public class Main {
         .process(orderPlaced, order, newEntity())
         .rollback(HttpInboxRequest.Rollback
             .matching(m -> m.requestLine().matches("DELETE /orders/.*"))
-            .messageIdParser(parseMessageId("DELETE /orders/(.*)", 1))
-            .deduplicateOn((m, _) -> valid(m.headerValue("X-Correlation-Id"))))
+            .deduplicateOn(parseMessageId("DELETE /orders/(.*)", 1)))
         .build("PlaceOrder", UUID.randomUUID());
     var name = "com.github.thxmasj.backend.http.inbox";
     stateDiagram(name + ".RequestRouting", RequestRouting, Map.of(RequestRouting, HttpInbox.requestRoutingTransitions(List.of(placeOrder))));

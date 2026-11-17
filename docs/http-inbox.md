@@ -15,8 +15,7 @@ HttpInboxRequest<Order> PlaceOrder = HttpInboxRequest
     .process(OrderPlaced, Orders, RoutedRequest::body, newEntity())
     .rollback(Rollback
         .matching(m -> m.method() == Method.DELETE)
-        .messageIdParser(parseMessageId("DELETE /orders/(.*)", 1))
-        .deduplicateOn((m, _) -> valid(m.headerValue("X-Correlation-Id")))
+        .deduplicateOn(parseMessageId("DELETE /orders/(.*)", 1))
         .authorizer(HttpInbox.bearerToken(verifier, "orders")))
     .build("PlaceOrder", UUID.fromString("..."));
 ```
@@ -26,11 +25,11 @@ HttpInboxRequest<Order> PlaceOrder = HttpInboxRequest
 | `matching`        | Yes      | Tells which requests are of this type, e.g. by method and path                                    |
 | `contentParser`   | Yes      | Parses the body, or `noContent()` to ignore it. An invalid body is answered with 400              |
 | `process`         | Yes      | The event type the request triggers, the entity model and the entity, e.g. `newEntity()` or `parseEntityId(...)`, and the event's data, which an event without data leaves out. Repeated with a content predicate for [content routing](#content-routing) |
-| `deduplicateOn`   | No       | The id of the request, by which a retried request is recognised. Without it, nothing is deduplicated |
+| `deduplicateOn`   | No       | The id of the request, by which a retried request is recognised. Without it, nothing is deduplicated, and the request can't be rolled back |
 | `authorizer`      | No       | Authorizes the request, e.g. with a bearer token (see [access tokens](#access-tokens))           |
 | `response`        | No       | A response of the application of its own, made from a `ResponseEventType` the application triggers |
 | `normalizer`      | No       | Normalizes a request before it is compared with an earlier request with the same message id       |
-| `rollback`        | No       | Requests rolling back a request by its message id, told apart by a deduplication key, with an authorizer of their own if the request has one, see [rollback](#rollback) |
+| `rollback`        | No       | Requests rolling back a request by its message id, with an authorizer of their own if the request has one. Needs `deduplicateOn`, see [rollback](#rollback) |
 
 `HttpInbox.transitions(requests, application)` gives the transitions to create the state machine with: those of the
 application, and of the inbox requests, `RequestRouting` and `MessageIds`.
@@ -125,24 +124,27 @@ to answer an authentication response with an error with 400 Bad Request.
 ## Rollback
 
 An inbox request with a `rollback` takes the requests the rollback's matcher matches as rollbacks of the request with
-the message id its parser gives, e.g. a `DELETE` with the id of an earlier `PUT`. The rollback is built like the inbox
-request, starting with `Rollback.matching(...)`:
+the message id the rollback's `deduplicateOn` gives, e.g. a `DELETE` with the id of an earlier `PUT`. Only an inbox
+request with `deduplicateOn` can have a rollback, as a request is found by its message id: `rollback` is a method of the
+builder `deduplicateOn` returns. The rollback is built like the inbox request, starting with `Rollback.matching(...)`:
 
-| Setting           | Required | What it does                                                                                     |
-|-------------------|----------|--------------------------------------------------------------------------------------------------|
-| `matching`        | Yes      | Tells which requests are rollbacks of a request of this type, e.g. by method and path             |
-| `messageIdParser` | Yes      | The message id of the request rolled back. An invalid one is answered with 400                    |
-| `deduplicateOn`   | Yes      | The key by which a retried rollback is recognised, e.g. a header. An invalid one is answered with 400 |
-| `authorizer`      | If the request has one | Authorizes the rollback                                                            |
+| Setting         | Required               | What it does                                                                                       |
+|-----------------|------------------------|----------------------------------------------------------------------------------------------------|
+| `matching`      | Yes                    | Tells which requests are rollbacks of a request of this type, e.g. by method and path               |
+| `deduplicateOn` | Yes                    | The message id of the request rolled back, the same one the request's `deduplicateOn` gives. An invalid one is answered with 400 |
+| `authorizer`    | If the request has one | Authorizes the rollback                                                                            |
+| `normalizer`    | No                     | Normalizes a rollback before it is compared with the first rollback of the request                 |
 
 A rollback goes to the entity of that request, which rolls back the events the request caused on the application and
 responds 201 Created with `Rolled back`. A rollback of a request not received yet is answered with `Nothing to roll
 back`, and takes the message id, so that the request is rejected with 422 Unprocessable Entity if it arrives later.
 
-A rollback repeated after the first one is told by its deduplication key, as the request line is the same for every
-rollback of a request. With the same key as the first, it is a retry and gets the response of the first one in both
-cases. With another key, it is rejected with 400 Bad Request and `Conflict`. There is no default key, as the library
-can't know what tells the rollbacks of an application apart.
+A request is rolled back once. A rollback repeated after the first one, which has the same message id, is compared with
+the first one as a request is: equal after normalizing, it is a retry and gets the response of the first one in both
+cases, and otherwise it is a second rollback, which is rejected with 400 Bad Request and `Conflict`. Without a
+normalizer, a rollback is compared as it is, headers included, so a retry must be sent as it was. A normalizer which
+removes e.g. the date and tracing headers lets a retry differ in them, and one which keeps e.g. `X-Correlation-Id` tells
+a second rollback by it.
 
 A rollback has no body, so the authorizer of the request, which may read the body, isn't used for it, and the functions
 of a rollback take `Void` for the body. A request with an authorizer takes a rollback with an authorizer of its own, and

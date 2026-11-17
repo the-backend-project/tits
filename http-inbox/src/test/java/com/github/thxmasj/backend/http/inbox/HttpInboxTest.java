@@ -263,14 +263,14 @@ public class HttpInboxTest {
     return HttpInboxRequest.matching(m -> m.requestLine().matches(requestLinePattern)).contentParser(m -> valid(m.body()));
   }
 
-  /// Can be rolled back by its message id, by rollbacks told apart by their `X-Rollback-Id`
+  /// Can be rolled back by its message id, by rollbacks which may differ in their correlation id when retried
   static HttpInboxRequest<byte[]> InternalRequest = withBody("PUT .*/internal/.*")
       .deduplicateOn(parseMessageId("PUT .*/internal/(.*)", 1))
       .process(InternalProcessingRequested, Lamp, newEntity())
       .rollback(Rollback
           .matching(m -> m.requestLine().matches("DELETE .*/lamps/messages/.*"))
-          .messageIdParser(parseMessageId("DELETE .*/lamps/messages/(.*)", 1))
-          .deduplicateOn((m, _) -> m.headerValue("X-Rollback-Id") != null ? valid(m.headerValue("X-Rollback-Id")) : invalid("X-Rollback-Id missing")))
+          .deduplicateOn(parseMessageId("DELETE .*/lamps/messages/(.*)", 1))
+          .normalizer(HttpInboxTest::withoutCorrelationId))
       .build("InternalRequest", UUID.fromString("3afa1f14-d4e3-49c4-b6ad-05a733f0b22d"));
 
   /// One endpoint, whose requests trigger different events by their content, with different inputs and selectors
@@ -292,8 +292,7 @@ public class HttpInboxTest {
       .process(InternalProcessingRequested, Lamp, newEntity())
       .rollback(Rollback
           .matching(m -> m.requestLine().matches("DELETE .*/owned/messages/.*"))
-          .messageIdParser(parseMessageId("DELETE .*/owned/messages/(.*)", 1))
-          .deduplicateOn((m, _) -> valid(m.requestLine()))
+          .deduplicateOn(parseMessageId("DELETE .*/owned/messages/(.*)", 1))
           .authorizer((m, _) -> Authorization.authorizedElse(m.headerValue("X-Owner"), "Owner missing")))
       .build("OwnedRequest", UUID.fromString("e2b7d14c-6a93-4f08-8c5e-3d9a1f6b2c47"));
 
@@ -907,9 +906,10 @@ public class HttpInboxTest {
   @Test
   public void processesOfRequestWithRollbackMustHaveTheSameEntityModel() {
     assertThatThrownBy(() -> HttpInboxRequest.matching(_ -> true).noContent()
+        .deduplicateOn(parseMessageId("(.*)", 1))
         .process(when("one", _ -> true), InternalProcessingRequested, Lamp, newEntity())
         .process(InternalProcessingRequested, EntityModel.of("Other", UUID.randomUUID()), newEntity())
-        .rollback(Rollback.matching(_ -> false).messageIdParser(parseMessageId("(.*)", 1)).deduplicateOn((m, _) -> valid(m.requestLine())))
+        .rollback(Rollback.matching(_ -> false).deduplicateOn(parseMessageId("(.*)", 1)))
         .build("Invalid", UUID.randomUUID()))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("must have the same entity model");
@@ -957,40 +957,35 @@ public class HttpInboxTest {
     String messageId = UUID.randomUUID().toString();
     HttpResponseMessage first = HttpMessageParser.parseResponse(onRollbackRequest(messageId).data());
     assertEquals("Nothing to roll back", ProblemDetail.parse(first.body()).detail());
-    // A retry, with the same rollback id but e.g. another correlation id
-    HttpResponseMessage second = onRollbackRequest(messageId, Map.of("X-Rollback-Id", "1", "X-Correlation-Id", "retry"));
+    // A retry, with another correlation id, which the normalizer removes
+    HttpResponseMessage second = onRollbackRequest(messageId, Map.of("X-Correlation-Id", "retry"));
     assertEquals(201, second.statusCode());
     assertArrayEquals(first.body(), second.body());
   }
 
-  /// A rollback is told from a retry by its deduplication key, not its request line, which is the same for all
-  /// rollbacks of a request
+  /// A repeated rollback with the same message id which differs from the first after normalizing is another rollback,
+  /// not a retry, as for requests
   @Test
   public void whenAnotherRollbackOfRolledBackRequestThenConflict() throws IOException {
     String messageId = UUID.randomUUID().toString();
     onInternalRequest(messageId, new InternalProcess("Hello!", 100));
-    HttpResponseMessage first = onRollbackRequest(messageId, Map.of("X-Rollback-Id", "1"));
+    HttpResponseMessage first = onRollbackRequest(messageId, Map.of("X-Reason", "Cancelled"));
     assertEquals("Rolled back", ProblemDetail.parse(first.body()).detail());
-    HttpResponseMessage second = onRollbackRequest(messageId, Map.of("X-Rollback-Id", "2"));
+    HttpResponseMessage second = onRollbackRequest(messageId, Map.of("X-Reason", "Timed out"));
     assertEquals(400, second.statusCode());
     assertEquals("Conflict", ProblemDetail.parse(second.body()).detail());
   }
 
+  /// Without a normalizer a rollback is compared as it is, so a retry with another correlation id is another rollback
   @Test
-  public void whenRollbackWithoutDeduplicationKeyThenBadRequest() throws IOException {
-    HttpResponseMessage rollback = onRollbackRequest(UUID.randomUUID().toString(), Map.of());
-    assertEquals(400, rollback.statusCode());
-    assertEquals("Unable to parse deduplication key: X-Rollback-Id missing", ProblemDetail.parse(rollback.body()).detail());
-  }
-
-  @Test
-  public void rollbackNeedsADeduplicationKey() {
-    assertThatThrownBy(() -> HttpInboxRequest.matching(_ -> true).noContent()
-        .process(InternalProcessingRequested, Lamp, newEntity())
-        .rollback(Rollback.matching(_ -> false).messageIdParser(parseMessageId("(.*)", 1)))
-        .build("Invalid", UUID.randomUUID()))
-        .isInstanceOf(NullPointerException.class)
-        .hasMessageContaining("deduplication key of a rollback is missing");
+  public void whenRollbackWithoutNormalizerIsRetriedWithAnotherCorrelationIdThenConflict() throws IOException {
+    String messageId = UUID.randomUUID().toString();
+    onRequest(PUT, URI.create("/owned/" + messageId), asJson(new InternalProcess("alice", 1)));
+    HttpResponseMessage first = onOwnedRollback(messageId, Map.of("X-Owner", "alice", "X-Correlation-Id", "first"));
+    assertEquals("Rolled back", ProblemDetail.parse(first.body()).detail());
+    HttpResponseMessage second = onOwnedRollback(messageId, Map.of("X-Owner", "alice", "X-Correlation-Id", "retry"));
+    assertEquals(400, second.statusCode());
+    assertEquals("Conflict", ProblemDetail.parse(second.body()).detail());
   }
 
   @Test
@@ -1034,9 +1029,10 @@ public class HttpInboxTest {
   @Test
   public void rollbackOfRequestWithAuthorizerNeedsAnAuthorizer() {
     assertThatThrownBy(() -> HttpInboxRequest.matching(_ -> true).noContent()
+        .deduplicateOn(parseMessageId("(.*)", 1))
         .authorizer((_, _) -> Authorization.authorized("alice"))
         .process(InternalProcessingRequested, Lamp, newEntity())
-        .rollback(Rollback.matching(_ -> false).messageIdParser(parseMessageId("(.*)", 1)).deduplicateOn((m, _) -> valid(m.requestLine())))
+        .rollback(Rollback.matching(_ -> false).deduplicateOn(parseMessageId("(.*)", 1)))
         .build("Invalid", UUID.randomUUID()))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("needs an authorizer");
@@ -1045,8 +1041,9 @@ public class HttpInboxTest {
   @Test
   public void rollbackOfRequestWithoutAuthorizerCanNotHaveAnAuthorizer() {
     assertThatThrownBy(() -> HttpInboxRequest.matching(_ -> true).noContent()
+        .deduplicateOn(parseMessageId("(.*)", 1))
         .process(InternalProcessingRequested, Lamp, newEntity())
-        .rollback(Rollback.matching(_ -> false).messageIdParser(parseMessageId("(.*)", 1)).deduplicateOn((m, _) -> valid(m.requestLine())).authorizer((_, _) -> Authorization.authorized("alice")))
+        .rollback(Rollback.matching(_ -> false).deduplicateOn(parseMessageId("(.*)", 1)).authorizer((_, _) -> Authorization.authorized("alice")))
         .build("Invalid", UUID.randomUUID()))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("can't have an authorizer");
@@ -1178,7 +1175,13 @@ public class HttpInboxTest {
   }
 
   private Event<?> onRollbackRequest(String messageId) {
-    return onRequest(TRIGGER, new HttpRequestMessage(DELETE, URI.create("/lamps/messages/" + messageId), Map.of("X-Rollback-Id", "1"), null));
+    return onRequest(DELETE, URI.create("/lamps/messages/" + messageId), null);
+  }
+
+  private static HttpRequestMessage withoutCorrelationId(HttpRequestMessage m) {
+    var headers = new HashMap<>(m.headers());
+    headers.remove("X-Correlation-Id");
+    return new HttpRequestMessage(m.method(), m.uri(), headers, m.body());
   }
 
   private HttpResponseMessage onRollbackRequest(String messageId, Map<String, String> headers) throws IOException {

@@ -80,7 +80,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
@@ -209,12 +208,9 @@ interface TransitionModels {
   }
 
   private static <T> Validation<T> validateRollback(HttpInboxRequest<T> request, HttpRequestMessage message) {
-    Validated<String> messageIdValue = request.rollback().messageIdParser().apply(message, null);
+    Validated<String> messageIdValue = request.rollback().deduplicateOn().apply(message, null);
     if (messageIdValue.isInvalid())
       return Validation.invalid("Unable to parse message id: " + messageIdValue.invalidReason());
-    Validated<String> deduplicationKey = request.rollback().deduplicateOn().apply(message, null);
-    if (deduplicationKey.isInvalid())
-      return Validation.invalid("Unable to parse deduplication key: " + deduplicationKey.invalidReason());
     // The rollback's own authorizer, as the request's may read the body, which a rollback doesn't have
     var authorizer = request.rollback().authorizer();
     Authorization authorization = authorizer != null ? authorizer.apply(message, null) : null;
@@ -534,10 +530,10 @@ interface TransitionModels {
         .output();
   }
 
-  /// Whether the rollback has the same deduplication key as the first one, which was valid
+  /// Whether the rollback is equal to the first one with the same message id after normalizing, as for requests
   private static <T> boolean isSameRollback(HttpInboxRequest<T> request, HttpRequestMessage rollback, HttpRequestMessage first) {
-    var deduplicateOn = request.rollback().deduplicateOn();
-    return Objects.equals(deduplicateOn.apply(rollback, null).validValue(), deduplicateOn.apply(first, null).validValue());
+    var normalizer = request.rollback().normalizer();
+    return normalizer.apply(rollback).equals(normalizer.apply(first));
   }
 
   /// A rollback repeated after the request is rolled back, or found to have nothing to roll back, gets the response of
@@ -550,7 +546,7 @@ interface TransitionModels {
             c.log().one(RollbackRequestCompleted),
             c.log().entityId()
         ))
-        // A retry of the first rollback has the same deduplication key
+        // A retry of the first rollback is equal to it after normalizing
         .when(d -> isSameRollback(request, d.t1().request(), d.t2())).then(
             onEvent(DuplicateRequestRejected).to(RollingBack)
                 .assembleInput()

@@ -187,14 +187,16 @@ public final class HttpInboxRequest<T> implements EntityModel {
   /// A response the application gives by triggering the event type on the request, created from the event's data
   record Response<I>(ResponseEventType<I> eventType, Function<TransitionContext<I>, HttpResponseMessage> messageCreator) {}
 
-  /// Requests rolling back a request of an inbox request, identified by its message id, given to
-  /// [Builder#rollback(Rollback.Builder)]:
+  /// Requests rolling back a request of an inbox request, given to [DeduplicatedBuilder#rollback(Rollback.Builder)].
+  /// A rollback is built like the inbox request, and its `deduplicateOn` gives the message id of the request it rolls
+  /// back, the same one the `deduplicateOn` of the request gives:
   ///
   /// ```java
+  /// .deduplicateOn(parseMessageId("PUT /orders/(.*)", 1))
+  /// ...
   /// .rollback(Rollback
   ///     .matching(m -> m.method() == Method.DELETE)
-  ///     .messageIdParser(parseMessageId("DELETE /orders/(.*)", 1))
-  ///     .deduplicateOn((m, _) -> valid(m.headerValue("X-Correlation-Id")))
+  ///     .deduplicateOn(parseMessageId("DELETE /orders/(.*)", 1))
   ///     .authorizer(HttpInbox.bearerToken(verifier, "orders")))
   /// ```
   ///
@@ -202,57 +204,59 @@ public final class HttpInboxRequest<T> implements EntityModel {
   public static final class Rollback {
 
     private final Predicate<HttpRequestMessage> matcher;
-    private final BiFunction<HttpRequestMessage, Void, Validated<String>> messageIdParser;
     private final BiFunction<HttpRequestMessage, Void, Validated<String>> deduplicateOn;
     private final BiFunction<HttpRequestMessage, Void, Authorization> authorizer;
+    private final Function<HttpRequestMessage, HttpRequestMessage> normalizer;
 
     private Rollback(Builder builder) {
       this.matcher = builder.matcher;
-      this.messageIdParser = Objects.requireNonNull(builder.messageIdParser, "The message id parser of a rollback is missing");
-      this.deduplicateOn = Objects.requireNonNull(builder.deduplicateOn, "The deduplication key of a rollback is missing");
+      this.deduplicateOn = builder.deduplicateOn;
       this.authorizer = builder.authorizer;
+      this.normalizer = builder.normalizer;
     }
 
     /// Starts building a rollback taking the requests the matcher matches, e.g. by their method and path
-    public static Builder matching(Predicate<HttpRequestMessage> matcher) {
-      return new Builder(Objects.requireNonNull(matcher));
+    public static DeduplicationStep matching(Predicate<HttpRequestMessage> matcher) {
+      return new DeduplicationStep(Objects.requireNonNull(matcher));
     }
 
     Predicate<HttpRequestMessage> matcher() {return matcher;}
-
-    BiFunction<HttpRequestMessage, Void, Validated<String>> messageIdParser() {return messageIdParser;}
 
     BiFunction<HttpRequestMessage, Void, Validated<String>> deduplicateOn() {return deduplicateOn;}
 
     BiFunction<HttpRequestMessage, Void, Authorization> authorizer() {return authorizer;}
 
-    /// Builds a rollback. The message id parser and the deduplication key are required, the authorizer is required
-    /// if the request has one and not allowed otherwise.
-    public static final class Builder {
+    Function<HttpRequestMessage, HttpRequestMessage> normalizer() {return normalizer;}
+
+    /// The step introducing the message id of the request a rollback rolls back, which every rollback needs
+    public static final class DeduplicationStep {
 
       private final Predicate<HttpRequestMessage> matcher;
-      private BiFunction<HttpRequestMessage, Void, Validated<String>> messageIdParser;
-      private BiFunction<HttpRequestMessage, Void, Validated<String>> deduplicateOn;
-      private BiFunction<HttpRequestMessage, Void, Authorization> authorizer;
 
-      private Builder(Predicate<HttpRequestMessage> matcher) {
+      private DeduplicationStep(Predicate<HttpRequestMessage> matcher) {
         this.matcher = matcher;
       }
 
-      /// The message id of the request a rollback rolls back, e.g. from its path. A rollback with an invalid one is
-      /// answered with 400 Bad Request.
-      public Builder messageIdParser(BiFunction<HttpRequestMessage, Void, Validated<String>> messageIdParser) {
-        this.messageIdParser = Objects.requireNonNull(messageIdParser);
-        return this;
+      /// The message id of the request a rollback rolls back, e.g. from its path, the same one the request's
+      /// `deduplicateOn` gives. Rollbacks with the same message id are deduplicated like requests: see
+      /// [Builder#normalizer(Function)]. A rollback with an invalid message id is answered with 400 Bad Request.
+      public Builder deduplicateOn(BiFunction<HttpRequestMessage, Void, Validated<String>> deduplicateOn) {
+        return new Builder(matcher, Objects.requireNonNull(deduplicateOn));
       }
 
-      /// The key by which a rollback repeated after the first one is recognised as a retry, e.g. a header such as
-      /// `X-Correlation-Id`. A repeated rollback with the same key as the first gets its response, and one with
-      /// another key is rejected with 400 Bad Request. A rollback with an invalid key is answered with 400 Bad
-      /// Request.
-      public Builder deduplicateOn(BiFunction<HttpRequestMessage, Void, Validated<String>> deduplicateOn) {
-        this.deduplicateOn = Objects.requireNonNull(deduplicateOn);
-        return this;
+    }
+
+    /// Builds a rollback. The authorizer is required if the request has one and not allowed otherwise.
+    public static final class Builder {
+
+      private final Predicate<HttpRequestMessage> matcher;
+      private final BiFunction<HttpRequestMessage, Void, Validated<String>> deduplicateOn;
+      private BiFunction<HttpRequestMessage, Void, Authorization> authorizer;
+      private Function<HttpRequestMessage, HttpRequestMessage> normalizer = Function.identity();
+
+      private Builder(Predicate<HttpRequestMessage> matcher, BiFunction<HttpRequestMessage, Void, Validated<String>> deduplicateOn) {
+        this.matcher = matcher;
+        this.deduplicateOn = deduplicateOn;
       }
 
       /// Authorizes a rollback, which rolls back the request with the message id the same subject sent. A rollback
@@ -261,6 +265,16 @@ public final class HttpInboxRequest<T> implements EntityModel {
       /// rollback without one.
       public Builder authorizer(BiFunction<HttpRequestMessage, Void, Authorization> authorizer) {
         this.authorizer = Objects.requireNonNull(authorizer);
+        return this;
+      }
+
+      /// Normalizes a rollback before it is compared with the first rollback of the request. A rollback equal to the
+      /// first one after normalizing is a retry and gets its response, and another is a second rollback, which is
+      /// rejected with 400 Bad Request. Without a normalizer, rollbacks are compared as they are, headers included,
+      /// so a retry must be sent as it was. A normalizer which removes e.g. the date and tracing headers lets a retry
+      /// differ in them, and one which keeps e.g. `X-Correlation-Id` tells a second rollback by it.
+      public Builder normalizer(Function<HttpRequestMessage, HttpRequestMessage> normalizer) {
+        this.normalizer = Objects.requireNonNull(normalizer);
         return this;
       }
 
@@ -289,8 +303,9 @@ public final class HttpInboxRequest<T> implements EntityModel {
 
   }
 
-  /// Builds an inbox request. A process is required, the rest is optional.
-  public static final class Builder<T> {
+  /// Builds an inbox request. A process is required, the rest is optional. An inbox request which can be rolled back
+  /// needs `deduplicateOn` first, which gives a [DeduplicatedBuilder].
+  public static sealed class Builder<T> permits DeduplicatedBuilder {
 
     private final Predicate<HttpRequestMessage> matcher;
     private final Function<HttpRequestMessage, Validated<T>> contentParser;
@@ -306,12 +321,21 @@ public final class HttpInboxRequest<T> implements EntityModel {
       this.contentParser = contentParser;
     }
 
+    private Builder(Builder<T> other) {
+      this.matcher = other.matcher;
+      this.contentParser = other.contentParser;
+      this.deduplicateOn = other.deduplicateOn;
+      this.authorizer = other.authorizer;
+      this.processes.addAll(other.processes);
+      this.normalizer = other.normalizer;
+      this.responses.addAll(other.responses);
+    }
+
     /// The message id of a request, e.g. from its path, by which a retried request is recognised and gets the response
     /// of the first one, and by which a request is rolled back. Without it, requests are not deduplicated: each one is
-    /// dispatched to the application.
-    public Builder<T> deduplicateOn(BiFunction<HttpRequestMessage, T, Validated<String>> deduplicateOn) {
-      this.deduplicateOn = deduplicateOn;
-      return this;
+    /// dispatched to the application, and the request can't be rolled back.
+    public DeduplicatedBuilder<T> deduplicateOn(BiFunction<HttpRequestMessage, T, Validated<String>> deduplicateOn) {
+      return new DeduplicatedBuilder<>(this, Objects.requireNonNull(deduplicateOn));
     }
 
     /// Authorizes a request, e.g. with [HttpInbox#bearerToken(AccessTokenVerifier, String...)]. A refused request is
@@ -420,17 +444,98 @@ public final class HttpInboxRequest<T> implements EntityModel {
       return this;
     }
 
-    /// Requests the rollback matches roll back the request with the message id it gives, by rolling back the events
-    /// the request caused on the application. A rollback of a request not received yet makes a later request with the
-    /// message id rejected. The processes of a request which can be rolled back must have the same entity model. See
-    /// [Rollback].
-    public Builder<T> rollback(Rollback.Builder rollback) {
-      this.rollback = new Rollback(Objects.requireNonNull(rollback));
+    public HttpInboxRequest<T> build(String name, UUID id) {
+      return new HttpInboxRequest<>(this, name, id);
+    }
+
+  }
+
+  /// Builds an inbox request with `deduplicateOn`, which can be rolled back by its message id
+  public static final class DeduplicatedBuilder<T> extends Builder<T> {
+
+    private DeduplicatedBuilder(Builder<T> builder, BiFunction<HttpRequestMessage, T, Validated<String>> deduplicateOn) {
+      super(builder);
+      ((Builder<T>) this).deduplicateOn = deduplicateOn;
+    }
+
+    @Override
+    public DeduplicatedBuilder<T> deduplicateOn(BiFunction<HttpRequestMessage, T, Validated<String>> deduplicateOn) {
+      ((Builder<T>) this).deduplicateOn = Objects.requireNonNull(deduplicateOn);
       return this;
     }
 
-    public HttpInboxRequest<T> build(String name, UUID id) {
-      return new HttpInboxRequest<>(this, name, id);
+    @Override
+    public DeduplicatedBuilder<T> authorizer(BiFunction<HttpRequestMessage, T, Authorization> authorizer) {
+      super.authorizer(authorizer);
+      return this;
+    }
+
+    @Override
+    public <U> DeduplicatedBuilder<T> process(
+        EventType<U, ?> eventType,
+        EntityModel entityModel,
+        Function<RoutedRequest<T>, U> input,
+        BiFunction<HttpRequestMessage, T, ? extends Validated<? extends EntitySelector>> selector
+    ) {
+      super.process(eventType, entityModel, input, selector);
+      return this;
+    }
+
+    @Override
+    public <U> DeduplicatedBuilder<T> process(
+        Content<T> content,
+        EventType<U, ?> eventType,
+        EntityModel entityModel,
+        Function<RoutedRequest<T>, U> input,
+        BiFunction<HttpRequestMessage, T, ? extends Validated<? extends EntitySelector>> selector
+    ) {
+      super.process(content, eventType, entityModel, input, selector);
+      return this;
+    }
+
+    @Override
+    public DeduplicatedBuilder<T> process(
+        EventType<Void, ?> eventType,
+        EntityModel entityModel,
+        BiFunction<HttpRequestMessage, T, ? extends Validated<? extends EntitySelector>> selector
+    ) {
+      super.process(eventType, entityModel, selector);
+      return this;
+    }
+
+    @Override
+    public DeduplicatedBuilder<T> process(
+        Content<T> content,
+        EventType<Void, ?> eventType,
+        EntityModel entityModel,
+        BiFunction<HttpRequestMessage, T, ? extends Validated<? extends EntitySelector>> selector
+    ) {
+      super.process(content, eventType, entityModel, selector);
+      return this;
+    }
+
+    @Override
+    public <I> DeduplicatedBuilder<T> response(
+        ResponseEventType<I> eventType,
+        Function<TransitionContext<I>, HttpResponseMessage> messageCreator
+    ) {
+      super.response(eventType, messageCreator);
+      return this;
+    }
+
+    @Override
+    public DeduplicatedBuilder<T> normalizer(Function<HttpRequestMessage, HttpRequestMessage> normalizer) {
+      super.normalizer(normalizer);
+      return this;
+    }
+
+    /// Requests the rollback matches roll back the request with the message id its `deduplicateOn` gives, by rolling
+    /// back the events the request caused on the application. A rollback of a request not received yet makes a later
+    /// request with the message id rejected. The processes of a request which can be rolled back must have the same
+    /// entity model. See [Rollback].
+    public DeduplicatedBuilder<T> rollback(Rollback.Builder rollback) {
+      ((Builder<T>) this).rollback = new Rollback(Objects.requireNonNull(rollback));
+      return this;
     }
 
   }
