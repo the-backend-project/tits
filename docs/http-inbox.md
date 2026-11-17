@@ -139,6 +139,47 @@ A rollback goes to the entity of that request, which rolls back the events the r
 responds 201 Created with `Rolled back`. A rollback of a request not received yet is answered with `Nothing to roll
 back`, and takes the message id, so that the request is rejected with 422 Unprocessable Entity if it arrives later.
 
+A rollback finds the request, and the request finds the events to roll back, through three entities. Here a
+`DELETE /orders/42` rolls back the `PUT /orders/42` of the `PlaceOrder` inbox request, whose process placed an order:
+
+```mermaid
+flowchart TB
+    rollback(["DELETE /orders/42"])
+    subgraph ids["MessageIds entity, with the id of the PlaceOrder entity"]
+        claimed["Message id claimed<br>(subject, 42)"]
+    end
+    subgraph request["PlaceOrder entity: the inbox request which can be rolled back"]
+        received["Request received<br>PUT /orders/42"] --> dispatched["Request dispatched"]
+        dispatched --> accepted["Request accepted<br>EventReference(order, n)"]
+        accepted --> completed["Request completed"]
+        completed --> rollbackReceived["Rollback request received"]
+        rollbackReceived --> rollbackAccepted["Rollback request accepted<br>EventReference(order, n + 1)"]
+        rollbackAccepted --> rollbackCompleted["Rollback request completed"]
+    end
+    subgraph log["Order entity: the event log of the process's entity"]
+        before["n − 1: …"] --> placed["n: Order placed"]
+        placed --> rolledBack["n + 1: Events rolled back<br>toNumber n − 1"]
+    end
+    rollback -- "deduplicateOn gives 42" --> claimed
+    claimed -. "same entity id" .- received
+    dispatched -- "process triggers" --> placed
+    accepted -. "refers to" .-> placed
+    rollbackReceived -- "triggers, on the entity and<br>before the event referred to" --> rolledBack
+    rollbackAccepted -. "refers to" .-> rolledBack
+```
+
+1. The request claims its message id, the subject and the id its `deduplicateOn` gives, on the `MessageIds` entity with
+   the same entity id as the request's own entity.
+2. The process of the request triggers its event on the application, here `Order placed` as event `n` of the order.
+   `Request accepted` keeps an `EventReference` to it: the entity id and the event number.
+3. A rollback is routed by the message id its `deduplicateOn` gives to the entity which claimed it, and there takes the
+   `EventReference` of `Request accepted`. It triggers `Events rolled back` on the entity referred to, rolling it back to
+   the event before the one referred to, `n − 1`. `Rollback request accepted` refers to that rollback event.
+
+The events rolled back stay in the event log, but are no longer effective: the state of the order, and everything read
+from its log, is as it was after event `n − 1`. This includes events after `n` which the request did not cause, so the
+application decides, by its transitions on `Events rolled back`, in which states of the entity a rollback is accepted.
+
 A request is rolled back once. A rollback repeated after the first one, which has the same message id, is compared with
 the first one as a request is: equal after normalizing, it is a retry and gets the response of the first one in both
 cases, and otherwise it is a second rollback, which is rejected with 400 Bad Request and `Conflict`. Without a
