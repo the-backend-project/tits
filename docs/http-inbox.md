@@ -13,13 +13,12 @@ HttpInboxRequest<Order> PlaceOrder = HttpInboxRequest
     .deduplicateOn(parseMessageId("PUT /orders/(.*)", 1))
     .authorizer(HttpInbox.bearerToken(verifier, "orders"))
     .process(OrderPlaced, Orders, RoutedRequest::body, newEntity())
-    .rollback(Rollback
-        .matching(m -> m.method() == Method.DELETE)
-        .noContent()
-        .deduplicateOn(parseMessageId("DELETE /orders/(.*)", 1))
-        .authorizer(HttpInbox.bearerToken(verifier, "orders")))
     .build("PlaceOrder", UUID.fromString("..."));
 ```
+
+<object data="../images/com.github.thxmasj.backend.http.inbox.PlaceOrder.svg" type="image/svg+xml"></object>
+
+[Open the PlaceOrder diagram in full size](images/com.github.thxmasj.backend.http.inbox.PlaceOrder.svg)
 
 | Setting           | Required | What it does                                                                                     |
 |-------------------|----------|--------------------------------------------------------------------------------------------------|
@@ -118,7 +117,11 @@ HttpInboxRequest<EnrolmentResult> EnrolmentResultReceived = HttpInboxRequest
     .build("EnrolmentResultReceived", UUID.fromString("..."));
 ```
 
-The diagram of the inbox request shows the choice: a `Request dispatched [status == Accepted]` and a
+<object data="../images/com.github.thxmasj.backend.http.inbox.EnrolmentResultReceived.svg" type="image/svg+xml"></object>
+
+[Open the EnrolmentResultReceived diagram in full size](images/com.github.thxmasj.backend.http.inbox.EnrolmentResultReceived.svg)
+
+The diagram shows the choice: a `Request dispatched [status == Accepted]` and a
 `Request dispatched [status == Rejected]`, each triggering its event. A single process can have a predicate too, e.g.
 to answer an authentication response with an error with 400 Bad Request.
 
@@ -127,7 +130,28 @@ to answer an authentication response with an error with 400 Bad Request.
 An inbox request with a `rollback` takes the requests the rollback's matcher matches as rollbacks of the request with
 the message id the rollback's `deduplicateOn` gives, e.g. a `DELETE` with the id of an earlier `PUT`. Only an inbox
 request with `deduplicateOn` can have a rollback, as a request is found by its message id: `rollback` is a method of the
-builder `deduplicateOn` returns. The rollback is built like the inbox request, starting with `Rollback.matching(...)`:
+builder `deduplicateOn` returns. Here `PlaceOrder` is rolled back by a `DELETE` with the id of the order:
+
+```java
+HttpInboxRequest<Order> PlaceOrder = HttpInboxRequest
+    .matching(m -> m.method() == Method.PUT && m.uri().getPath().startsWith("/orders/"))
+    .contentParser(HttpInbox.jsonParser(Order.class))
+    .deduplicateOn(parseMessageId("PUT /orders/(.*)", 1))
+    .authorizer(HttpInbox.bearerToken(verifier, "orders"))
+    .process(OrderPlaced, Orders, RoutedRequest::body, newEntity())
+    .rollback(Rollback
+        .matching(m -> m.method() == Method.DELETE && m.uri().getPath().startsWith("/orders/"))
+        .noContent()
+        .deduplicateOn(parseMessageId("DELETE /orders/(.*)", 1))
+        .authorizer(HttpInbox.bearerToken(verifier, "orders")))
+    .build("PlaceOrder", UUID.fromString("..."));
+```
+
+<object data="../images/com.github.thxmasj.backend.http.inbox.PlaceOrderWithRollback.svg" type="image/svg+xml"></object>
+
+[Open the PlaceOrder diagram in full size](images/com.github.thxmasj.backend.http.inbox.PlaceOrderWithRollback.svg)
+
+The rollback is built like the inbox request, starting with `Rollback.matching(...)`:
 
 | Setting         | Required               | What it does                                                                                       |
 |-----------------|------------------------|----------------------------------------------------------------------------------------------------|
@@ -144,9 +168,10 @@ back`, and takes the message id, so that the request is rejected with 422 Unproc
 A rollback finds the request, and the request finds the events to roll back, through the event logs of the entities
 involved. Here a `DELETE /orders/42` rolls back the `PUT /orders/42` of the `PlaceOrder` inbox request, whose process
 placed an order. Each entity is a box, like a class in a class diagram, with the name of its entity model, and the kind
-of entity as a stereotype unless it is a plain entity model, over its events, the oldest on top. The `MessageIds` entity has the same entity id as the
-`PlaceOrder` entity. An event in italics, with a dashed border, leads to a choice and is not stored: only the event of
-the chosen transition is. Solid arrows are triggers, and dashed arrows the event references:
+of entity as a stereotype unless it is a plain entity model, over its events, the oldest on top. The `MessageIds`
+entity has the same entity id as the `PlaceOrder` entity. An event in italics, with a dashed border, leads to a choice
+and is not stored: only the event of the chosen transition is. Solid arrows are triggers, and dashed arrows the event
+references:
 
 <object data="../images/com.github.thxmasj.backend.http.inbox.Rollback.svg" type="image/svg+xml"></object>
 
@@ -229,11 +254,8 @@ issuer has added since.
 
 [Open the RequestRouting diagram in full size](images/com.github.thxmasj.backend.http.inbox.RequestRouting.svg)
 
-The `PlaceOrder` inbox request, from receiving the request to its response, and its rollback:
-
-<object data="../images/com.github.thxmasj.backend.http.inbox.HttpInboxRequest.svg" type="image/svg+xml"></object>
-
-[Open the PlaceOrder diagram in full size](images/com.github.thxmasj.backend.http.inbox.HttpInboxRequest.svg)
+The states of an inbox request, which the diagram of `PlaceOrder` with its rollback, under the
+[rollback](#rollback) example, has all of:
 
 | State         | Meaning                                                                                                   |
 |---------------|-----------------------------------------------------------------------------------------------------------|
