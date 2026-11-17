@@ -53,6 +53,21 @@ final class DiagramColours {
           .collect(joining())
       + "}\n";
 
+  /// CSS for the `style` element of an SVG written by Graphviz, whose edges are groups of class `edge`
+  static final String GRAPHVIZ_STYLE = """
+      svg{color-scheme:light dark}
+      @media (prefers-color-scheme:dark){
+      g.edge path{stroke:%1$s}
+      g.edge polygon{fill:%1$s;stroke:%1$s}
+      g.edge text{fill:%2$s}
+      }
+      """.formatted(ARROW, TEXT);
+
+  /// Adds [#GRAPHVIZ_STYLE] to an SVG written by Graphviz, which has no `defs` element
+  static String addGraphvizStyle(String svg) {
+    return svg.replaceFirst("(<svg[^>]*>)", "$1<style type=\"text/css\">" + Matcher.quoteReplacement(GRAPHVIZ_STYLE) + "</style>");
+  }
+
   /// Adds [#STYLE] to an SVG written by PlantUML
   static String addStyle(String svg) {
     return svg.replaceFirst("<defs/>", "<defs></defs>")

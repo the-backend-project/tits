@@ -10,6 +10,10 @@ The diagrams in this documentation, of the [card payment template](cardpayments.
 `doc-diagrams` module. It is the only module depending on the diagram module, so PlantUML is never a dependency of the
 libraries or the apps.
 
+A diagram of something other than an entity model, such as how a [rollback](http-inbox.md#rollback) relates the event
+logs of several entities, is drawn by hand in the DOT language of Graphviz, in the resources of `doc-diagrams`, and
+rendered by `GraphvizFormatter` with `dot`.
+
 A state diagram shows the details of an event when the mouse hovers over its name: its data and the events and actions
 it triggers. An event whose transition has a [severity](monitoring.md#severity) above `Info` is named in bold, after a
 symbol and in a colour for its severity: ⚠ in amber for `Warning`, ✖ in orange for `Error` and ‼ in red for `Critical`.

@@ -17,6 +17,7 @@ import com.github.thxmasj.backend.core.Identifiable;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.diagram.ERDiagramFormatter;
+import com.github.thxmasj.backend.diagram.GraphvizFormatter;
 import com.github.thxmasj.backend.diagram.PlantUMLFormatter;
 import com.github.thxmasj.backend.helloworld.Greetings;
 import com.github.thxmasj.backend.http.inbox.HttpInbox;
@@ -32,6 +33,7 @@ import com.github.thxmasj.backend.templates.cardpayment.Identifiers;
 import com.github.thxmasj.backend.templates.cardpayment.MerchantTransitions;
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
@@ -79,6 +81,7 @@ public class Main {
     stateDiagram(name + ".RequestRouting", RequestRouting, Map.of(RequestRouting, HttpInbox.requestRoutingTransitions(List.of(placeOrder))));
     stateDiagram(name + ".HttpInboxRequest", placeOrder, Map.of(placeOrder, placeOrder.transitions()));
     stateDiagram(MessageIds, MessageIds.transitions());
+    graphviz("http-inbox-rollback.dot", name + ".Rollback");
   }
 
   private static void cardPayments() throws IOException {
@@ -131,6 +134,16 @@ public class Main {
       Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions
   ) throws IOException {
     System.out.println(new PlantUMLFormatter(model, transitions.get(model)).formatToImage(new File(directory, fileName + ".svg")));
+  }
+
+  /// A diagram drawn by hand in Graphviz, from a resource next to this class
+  private static void graphviz(String resource, String fileName) throws IOException {
+    try (var source = Main.class.getResourceAsStream(resource)) {
+      if (source == null)
+        throw new IOException("No resource " + resource);
+      var formatter = new GraphvizFormatter(new String(source.readAllBytes(), StandardCharsets.UTF_8));
+      System.out.println(formatter.formatToImage(new File(directory, fileName + ".svg")));
+    }
   }
 
   private static void erDiagram(String name, Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions) throws IOException {

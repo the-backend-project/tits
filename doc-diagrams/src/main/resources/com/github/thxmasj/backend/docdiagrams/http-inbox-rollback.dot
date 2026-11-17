@@ -1,0 +1,69 @@
+// How a rollback finds a request of an inbox request, and the events the request caused on the application. Each
+// entity is a stack of its events, oldest on top. Solid arrows are triggers, dashed arrows event references.
+digraph rollback {
+  graph [rankdir=LR, nodesep=0.6, ranksep=1.3, fontname="Helvetica", bgcolor="transparent"]
+  node [shape=plain, fontname="Helvetica", fontsize=11]
+  edge [fontname="Helvetica", fontsize=10, color="#555555", fontcolor="#333333"]
+
+  put [label=<
+    <table border="0" cellborder="1" cellspacing="0" cellpadding="6" bgcolor="#eef3fb" color="#7d97c4">
+      <tr><td border="0"><b>RequestRouting</b><br/>PUT /orders/42</td></tr>
+      <tr><td port="received" bgcolor="white">Request received</td></tr>
+      <tr><td port="routed" bgcolor="white">Request routed</td></tr>
+      <tr><td port="response" bgcolor="white">Response created<br/>201 Created</td></tr>
+    </table>>]
+
+  delete [label=<
+    <table border="0" cellborder="1" cellspacing="0" cellpadding="6" bgcolor="#eef3fb" color="#7d97c4">
+      <tr><td border="0"><b>RequestRouting</b><br/>DELETE /orders/42</td></tr>
+      <tr><td port="received" bgcolor="white">Request received</td></tr>
+      <tr><td port="routed" bgcolor="white">Request routed</td></tr>
+      <tr><td port="response" bgcolor="white">Response created<br/>201 Created</td></tr>
+    </table>>]
+
+  request [label=<
+    <table border="0" cellborder="1" cellspacing="0" cellpadding="6" bgcolor="#fdf3e4" color="#d9a55a">
+      <tr><td border="0"><b>PlaceOrder</b><br/>the inbox request, which can be rolled back</td></tr>
+      <tr><td port="received" bgcolor="white">Request received</td></tr>
+      <tr><td port="claim" bgcolor="white">Request dispatched</td></tr>
+      <tr><td port="dispatched" bgcolor="white">Request dispatched</td></tr>
+      <tr><td port="accepted" bgcolor="white">Request accepted<br/>EventReference(order, n)</td></tr>
+      <tr><td port="completed" bgcolor="white">Request completed</td></tr>
+      <tr><td port="rb_received" bgcolor="white">Rollback request received</td></tr>
+      <tr><td port="rb_accepted" bgcolor="white">Rollback request accepted<br/>EventReference(order, n + 1)</td></tr>
+      <tr><td port="rb_completed" bgcolor="white">Rollback request completed</td></tr>
+    </table>>]
+
+  ids [label=<
+    <table border="0" cellborder="1" cellspacing="0" cellpadding="6" bgcolor="#eef7ee" color="#7fb57f">
+      <tr><td border="0"><b>MessageIds</b><br/>with the entity id of the PlaceOrder entity</td></tr>
+      <tr><td port="claimed" bgcolor="white">Message id claimed<br/>(subject, 42)</td></tr>
+      <tr><td port="rb_claimed" bgcolor="white">Rollback message id claimed<br/>(subject, 42)</td></tr>
+    </table>>]
+
+  order [label=<
+    <table border="0" cellborder="1" cellspacing="0" cellpadding="6" bgcolor="#f4eefa" color="#a385c9">
+      <tr><td border="0"><b>Order</b><br/>the entity of the process</td></tr>
+      <tr><td port="before" bgcolor="white">n − 1: …</td></tr>
+      <tr><td port="placed" bgcolor="white">n: Order placed</td></tr>
+      <tr><td port="rolled_back" bgcolor="white">n + 1: Events rolled back<br/>toNumber n − 1</td></tr>
+    </table>>]
+
+  // Triggers
+  put:routed:e -> request:received:w [label="new entity"]
+  delete:routed:e -> request:rb_received:w [taillabel="selected by\nmessage id 42", labelangle=30, labeldistance=6]
+  request:dispatched:e -> order:placed:w [label="process"]
+  request:rb_received:e -> order:rolled_back:w [label="rolls back to before\nthe event referred to"]
+  // Triggers against the direction of the layout are drawn reversed, so that they don't loop around the stacks
+  request:completed:e -> order:placed:w [dir=back, label="the application responds"]
+  put:response:e -> request:completed:w [dir=back]
+  ids:claimed:e -> request:claim:w [dir=back, label="deduplicateOn gives 42"]
+  ids:rb_claimed:e -> request:rb_accepted:w [dir=back]
+  delete:response:e -> request:rb_completed:w [dir=back]
+
+  // Event references
+  request:accepted:e -> order:placed:w [style=dashed, label="refers to"]
+  request:rb_accepted:e -> order:rolled_back:w [style=dashed, label="refers to"]
+
+  {rank=same; put -> ids -> delete [style=invis]}
+}
