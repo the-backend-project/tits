@@ -69,7 +69,7 @@ public class Main {
     var placeOrder = HttpInboxRequest
         .matching(m -> m.requestLine().matches("PUT /orders/.*"))
         .noContent()
-        .messageIdParser(parseMessageId("PUT /orders/(.*)", 1))
+        .deduplicateOn(parseMessageId("PUT /orders/(.*)", 1))
         .process(orderPlaced, order, newEntity())
         .rollback(m -> m.requestLine().matches("DELETE /orders/.*"), parseMessageId("DELETE /orders/(.*)", 1))
         .build("PlaceOrder", UUID.randomUUID());

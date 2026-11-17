@@ -264,7 +264,7 @@ public class HttpInboxTest {
 
   /// Can be rolled back by its message id
   static HttpInboxRequest<byte[]> InternalRequest = withBody("PUT .*/internal/.*")
-      .messageIdParser(parseMessageId("PUT .*/internal/(.*)", 1))
+      .deduplicateOn(parseMessageId("PUT .*/internal/(.*)", 1))
       .process(InternalProcessingRequested, Lamp, newEntity())
       .rollback(m -> m.requestLine().matches("DELETE .*/lamps/messages/.*"), parseMessageId("DELETE .*/lamps/messages/(.*)", 1))
       .build("InternalRequest", UUID.fromString("3afa1f14-d4e3-49c4-b6ad-05a733f0b22d"));
@@ -273,7 +273,7 @@ public class HttpInboxTest {
   static HttpInboxRequest<InternalProcess> ContentRequest = HttpInboxRequest
       .matching(m -> m.requestLine().matches("PUT .*/content/.*"))
       .contentParser(HttpInbox.jsonParser(InternalProcess.class, false))
-      .messageIdParser(parseMessageId("PUT .*/content/(.*)", 1))
+      .deduplicateOn(parseMessageId("PUT .*/content/(.*)", 1))
       .process(when("a == internal", p -> p.a().equals("internal")), InternalProcessingRequested, Lamp, newEntity())
       .process(when("a == unavailable", p -> p.a().equals("unavailable")), SubsystemUnavailableProcessingRequested, Lamp, newEntity())
       .process(when("a == zero", p -> p.a().equals("zero")), ZeroProcessingRequested, Lamp, r -> new Zero(r.body().a()), parseEntityId("PUT .*/content/(.*)", 1))
@@ -283,7 +283,7 @@ public class HttpInboxTest {
   static HttpInboxRequest<InternalProcess> OwnedRequest = HttpInboxRequest
       .matching(m -> m.requestLine().matches("PUT .*/owned/.*"))
       .contentParser(HttpInbox.jsonParser(InternalProcess.class, false))
-      .messageIdParser(parseMessageId("PUT .*/owned/(.*)", 1))
+      .deduplicateOn(parseMessageId("PUT .*/owned/(.*)", 1))
       .authorizer((_, body) -> Authorization.authorized(body.a()))
       .process(InternalProcessingRequested, Lamp, newEntity())
       .rollback(
@@ -295,7 +295,7 @@ public class HttpInboxTest {
 
   /// Its normalizer expects a header, which a retried request may lack
   static HttpInboxRequest<byte[]> NormalizedRequest = withBody("PUT .*/normalized/.*")
-      .messageIdParser(parseMessageId("PUT .*/normalized/(.*)", 1))
+      .deduplicateOn(parseMessageId("PUT .*/normalized/(.*)", 1))
       .normalizer(m -> {
         if (m.headerValue("X-Version") == null)
           throw new IllegalStateException("X-Version missing");
@@ -326,22 +326,22 @@ public class HttpInboxTest {
           .process(AlwaysRejectedEventSubmitted, Lamp, newEntity())
           .build("HandledRejectRequest", UUID.fromString("00f910e2-8c22-4403-835d-15e112ac3080")),
       withBody("PUT .*/unavailable/.*")
-          .messageIdParser(parseMessageId("PUT .*/unavailable/(.*)", 1))
+          .deduplicateOn(parseMessageId("PUT .*/unavailable/(.*)", 1))
           .process(SubsystemUnavailableProcessingRequested, Lamp, newEntity())
           .build("UnavailableRequest", UUID.fromString("29d91ea2-3011-47d5-8e68-51e593a5fe3d")),
       withBody("PUT .*/complexinternal/.*")
-          .messageIdParser(parseMessageId("PUT .*/complexinternal/(.*)", 1))
+          .deduplicateOn(parseMessageId("PUT .*/complexinternal/(.*)", 1))
           .process(ComplexInternalProcessingRequested, Lamp, newEntity())
           .build("ComplexInternalRequest", UUID.fromString("84164954-ad85-4b44-9de6-079bf4805df7")),
       withBody("PUT .*/external/.*")
-          .messageIdParser(parseMessageId("PUT .*/external/(.*)", 1))
+          .deduplicateOn(parseMessageId("PUT .*/external/(.*)", 1))
           .process(ExternalProcessingRequested, Lamp, _ -> null, newEntity())
           .build("ExternalRequest", UUID.fromString("415cfd95-6feb-4106-8d47-fcf41ddcb3d1")),
       withBody("PUT .*/long-external/.*")
           .process(LongExternalProcessingRequested, Lamp, _ -> null, newEntity())
           .build("LongExternalRequest", UUID.fromString("721fedb2-e715-4c4d-a8fb-e2cdb16f86e5")),
       withBody("PUT .*/rejected/.*")
-          .messageIdParser(parseMessageId("PUT .*/rejected/(.*)", 1))
+          .deduplicateOn(parseMessageId("PUT .*/rejected/(.*)", 1))
           .process(AlwaysRejectedEventSubmitted, Lamp, newEntity())
           .build("RejectedRequest", UUID.fromString("e58f3910-0b01-4f8b-bbf3-c7fde4980197")),
       HttpInboxRequest.matching(m -> m.requestLine().matches("DELETE .*/internal/.*"))

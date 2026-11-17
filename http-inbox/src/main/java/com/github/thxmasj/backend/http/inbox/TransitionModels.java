@@ -182,7 +182,7 @@ interface TransitionModels {
     if (body.isInvalid())
       return Validation.invalid("Invalid request body: " + body.invalidReason());
     T content = body.validValue();
-    Validated<String> messageIdValue = request.messageIdParser() != null ? request.messageIdParser().apply(message, content) : null;
+    Validated<String> messageIdValue = request.deduplicateOn() != null ? request.deduplicateOn().apply(message, content) : null;
     if (messageIdValue != null && messageIdValue.isInvalid())
       return Validation.invalid("Unable to parse message id: " + messageIdValue.invalidReason());
     Authorization authorization = request.authorizer() != null ? request.authorizer().apply(message, content) : null;
@@ -302,14 +302,14 @@ interface TransitionModels {
   }
 
   /// A received request is validated, and dispatched to the application if it is valid. A request with a message id
-  /// claims it first, so that a retry is recognised, while a request of an inbox request without a message id parser
+  /// claims it first, so that a retry is recognised, while a request of an inbox request without `deduplicateOn`
   /// is not deduplicated, and is dispatched as it is.
   private static <T> TransitionModel<?, ?> receivedTransition(HttpInboxRequest<T> request) {
     var validated = onEvent(RequestReceived).to(Dispatched)
         .assemble(c -> validate(request, c.input()))
         .when(Validation::isInvalid).then(rejectedAsInvalid(), Validation::invalidReason)
         .when(Validation::isRefused).then(rejectedAsUnauthorized(), Validation::refused);
-    if (request.messageIdParser() != null)
+    if (request.deduplicateOn() != null)
       return validated.otherwise(dispatchChoiceTransition(request), Validation::dispatch);
     return request.processes().size() == 1 ?
         validated.otherwise(dispatchTransition(request, 0), Validation::routedRequest) :

@@ -10,7 +10,7 @@ own, drawn in the same kind of state diagram as the entities of the application 
 HttpInboxRequest<Order> PlaceOrder = HttpInboxRequest
     .matching(m -> m.method() == Method.PUT && m.uri().getPath().startsWith("/orders/"))
     .contentParser(HttpInbox.jsonParser(Order.class))
-    .messageIdParser(parseMessageId("PUT /orders/(.*)", 1))
+    .deduplicateOn(parseMessageId("PUT /orders/(.*)", 1))
     .authorizer(HttpInbox.bearerToken(verifier, "orders"))
     .process(OrderPlaced, Orders, RoutedRequest::body, newEntity())
     .rollback(m -> m.method() == Method.DELETE, parseMessageId("DELETE /orders/(.*)", 1), HttpInbox.bearerToken(verifier, "orders"))
@@ -22,7 +22,7 @@ HttpInboxRequest<Order> PlaceOrder = HttpInboxRequest
 | `matching`        | Yes      | Tells which requests are of this type, e.g. by method and path                                    |
 | `contentParser`   | Yes      | Parses the body, or `noContent()` to ignore it. An invalid body is answered with 400              |
 | `process`         | Yes      | The event type the request triggers, the entity model and the entity, e.g. `newEntity()` or `parseEntityId(...)`, and the event's data, which an event without data leaves out. Repeated with a content predicate for [content routing](#content-routing) |
-| `messageIdParser` | No       | The id of the request, by which a retried request is recognised. Without it, nothing is deduplicated |
+| `deduplicateOn`   | No       | The id of the request, by which a retried request is recognised. Without it, nothing is deduplicated |
 | `authorizer`      | No       | Authorizes the request, e.g. with a bearer token (see [access tokens](#access-tokens))           |
 | `response`        | No       | A response of the application of its own, made from a `ResponseEventType` the application triggers |
 | `normalizer`      | No       | Normalizes a request before it is compared with an earlier request with the same message id       |
@@ -73,7 +73,7 @@ the client's: the authorized subject and the id, or the id alone without an auth
 `MessageIds`, so a client can use a message id once, for one request of one type. A request with the message id of an
 earlier request it differs from, of the same or another inbox request, is answered with 400 Bad Request and the detail
 `Conflict`, and so is a request with the message id of a request still being dispatched. The requests of an inbox
-request without a `messageIdParser` are not deduplicated: each one is dispatched to the application, also when it
+request without `deduplicateOn` are not deduplicated: each one is dispatched to the application, also when it
 repeats an earlier one. Filters on the listener can authenticate, log or rewrite requests before they reach the inbox.
 
 A response of 500 Internal Server Error, which the application triggers with `FailedRequestCompleted`, is an event of
@@ -94,7 +94,7 @@ once, the processes are tried in the order they are given, and the first one who
 request matching none is answered with 400 Bad Request and the detail `No process for the content`. A process without
 a predicate takes any content, so it can only be the last one, as a default.
 
-Each process has its own event type, entity model, input and entity selector, while the message id parser, the
+Each process has its own event type, entity model, input and entity selector, while `deduplicateOn`, the
 authorizer and the normalizer are those of the endpoint. Here the result of an enrolment activates the payment token
 it is about, or rejects it, by its status:
 
@@ -102,7 +102,7 @@ it is about, or rejects it, by its status:
 HttpInboxRequest<EnrolmentResult> EnrolmentResultReceived = HttpInboxRequest
     .matching(m -> m.requestLine().matches("POST /enrolments"))
     .contentParser(HttpInbox.jsonParser(EnrolmentResult.class))
-    .messageIdParser((_, result) -> valid(result.messageId()))
+    .deduplicateOn((_, result) -> valid(result.messageId()))
     .process(
         when("status == Accepted", result -> result.status() == EnrolmentStatus.ACCEPTED),
         Activate, PaymentToken, RoutedRequest::body, (_, result) -> entityId(result.tokenReference())

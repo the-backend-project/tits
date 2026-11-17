@@ -47,7 +47,7 @@ import java.util.regex.Pattern;
 /// HttpInboxRequest<Enrolment> EnrolmentResult = HttpInboxRequest
 ///     .matching(m -> m.requestLine().matches("POST /enrolments"))
 ///     .contentParser(HttpInbox.jsonParser(Enrolment.class))
-///     .messageIdParser((_, enrolment) -> valid(enrolment.messageId()))
+///     .deduplicateOn((_, enrolment) -> valid(enrolment.messageId()))
 ///     .process(when("status == Accepted", e -> e.status() == ACCEPTED), Activate, Tokens, RoutedRequest::body, tokenOf())
 ///     .process(when("status == Rejected", e -> e.status() == REJECTED), Reject, Tokens, RoutedRequest::body, tokenOf())
 ///     .build("EnrolmentResult", UUID.fromString("..."));
@@ -60,7 +60,7 @@ public final class HttpInboxRequest<T> implements EntityModel {
   private final UUID id;
   private final Predicate<HttpRequestMessage> matcher;
   private final Function<HttpRequestMessage, Validated<T>> contentParser;
-  private final BiFunction<HttpRequestMessage, T, Validated<String>> messageIdParser;
+  private final BiFunction<HttpRequestMessage, T, Validated<String>> deduplicateOn;
   private final BiFunction<HttpRequestMessage, T, Authorization> authorizer;
   private final List<Process<T, ?>> processes;
   private final Function<HttpRequestMessage, HttpRequestMessage> normalizer;
@@ -73,7 +73,7 @@ public final class HttpInboxRequest<T> implements EntityModel {
     this.id = Objects.requireNonNull(id);
     this.matcher = builder.matcher;
     this.contentParser = builder.contentParser;
-    this.messageIdParser = builder.messageIdParser;
+    this.deduplicateOn = builder.deduplicateOn;
     this.authorizer = builder.authorizer;
     this.processes = List.copyOf(builder.processes);
     if (processes.isEmpty())
@@ -138,7 +138,7 @@ public final class HttpInboxRequest<T> implements EntityModel {
 
   Function<HttpRequestMessage, Validated<T>> contentParser() {return contentParser;}
 
-  BiFunction<HttpRequestMessage, T, Validated<String>> messageIdParser() {return messageIdParser;}
+  BiFunction<HttpRequestMessage, T, Validated<String>> deduplicateOn() {return deduplicateOn;}
 
   BiFunction<HttpRequestMessage, T, Authorization> authorizer() {return authorizer;}
 
@@ -220,7 +220,7 @@ public final class HttpInboxRequest<T> implements EntityModel {
 
     private final Predicate<HttpRequestMessage> matcher;
     private final Function<HttpRequestMessage, Validated<T>> contentParser;
-    private BiFunction<HttpRequestMessage, T, Validated<String>> messageIdParser;
+    private BiFunction<HttpRequestMessage, T, Validated<String>> deduplicateOn;
     private BiFunction<HttpRequestMessage, T, Authorization> authorizer;
     private final List<Process<T, ?>> processes = new ArrayList<>();
     private Function<HttpRequestMessage, HttpRequestMessage> normalizer = Function.identity();
@@ -232,11 +232,11 @@ public final class HttpInboxRequest<T> implements EntityModel {
       this.contentParser = contentParser;
     }
 
-    /// The id of a request, e.g. from its path, by which a retried request is recognised and gets the response of the
-    /// first one, and by which a request is rolled back. Without it, a request selecting an existing entity of the
-    /// application is identified by the event type and the entity.
-    public Builder<T> messageIdParser(BiFunction<HttpRequestMessage, T, Validated<String>> messageIdParser) {
-      this.messageIdParser = messageIdParser;
+    /// The message id of a request, e.g. from its path, by which a retried request is recognised and gets the response
+    /// of the first one, and by which a request is rolled back. Without it, requests are not deduplicated: each one is
+    /// dispatched to the application.
+    public Builder<T> deduplicateOn(BiFunction<HttpRequestMessage, T, Validated<String>> deduplicateOn) {
+      this.deduplicateOn = deduplicateOn;
       return this;
     }
 
@@ -265,7 +265,7 @@ public final class HttpInboxRequest<T> implements EntityModel {
 
     /// The event a request with the content triggers on the application. The processes are tried in the order they
     /// are given, the first one whose content matches is taken, and a request matching none is answered with 400 Bad
-    /// Request. The message id parser, the authorizer and the normalizer are the same for all of them.
+    /// Request. `deduplicateOn`, the authorizer and the normalizer are the same for all of them.
     ///
     /// @param content the predicate on the parsed body choosing the process, see [HttpInboxRequest#when(String, Predicate)]
     /// @param eventType the event type triggered
