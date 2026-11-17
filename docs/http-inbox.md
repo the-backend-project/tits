@@ -15,6 +15,7 @@ HttpInboxRequest<Order> PlaceOrder = HttpInboxRequest
     .process(OrderPlaced, Orders, RoutedRequest::body, newEntity())
     .rollback(Rollback
         .matching(m -> m.method() == Method.DELETE)
+        .noContent()
         .deduplicateOn(parseMessageId("DELETE /orders/(.*)", 1))
         .authorizer(HttpInbox.bearerToken(verifier, "orders")))
     .build("PlaceOrder", UUID.fromString("..."));
@@ -131,7 +132,8 @@ builder `deduplicateOn` returns. The rollback is built like the inbox request, s
 | Setting         | Required               | What it does                                                                                       |
 |-----------------|------------------------|----------------------------------------------------------------------------------------------------|
 | `matching`      | Yes                    | Tells which requests are rollbacks of a request of this type, e.g. by method and path               |
-| `deduplicateOn` | Yes                    | The message id of the request rolled back, the same one the request's `deduplicateOn` gives. An invalid one is answered with 400 |
+| `contentParser` | Yes                    | Parses the content of a rollback, or `noContent()` to ignore it. Invalid content is answered with 400 |
+| `deduplicateOn` | Yes                    | The message id of the request rolled back, from e.g. the path or the content, the same one the request's `deduplicateOn` gives. An invalid one is answered with 400 |
 | `authorizer`    | If the request has one | Authorizes the rollback                                                                            |
 | `normalizer`    | No                     | Normalizes a rollback before it is compared with the first rollback of the request                 |
 
@@ -170,12 +172,24 @@ normalizer, a rollback is compared as it is, headers included, so a retry must b
 removes e.g. the date and tracing headers lets a retry differ in them, and one which keeps e.g. `X-Correlation-Id` tells
 a second rollback by it.
 
-A rollback has no body, so the authorizer of the request, which may read the body, isn't used for it, and the functions
-of a rollback take `Void` for the body. A request with an authorizer takes a rollback with an authorizer of its own, and
-a request without one a rollback without one. The message id of a request is the authorized subject's, so the rollback is
-of the request the same subject sent: another subject's rollback with the message id has nothing to roll back. The message ids of all inbox requests share `MessageIds`, but a rollback only finds requests of its own
-inbox request: the message id of another type of request has nothing to roll back. The processes of an inbox request
-with a rollback must have the same entity model, which the rollback rolls the events back on.
+A rollback has content of its own, of a type of its own, which its `deduplicateOn` and `authorizer` read. The message
+id can be in the content instead of the path, e.g. a reversal posted with the id of the order:
+
+```java
+.rollback(Rollback
+    .matching(m -> m.requestLine().equals("POST /order-reversals"))
+    .contentParser(HttpInbox.jsonParser(OrderReversal.class))
+    .deduplicateOn((_, reversal) -> valid(reversal.orderId()))
+    .authorizer(HttpInbox.bearerToken(verifier, "orders")))
+```
+
+As the content of a rollback isn't the request's, the authorizer of the request isn't used for it. A request with an
+authorizer takes a rollback with an authorizer of its own, and a request without one a rollback without one. The
+message id of a request is the authorized subject's, so the rollback is of the request the same subject sent: another
+subject's rollback with the message id has nothing to roll back. The message ids of all inbox requests share
+`MessageIds`, but a rollback only finds requests of its own inbox request: the message id of another type of request
+has nothing to roll back. The processes of an inbox request with a rollback must have the same entity model, which the
+rollback rolls the events back on.
 
 ## Access tokens
 

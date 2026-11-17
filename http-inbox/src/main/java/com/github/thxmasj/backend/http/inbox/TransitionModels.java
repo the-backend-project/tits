@@ -71,6 +71,7 @@ import com.github.thxmasj.backend.http.inbox.HttpInbox.MessageId;
 import com.github.thxmasj.backend.http.inbox.HttpInbox.RoutedRequest;
 import com.github.thxmasj.backend.http.inbox.HttpInboxRequest.Process;
 import com.github.thxmasj.backend.http.inbox.HttpInboxRequest.Response;
+import com.github.thxmasj.backend.http.inbox.HttpInboxRequest.Rollback;
 import jakarta.annotation.Nullable;
 import java.nio.charset.StandardCharsets;
 import java.time.ZonedDateTime;
@@ -208,12 +209,21 @@ interface TransitionModels {
   }
 
   private static <T> Validation<T> validateRollback(HttpInboxRequest<T> request, HttpRequestMessage message) {
-    Validated<String> messageIdValue = request.rollback().deduplicateOn().apply(message, null);
+    return validateRollback(request.rollback(), message);
+  }
+
+  /// Validates a rollback by its own content, authorizer and message id. The content is only used for that, so the
+  /// routed rollback has no body.
+  private static <T, R> Validation<T> validateRollback(Rollback<R> rollback, HttpRequestMessage message) {
+    Validated<R> body = rollback.contentParser().apply(message);
+    if (body.isInvalid())
+      return Validation.invalid("Invalid request body: " + body.invalidReason());
+    R content = body.validValue();
+    Validated<String> messageIdValue = rollback.deduplicateOn().apply(message, content);
     if (messageIdValue.isInvalid())
       return Validation.invalid("Unable to parse message id: " + messageIdValue.invalidReason());
-    // The rollback's own authorizer, as the request's may read the body, which a rollback doesn't have
-    var authorizer = request.rollback().authorizer();
-    Authorization authorization = authorizer != null ? authorizer.apply(message, null) : null;
+    var authorizer = rollback.authorizer();
+    Authorization authorization = authorizer != null ? authorizer.apply(message, content) : null;
     if (authorization != null && authorization.isRefused())
       return Validation.refusal(authorization.refused());
     String subject = authorization != null ? authorization.subject() : null;

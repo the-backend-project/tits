@@ -206,6 +206,8 @@ public class HttpInboxTest {
 
   record InternalProcess(String a, int b) {}
 
+  record Reversal(String messageId) {}
+
   public record Zero(String value) {}
 
   static EventType<Zero, Zero>
@@ -269,6 +271,7 @@ public class HttpInboxTest {
       .process(InternalProcessingRequested, Lamp, newEntity())
       .rollback(Rollback
           .matching(m -> m.requestLine().matches("DELETE .*/lamps/messages/.*"))
+          .noContent()
           .deduplicateOn(parseMessageId("DELETE .*/lamps/messages/(.*)", 1))
           .normalizer(HttpInboxTest::withoutCorrelationId))
       .build("InternalRequest", UUID.fromString("3afa1f14-d4e3-49c4-b6ad-05a733f0b22d"));
@@ -292,9 +295,20 @@ public class HttpInboxTest {
       .process(InternalProcessingRequested, Lamp, newEntity())
       .rollback(Rollback
           .matching(m -> m.requestLine().matches("DELETE .*/owned/messages/.*"))
+          .noContent()
           .deduplicateOn(parseMessageId("DELETE .*/owned/messages/(.*)", 1))
           .authorizer((m, _) -> Authorization.authorizedElse(m.headerValue("X-Owner"), "Owner missing")))
       .build("OwnedRequest", UUID.fromString("e2b7d14c-6a93-4f08-8c5e-3d9a1f6b2c47"));
+
+  /// Rolled back by a rollback with the message id of the request in its content
+  static HttpInboxRequest<byte[]> ReversibleRequest = withBody("PUT .*/reversible/.*")
+      .deduplicateOn(parseMessageId("PUT .*/reversible/(.*)", 1))
+      .process(InternalProcessingRequested, Lamp, newEntity())
+      .rollback(Rollback
+          .matching(m -> m.requestLine().matches("POST .*/reversals"))
+          .contentParser(HttpInbox.jsonParser(Reversal.class, false))
+          .deduplicateOn((_, reversal) -> reversal.messageId() != null ? valid(reversal.messageId()) : invalid("messageId missing")))
+      .build("ReversibleRequest", UUID.fromString("9d4e2f7a-1c58-4b36-8e0d-5a7c3f1b9e62"));
 
   /// Its normalizer expects a header, which a retried request may lack
   static HttpInboxRequest<byte[]> NormalizedRequest = withBody("PUT .*/normalized/.*")
@@ -311,6 +325,7 @@ public class HttpInboxTest {
       ContentRequest,
       NormalizedRequest,
       OwnedRequest,
+      ReversibleRequest,
       withBody("PUT .*/protected/.*")
           .authorizer(HttpInbox.bearerToken(verifier, "payments"))
           .process(InternalProcessingRequested, Lamp, newEntity())
@@ -780,6 +795,30 @@ public class HttpInboxTest {
   }
 
   @Test
+  public void whenRollbackWithMessageIdInContentThenRolledBack() throws IOException {
+    String messageId = UUID.randomUUID().toString();
+    HttpResponseMessage request = HttpMessageParser.parseResponse(onRequest(PUT, URI.create("/reversible/" + messageId), asJson(new InternalProcess("Hello!", 1))).data());
+    assertEquals(201, request.statusCode());
+    HttpResponseMessage rollback = HttpMessageParser.parseResponse(onRequest(POST, URI.create("/reversals"), asJson(new Reversal(messageId))).data());
+    assertEquals(201, rollback.statusCode());
+    assertEquals("Rolled back", ProblemDetail.parse(rollback.body()).detail());
+  }
+
+  @Test
+  public void whenRollbackWithInvalidContentThenBadRequest() throws IOException {
+    HttpResponseMessage rollback = HttpMessageParser.parseResponse(onRequest(POST, URI.create("/reversals"), "not json".getBytes()).data());
+    assertEquals(400, rollback.statusCode());
+    assertTrue(ProblemDetail.parse(rollback.body()).detail().startsWith("Invalid request body"));
+  }
+
+  @Test
+  public void whenRollbackWithoutMessageIdInContentThenBadRequest() throws IOException {
+    HttpResponseMessage rollback = HttpMessageParser.parseResponse(onRequest(POST, URI.create("/reversals"), asJson(new Reversal(null))).data());
+    assertEquals(400, rollback.statusCode());
+    assertEquals("Unable to parse message id: messageId missing", ProblemDetail.parse(rollback.body()).detail());
+  }
+
+  @Test
   public void whenRollbackAfterRequestCompletedThenRespondOk() throws IOException {
     String messageId = UUID.randomUUID().toString();
     Event<?> responseEvent = onInternalRequest(messageId, new InternalProcess("Hello!", 100));
@@ -909,7 +948,7 @@ public class HttpInboxTest {
         .deduplicateOn(parseMessageId("(.*)", 1))
         .process(when("one", _ -> true), InternalProcessingRequested, Lamp, newEntity())
         .process(InternalProcessingRequested, EntityModel.of("Other", UUID.randomUUID()), newEntity())
-        .rollback(Rollback.matching(_ -> false).deduplicateOn(parseMessageId("(.*)", 1)))
+        .rollback(Rollback.matching(_ -> false).noContent().deduplicateOn(parseMessageId("(.*)", 1)))
         .build("Invalid", UUID.randomUUID()))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("must have the same entity model");
@@ -1032,7 +1071,7 @@ public class HttpInboxTest {
         .deduplicateOn(parseMessageId("(.*)", 1))
         .authorizer((_, _) -> Authorization.authorized("alice"))
         .process(InternalProcessingRequested, Lamp, newEntity())
-        .rollback(Rollback.matching(_ -> false).deduplicateOn(parseMessageId("(.*)", 1)))
+        .rollback(Rollback.matching(_ -> false).noContent().deduplicateOn(parseMessageId("(.*)", 1)))
         .build("Invalid", UUID.randomUUID()))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("needs an authorizer");
@@ -1043,7 +1082,7 @@ public class HttpInboxTest {
     assertThatThrownBy(() -> HttpInboxRequest.matching(_ -> true).noContent()
         .deduplicateOn(parseMessageId("(.*)", 1))
         .process(InternalProcessingRequested, Lamp, newEntity())
-        .rollback(Rollback.matching(_ -> false).deduplicateOn(parseMessageId("(.*)", 1)).authorizer((_, _) -> Authorization.authorized("alice")))
+        .rollback(Rollback.matching(_ -> false).noContent().deduplicateOn(parseMessageId("(.*)", 1)).authorizer((_, _) -> Authorization.authorized("alice")))
         .build("Invalid", UUID.randomUUID()))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("can't have an authorizer");

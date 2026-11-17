@@ -75,6 +75,7 @@ public class Main {
         .process(orderPlaced, order, newEntity())
         .rollback(HttpInboxRequest.Rollback
             .matching(m -> m.requestLine().matches("DELETE /orders/.*"))
+            .noContent()
             .deduplicateOn(parseMessageId("DELETE /orders/(.*)", 1)))
         .build("PlaceOrder", UUID.randomUUID());
     var name = "com.github.thxmasj.backend.http.inbox";
