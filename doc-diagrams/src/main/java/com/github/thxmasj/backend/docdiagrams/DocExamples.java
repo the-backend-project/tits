@@ -91,8 +91,6 @@ final class DocExamples {
 
   static final EventType<Void, Void> Reject = BasicEventType.of("Reject", UUID.fromString("e7b3d2a6-9c4f-4a18-b5e0-6d1f8c2a7e95"));
 
-  // Not drawn, as its diagram is that of PlaceOrder but for the dispatch, which the page describes. It is here so that
-  // the example is known to compile.
   static final HttpInboxRequest<EnrolmentResult> EnrolmentResultReceived = HttpInboxRequest
       .matching(m -> m.requestLine().matches("POST /enrolments"))
       .contentParser(HttpInbox.jsonParser(EnrolmentResult.class))

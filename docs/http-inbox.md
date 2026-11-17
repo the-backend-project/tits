@@ -117,8 +117,12 @@ HttpInboxRequest<EnrolmentResult> EnrolmentResultReceived = HttpInboxRequest
     .build("EnrolmentResultReceived", UUID.fromString("..."));
 ```
 
-Its diagram is that of `PlaceOrder` at the top of this page but for the dispatch, which is a choice: a
-`Request dispatched [status == Accepted]` and a `Request dispatched [status == Rejected]`, each triggering its event. A single process can have a predicate too, e.g.
+<object data="../images/com.github.thxmasj.backend.http.inbox.EnrolmentResultReceived.svg" type="image/svg+xml"></object>
+
+[Open the EnrolmentResultReceived diagram in full size](images/com.github.thxmasj.backend.http.inbox.EnrolmentResultReceived.svg)
+
+The diagram shows the choice: a `Request dispatched [status == Accepted]` and a
+`Request dispatched [status == Rejected]`, each triggering its event. A single process can have a predicate too, e.g.
 to answer an authentication response with an error with 400 Bad Request.
 
 ## Rollback

@@ -59,6 +59,8 @@ public class Main {
     var name = "com.github.thxmasj.backend.http.inbox";
     var placeOrder = DocExamples.PlaceOrder;
     stateDiagram(name + ".PlaceOrder", placeOrder, Map.of(placeOrder, placeOrder.transitions()));
+    var enrolmentResult = DocExamples.EnrolmentResultReceived;
+    stateDiagram(name + ".EnrolmentResultReceived", enrolmentResult, Map.of(enrolmentResult, enrolmentResult.transitions()));
     var withRollback = DocExamples.PlaceOrderWithRollback;
     stateDiagram(name + ".PlaceOrderWithRollback", withRollback, Map.of(withRollback, withRollback.transitions()));
     stateDiagram(name + ".RequestRouting", RequestRouting, Map.of(RequestRouting, HttpInbox.requestRoutingTransitions(List.of(withRollback))));
