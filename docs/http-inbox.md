@@ -143,8 +143,8 @@ back`, and takes the message id, so that the request is rejected with 422 Unproc
 
 A rollback finds the request, and the request finds the events to roll back, through the event logs of the entities
 involved. Here a `DELETE /orders/42` rolls back the `PUT /orders/42` of the `PlaceOrder` inbox request, whose process
-placed an order. Each entity is a box, like a class in a class diagram, with the name of its entity model and the kind
-of entity as a stereotype, over its events, the oldest on top. The `MessageIds` entity has the same entity id as the
+placed an order. Each entity is a box, like a class in a class diagram, with the name of its entity model, and the kind
+of entity as a stereotype unless it is a plain entity model, over its events, the oldest on top. The `MessageIds` entity has the same entity id as the
 `PlaceOrder` entity. An event in italics, with a dashed border, leads to a choice and is not stored: only the event of
 the chosen transition is. Solid arrows are triggers, and dashed arrows the event references:
 

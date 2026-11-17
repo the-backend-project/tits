@@ -1,6 +1,6 @@
 // How a rollback finds a request of an inbox request, and the events the request caused on the application. Each
-// entity is a box, like a class in a class diagram, with the name of its entity model and the kind of entity as a
-// stereotype, over its events, oldest on top. An event with a dashed border, in italics, leads to a choice, and is not
+// entity is a box, like a class in a class diagram, with the name of its entity model, and the kind of entity as a
+// stereotype unless it is a plain entity model, over its events, oldest on top. An event with a dashed border, in italics, leads to a choice, and is not
 // stored: only the event of the chosen transition is. Solid arrows are triggers, dashed arrows event references. The
 // colours are those of the other diagrams.
 digraph rollback {
@@ -10,7 +10,7 @@ digraph rollback {
 
   put [label=<
     <table border="1" cellborder="1" cellspacing="5" cellpadding="5" bgcolor="#9bb08a" color="#4b5320">
-      <tr><td border="0"><font point-size="9">«Entity»</font><br/><b>RequestRouting</b></td></tr>
+      <tr><td border="0"><b>RequestRouting</b></td></tr>
       <tr><td port="received" style="dashed"><i>Request received</i><br/>PUT /orders/42</td></tr>
       <tr><td port="routed">Request routed</td></tr>
       <tr><td port="response">Response created<br/>201 Created</td></tr>
@@ -18,7 +18,7 @@ digraph rollback {
 
   delete [label=<
     <table border="1" cellborder="1" cellspacing="5" cellpadding="5" bgcolor="#9bb08a" color="#4b5320">
-      <tr><td border="0"><font point-size="9">«Entity»</font><br/><b>RequestRouting</b></td></tr>
+      <tr><td border="0"><b>RequestRouting</b></td></tr>
       <tr><td port="received" style="dashed"><i>Request received</i><br/>DELETE /orders/42</td></tr>
       <tr><td port="routed">Request routed</td></tr>
       <tr><td port="response">Response created<br/>201 Created</td></tr>
@@ -46,7 +46,7 @@ digraph rollback {
 
   order [label=<
     <table border="1" cellborder="1" cellspacing="5" cellpadding="5" bgcolor="#9bb08a" color="#4b5320">
-      <tr><td border="0"><font point-size="9">«Entity»</font><br/><b>Order</b></td></tr>
+      <tr><td border="0"><b>Order</b></td></tr>
       <tr><td port="before">n − 1: …</td></tr>
       <tr><td port="placed">n: Order placed</td></tr>
       <tr><td port="rolled_back">n + 1: Events rolled back<br/>toNumber n − 1</td></tr>
