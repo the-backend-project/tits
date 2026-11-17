@@ -1,52 +1,54 @@
 // How a rollback finds a request of an inbox request, and the events the request caused on the application. Each
-// entity is a stack of its events, oldest on top. Solid arrows are triggers, dashed arrows event references.
+// entity is a stack of its events, oldest on top, under its entity id and entity model in UML object notation, with
+// the type of the model as a stereotype. Solid arrows are triggers, dashed arrows event references. The colours are
+// those of the other diagrams.
 digraph rollback {
   graph [rankdir=LR, nodesep=0.6, ranksep=1.3, fontname="Helvetica", bgcolor="transparent"]
   node [shape=plain, fontname="Helvetica", fontsize=11]
-  edge [fontname="Helvetica", fontsize=10, color="#555555", fontcolor="#333333"]
+  edge [fontname="Helvetica", fontsize=10, color="#4b5320", fontcolor="#000000"]
 
   put [label=<
-    <table border="0" cellborder="1" cellspacing="0" cellpadding="6" bgcolor="#eef3fb" color="#7d97c4">
-      <tr><td border="0"><b>RequestRouting</b><br/>PUT /orders/42</td></tr>
-      <tr><td port="received" bgcolor="white">Request received</td></tr>
-      <tr><td port="routed" bgcolor="white">Request routed</td></tr>
-      <tr><td port="response" bgcolor="white">Response created<br/>201 Created</td></tr>
+    <table border="0" cellborder="1" cellspacing="0" cellpadding="6" bgcolor="#9bb08a" color="#4b5320">
+      <tr><td><font point-size="9">«EntityModel»</font><br/><u>r1 : RequestRouting</u></td></tr>
+      <tr><td port="received">Request received<br/>PUT /orders/42</td></tr>
+      <tr><td port="routed">Request routed</td></tr>
+      <tr><td port="response">Response created<br/>201 Created</td></tr>
     </table>>]
 
   delete [label=<
-    <table border="0" cellborder="1" cellspacing="0" cellpadding="6" bgcolor="#eef3fb" color="#7d97c4">
-      <tr><td border="0"><b>RequestRouting</b><br/>DELETE /orders/42</td></tr>
-      <tr><td port="received" bgcolor="white">Request received</td></tr>
-      <tr><td port="routed" bgcolor="white">Request routed</td></tr>
-      <tr><td port="response" bgcolor="white">Response created<br/>201 Created</td></tr>
+    <table border="0" cellborder="1" cellspacing="0" cellpadding="6" bgcolor="#9bb08a" color="#4b5320">
+      <tr><td><font point-size="9">«EntityModel»</font><br/><u>r2 : RequestRouting</u></td></tr>
+      <tr><td port="received">Request received<br/>DELETE /orders/42</td></tr>
+      <tr><td port="routed">Request routed</td></tr>
+      <tr><td port="response">Response created<br/>201 Created</td></tr>
     </table>>]
 
   request [label=<
-    <table border="0" cellborder="1" cellspacing="0" cellpadding="6" bgcolor="#fdf3e4" color="#d9a55a">
-      <tr><td border="0"><b>PlaceOrder</b><br/>the inbox request, which can be rolled back</td></tr>
-      <tr><td port="received" bgcolor="white">Request received</td></tr>
-      <tr><td port="claim" bgcolor="white">Request dispatched</td></tr>
-      <tr><td port="dispatched" bgcolor="white">Request dispatched</td></tr>
-      <tr><td port="accepted" bgcolor="white">Request accepted<br/>EventReference(order, n)</td></tr>
-      <tr><td port="completed" bgcolor="white">Request completed</td></tr>
-      <tr><td port="rb_received" bgcolor="white">Rollback request received</td></tr>
-      <tr><td port="rb_accepted" bgcolor="white">Rollback request accepted<br/>EventReference(order, n + 1)</td></tr>
-      <tr><td port="rb_completed" bgcolor="white">Rollback request completed</td></tr>
+    <table border="0" cellborder="1" cellspacing="0" cellpadding="6" bgcolor="#9bb08a" color="#4b5320">
+      <tr><td port="header"><font point-size="9">«HttpInboxRequest»</font><br/><u>p : PlaceOrder</u></td></tr>
+      <tr><td port="received">Request received</td></tr>
+      <tr><td port="claim">Request dispatched</td></tr>
+      <tr><td port="dispatched">Request dispatched</td></tr>
+      <tr><td port="accepted">Request accepted<br/>EventReference(o, n)</td></tr>
+      <tr><td port="completed">Request completed</td></tr>
+      <tr><td port="rb_received">Rollback request received</td></tr>
+      <tr><td port="rb_accepted">Rollback request accepted<br/>EventReference(o, n + 1)</td></tr>
+      <tr><td port="rb_completed">Rollback request completed</td></tr>
     </table>>]
 
   ids [label=<
-    <table border="0" cellborder="1" cellspacing="0" cellpadding="6" bgcolor="#eef7ee" color="#7fb57f">
-      <tr><td border="0"><b>MessageIds</b><br/>with the entity id of the PlaceOrder entity</td></tr>
-      <tr><td port="claimed" bgcolor="white">Message id claimed<br/>(subject, 42)</td></tr>
-      <tr><td port="rb_claimed" bgcolor="white">Rollback message id claimed<br/>(subject, 42)</td></tr>
+    <table border="0" cellborder="1" cellspacing="0" cellpadding="6" bgcolor="#9bb08a" color="#4b5320">
+      <tr><td port="header"><font point-size="9">«IdEntityModel»</font><br/><u>p : MessageIds</u></td></tr>
+      <tr><td port="claimed">Message id claimed<br/>(subject, 42)</td></tr>
+      <tr><td port="rb_claimed">Rollback message id claimed<br/>(subject, 42)</td></tr>
     </table>>]
 
   order [label=<
-    <table border="0" cellborder="1" cellspacing="0" cellpadding="6" bgcolor="#f4eefa" color="#a385c9">
-      <tr><td border="0"><b>Order</b><br/>the entity of the process</td></tr>
-      <tr><td port="before" bgcolor="white">n − 1: …</td></tr>
-      <tr><td port="placed" bgcolor="white">n: Order placed</td></tr>
-      <tr><td port="rolled_back" bgcolor="white">n + 1: Events rolled back<br/>toNumber n − 1</td></tr>
+    <table border="0" cellborder="1" cellspacing="0" cellpadding="6" bgcolor="#9bb08a" color="#4b5320">
+      <tr><td><font point-size="9">«EntityModel»</font><br/><u>o : Order</u></td></tr>
+      <tr><td port="before">n − 1: …</td></tr>
+      <tr><td port="placed">n: Order placed</td></tr>
+      <tr><td port="rolled_back">n + 1: Events rolled back<br/>toNumber n − 1</td></tr>
     </table>>]
 
   // Triggers
