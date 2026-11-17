@@ -83,6 +83,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
@@ -226,6 +227,9 @@ interface TransitionModels {
     Validated<String> messageIdValue = request.rollback().messageIdParser().apply(message, null);
     if (messageIdValue.isInvalid())
       return Validation.invalid("Unable to parse message id: " + messageIdValue.invalidReason());
+    Validated<String> deduplicationKey = request.rollback().deduplicateOn().apply(message, null);
+    if (deduplicationKey.isInvalid())
+      return Validation.invalid("Unable to parse deduplication key: " + deduplicationKey.invalidReason());
     // The rollback's own authorizer, as the request's may read the body, which a rollback doesn't have
     var authorizer = request.rollback().authorizer();
     Authorization authorization = authorizer != null ? authorizer.apply(message, null) : null;
@@ -539,6 +543,12 @@ interface TransitionModels {
         .output();
   }
 
+  /// Whether the rollback has the same deduplication key as the first one, which was valid
+  private static <T> boolean isSameRollback(HttpInboxRequest<T> request, HttpRequestMessage rollback, HttpRequestMessage first) {
+    var deduplicateOn = request.rollback().deduplicateOn();
+    return Objects.equals(deduplicateOn.apply(rollback, null).validValue(), deduplicateOn.apply(first, null).validValue());
+  }
+
   /// A rollback repeated after the request is rolled back, or found to have nothing to roll back, gets the response of
   /// the first one
   private static <T> TransitionModel<?, ?> repeatedRollbackTransition(HttpInboxRequest<T> request) {
@@ -549,8 +559,8 @@ interface TransitionModels {
             c.log().one(RollbackRequestCompleted),
             c.log().entityId()
         ))
-        // A rollback is told by its request line, as a retry may differ in headers such as the correlation id
-        .when(d -> d.t1().request().requestLine().equals(d.t2().requestLine())).then(
+        // A retry of the first rollback has the same deduplication key
+        .when(d -> isSameRollback(request, d.t1().request(), d.t2())).then(
             onEvent(DuplicateRequestRejected).to(RollingBack)
                 .assembleInput()
                 .trigger(DuplicatedRequestCompleted).with(Tuple2::t2).on(request).identifiedBy(entityIdFromSession())

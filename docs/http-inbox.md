@@ -13,7 +13,11 @@ HttpInboxRequest<Order> PlaceOrder = HttpInboxRequest
     .messageIdParser(parseMessageId("PUT /orders/(.*)", 1))
     .authorizer(HttpInbox.bearerToken(verifier, "orders"))
     .process(OrderPlaced, Orders, RoutedRequest::body, newEntity())
-    .rollback(m -> m.method() == Method.DELETE, parseMessageId("DELETE /orders/(.*)", 1), HttpInbox.bearerToken(verifier, "orders"))
+    .rollback(Rollback
+        .matching(m -> m.method() == Method.DELETE)
+        .messageIdParser(parseMessageId("DELETE /orders/(.*)", 1))
+        .deduplicateOn((m, _) -> valid(m.headerValue("X-Correlation-Id")))
+        .authorizer(HttpInbox.bearerToken(verifier, "orders")))
     .build("PlaceOrder", UUID.fromString("..."));
 ```
 
@@ -26,7 +30,7 @@ HttpInboxRequest<Order> PlaceOrder = HttpInboxRequest
 | `authorizer`      | No       | Authorizes the request, e.g. with a bearer token (see [access tokens](#access-tokens))           |
 | `response`        | No       | A response of the application of its own, made from a `ResponseEventType` the application triggers |
 | `normalizer`      | No       | Normalizes a request before it is compared with an earlier request with the same message id       |
-| `rollback`        | No       | Requests rolling back a request by its message id, with an authorizer of their own if the request has one, see [rollback](#rollback) |
+| `rollback`        | No       | Requests rolling back a request by its message id, told apart by a deduplication key, with an authorizer of their own if the request has one, see [rollback](#rollback) |
 
 `HttpInbox.transitions(requests, application)` gives the transitions to create the state machine with: those of the
 application, and of the inbox requests, `RequestRouting` and `MessageIds`.
@@ -120,16 +124,29 @@ to answer an authentication response with an error with 400 Bad Request.
 
 ## Rollback
 
-An inbox request with a `rollback` takes the requests its matcher matches as rollbacks of the request with the message
-id its parser gives, e.g. a `DELETE` with the id of an earlier `PUT`. A rollback goes to the entity of that request,
-which rolls back the events the request caused on the application and responds 201 Created with `Rolled back`. A
-rollback of a request not received yet is answered with `Nothing to roll back`, and takes the message id, so that the
-request is rejected with 422 Unprocessable Entity if it arrives later. A rollback repeated, with the same request line,
-gets the response of the first one in both cases, also if it differs in headers such as the correlation id.
+An inbox request with a `rollback` takes the requests the rollback's matcher matches as rollbacks of the request with
+the message id its parser gives, e.g. a `DELETE` with the id of an earlier `PUT`. The rollback is built like the inbox
+request, starting with `Rollback.matching(...)`:
 
-A rollback has no body, so the authorizer of the request, which may read the body, isn't used for it. A request with an
-authorizer takes a rollback with an authorizer of its own, `rollback(matcher, messageIdParser, authorizer)`, and a
-request without one a rollback without one. The message id of a request is the authorized subject's, so the rollback is
+| Setting           | Required | What it does                                                                                     |
+|-------------------|----------|--------------------------------------------------------------------------------------------------|
+| `matching`        | Yes      | Tells which requests are rollbacks of a request of this type, e.g. by method and path             |
+| `messageIdParser` | Yes      | The message id of the request rolled back. An invalid one is answered with 400                    |
+| `deduplicateOn`   | Yes      | The key by which a retried rollback is recognised, e.g. a header. An invalid one is answered with 400 |
+| `authorizer`      | If the request has one | Authorizes the rollback                                                            |
+
+A rollback goes to the entity of that request, which rolls back the events the request caused on the application and
+responds 201 Created with `Rolled back`. A rollback of a request not received yet is answered with `Nothing to roll
+back`, and takes the message id, so that the request is rejected with 422 Unprocessable Entity if it arrives later.
+
+A rollback repeated after the first one is told by its deduplication key, as the request line is the same for every
+rollback of a request. With the same key as the first, it is a retry and gets the response of the first one in both
+cases. With another key, it is rejected with 400 Bad Request and `Conflict`. There is no default key, as the library
+can't know what tells the rollbacks of an application apart.
+
+A rollback has no body, so the authorizer of the request, which may read the body, isn't used for it, and the functions
+of a rollback take `Void` for the body. A request with an authorizer takes a rollback with an authorizer of its own, and
+a request without one a rollback without one. The message id of a request is the authorized subject's, so the rollback is
 of the request the same subject sent: another subject's rollback with the message id has nothing to roll back. The message ids of all inbox requests share `MessageIds`, but a rollback only finds requests of its own
 inbox request: the message id of another type of request has nothing to roll back. The processes of an inbox request
 with a rollback must have the same entity model, which the rollback rolls the events back on.

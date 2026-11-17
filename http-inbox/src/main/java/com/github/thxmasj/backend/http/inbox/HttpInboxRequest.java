@@ -187,12 +187,86 @@ public final class HttpInboxRequest<T> implements EntityModel {
   /// A response the application gives by triggering the event type on the request, created from the event's data
   record Response<I>(ResponseEventType<I> eventType, Function<TransitionContext<I>, HttpResponseMessage> messageCreator) {}
 
-  /// A rollback of a request, identified by its message id
-  record Rollback(
-      Predicate<HttpRequestMessage> matcher,
-      BiFunction<HttpRequestMessage, Void, Validated<String>> messageIdParser,
-      BiFunction<HttpRequestMessage, Void, Authorization> authorizer
-  ) {}
+  /// Requests rolling back a request of an inbox request, identified by its message id, given to
+  /// [Builder#rollback(Rollback.Builder)]:
+  ///
+  /// ```java
+  /// .rollback(Rollback
+  ///     .matching(m -> m.method() == Method.DELETE)
+  ///     .messageIdParser(parseMessageId("DELETE /orders/(.*)", 1))
+  ///     .deduplicateOn((m, _) -> valid(m.headerValue("X-Correlation-Id")))
+  ///     .authorizer(HttpInbox.bearerToken(verifier, "orders")))
+  /// ```
+  ///
+  /// A rollback has no body, so its functions take `Void` for it.
+  public static final class Rollback {
+
+    private final Predicate<HttpRequestMessage> matcher;
+    private final BiFunction<HttpRequestMessage, Void, Validated<String>> messageIdParser;
+    private final BiFunction<HttpRequestMessage, Void, Validated<String>> deduplicateOn;
+    private final BiFunction<HttpRequestMessage, Void, Authorization> authorizer;
+
+    private Rollback(Builder builder) {
+      this.matcher = builder.matcher;
+      this.messageIdParser = Objects.requireNonNull(builder.messageIdParser, "The message id parser of a rollback is missing");
+      this.deduplicateOn = Objects.requireNonNull(builder.deduplicateOn, "The deduplication key of a rollback is missing");
+      this.authorizer = builder.authorizer;
+    }
+
+    /// Starts building a rollback taking the requests the matcher matches, e.g. by their method and path
+    public static Builder matching(Predicate<HttpRequestMessage> matcher) {
+      return new Builder(Objects.requireNonNull(matcher));
+    }
+
+    Predicate<HttpRequestMessage> matcher() {return matcher;}
+
+    BiFunction<HttpRequestMessage, Void, Validated<String>> messageIdParser() {return messageIdParser;}
+
+    BiFunction<HttpRequestMessage, Void, Validated<String>> deduplicateOn() {return deduplicateOn;}
+
+    BiFunction<HttpRequestMessage, Void, Authorization> authorizer() {return authorizer;}
+
+    /// Builds a rollback. The message id parser and the deduplication key are required, the authorizer is required
+    /// if the request has one and not allowed otherwise.
+    public static final class Builder {
+
+      private final Predicate<HttpRequestMessage> matcher;
+      private BiFunction<HttpRequestMessage, Void, Validated<String>> messageIdParser;
+      private BiFunction<HttpRequestMessage, Void, Validated<String>> deduplicateOn;
+      private BiFunction<HttpRequestMessage, Void, Authorization> authorizer;
+
+      private Builder(Predicate<HttpRequestMessage> matcher) {
+        this.matcher = matcher;
+      }
+
+      /// The message id of the request a rollback rolls back, e.g. from its path. A rollback with an invalid one is
+      /// answered with 400 Bad Request.
+      public Builder messageIdParser(BiFunction<HttpRequestMessage, Void, Validated<String>> messageIdParser) {
+        this.messageIdParser = Objects.requireNonNull(messageIdParser);
+        return this;
+      }
+
+      /// The key by which a rollback repeated after the first one is recognised as a retry, e.g. a header such as
+      /// `X-Correlation-Id`. A repeated rollback with the same key as the first gets its response, and one with
+      /// another key is rejected with 400 Bad Request. A rollback with an invalid key is answered with 400 Bad
+      /// Request.
+      public Builder deduplicateOn(BiFunction<HttpRequestMessage, Void, Validated<String>> deduplicateOn) {
+        this.deduplicateOn = Objects.requireNonNull(deduplicateOn);
+        return this;
+      }
+
+      /// Authorizes a rollback, which rolls back the request with the message id the same subject sent. A rollback
+      /// has no body to authorize it by, so the authorizer of the request isn't used: it may read the body, which a
+      /// rollback doesn't have. A request with an authorizer needs a rollback with one, and a request without one a
+      /// rollback without one.
+      public Builder authorizer(BiFunction<HttpRequestMessage, Void, Authorization> authorizer) {
+        this.authorizer = Objects.requireNonNull(authorizer);
+        return this;
+      }
+
+    }
+
+  }
 
   /// The step introducing the type of the body of the request
   public static final class ContentStep {
@@ -346,32 +420,12 @@ public final class HttpInboxRequest<T> implements EntityModel {
       return this;
     }
 
-    /// Requests the matcher matches roll back the request with the message id the parser gives, by rolling back the
-    /// events the request caused on the application. A rollback of a request not received yet makes a later request
-    /// with the message id rejected. The processes of a request which can be rolled back must have the same entity
-    /// model. This is for a request without an authorizer; one with an authorizer needs a rollback with an authorizer
-    /// too.
-    public Builder<T> rollback(
-        Predicate<HttpRequestMessage> matcher,
-        BiFunction<HttpRequestMessage, Void, Validated<String>> messageIdParser
-    ) {
-      this.rollback = new Rollback(Objects.requireNonNull(matcher), Objects.requireNonNull(messageIdParser), null);
-      return this;
-    }
-
-    /// Requests the matcher matches, authorized by the authorizer, roll back the request with the message id the
-    /// parser gives, which the same subject sent. A rollback has no body to authorize it by, so the authorizer of the
-    /// request isn't used: it may read the body, which a rollback doesn't have. See [#rollback(Predicate, BiFunction)].
-    public Builder<T> rollback(
-        Predicate<HttpRequestMessage> matcher,
-        BiFunction<HttpRequestMessage, Void, Validated<String>> messageIdParser,
-        BiFunction<HttpRequestMessage, Void, Authorization> authorizer
-    ) {
-      this.rollback = new Rollback(
-          Objects.requireNonNull(matcher),
-          Objects.requireNonNull(messageIdParser),
-          Objects.requireNonNull(authorizer)
-      );
+    /// Requests the rollback matches roll back the request with the message id it gives, by rolling back the events
+    /// the request caused on the application. A rollback of a request not received yet makes a later request with the
+    /// message id rejected. The processes of a request which can be rolled back must have the same entity model. See
+    /// [Rollback].
+    public Builder<T> rollback(Rollback.Builder rollback) {
+      this.rollback = new Rollback(Objects.requireNonNull(rollback));
       return this;
     }
 
