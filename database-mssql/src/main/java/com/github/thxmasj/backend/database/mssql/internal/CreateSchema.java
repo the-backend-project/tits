@@ -1,4 +1,4 @@
-package com.github.thxmasj.backend.database.mssql;
+package com.github.thxmasj.backend.database.mssql.internal;
 
 import java.nio.charset.StandardCharsets;
 import java.sql.CallableStatement;
@@ -13,7 +13,7 @@ import javax.sql.DataSource;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
-class CreateSchema {
+public class CreateSchema {
 
   private final String schema;
   private final String role;

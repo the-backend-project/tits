@@ -1,4 +1,4 @@
-package com.github.thxmasj.backend.database.pgsql;
+package com.github.thxmasj.backend.database.pgsql.internal;
 
 /// Identifiers in PostgreSQL. Schema and table names are quoted, so they keep their case. Column names are not quoted,
 /// so they are folded to lower case, and are found by the driver in any case.

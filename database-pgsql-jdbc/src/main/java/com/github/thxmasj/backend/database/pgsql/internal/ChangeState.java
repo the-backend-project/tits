@@ -1,6 +1,6 @@
-package com.github.thxmasj.backend.database.pgsql;
+package com.github.thxmasj.backend.database.pgsql.internal;
 
-import static com.github.thxmasj.backend.database.pgsql.Names.table;
+import static com.github.thxmasj.backend.database.pgsql.internal.Names.table;
 import static java.util.stream.Collectors.joining;
 
 import com.github.thxmasj.backend.core.EntityModel;

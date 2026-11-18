@@ -8,4 +8,5 @@ module com.github.thxmasj.backend.database.pgsql.vertx {
   exports com.github.thxmasj.backend.database.pgsql.vertx;
 
   provides com.github.thxmasj.backend.core.database.Database with com.github.thxmasj.backend.database.pgsql.vertx.PgsqlVertxDatabase;
+  provides com.github.thxmasj.backend.core.internal.database.StorageProvider with com.github.thxmasj.backend.database.pgsql.vertx.internal.PgsqlVertxStorage;
 }

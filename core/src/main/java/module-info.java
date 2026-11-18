@@ -43,4 +43,5 @@ module com.github.thxmasj.backend.core {
       com.github.thxmasj.backend.http.outbox;
 
   uses com.github.thxmasj.backend.core.database.Database;
+  uses com.github.thxmasj.backend.core.internal.database.StorageProvider;
 }

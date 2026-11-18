@@ -1,7 +1,7 @@
-package com.github.thxmasj.backend.database.pgsql;
+package com.github.thxmasj.backend.database.pgsql.internal;
 
-import static com.github.thxmasj.backend.database.pgsql.Names.quote;
-import static com.github.thxmasj.backend.database.pgsql.Names.table;
+import static com.github.thxmasj.backend.database.pgsql.internal.Names.quote;
+import static com.github.thxmasj.backend.database.pgsql.internal.Names.table;
 
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
@@ -16,7 +16,7 @@ import reactor.core.scheduler.Schedulers;
 
 /// The same tables as for SQL Server, with PostgreSQL types. Index names are prefixed with their table, as they are
 /// unique within the schema and not only within the table.
-class CreateSchema {
+public class CreateSchema {
 
   private final String schema;
   private final String role;

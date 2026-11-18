@@ -17,9 +17,10 @@ Core exports only what applications use: the packages `com.github.thxmasj.backen
 building of entity models), `core.database` (the databases, their clients and `DataSourceBuilder`), `core.http` (HTTP
 clients and the data types of HTTP messages) and `core.message.http` (HTTP messages). The packages under
 `core.internal`, such as the queries and updates of the databases and the steps of a transition, are exported only to
-the other modules of the library, and so is `database.pgsql.internal` of database-pgsql-jdbc, which the other
-PostgreSQL modules share. To create a schema or look into a database without a state machine, use
-`Database.createSchema` and the [test API](testing.md).
+the other modules of the library. A database module exports only its `Database`, and provides the queries and updates
+of its schema to the state machine as a service from an internal package. The internal package of database-pgsql-jdbc
+is exported to the other PostgreSQL modules, which share it. To create a schema or look into a database without a
+state machine, use `Database.createSchema` and the [test API](testing.md).
 
 ## Java version
 

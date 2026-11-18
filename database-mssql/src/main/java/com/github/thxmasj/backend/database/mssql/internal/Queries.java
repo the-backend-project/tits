@@ -1,4 +1,4 @@
-package com.github.thxmasj.backend.database.mssql;
+package com.github.thxmasj.backend.database.mssql.internal;
 
 /// The SQL of the queries of the state machine's schema in SQL Server
 final class Queries {

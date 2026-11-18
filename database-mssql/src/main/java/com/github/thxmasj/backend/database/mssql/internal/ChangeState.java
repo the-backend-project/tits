@@ -1,4 +1,4 @@
-package com.github.thxmasj.backend.database.mssql;
+package com.github.thxmasj.backend.database.mssql.internal;
 
 import static java.util.stream.Collectors.joining;
 
@@ -193,7 +193,7 @@ class ChangeState extends com.github.thxmasj.backend.core.internal.database.Chan
   }
 
   /// The duplicate key of an id event, as reported by SQL Server with its type as a UUID (see
-  /// [MssqlClient#withUuid(String)]), e.g. "019a6b2c-1d3e-7f40-8a1b-2c3d4e5f6071, 0x7B22..."
+  /// `MssqlClient.withUuid(String)`), e.g. "019a6b2c-1d3e-7f40-8a1b-2c3d4e5f6071, 0x7B22..."
   @Override
   protected String duplicateKey(Event<?> idEvent) {
     return idEvent.type().id() + ", 0x" + HexFormat.of().formatHex(idEvent.getMarshalledData());

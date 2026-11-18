@@ -8,13 +8,19 @@ import com.github.thxmasj.backend.core.database.DatabaseClient;
 import java.time.Clock;
 import java.util.List;
 import java.util.Map;
+import java.util.ServiceLoader;
+import java.util.ServiceLoader.Provider;
 
-/// The storage of a [Database] of the library, which implements this along with [Database]
+/// The storage of a [Database]. The module of a database provides its storage as a service of its own, found on the
+/// module path or class path like the [Database], so that the public [Database] has no internal types.
 public interface StorageProvider {
+
+  /// The name of the database this is the storage of, see [Database#name()]
+  String database();
 
   /// The queries and updates of the schema
   ///
-  /// @param client a client of this database
+  /// @param client a client of the database
   /// @param transitions the transitions of the state machine, which give the entity models and event types
   Storage storage(
       DatabaseClient client,
@@ -23,7 +29,7 @@ public interface StorageProvider {
       Clock clock
   );
 
-  /// The storage of the database, which must be one of the library's
+  /// The storage of the database, by the provider of its module
   static Storage storage(
       Database database,
       DatabaseClient client,
@@ -31,8 +37,11 @@ public interface StorageProvider {
       String schemaName,
       Clock clock
   ) {
-    if (!(database instanceof StorageProvider provider))
-      throw new IllegalArgumentException("Database " + database.name() + " is not one of the library's databases");
-    return provider.storage(client, transitions, schemaName, clock);
+    return ServiceLoader.load(StorageProvider.class).stream()
+        .map(Provider::get)
+        .filter(provider -> provider.database().equals(database.name()))
+        .findFirst()
+        .orElseThrow(() -> new IllegalArgumentException("No storage of database " + database.name()))
+        .storage(client, transitions, schemaName, clock);
   }
 }

@@ -1,6 +1,6 @@
-package com.github.thxmasj.backend.database.pgsql;
+package com.github.thxmasj.backend.database.pgsql.internal;
 
-import static com.github.thxmasj.backend.database.pgsql.Names.table;
+import static com.github.thxmasj.backend.database.pgsql.internal.Names.table;
 
 /// The SQL of the queries of the state machine's schema in PostgreSQL. It has no index hints, as PostgreSQL does not
 /// support them.

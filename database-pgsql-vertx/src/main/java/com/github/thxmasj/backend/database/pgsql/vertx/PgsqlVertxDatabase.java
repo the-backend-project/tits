@@ -1,26 +1,15 @@
 package com.github.thxmasj.backend.database.pgsql.vertx;
 
-import com.github.thxmasj.backend.core.EntityModel;
-import com.github.thxmasj.backend.core.State;
-import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.core.database.Database;
 import com.github.thxmasj.backend.core.database.DatabaseClient;
 import com.github.thxmasj.backend.core.database.DatabaseClient.Config;
-import com.github.thxmasj.backend.core.internal.database.Storage;
-import com.github.thxmasj.backend.core.internal.database.StorageProvider;
 import com.github.thxmasj.backend.database.pgsql.PgsqlDatabase;
-import java.time.Clock;
-import java.util.List;
-import java.util.Map;
 import javax.sql.DataSource;
 import reactor.core.publisher.Mono;
 
 /// PostgreSQL through the reactive Vert.x client, e.g. for comparing it with its JDBC driver. The queries are those of
 /// [PgsqlDatabase], and the schema is created by it through JDBC.
-// StorageProvider is internal to the library, which gets the storage of the database through it, so applications have no
-// use for it.
-@SuppressWarnings("exports")
-public class PgsqlVertxDatabase implements Database, StorageProvider {
+public class PgsqlVertxDatabase implements Database {
 
   private final PgsqlDatabase pgsql = new PgsqlDatabase();
 
@@ -49,16 +38,6 @@ public class PgsqlVertxDatabase implements Database, StorageProvider {
   @Override
   public DatabaseClient client(Config config) {
     return PgsqlVertxClient.of(config);
-  }
-
-  @Override
-  public Storage storage(
-      DatabaseClient client,
-      Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions,
-      String schemaName,
-      Clock clock
-  ) {
-    return pgsql.storage(client, transitions, schemaName, clock);
   }
 
   @Override
