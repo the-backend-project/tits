@@ -143,7 +143,8 @@ entity it indexes, but its events need not be unique: `Data` is an index key, su
 belongs to, which may index many entities. The index is used to:
 
 * find all entities indexed by a key and event type (`EntitiesByIndex`), which is what conditional triggers are
-  evaluated against (see [ConditionalTrigger](#conditionaltrigger)).
+  evaluated against (see [ConditionalTrigger](#conditionaltrigger)), and from which the last created entity of a model
+  is selected by `EntitySelector.lastReferencing`, such as the last request a process dispatched to an outbox.
 * find the last entity of a group (`EventsByLastIndexEvent`), such as the current settlement of a merchant. The data
   type of such an index event type is a `GroupedDataType`, which marshals values to the group followed by bytes that
   order the values within it, so that the last entity is the one whose index event has the greatest `Data` starting

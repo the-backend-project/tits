@@ -7,6 +7,7 @@ import com.github.thxmasj.backend.core.EntitySelector.ById;
 import com.github.thxmasj.backend.core.EntitySelector.ByIdFromSession;
 import com.github.thxmasj.backend.core.EntitySelector.ByIdEvent;
 import com.github.thxmasj.backend.core.EntitySelector.ByLastIndexed;
+import com.github.thxmasj.backend.core.EntitySelector.ByLastReferencing;
 import java.util.UUID;
 import java.util.function.Function;
 
@@ -15,7 +16,7 @@ import java.util.function.Function;
 /// A selector that may create an entity is given its id as an [EntityId], which can't be made from a UUID: the id is
 /// new and time-ordered, or the id of the entity a transition is on. An existing entity can be selected by any id. See
 /// [identifiers](https://the-backend-project.github.io/tits/identifiers/).
-public sealed class EntitySelector permits ById, ByIdFromSession, ByIdEvent, ByLastIndexed {
+public sealed class EntitySelector permits ById, ByIdFromSession, ByIdEvent, ByLastIndexed, ByLastReferencing {
 
   /// The existing entity with the id
   public static ById entityId(UUID entityId) {
@@ -81,6 +82,13 @@ public sealed class EntitySelector permits ById, ByIdFromSession, ByIdEvent, ByL
 
   public static <G> ByLastIndexed<G> secondToLastIndexed(EventType<?, ?> type, G group, CreationMode creationMode) {
     return new ByLastIndexed<>(type, group, creationMode, 2);
+  }
+
+  /// The existing entity created last of those referencing the id, i.e. having an index event of the type with the id
+  /// as data. Only entities of the model the event is triggered on are considered, so that e.g. the outbox request of
+  /// one model that a process dispatched is found among the requests of other models it dispatched.
+  public static ByLastReferencing lastReferencing(EventType<?, UUID> type, UUID id) {
+    return new ByLastReferencing(type, id);
   }
 
   public enum CreationMode{AlwaysCreate, CreateIfNotExists, NeverCreate}
@@ -179,6 +187,31 @@ public sealed class EntitySelector permits ById, ByIdFromSession, ByIdEvent, ByL
 
     public int position() {
       return position;
+    }
+  }
+
+  public static final class ByLastReferencing extends EntitySelector {
+
+    private final EventType<?, UUID> type;
+    private final UUID id;
+
+    public ByLastReferencing(EventType<?, UUID> type, UUID id) {
+      super(NeverCreate, null);
+      this.type = type;
+      this.id = id;
+    }
+
+    public EventType<?, UUID> type() {
+      return type;
+    }
+
+    public UUID id() {
+      return id;
+    }
+
+    @Override
+    public String toString() {
+      return getClass().getSimpleName() + "(" + type.name() + ", " + id + ")";
     }
   }
 
