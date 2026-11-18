@@ -31,7 +31,7 @@ import reactor.core.publisher.Mono;
 ///
 /// R2DBC runs one statement with parameters at a time, so SQL of several statements, separated by a semicolon at the
 /// end of a line, is run statement by statement in a transaction. The rows of the last statement are given, as by
-/// [com.github.thxmasj.backend.core.database.jdbc.JDBCClient].
+/// [com.github.thxmasj.backend.core.internal.database.jdbc.JDBCClient].
 public class PgsqlR2dbcClient implements DatabaseClient {
 
   private final ConnectionPool pool;

@@ -1,4 +1,4 @@
-package com.github.thxmasj.backend.core;
+package com.github.thxmasj.backend.core.internal;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;

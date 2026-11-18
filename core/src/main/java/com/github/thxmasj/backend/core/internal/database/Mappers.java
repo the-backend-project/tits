@@ -1,4 +1,4 @@
-package com.github.thxmasj.backend.core.database;
+package com.github.thxmasj.backend.core.internal.database;
 
 import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
@@ -11,6 +11,8 @@ import com.github.thxmasj.backend.core.Event;
 import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.TransitionModel;
+import com.github.thxmasj.backend.core.database.MappingFailure;
+import com.github.thxmasj.backend.core.database.Row;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.ArrayList;

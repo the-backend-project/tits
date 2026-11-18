@@ -34,7 +34,7 @@ import reactor.core.publisher.Mono;
 /// SQL of several statements, separated by a semicolon at the end of a line, is run in a transaction on one connection.
 /// The statements are pipelined, i.e. sent without waiting for the results of the ones before them, so they take a
 /// single round trip, as with the JDBC driver. The rows of the last statement are given, as by
-/// [com.github.thxmasj.backend.core.database.jdbc.JDBCClient].
+/// [com.github.thxmasj.backend.core.internal.database.jdbc.JDBCClient].
 public class PgsqlVertxClient implements DatabaseClient {
 
   private final Vertx vertx;

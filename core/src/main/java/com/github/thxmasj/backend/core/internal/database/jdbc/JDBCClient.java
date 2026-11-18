@@ -1,6 +1,6 @@
-package com.github.thxmasj.backend.core.database.jdbc;
+package com.github.thxmasj.backend.core.internal.database.jdbc;
 
-import static com.github.thxmasj.backend.core.database.jdbc.PreparedStatementSupport.prepare;
+import static com.github.thxmasj.backend.core.internal.database.jdbc.PreparedStatementSupport.prepare;
 import static java.util.stream.Collectors.joining;
 
 import com.github.thxmasj.backend.core.database.DatabaseClient;

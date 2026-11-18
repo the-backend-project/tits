@@ -32,17 +32,19 @@ import com.github.thxmasj.backend.core.TransitionStep.RejectedStep;
 import com.github.thxmasj.backend.core.TransitionStep.TriggerStep;
 import com.github.thxmasj.backend.core.TransitionStep.UnknownIdStep;
 import com.github.thxmasj.backend.core.Tuples.Tuple3;
-import com.github.thxmasj.backend.core.database.ChangeState.Change;
-import com.github.thxmasj.backend.core.database.ChangeState;
 import com.github.thxmasj.backend.core.database.Database;
 import com.github.thxmasj.backend.core.database.DatabaseClient;
 import com.github.thxmasj.backend.core.database.EntityGroupNotInitialised;
 import com.github.thxmasj.backend.core.database.EventAlreadyExists;
 import com.github.thxmasj.backend.core.database.IdEventAlreadyExists;
-import com.github.thxmasj.backend.core.database.Mappers;
 import com.github.thxmasj.backend.core.database.MappingFailure;
-import com.github.thxmasj.backend.core.database.Storage;
 import com.github.thxmasj.backend.core.database.UnknownEntity;
+import com.github.thxmasj.backend.core.internal.Debug;
+import com.github.thxmasj.backend.core.internal.database.ChangeState;
+import com.github.thxmasj.backend.core.internal.database.ChangeState.Change;
+import com.github.thxmasj.backend.core.internal.database.DelayedTrigger;
+import com.github.thxmasj.backend.core.internal.database.Mappers;
+import com.github.thxmasj.backend.core.internal.database.Storage;
 import jakarta.annotation.Nullable;
 import jakarta.validation.constraints.NotNull;
 import java.time.Clock;
@@ -1146,7 +1148,7 @@ public class StateMachine implements AutoCloseable {
         );
   }
 
-  public Traverser traverser(EntityModel entityModel) {
+  Traverser traverser(EntityModel entityModel) {
     return traversers.get(entityModel);
   }
 

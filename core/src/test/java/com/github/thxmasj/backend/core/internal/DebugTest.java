@@ -1,4 +1,4 @@
-package com.github.thxmasj.backend.core;
+package com.github.thxmasj.backend.core.internal;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;

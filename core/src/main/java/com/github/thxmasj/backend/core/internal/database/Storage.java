@@ -1,8 +1,9 @@
-package com.github.thxmasj.backend.core.database;
+package com.github.thxmasj.backend.core.internal.database;
 
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.TransitionModel;
+import com.github.thxmasj.backend.core.database.Database;
 import java.time.Clock;
 import java.util.List;
 import java.util.Map;

@@ -1,4 +1,4 @@
-package com.github.thxmasj.backend.core.database;
+package com.github.thxmasj.backend.core.internal.database;
 
 import static java.util.Collections.unmodifiableList;
 
@@ -7,6 +7,8 @@ import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.Event;
 import com.github.thxmasj.backend.core.EventLog;
 import com.github.thxmasj.backend.core.EventType;
+import com.github.thxmasj.backend.core.database.DatabaseClient;
+import com.github.thxmasj.backend.core.database.Row;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.HashMap;

@@ -1,7 +1,6 @@
-package com.github.thxmasj.backend.core.database.jdbc;
+package com.github.thxmasj.backend.core.database;
 
 import com.github.thxmasj.backend.core.database.DatabaseClient.Config;
-import com.github.thxmasj.backend.core.database.Database;
 import com.zaxxer.hikari.HikariDataSource;
 import com.zaxxer.hikari.pool.HikariPool;
 import java.sql.Connection;

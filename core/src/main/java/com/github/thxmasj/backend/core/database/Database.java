@@ -6,7 +6,7 @@ import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.core.database.DatabaseClient.Config;
-import com.github.thxmasj.backend.core.database.jdbc.DataSourceBuilder;
+import com.github.thxmasj.backend.core.internal.database.Storage;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Clock;
@@ -41,7 +41,8 @@ public interface Database {
     return client(new DataSourceBuilder(this, config).buildPooled());
   }
 
-  /// The queries and updates of the schema
+  /// The queries and updates of the schema. [Storage] is internal to the library, which implements this for the state
+  /// machine, so applications have no use for it.
   ///
   /// @param client a client of this database
   /// @param transitions the transitions of the state machine, which give the entity models and event types

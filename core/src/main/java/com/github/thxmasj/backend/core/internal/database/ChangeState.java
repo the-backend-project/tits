@@ -1,4 +1,4 @@
-package com.github.thxmasj.backend.core.database;
+package com.github.thxmasj.backend.core.internal.database;
 
 import com.github.thxmasj.backend.core.BasicEventType;
 import com.github.thxmasj.backend.core.ConditionalTrigger;
@@ -10,9 +10,12 @@ import com.github.thxmasj.backend.core.IdEntityModel;
 import com.github.thxmasj.backend.core.Severity;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult;
 import com.github.thxmasj.backend.core.TriggerType;
+import com.github.thxmasj.backend.core.database.DatabaseClient;
 import com.github.thxmasj.backend.core.database.DatabaseClient.PrimaryKeyConstraintViolation;
 import com.github.thxmasj.backend.core.database.DatabaseClient.Query.Builder;
 import com.github.thxmasj.backend.core.database.DatabaseClient.UniqueIndexConstraintViolation;
+import com.github.thxmasj.backend.core.database.EventAlreadyExists;
+import com.github.thxmasj.backend.core.database.IdEventAlreadyExists;
 import java.time.Clock;
 import java.time.ZonedDateTime;
 import java.util.List;

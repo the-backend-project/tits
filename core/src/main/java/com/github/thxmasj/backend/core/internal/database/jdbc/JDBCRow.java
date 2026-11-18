@@ -1,7 +1,6 @@
-package com.github.thxmasj.backend.core.database.jdbc;
+package com.github.thxmasj.backend.core.internal.database.jdbc;
 
 import com.github.thxmasj.backend.core.database.Row;
-
 import java.sql.ResultSet;
 import java.sql.SQLException;
 

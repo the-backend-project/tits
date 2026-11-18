@@ -3,7 +3,7 @@ package com.github.thxmasj.backend.database.pgsql;
 import com.github.thxmasj.backend.core.database.DatabaseClient.DataIntegrityViolation;
 import com.github.thxmasj.backend.core.database.DatabaseClient.PrimaryKeyConstraintViolation;
 import com.github.thxmasj.backend.core.database.DatabaseClient.UniqueIndexConstraintViolation;
-import com.github.thxmasj.backend.core.database.jdbc.JDBCClient;
+import com.github.thxmasj.backend.core.internal.database.jdbc.JDBCClient;
 import java.sql.SQLException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;

@@ -4,7 +4,7 @@ import com.github.thxmasj.backend.core.database.DatabaseClient.DataIntegrityViol
 import com.github.thxmasj.backend.core.database.DatabaseClient.PrimaryKeyConstraintViolation;
 import com.github.thxmasj.backend.core.database.DatabaseClient.UniqueIndexConstraintViolation;
 import com.github.thxmasj.backend.core.database.Parameter;
-import com.github.thxmasj.backend.core.database.jdbc.JDBCClient;
+import com.github.thxmasj.backend.core.internal.database.jdbc.JDBCClient;
 import com.microsoft.sqlserver.jdbc.SQLServerException;
 import java.nio.ByteBuffer;
 import java.sql.PreparedStatement;

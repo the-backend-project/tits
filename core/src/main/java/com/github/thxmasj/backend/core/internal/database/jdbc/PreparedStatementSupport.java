@@ -1,4 +1,4 @@
-package com.github.thxmasj.backend.core.database.jdbc;
+package com.github.thxmasj.backend.core.internal.database.jdbc;
 
 import com.github.thxmasj.backend.core.database.Parameter;
 import java.sql.Connection;

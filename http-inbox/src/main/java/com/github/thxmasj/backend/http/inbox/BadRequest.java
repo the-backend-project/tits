@@ -1,4 +1,5 @@
-package com.github.thxmasj.backend.core.message.http;
+package com.github.thxmasj.backend.http.inbox;
+
 
 public class BadRequest extends HttpResponseCreator {
 

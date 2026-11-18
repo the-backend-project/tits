@@ -16,7 +16,7 @@ import java.util.List;
 import java.util.stream.IntStream;
 
 /// Stores the changes in a single batch with an explicit transaction
-class ChangeState extends com.github.thxmasj.backend.core.database.ChangeState {
+class ChangeState extends com.github.thxmasj.backend.core.internal.database.ChangeState {
 
   private final String schema;
 

@@ -1,4 +1,4 @@
-package com.github.thxmasj.backend.core.database;
+package com.github.thxmasj.backend.core.internal.database;
 
 import static java.lang.String.format;
 
@@ -7,6 +7,9 @@ import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.EventReference;
 import com.github.thxmasj.backend.core.EventType;
+import com.github.thxmasj.backend.core.database.DatabaseClient;
+import com.github.thxmasj.backend.core.database.MappingFailure;
+import com.github.thxmasj.backend.core.database.Row;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZonedDateTime;

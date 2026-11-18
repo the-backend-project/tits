@@ -18,7 +18,7 @@ import com.github.thxmasj.backend.core.IndexEntityModel;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.StateMachine;
 import com.github.thxmasj.backend.core.TransitionModel;
-import com.github.thxmasj.backend.core.database.EntitiesByIndex;
+import com.github.thxmasj.backend.core.internal.database.EntitiesByIndex;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;

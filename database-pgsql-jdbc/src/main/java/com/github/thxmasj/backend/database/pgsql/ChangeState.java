@@ -21,7 +21,7 @@ import reactor.core.publisher.Flux;
 /// Stores the changes in a single round trip without an explicit transaction. PostgreSQL then executes them in a
 /// single implicit transaction, which is rolled back if any of them fails.
 @SuppressWarnings("StringConcatenationInLoop")
-class ChangeState extends com.github.thxmasj.backend.core.database.ChangeState {
+class ChangeState extends com.github.thxmasj.backend.core.internal.database.ChangeState {
 
   private final String schema;
 

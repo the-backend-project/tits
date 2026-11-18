@@ -2,7 +2,7 @@ package com.github.thxmasj.backend.http.inbox;
 
 import static com.github.thxmasj.backend.core.Validated.invalid;
 import static com.github.thxmasj.backend.core.Validated.valid;
-import static com.github.thxmasj.backend.core.database.Mappers.eventTypesFor;
+import static com.github.thxmasj.backend.core.internal.database.Mappers.eventTypesFor;
 
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.EntitySelector;

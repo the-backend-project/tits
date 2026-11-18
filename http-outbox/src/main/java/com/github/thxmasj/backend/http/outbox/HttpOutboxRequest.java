@@ -1,7 +1,7 @@
 package com.github.thxmasj.backend.http.outbox;
 
 import static com.github.thxmasj.backend.core.IndexEntityModel.referenceEventType;
-import static com.github.thxmasj.backend.core.database.Mappers.eventTypesFor;
+import static com.github.thxmasj.backend.core.internal.database.Mappers.eventTypesFor;
 
 import com.github.thxmasj.backend.core.BasicEventType;
 import com.github.thxmasj.backend.core.DataType;
@@ -10,7 +10,7 @@ import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.IndexEntityModel;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.TransitionModel;
-import com.github.thxmasj.backend.core.http.HttpDataType;
+import com.github.thxmasj.backend.core.internal.http.HttpDataType;
 import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
 import com.github.thxmasj.backend.core.message.http.TypedHttpRequest;
 import com.github.thxmasj.backend.core.message.http.TypedHttpResponse;

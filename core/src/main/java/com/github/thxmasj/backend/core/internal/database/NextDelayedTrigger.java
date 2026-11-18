@@ -1,9 +1,9 @@
-package com.github.thxmasj.backend.core.database;
+package com.github.thxmasj.backend.core.internal.database;
 
-import com.github.thxmasj.backend.core.DelayedTrigger;
 import com.github.thxmasj.backend.core.DelaySpecification;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.EventType;
+import com.github.thxmasj.backend.core.database.DatabaseClient;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZonedDateTime;

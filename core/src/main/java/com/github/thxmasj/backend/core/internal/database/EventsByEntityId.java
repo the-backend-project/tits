@@ -1,4 +1,4 @@
-package com.github.thxmasj.backend.core.database;
+package com.github.thxmasj.backend.core.internal.database;
 
 import static java.util.Objects.requireNonNull;
 
@@ -8,6 +8,9 @@ import com.github.thxmasj.backend.core.EventLog;
 import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.IdEntityModel;
 import com.github.thxmasj.backend.core.IndexEntityModel;
+import com.github.thxmasj.backend.core.database.DatabaseClient;
+import com.github.thxmasj.backend.core.database.MappingFailure;
+import com.github.thxmasj.backend.core.database.UnknownEntity;
 import java.time.Clock;
 import java.util.Collections;
 import java.util.HashMap;

@@ -3,7 +3,7 @@ package com.github.thxmasj.backend.core;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.github.thxmasj.backend.core.Tuples.Tuple2;
-import com.github.thxmasj.backend.core.http.HttpDataType;
+import com.github.thxmasj.backend.core.internal.http.HttpDataType;
 import com.github.thxmasj.backend.core.message.http.HttpRequestMessage.Method;
 import com.github.thxmasj.backend.core.message.http.TypedHttpRequest;
 import java.net.URI;

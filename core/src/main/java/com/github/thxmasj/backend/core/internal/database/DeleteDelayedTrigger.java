@@ -1,7 +1,8 @@
-package com.github.thxmasj.backend.core.database;
+package com.github.thxmasj.backend.core.internal.database;
 
-import reactor.core.publisher.Mono;
+import com.github.thxmasj.backend.core.database.DatabaseClient;
 import java.util.UUID;
+import reactor.core.publisher.Mono;
 
 public class DeleteDelayedTrigger {
 
