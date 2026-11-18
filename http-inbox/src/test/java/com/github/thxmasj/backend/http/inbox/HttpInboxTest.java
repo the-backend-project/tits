@@ -39,6 +39,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.github.thxmasj.backend.core.BasicEventType;
 import com.github.thxmasj.backend.core.BasicEventType.Rollback.Data;
+import com.github.thxmasj.backend.http.inbox.HttpInboxRequest.Rollback;
 import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.DelaySpecification;
 import com.github.thxmasj.backend.core.EntityModel;
@@ -77,6 +78,7 @@ import java.net.URI;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -204,6 +206,8 @@ public class HttpInboxTest {
 
   record InternalProcess(String a, int b) {}
 
+  record Reversal(String messageId) {}
+
   public record Zero(String value) {}
 
   static EventType<Zero, Zero>
@@ -261,18 +265,22 @@ public class HttpInboxTest {
     return HttpInboxRequest.matching(m -> m.requestLine().matches(requestLinePattern)).contentParser(m -> valid(m.body()));
   }
 
-  /// Can be rolled back by its message id
+  /// Can be rolled back by its message id, by rollbacks which may differ in their correlation id when retried
   static HttpInboxRequest<byte[]> InternalRequest = withBody("PUT .*/internal/.*")
-      .messageIdParser(parseMessageId("PUT .*/internal/(.*)", 1))
+      .deduplicateOn(parseMessageId("PUT .*/internal/(.*)", 1))
       .process(InternalProcessingRequested, Lamp, newEntity())
-      .rollback(m -> m.requestLine().matches("DELETE .*/lamps/messages/.*"), parseMessageId("DELETE .*/lamps/messages/(.*)", 1))
+      .rollback(Rollback
+          .matching(m -> m.requestLine().matches("DELETE .*/lamps/messages/.*"))
+          .noContent()
+          .deduplicateOn(parseMessageId("DELETE .*/lamps/messages/(.*)", 1))
+          .normalizer(HttpInboxTest::withoutCorrelationId))
       .build("InternalRequest", UUID.fromString("3afa1f14-d4e3-49c4-b6ad-05a733f0b22d"));
 
   /// One endpoint, whose requests trigger different events by their content, with different inputs and selectors
   static HttpInboxRequest<InternalProcess> ContentRequest = HttpInboxRequest
       .matching(m -> m.requestLine().matches("PUT .*/content/.*"))
       .contentParser(HttpInbox.jsonParser(InternalProcess.class, false))
-      .messageIdParser(parseMessageId("PUT .*/content/(.*)", 1))
+      .deduplicateOn(parseMessageId("PUT .*/content/(.*)", 1))
       .process(when("a == internal", p -> p.a().equals("internal")), InternalProcessingRequested, Lamp, newEntity())
       .process(when("a == unavailable", p -> p.a().equals("unavailable")), SubsystemUnavailableProcessingRequested, Lamp, newEntity())
       .process(when("a == zero", p -> p.a().equals("zero")), ZeroProcessingRequested, Lamp, r -> new Zero(r.body().a()), parseEntityId("PUT .*/content/(.*)", 1))
@@ -282,19 +290,29 @@ public class HttpInboxTest {
   static HttpInboxRequest<InternalProcess> OwnedRequest = HttpInboxRequest
       .matching(m -> m.requestLine().matches("PUT .*/owned/.*"))
       .contentParser(HttpInbox.jsonParser(InternalProcess.class, false))
-      .messageIdParser(parseMessageId("PUT .*/owned/(.*)", 1))
+      .deduplicateOn(parseMessageId("PUT .*/owned/(.*)", 1))
       .authorizer((_, body) -> Authorization.authorized(body.a()))
       .process(InternalProcessingRequested, Lamp, newEntity())
-      .rollback(
-          m -> m.requestLine().matches("DELETE .*/owned/messages/.*"),
-          parseMessageId("DELETE .*/owned/messages/(.*)", 1),
-          (m, _) -> Authorization.authorizedElse(m.headerValue("X-Owner"), "Owner missing")
-      )
+      .rollback(Rollback
+          .matching(m -> m.requestLine().matches("DELETE .*/owned/messages/.*"))
+          .noContent()
+          .deduplicateOn(parseMessageId("DELETE .*/owned/messages/(.*)", 1))
+          .authorizer((m, _) -> Authorization.authorizedElse(m.headerValue("X-Owner"), "Owner missing")))
       .build("OwnedRequest", UUID.fromString("e2b7d14c-6a93-4f08-8c5e-3d9a1f6b2c47"));
+
+  /// Rolled back by a rollback with the message id of the request in its content
+  static HttpInboxRequest<byte[]> ReversibleRequest = withBody("PUT .*/reversible/.*")
+      .deduplicateOn(parseMessageId("PUT .*/reversible/(.*)", 1))
+      .process(InternalProcessingRequested, Lamp, newEntity())
+      .rollback(Rollback
+          .matching(m -> m.requestLine().matches("POST .*/reversals"))
+          .contentParser(HttpInbox.jsonParser(Reversal.class, false))
+          .deduplicateOn((_, reversal) -> reversal.messageId() != null ? valid(reversal.messageId()) : invalid("messageId missing")))
+      .build("ReversibleRequest", UUID.fromString("9d4e2f7a-1c58-4b36-8e0d-5a7c3f1b9e62"));
 
   /// Its normalizer expects a header, which a retried request may lack
   static HttpInboxRequest<byte[]> NormalizedRequest = withBody("PUT .*/normalized/.*")
-      .messageIdParser(parseMessageId("PUT .*/normalized/(.*)", 1))
+      .deduplicateOn(parseMessageId("PUT .*/normalized/(.*)", 1))
       .normalizer(m -> {
         if (m.headerValue("X-Version") == null)
           throw new IllegalStateException("X-Version missing");
@@ -307,6 +325,7 @@ public class HttpInboxTest {
       ContentRequest,
       NormalizedRequest,
       OwnedRequest,
+      ReversibleRequest,
       withBody("PUT .*/protected/.*")
           .authorizer(HttpInbox.bearerToken(verifier, "payments"))
           .process(InternalProcessingRequested, Lamp, newEntity())
@@ -325,22 +344,22 @@ public class HttpInboxTest {
           .process(AlwaysRejectedEventSubmitted, Lamp, newEntity())
           .build("HandledRejectRequest", UUID.fromString("00f910e2-8c22-4403-835d-15e112ac3080")),
       withBody("PUT .*/unavailable/.*")
-          .messageIdParser(parseMessageId("PUT .*/unavailable/(.*)", 1))
+          .deduplicateOn(parseMessageId("PUT .*/unavailable/(.*)", 1))
           .process(SubsystemUnavailableProcessingRequested, Lamp, newEntity())
           .build("UnavailableRequest", UUID.fromString("29d91ea2-3011-47d5-8e68-51e593a5fe3d")),
       withBody("PUT .*/complexinternal/.*")
-          .messageIdParser(parseMessageId("PUT .*/complexinternal/(.*)", 1))
+          .deduplicateOn(parseMessageId("PUT .*/complexinternal/(.*)", 1))
           .process(ComplexInternalProcessingRequested, Lamp, newEntity())
           .build("ComplexInternalRequest", UUID.fromString("84164954-ad85-4b44-9de6-079bf4805df7")),
       withBody("PUT .*/external/.*")
-          .messageIdParser(parseMessageId("PUT .*/external/(.*)", 1))
+          .deduplicateOn(parseMessageId("PUT .*/external/(.*)", 1))
           .process(ExternalProcessingRequested, Lamp, _ -> null, newEntity())
           .build("ExternalRequest", UUID.fromString("415cfd95-6feb-4106-8d47-fcf41ddcb3d1")),
       withBody("PUT .*/long-external/.*")
           .process(LongExternalProcessingRequested, Lamp, _ -> null, newEntity())
           .build("LongExternalRequest", UUID.fromString("721fedb2-e715-4c4d-a8fb-e2cdb16f86e5")),
       withBody("PUT .*/rejected/.*")
-          .messageIdParser(parseMessageId("PUT .*/rejected/(.*)", 1))
+          .deduplicateOn(parseMessageId("PUT .*/rejected/(.*)", 1))
           .process(AlwaysRejectedEventSubmitted, Lamp, newEntity())
           .build("RejectedRequest", UUID.fromString("e58f3910-0b01-4f8b-bbf3-c7fde4980197")),
       HttpInboxRequest.matching(m -> m.requestLine().matches("DELETE .*/internal/.*"))
@@ -611,6 +630,24 @@ public class HttpInboxTest {
   }
 
   @Test
+  public void whenRequestWithoutMessageIdIsRepeatedOnSameEntityThenItIsProcessedAgain() throws IOException {
+    HttpResponseMessage response = HttpMessageParser.parseResponse(onRequest(
+        PUT,
+        URI.create("/internal/" + UUID.randomUUID()),
+        new ObjectMapper().writeValueAsBytes(new InternalProcess("Hello", 1))
+    ).data());
+    UUID entityId = UUID.fromString(ProblemDetail.parse(response.body()).entityId());
+
+    HttpResponseMessage zero1 = HttpMessageParser.parseResponse(onRequest(PUT, URI.create("/zero/" + entityId), null).data());
+    HttpResponseMessage zero2 = HttpMessageParser.parseResponse(onRequest(PUT, URI.create("/zero/" + entityId), null).data());
+    assertEquals(201, zero1.statusCode());
+    assertEquals(201, zero2.statusCode());
+    assertEquals("Complete", ProblemDetail.parse(zero2.body()).detail());
+    // A response of its own, not the one of the first request
+    assertFalse(Arrays.equals(zero1.body(), zero2.body()));
+  }
+
+  @Test
   public void whenCancelInternalProcessRequestThen() throws IOException {
     String messageId = UUID.randomUUID().toString();
     Event<?> responseEvent = onRequest(
@@ -758,6 +795,30 @@ public class HttpInboxTest {
   }
 
   @Test
+  public void whenRollbackWithMessageIdInContentThenRolledBack() throws IOException {
+    String messageId = UUID.randomUUID().toString();
+    HttpResponseMessage request = HttpMessageParser.parseResponse(onRequest(PUT, URI.create("/reversible/" + messageId), asJson(new InternalProcess("Hello!", 1))).data());
+    assertEquals(201, request.statusCode());
+    HttpResponseMessage rollback = HttpMessageParser.parseResponse(onRequest(POST, URI.create("/reversals"), asJson(new Reversal(messageId))).data());
+    assertEquals(201, rollback.statusCode());
+    assertEquals("Rolled back", ProblemDetail.parse(rollback.body()).detail());
+  }
+
+  @Test
+  public void whenRollbackWithInvalidContentThenBadRequest() throws IOException {
+    HttpResponseMessage rollback = HttpMessageParser.parseResponse(onRequest(POST, URI.create("/reversals"), "not json".getBytes()).data());
+    assertEquals(400, rollback.statusCode());
+    assertTrue(ProblemDetail.parse(rollback.body()).detail().startsWith("Invalid request body"));
+  }
+
+  @Test
+  public void whenRollbackWithoutMessageIdInContentThenBadRequest() throws IOException {
+    HttpResponseMessage rollback = HttpMessageParser.parseResponse(onRequest(POST, URI.create("/reversals"), asJson(new Reversal(null))).data());
+    assertEquals(400, rollback.statusCode());
+    assertEquals("Unable to parse message id: messageId missing", ProblemDetail.parse(rollback.body()).detail());
+  }
+
+  @Test
   public void whenRollbackAfterRequestCompletedThenRespondOk() throws IOException {
     String messageId = UUID.randomUUID().toString();
     Event<?> responseEvent = onInternalRequest(messageId, new InternalProcess("Hello!", 100));
@@ -884,9 +945,10 @@ public class HttpInboxTest {
   @Test
   public void processesOfRequestWithRollbackMustHaveTheSameEntityModel() {
     assertThatThrownBy(() -> HttpInboxRequest.matching(_ -> true).noContent()
+        .deduplicateOn(parseMessageId("(.*)", 1))
         .process(when("one", _ -> true), InternalProcessingRequested, Lamp, newEntity())
         .process(InternalProcessingRequested, EntityModel.of("Other", UUID.randomUUID()), newEntity())
-        .rollback(_ -> false, parseMessageId("(.*)", 1))
+        .rollback(Rollback.matching(_ -> false).noContent().deduplicateOn(parseMessageId("(.*)", 1)))
         .build("Invalid", UUID.randomUUID()))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("must have the same entity model");
@@ -934,15 +996,35 @@ public class HttpInboxTest {
     String messageId = UUID.randomUUID().toString();
     HttpResponseMessage first = HttpMessageParser.parseResponse(onRollbackRequest(messageId).data());
     assertEquals("Nothing to roll back", ProblemDetail.parse(first.body()).detail());
-    // A retry, e.g. with another correlation id
-    HttpResponseMessage second = HttpMessageParser.parseResponse(onRequest(TRIGGER, new HttpRequestMessage(
-        DELETE,
-        URI.create("/lamps/messages/" + messageId),
-        Map.of("X-Correlation-Id", "retry"),
-        null
-    )).data());
+    // A retry, with another correlation id, which the normalizer removes
+    HttpResponseMessage second = onRollbackRequest(messageId, Map.of("X-Correlation-Id", "retry"));
     assertEquals(201, second.statusCode());
     assertArrayEquals(first.body(), second.body());
+  }
+
+  /// A repeated rollback with the same message id which differs from the first after normalizing is another rollback,
+  /// not a retry, as for requests
+  @Test
+  public void whenAnotherRollbackOfRolledBackRequestThenConflict() throws IOException {
+    String messageId = UUID.randomUUID().toString();
+    onInternalRequest(messageId, new InternalProcess("Hello!", 100));
+    HttpResponseMessage first = onRollbackRequest(messageId, Map.of("X-Reason", "Cancelled"));
+    assertEquals("Rolled back", ProblemDetail.parse(first.body()).detail());
+    HttpResponseMessage second = onRollbackRequest(messageId, Map.of("X-Reason", "Timed out"));
+    assertEquals(400, second.statusCode());
+    assertEquals("Conflict", ProblemDetail.parse(second.body()).detail());
+  }
+
+  /// Without a normalizer a rollback is compared as it is, so a retry with another correlation id is another rollback
+  @Test
+  public void whenRollbackWithoutNormalizerIsRetriedWithAnotherCorrelationIdThenConflict() throws IOException {
+    String messageId = UUID.randomUUID().toString();
+    onRequest(PUT, URI.create("/owned/" + messageId), asJson(new InternalProcess("alice", 1)));
+    HttpResponseMessage first = onOwnedRollback(messageId, Map.of("X-Owner", "alice", "X-Correlation-Id", "first"));
+    assertEquals("Rolled back", ProblemDetail.parse(first.body()).detail());
+    HttpResponseMessage second = onOwnedRollback(messageId, Map.of("X-Owner", "alice", "X-Correlation-Id", "retry"));
+    assertEquals(400, second.statusCode());
+    assertEquals("Conflict", ProblemDetail.parse(second.body()).detail());
   }
 
   @Test
@@ -986,9 +1068,10 @@ public class HttpInboxTest {
   @Test
   public void rollbackOfRequestWithAuthorizerNeedsAnAuthorizer() {
     assertThatThrownBy(() -> HttpInboxRequest.matching(_ -> true).noContent()
+        .deduplicateOn(parseMessageId("(.*)", 1))
         .authorizer((_, _) -> Authorization.authorized("alice"))
         .process(InternalProcessingRequested, Lamp, newEntity())
-        .rollback(_ -> false, parseMessageId("(.*)", 1))
+        .rollback(Rollback.matching(_ -> false).noContent().deduplicateOn(parseMessageId("(.*)", 1)))
         .build("Invalid", UUID.randomUUID()))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("needs an authorizer");
@@ -997,8 +1080,9 @@ public class HttpInboxTest {
   @Test
   public void rollbackOfRequestWithoutAuthorizerCanNotHaveAnAuthorizer() {
     assertThatThrownBy(() -> HttpInboxRequest.matching(_ -> true).noContent()
+        .deduplicateOn(parseMessageId("(.*)", 1))
         .process(InternalProcessingRequested, Lamp, newEntity())
-        .rollback(_ -> false, parseMessageId("(.*)", 1), (_, _) -> Authorization.authorized("alice"))
+        .rollback(Rollback.matching(_ -> false).noContent().deduplicateOn(parseMessageId("(.*)", 1)).authorizer((_, _) -> Authorization.authorized("alice")))
         .build("Invalid", UUID.randomUUID()))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("can't have an authorizer");
@@ -1131,6 +1215,21 @@ public class HttpInboxTest {
 
   private Event<?> onRollbackRequest(String messageId) {
     return onRequest(DELETE, URI.create("/lamps/messages/" + messageId), null);
+  }
+
+  private static HttpRequestMessage withoutCorrelationId(HttpRequestMessage m) {
+    var headers = new HashMap<>(m.headers());
+    headers.remove("X-Correlation-Id");
+    return new HttpRequestMessage(m.method(), m.uri(), headers, m.body());
+  }
+
+  private HttpResponseMessage onRollbackRequest(String messageId, Map<String, String> headers) throws IOException {
+    return HttpMessageParser.parseResponse(onRequest(TRIGGER, new HttpRequestMessage(
+        DELETE,
+        URI.create("/lamps/messages/" + messageId),
+        headers,
+        null
+    )).data());
   }
 
   private Event<?> onRequest(EventTrigger<HttpRequestMessage, ?, ?> eventTrigger, HttpRequestMessage requestMessage) {

@@ -95,6 +95,10 @@ HttpInboxRequest<Void> GreetingRequest = HttpInboxRequest
     .build("GreetingRequest", UUID.fromString("5e3d4a8c-0f2b-4c6e-b1d7-9a8f7e6d5c4b"));
 ```
 
+<object data="../images/com.github.thxmasj.backend.helloworld.GreetingRequest.svg" type="image/svg+xml"></object>
+
+[Open the GreetingRequest diagram in full size](images/com.github.thxmasj.backend.helloworld.GreetingRequest.svg)
+
 The [transitions](transition-models.md) say what happens on each event type in each state. A greeting starts in
 `Begin`, and `GreetingRequested` takes it to `Greeted`. On the way, the transition triggers the response on the request
 that is waiting for it, `HttpInbox.Request`, which stands for whichever inbox request the greeting was requested by:
@@ -114,6 +118,12 @@ static Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions() {
   ));
 }
 ```
+
+The diagram of `Greeting`, drawn from these transitions:
+
+<object data="../images/com.github.thxmasj.backend.helloworld.Greeting.svg" type="image/svg+xml"></object>
+
+[Open the Greeting diagram in full size](images/com.github.thxmasj.backend.helloworld.Greeting.svg)
 
 `HttpInbox.transitions` adds the entity models of the inbox to those of the application: the inbox requests,
 `RequestRouting`, which routes a request to the inbox request matching it, and `MessageIds`. It also checks that the

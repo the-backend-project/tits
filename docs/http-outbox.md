@@ -106,12 +106,6 @@ delayed trigger; otherwise the request is `Dead`. The repeated request is the or
 `repeatMessageCreator` makes of it, e.g. with a new timestamp. Like the first attempt, every repeated attempt has the
 inflight timeout.
 
-The diagram generated from the model shows every event, including the intermediate ones of the choices above:
-
-<object data="../images/com.github.thxmasj.backend.http.outbox.AtLeastOnce.svg" type="image/svg+xml"></object>
-
-[Open the diagram in full size](images/com.github.thxmasj.backend.http.outbox.AtLeastOnce.svg)
-
 ### Example
 
 A notification to a merchant, which the merchant deduplicates by its id, retried every 30 seconds for a day:
@@ -131,6 +125,12 @@ AtLeastOnce<Notification> notification = HttpOutboxRequest.atLeastOnce()
     .backoffAlgorithm(_ -> Duration.ofSeconds(30))
     .build("MerchantNotification", notificationId);
 ```
+
+The diagram generated from it shows every event, including the intermediate ones of the choices above:
+
+<object data="../images/com.github.thxmasj.backend.http.outbox.MerchantNotification.svg" type="image/svg+xml"></object>
+
+[Open the MerchantNotification diagram in full size](images/com.github.thxmasj.backend.http.outbox.MerchantNotification.svg)
 
 ## AtMostOnce
 
@@ -193,12 +193,6 @@ request, by the rollback message creator of the dispatcher (see [dispatching](#d
 rollback model is `AtLeastOnce`, the receiver must tolerate a duplicate rollback, as well as a rollback of a request it
 never received.
 
-The diagram generated from the model, with both rollback models:
-
-<object data="../images/com.github.thxmasj.backend.http.outbox.AtMostOnce.svg" type="image/svg+xml"></object>
-
-[Open the diagram in full size](images/com.github.thxmasj.backend.http.outbox.AtMostOnce.svg)
-
 ### Example
 
 An authorisation of a card payment, reversed by an `AtLeastOnce` reversal if it is accepted or its outcome is unknown:
@@ -220,6 +214,12 @@ AtMostOnce<AuthorisationRequest, ReversalRequest> authorisation = HttpOutboxRequ
     .rollbackOnUnknownModel(reversal)
     .build("Authorisation", authorisationId);
 ```
+
+The diagram generated from it:
+
+<object data="../images/com.github.thxmasj.backend.http.outbox.Authorisation.svg" type="image/svg+xml"></object>
+
+[Open the Authorisation diagram in full size](images/com.github.thxmasj.backend.http.outbox.Authorisation.svg)
 
 ## Dispatching a request
 

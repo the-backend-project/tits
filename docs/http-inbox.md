@@ -10,23 +10,26 @@ own, drawn in the same kind of state diagram as the entities of the application 
 HttpInboxRequest<Order> PlaceOrder = HttpInboxRequest
     .matching(m -> m.method() == Method.PUT && m.uri().getPath().startsWith("/orders/"))
     .contentParser(HttpInbox.jsonParser(Order.class))
-    .messageIdParser(parseMessageId("PUT /orders/(.*)", 1))
+    .deduplicateOn(parseMessageId("PUT /orders/(.*)", 1))
     .authorizer(HttpInbox.bearerToken(verifier, "orders"))
     .process(OrderPlaced, Orders, RoutedRequest::body, newEntity())
-    .rollback(m -> m.method() == Method.DELETE, parseMessageId("DELETE /orders/(.*)", 1), HttpInbox.bearerToken(verifier, "orders"))
     .build("PlaceOrder", UUID.fromString("..."));
 ```
+
+<object data="../images/com.github.thxmasj.backend.http.inbox.PlaceOrder.svg" type="image/svg+xml"></object>
+
+[Open the PlaceOrder diagram in full size](images/com.github.thxmasj.backend.http.inbox.PlaceOrder.svg)
 
 | Setting           | Required | What it does                                                                                     |
 |-------------------|----------|--------------------------------------------------------------------------------------------------|
 | `matching`        | Yes      | Tells which requests are of this type, e.g. by method and path                                    |
 | `contentParser`   | Yes      | Parses the body, or `noContent()` to ignore it. An invalid body is answered with 400              |
 | `process`         | Yes      | The event type the request triggers, the entity model and the entity, e.g. `newEntity()` or `parseEntityId(...)`, and the event's data, which an event without data leaves out. Repeated with a content predicate for [content routing](#content-routing) |
-| `messageIdParser` | No       | The id of the request, by which a retried request is recognised                                   |
+| `deduplicateOn`   | No       | The id of the request, by which a retried request is recognised. Without it, nothing is deduplicated, and the request can't be rolled back |
 | `authorizer`      | No       | Authorizes the request, e.g. with a bearer token (see [access tokens](#access-tokens))           |
 | `response`        | No       | A response of the application of its own, made from a `ResponseEventType` the application triggers |
 | `normalizer`      | No       | Normalizes a request before it is compared with an earlier request with the same message id       |
-| `rollback`        | No       | Requests rolling back a request by its message id, with an authorizer of their own if the request has one, see [rollback](#rollback) |
+| `rollback`        | No       | Requests rolling back a request by its message id, with an authorizer of their own if the request has one. Needs `deduplicateOn`, see [rollback](#rollback) |
 
 `HttpInbox.transitions(requests, application)` gives the transitions to create the state machine with: those of the
 application, and of the inbox requests, `RequestRouting` and `MessageIds`.
@@ -72,9 +75,9 @@ response of the first one, also if the application rejected it, without triggeri
 the client's: the authorized subject and the id, or the id alone without an authorizer. All inbox requests share
 `MessageIds`, so a client can use a message id once, for one request of one type. A request with the message id of an
 earlier request it differs from, of the same or another inbox request, is answered with 400 Bad Request and the detail
-`Conflict`, and so is a request with the message id of a request still being dispatched. A request without a message
-id that triggers an event on an existing entity is identified by the event type and the entity. Filters on the
-listener can authenticate, log or rewrite requests before they reach the inbox.
+`Conflict`, and so is a request with the message id of a request still being dispatched. The requests of an inbox
+request without `deduplicateOn` are not deduplicated: each one is dispatched to the application, also when it
+repeats an earlier one. Filters on the listener can authenticate, log or rewrite requests before they reach the inbox.
 
 A response of 500 Internal Server Error, which the application triggers with `FailedRequestCompleted`, is an event of
 [severity](monitoring.md#severity) `Error`.
@@ -94,7 +97,7 @@ once, the processes are tried in the order they are given, and the first one who
 request matching none is answered with 400 Bad Request and the detail `No process for the content`. A process without
 a predicate takes any content, so it can only be the last one, as a default.
 
-Each process has its own event type, entity model, input and entity selector, while the message id parser, the
+Each process has its own event type, entity model, input and entity selector, while `deduplicateOn`, the
 authorizer and the normalizer are those of the endpoint. Here the result of an enrolment activates the payment token
 it is about, or rejects it, by its status:
 
@@ -102,7 +105,7 @@ it is about, or rejects it, by its status:
 HttpInboxRequest<EnrolmentResult> EnrolmentResultReceived = HttpInboxRequest
     .matching(m -> m.requestLine().matches("POST /enrolments"))
     .contentParser(HttpInbox.jsonParser(EnrolmentResult.class))
-    .messageIdParser((_, result) -> valid(result.messageId()))
+    .deduplicateOn((_, result) -> valid(result.messageId()))
     .process(
         when("status == Accepted", result -> result.status() == EnrolmentStatus.ACCEPTED),
         Activate, PaymentToken, RoutedRequest::body, (_, result) -> entityId(result.tokenReference())
@@ -114,25 +117,106 @@ HttpInboxRequest<EnrolmentResult> EnrolmentResultReceived = HttpInboxRequest
     .build("EnrolmentResultReceived", UUID.fromString("..."));
 ```
 
-The diagram of the inbox request shows the choice: a `Request dispatched [status == Accepted]` and a
+<object data="../images/com.github.thxmasj.backend.http.inbox.EnrolmentResultReceived.svg" type="image/svg+xml"></object>
+
+[Open the EnrolmentResultReceived diagram in full size](images/com.github.thxmasj.backend.http.inbox.EnrolmentResultReceived.svg)
+
+The diagram shows the choice: a `Request dispatched [status == Accepted]` and a
 `Request dispatched [status == Rejected]`, each triggering its event. A single process can have a predicate too, e.g.
 to answer an authentication response with an error with 400 Bad Request.
 
 ## Rollback
 
-An inbox request with a `rollback` takes the requests its matcher matches as rollbacks of the request with the message
-id its parser gives, e.g. a `DELETE` with the id of an earlier `PUT`. A rollback goes to the entity of that request,
-which rolls back the events the request caused on the application and responds 201 Created with `Rolled back`. A
-rollback of a request not received yet is answered with `Nothing to roll back`, and takes the message id, so that the
-request is rejected with 422 Unprocessable Entity if it arrives later. A rollback repeated, with the same request line,
-gets the response of the first one in both cases, also if it differs in headers such as the correlation id.
+An inbox request with a `rollback` takes the requests the rollback's matcher matches as rollbacks of the request with
+the message id the rollback's `deduplicateOn` gives, e.g. a `DELETE` with the id of an earlier `PUT`. Only an inbox
+request with `deduplicateOn` can have a rollback, as a request is found by its message id: `rollback` is a method of the
+builder `deduplicateOn` returns. Here `PlaceOrder` is rolled back by a `DELETE` with the id of the order:
 
-A rollback has no body, so the authorizer of the request, which may read the body, isn't used for it. A request with an
-authorizer takes a rollback with an authorizer of its own, `rollback(matcher, messageIdParser, authorizer)`, and a
-request without one a rollback without one. The message id of a request is the authorized subject's, so the rollback is
-of the request the same subject sent: another subject's rollback with the message id has nothing to roll back. The message ids of all inbox requests share `MessageIds`, but a rollback only finds requests of its own
-inbox request: the message id of another type of request has nothing to roll back. The processes of an inbox request
-with a rollback must have the same entity model, which the rollback rolls the events back on.
+```java
+HttpInboxRequest<Order> PlaceOrder = HttpInboxRequest
+    .matching(m -> m.method() == Method.PUT && m.uri().getPath().startsWith("/orders/"))
+    .contentParser(HttpInbox.jsonParser(Order.class))
+    .deduplicateOn(parseMessageId("PUT /orders/(.*)", 1))
+    .authorizer(HttpInbox.bearerToken(verifier, "orders"))
+    .process(OrderPlaced, Orders, RoutedRequest::body, newEntity())
+    .rollback(Rollback
+        .matching(m -> m.method() == Method.DELETE && m.uri().getPath().startsWith("/orders/"))
+        .noContent()
+        .deduplicateOn(parseMessageId("DELETE /orders/(.*)", 1))
+        .authorizer(HttpInbox.bearerToken(verifier, "orders")))
+    .build("PlaceOrder", UUID.fromString("..."));
+```
+
+<object data="../images/com.github.thxmasj.backend.http.inbox.PlaceOrderWithRollback.svg" type="image/svg+xml"></object>
+
+[Open the PlaceOrder diagram in full size](images/com.github.thxmasj.backend.http.inbox.PlaceOrderWithRollback.svg)
+
+The rollback is built like the inbox request, starting with `Rollback.matching(...)`:
+
+| Setting         | Required               | What it does                                                                                       |
+|-----------------|------------------------|----------------------------------------------------------------------------------------------------|
+| `matching`      | Yes                    | Tells which requests are rollbacks of a request of this type, e.g. by method and path               |
+| `contentParser` | Yes                    | Parses the content of a rollback, or `noContent()` to ignore it. Invalid content is answered with 400 |
+| `deduplicateOn` | Yes                    | The message id of the request rolled back, from e.g. the path or the content, the same one the request's `deduplicateOn` gives. An invalid one is answered with 400 |
+| `authorizer`    | If the request has one | Authorizes the rollback                                                                            |
+| `normalizer`    | No                     | Normalizes a rollback before it is compared with the first rollback of the request                 |
+
+A rollback goes to the entity of that request, which rolls back the events the request caused on the application and
+responds 201 Created with `Rolled back`. A rollback of a request not received yet is answered with `Nothing to roll
+back`, and takes the message id, so that the request is rejected with 422 Unprocessable Entity if it arrives later.
+
+A rollback finds the request, and the request finds the events to roll back, through the event logs of the entities
+involved. Here a `DELETE /orders/42` rolls back the `PUT /orders/42` of the `PlaceOrder` inbox request, whose process
+placed an order. Each entity is a box, like a class in a class diagram, with the name of its entity model, and the kind
+of entity as a stereotype unless it is a plain entity model, over its events, the oldest on top. The `MessageIds`
+entity has the same entity id as the `PlaceOrder` entity. An event in italics, with a dashed border, leads to a choice
+and is not stored: only the event of the chosen transition is. Solid arrows are triggers, and dashed arrows the event
+references:
+
+<object data="../images/com.github.thxmasj.backend.http.inbox.Rollback.svg" type="image/svg+xml"></object>
+
+[Open the rollback diagram in full size](images/com.github.thxmasj.backend.http.inbox.Rollback.svg)
+
+1. Each HTTP request is received by a `RequestRouting` entity of its own, which routes it to its inbox request.
+2. A valid request claims its message id, the subject and the id its `deduplicateOn` gives, on the `MessageIds` entity
+   with the same entity id as the request's own entity, unless an earlier request or rollback has claimed it.
+3. The process of the request triggers its event on the application, here `Order placed` as event `n` of the order.
+   `Request accepted` keeps an `EventReference` to it: the entity id of the order and the event number. The application responds by
+   triggering `Request completed`, which gives the response to the `RequestRouting` entity of the request.
+4. A rollback is routed to the entity which claimed the message id its `deduplicateOn` gives, and there takes the
+   `EventReference` of `Request accepted`. It triggers `Events rolled back` on the entity referred to, rolling it back
+   to the event before the one referred to, `n − 1`. `Rollback request accepted` refers to that rollback event, and
+   claims the message id for the rollback.
+
+The events rolled back stay in the event log, but are no longer effective: the state of the order, and everything read
+from its log, is as it was after event `n − 1`. This includes events after `n` which the request did not cause, so the
+application decides, by its transitions on `Events rolled back`, in which states of the entity a rollback is accepted.
+
+A request is rolled back once. A rollback repeated after the first one, which has the same message id, is compared with
+the first one as a request is: equal after normalizing, it is a retry and gets the response of the first one in both
+cases, and otherwise it is a second rollback, which is rejected with 400 Bad Request and `Conflict`. Without a
+normalizer, a rollback is compared as it is, headers included, so a retry must be sent as it was. A normalizer which
+removes e.g. the date and tracing headers lets a retry differ in them, and one which keeps e.g. `X-Correlation-Id` tells
+a second rollback by it.
+
+A rollback has content of its own, of a type of its own, which its `deduplicateOn` and `authorizer` read. The message
+id can be in the content instead of the path, e.g. a reversal posted with the id of the order:
+
+```java
+.rollback(Rollback
+    .matching(m -> m.requestLine().equals("POST /order-reversals"))
+    .contentParser(HttpInbox.jsonParser(OrderReversal.class))
+    .deduplicateOn((_, reversal) -> valid(reversal.orderId()))
+    .authorizer(HttpInbox.bearerToken(verifier, "orders")))
+```
+
+As the content of a rollback isn't the request's, the authorizer of the request isn't used for it. A request with an
+authorizer takes a rollback with an authorizer of its own, and a request without one a rollback without one. The
+message id of a request is the authorized subject's, so the rollback is of the request the same subject sent: another
+subject's rollback with the message id has nothing to roll back. The message ids of all inbox requests share
+`MessageIds`, but a rollback only finds requests of its own inbox request: the message id of another type of request
+has nothing to roll back. The processes of an inbox request with a rollback must have the same entity model, which the
+rollback rolls the events back on.
 
 ## Access tokens
 
@@ -170,11 +254,8 @@ issuer has added since.
 
 [Open the RequestRouting diagram in full size](images/com.github.thxmasj.backend.http.inbox.RequestRouting.svg)
 
-The `PlaceOrder` inbox request, from receiving the request to its response, and its rollback:
-
-<object data="../images/com.github.thxmasj.backend.http.inbox.HttpInboxRequest.svg" type="image/svg+xml"></object>
-
-[Open the PlaceOrder diagram in full size](images/com.github.thxmasj.backend.http.inbox.HttpInboxRequest.svg)
+The states of an inbox request, which the diagram of `PlaceOrder` with its rollback, under the
+[rollback](#rollback) example, has all of:
 
 | State         | Meaning                                                                                                   |
 |---------------|-----------------------------------------------------------------------------------------------------------|

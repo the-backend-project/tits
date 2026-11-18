@@ -47,9 +47,6 @@ import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.EntityModelGroup;
 import com.github.thxmasj.backend.core.EntitySelector;
-import com.github.thxmasj.backend.core.EntitySelector.ById;
-import com.github.thxmasj.backend.core.EntitySelector.ByIdEvent;
-import com.github.thxmasj.backend.core.EntitySelector.ByIdFromSession;
 import com.github.thxmasj.backend.core.EventLog;
 import com.github.thxmasj.backend.core.EventReference;
 import com.github.thxmasj.backend.core.EventTrigger;
@@ -74,6 +71,7 @@ import com.github.thxmasj.backend.http.inbox.HttpInbox.MessageId;
 import com.github.thxmasj.backend.http.inbox.HttpInbox.RoutedRequest;
 import com.github.thxmasj.backend.http.inbox.HttpInboxRequest.Process;
 import com.github.thxmasj.backend.http.inbox.HttpInboxRequest.Response;
+import com.github.thxmasj.backend.http.inbox.HttpInboxRequest.Rollback;
 import jakarta.annotation.Nullable;
 import java.nio.charset.StandardCharsets;
 import java.time.ZonedDateTime;
@@ -185,7 +183,7 @@ interface TransitionModels {
     if (body.isInvalid())
       return Validation.invalid("Invalid request body: " + body.invalidReason());
     T content = body.validValue();
-    Validated<String> messageIdValue = request.messageIdParser() != null ? request.messageIdParser().apply(message, content) : null;
+    Validated<String> messageIdValue = request.deduplicateOn() != null ? request.deduplicateOn().apply(message, content) : null;
     if (messageIdValue != null && messageIdValue.isInvalid())
       return Validation.invalid("Unable to parse message id: " + messageIdValue.invalidReason());
     Authorization authorization = request.authorizer() != null ? request.authorizer().apply(message, content) : null;
@@ -200,20 +198,8 @@ interface TransitionModels {
       return Validation.invalid("Unable to parse process selector: " + selector.invalidReason());
     String clientId = authorization != null ? authorization.subject() : "N/A";
     EntitySelector processSelector = selector.validValue();
-    MessageId messageId = null;
-    if (messageIdValue != null) {
-      messageId = new MessageId(clientId, messageIdValue.validValue());
-    } else {
-      // A request without a message id is identified by the event it triggers on an existing entity
-      String entity = switch (processSelector) {
-        case ById s -> s.id().toString();
-        case ByIdEvent<?> s -> s.id().toString();
-        case ByIdFromSession _ -> UUID.randomUUID().toString(); // TODO: Use id from session for the process model
-        default -> null;
-      };
-      if (entity != null)
-        messageId = new MessageId(clientId, process.eventType().id() + "/" + entity);
-    }
+    // A request without a message id is not deduplicated, so each one is dispatched
+    MessageId messageId = messageIdValue != null ? new MessageId(clientId, messageIdValue.validValue()) : null;
     return new Validation<>(
         null,
         null,
@@ -223,12 +209,21 @@ interface TransitionModels {
   }
 
   private static <T> Validation<T> validateRollback(HttpInboxRequest<T> request, HttpRequestMessage message) {
-    Validated<String> messageIdValue = request.rollback().messageIdParser().apply(message, null);
+    return validateRollback(request.rollback(), message);
+  }
+
+  /// Validates a rollback by its own content, authorizer and message id. The content is only used for that, so the
+  /// routed rollback has no body.
+  private static <T, R> Validation<T> validateRollback(Rollback<R> rollback, HttpRequestMessage message) {
+    Validated<R> body = rollback.contentParser().apply(message);
+    if (body.isInvalid())
+      return Validation.invalid("Invalid request body: " + body.invalidReason());
+    R content = body.validValue();
+    Validated<String> messageIdValue = rollback.deduplicateOn().apply(message, content);
     if (messageIdValue.isInvalid())
       return Validation.invalid("Unable to parse message id: " + messageIdValue.invalidReason());
-    // The rollback's own authorizer, as the request's may read the body, which a rollback doesn't have
-    var authorizer = request.rollback().authorizer();
-    Authorization authorization = authorizer != null ? authorizer.apply(message, null) : null;
+    var authorizer = rollback.authorizer();
+    Authorization authorization = authorizer != null ? authorizer.apply(message, content) : null;
     if (authorization != null && authorization.isRefused())
       return Validation.refusal(authorization.refused());
     String subject = authorization != null ? authorization.subject() : null;
@@ -316,13 +311,19 @@ interface TransitionModels {
     return Map.copyOf(transitions);
   }
 
-  /// A received request is validated, and dispatched to the application if it is valid
+  /// A received request is validated, and dispatched to the application if it is valid. A request with a message id
+  /// claims it first, so that a retry is recognised, while a request of an inbox request without `deduplicateOn`
+  /// is not deduplicated, and is dispatched as it is.
   private static <T> TransitionModel<?, ?> receivedTransition(HttpInboxRequest<T> request) {
-    return onEvent(RequestReceived).to(Dispatched)
+    var validated = onEvent(RequestReceived).to(Dispatched)
         .assemble(c -> validate(request, c.input()))
         .when(Validation::isInvalid).then(rejectedAsInvalid(), Validation::invalidReason)
-        .when(Validation::isRefused).then(rejectedAsUnauthorized(), Validation::refused)
-        .otherwise(dispatchChoiceTransition(request), Validation::dispatch);
+        .when(Validation::isRefused).then(rejectedAsUnauthorized(), Validation::refused);
+    if (request.deduplicateOn() != null)
+      return validated.otherwise(dispatchChoiceTransition(request), Validation::dispatch);
+    return request.processes().size() == 1 ?
+        validated.otherwise(dispatchTransition(request, 0), Validation::routedRequest) :
+        validated.otherwise(contentChoiceTransition(request), Validation::dispatch);
   }
 
   private static TransitionModel<String, HttpResponseMessage> rejectedAsInvalid() {
@@ -342,6 +343,11 @@ interface TransitionModels {
   @SuppressWarnings({"unchecked", "rawtypes"})
   private static <D> EventType<D, Void> requestDispatched() {
     return (EventType) HttpInbox.RequestDispatched;
+  }
+
+  @SuppressWarnings({"unchecked", "rawtypes"})
+  private static <D> EventType<D, Void> requestValidated() {
+    return (EventType) HttpInbox.RequestValidated;
   }
 
   /// Whether the request is a repeat of the request of the entity which has its message id, accepted or rejected by
@@ -390,7 +396,7 @@ interface TransitionModels {
 
   /// Claims the message id of the request, and dispatches it unless the id is taken by an earlier request
   private static <T> TransitionModel<Dispatch<T>, Void> dispatchChoiceTransition(HttpInboxRequest<T> request) {
-    var claimed = onEvent(TransitionModels.<Dispatch<T>>requestDispatched()).to(Dispatched)
+    var claimed = onEvent(TransitionModels.<Dispatch<T>>requestValidated()).to(Dispatched)
         .assemble(c -> tuple(c.input(), c.entityId()))
         .trigger(MessageIdClaimed).with(d -> d.t1().routedRequest().messageId()).on(MessageIds).identifiedBy(d -> entityId(d.t2(), CreateIfNotExists))
         .when(d -> d.t2().isIdExists() && d.t2().idExists().log().oneIfExists(RollbackRequestAccepted).isPresent()).then(
@@ -539,6 +545,12 @@ interface TransitionModels {
         .output();
   }
 
+  /// Whether the rollback is equal to the first one with the same message id after normalizing, as for requests
+  private static <T> boolean isSameRollback(HttpInboxRequest<T> request, HttpRequestMessage rollback, HttpRequestMessage first) {
+    var normalizer = request.rollback().normalizer();
+    return normalizer.apply(rollback).equals(normalizer.apply(first));
+  }
+
   /// A rollback repeated after the request is rolled back, or found to have nothing to roll back, gets the response of
   /// the first one
   private static <T> TransitionModel<?, ?> repeatedRollbackTransition(HttpInboxRequest<T> request) {
@@ -549,8 +561,8 @@ interface TransitionModels {
             c.log().one(RollbackRequestCompleted),
             c.log().entityId()
         ))
-        // A rollback is told by its request line, as a retry may differ in headers such as the correlation id
-        .when(d -> d.t1().request().requestLine().equals(d.t2().requestLine())).then(
+        // A retry of the first rollback is equal to it after normalizing
+        .when(d -> isSameRollback(request, d.t1().request(), d.t2())).then(
             onEvent(DuplicateRequestRejected).to(RollingBack)
                 .assembleInput()
                 .trigger(DuplicatedRequestCompleted).with(Tuple2::t2).on(request).identifiedBy(entityIdFromSession())
