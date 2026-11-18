@@ -51,8 +51,8 @@ public class DebugTest {
     assertEquals("\n  | {}", Debug.marked("\n{}"));
   }
 
-  /// Console output of the library which did not go through [Debug] would not be marked. Only [JsonLinesListener]
-  /// writes lines of its own.
+  /// Console output of the library which did not go through [Debug] would not be marked. Only
+  /// [com.github.thxmasj.backend.core.JsonLinesListener] writes lines of its own.
   @Test
   public void theLibraryWritesToTheConsoleThroughDebugOnly() throws IOException {
     Path sources = Path.of("src/main/java");

@@ -24,24 +24,23 @@ module com.github.thxmasj.backend.core {
   // Internals shared with the other modules of the library only. The modules are not dependencies of this one, so the
   // compiler would warn that they are not found.
   exports com.github.thxmasj.backend.core.internal to
-      com.github.thxmasj.backend.http.outbox;
+      com.github.thxmasj.backend.database.mssql,
+      com.github.thxmasj.backend.database.pgsql.jdbc,
+      com.github.thxmasj.backend.http.inbox,
+      com.github.thxmasj.backend.http.outbox,
+      com.github.thxmasj.backend.testapi;
   exports com.github.thxmasj.backend.core.internal.database to
       com.github.thxmasj.backend.database.mssql,
       com.github.thxmasj.backend.database.pgsql.jdbc,
       com.github.thxmasj.backend.database.pgsql.r2dbc,
       com.github.thxmasj.backend.database.pgsql.vertx,
-      com.github.thxmasj.backend.http.inbox,
-      com.github.thxmasj.backend.http.outbox,
       com.github.thxmasj.backend.testapi;
   exports com.github.thxmasj.backend.core.internal.database.jdbc to
       com.github.thxmasj.backend.database.mssql,
-      com.github.thxmasj.backend.database.pgsql.jdbc,
-      com.github.thxmasj.backend.database.pgsql.r2dbc,
-      com.github.thxmasj.backend.database.pgsql.vertx;
+      com.github.thxmasj.backend.database.pgsql.jdbc;
   exports com.github.thxmasj.backend.core.internal.http to
       com.github.thxmasj.backend.http.inbox,
       com.github.thxmasj.backend.http.outbox;
-
 
   uses com.github.thxmasj.backend.core.database.Database;
 }

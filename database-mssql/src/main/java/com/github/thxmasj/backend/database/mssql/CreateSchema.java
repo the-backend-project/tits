@@ -13,7 +13,7 @@ import javax.sql.DataSource;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
-public class CreateSchema {
+class CreateSchema {
 
   private final String schema;
   private final String role;

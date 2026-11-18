@@ -7,6 +7,7 @@ import com.github.thxmasj.backend.core.database.Database;
 import com.github.thxmasj.backend.core.database.DatabaseClient;
 import com.github.thxmasj.backend.core.database.DatabaseClient.Config;
 import com.github.thxmasj.backend.core.internal.database.Storage;
+import com.github.thxmasj.backend.core.internal.database.StorageProvider;
 import com.github.thxmasj.backend.database.pgsql.PgsqlDatabase;
 import java.time.Clock;
 import java.util.List;
@@ -14,9 +15,12 @@ import java.util.Map;
 import javax.sql.DataSource;
 import reactor.core.publisher.Mono;
 
+// StorageProvider is internal to the library, which gets the storage of the database through it, so applications have no
+// use for it.
 /// PostgreSQL through its R2DBC driver, e.g. for comparing it with its JDBC driver. The queries are those of
 /// [PgsqlDatabase], and the schema is created by it through JDBC.
-public class PgsqlR2dbcDatabase implements Database {
+@SuppressWarnings("exports")
+public class PgsqlR2dbcDatabase implements Database, StorageProvider {
 
   private final PgsqlDatabase pgsql = new PgsqlDatabase();
 

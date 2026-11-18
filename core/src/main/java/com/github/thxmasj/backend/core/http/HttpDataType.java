@@ -1,4 +1,4 @@
-package com.github.thxmasj.backend.core.internal.http;
+package com.github.thxmasj.backend.core.http;
 
 import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.message.http.HttpMessageParser;

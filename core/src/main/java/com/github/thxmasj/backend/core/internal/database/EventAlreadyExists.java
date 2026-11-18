@@ -1,4 +1,4 @@
-package com.github.thxmasj.backend.core.database;
+package com.github.thxmasj.backend.core.internal.database;
 
 import java.util.List;
 import java.util.UUID;

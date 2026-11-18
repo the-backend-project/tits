@@ -23,7 +23,7 @@ import javax.sql.DataSource;
 /// A UUID is stored as its 16 bytes in the order of its string form. SQL Server compares BINARY values byte by byte
 /// from the first, so time-ordered UUIDs (version 7) are ordered by time in its indexes. It compares UNIQUEIDENTIFIER
 /// values from their last 6 bytes, where a version 7 UUID has random bits, so would insert them at random places.
-public class MssqlClient extends JDBCClient {
+class MssqlClient extends JDBCClient {
 
   private static final Pattern binaryUuidPattern = Pattern.compile("^0x(\\p{XDigit}{32})(?=,|$)");
 

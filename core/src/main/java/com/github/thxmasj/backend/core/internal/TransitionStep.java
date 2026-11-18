@@ -1,9 +1,14 @@
-package com.github.thxmasj.backend.core;
+package com.github.thxmasj.backend.core.internal;
 
-import static com.github.thxmasj.backend.core.StateMachine.chainToString;
 import static com.github.thxmasj.backend.core.Tuples.tuple;
 import static java.util.Optional.ofNullable;
 
+import com.github.thxmasj.backend.core.EventLog;
+import com.github.thxmasj.backend.core.EventReference;
+import com.github.thxmasj.backend.core.EventTrigger;
+import com.github.thxmasj.backend.core.EventType;
+import com.github.thxmasj.backend.core.State;
+import com.github.thxmasj.backend.core.StateMachine;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.Accepted;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.Completed;
@@ -11,8 +16,11 @@ import com.github.thxmasj.backend.core.StateMachine.ProcessResult.IdExists;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.Pending;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.Rejected;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.UnknownId;
+import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionContext;
+import com.github.thxmasj.backend.core.TriggerType;
 import com.github.thxmasj.backend.core.Tuples.Tuple2;
+import com.github.thxmasj.backend.core.internal.database.ConditionalTrigger;
 import java.time.ZonedDateTime;
 import java.util.UUID;
 
@@ -24,6 +32,14 @@ public sealed interface TransitionStep<T> {
   TransitionStep<?> previous();
 
   T stepOutput();
+
+  static String chainToString(TransitionStep<?> tail) {
+    StringBuilder b = new StringBuilder();
+    for (TransitionStep<?> c = tail; c != null; c = c.previous()) {
+      b.append(c).append("\n");
+    }
+    return b.toString();
+  }
 
   default InputStep<?> inputStep() {
     try {

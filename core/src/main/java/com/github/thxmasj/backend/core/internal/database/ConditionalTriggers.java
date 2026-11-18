@@ -2,7 +2,6 @@ package com.github.thxmasj.backend.core.internal.database;
 
 import static java.lang.String.format;
 
-import com.github.thxmasj.backend.core.ConditionalTrigger;
 import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.EventReference;

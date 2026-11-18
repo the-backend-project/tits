@@ -28,7 +28,7 @@ import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionContext;
 import com.github.thxmasj.backend.core.Tuples.Tuple2;
 import com.github.thxmasj.backend.core.Validated;
 import com.github.thxmasj.backend.core.http.HttpClient;
-import com.github.thxmasj.backend.core.internal.http.HttpDataType;
+import com.github.thxmasj.backend.core.http.HttpDataType;
 import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
 import com.github.thxmasj.backend.core.message.http.TypedHttpRequest;
 import com.github.thxmasj.backend.core.message.http.TypedHttpResponse;

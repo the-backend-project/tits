@@ -5,7 +5,7 @@ import static com.github.thxmasj.backend.core.BasicEventType.of;
 import com.github.thxmasj.backend.core.BasicEventType;
 import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.EventType;
-import com.github.thxmasj.backend.core.internal.http.HttpDataType;
+import com.github.thxmasj.backend.core.http.HttpDataType;
 import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
 import java.util.UUID;
 

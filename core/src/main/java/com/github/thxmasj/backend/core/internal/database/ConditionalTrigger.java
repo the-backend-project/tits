@@ -1,5 +1,8 @@
-package com.github.thxmasj.backend.core;
+package com.github.thxmasj.backend.core.internal.database;
 
+import com.github.thxmasj.backend.core.EntityModel;
+import com.github.thxmasj.backend.core.EventReference;
+import com.github.thxmasj.backend.core.EventType;
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.UUID;

@@ -55,7 +55,7 @@ import com.github.thxmasj.backend.core.Tuples.Tuple2;
 import com.github.thxmasj.backend.core.Validated.Valid;
 import com.github.thxmasj.backend.core.http.NettyHttpClient;
 import com.github.thxmasj.backend.core.http.NettyHttpClientBuilder;
-import com.github.thxmasj.backend.core.internal.database.Mappers;
+import com.github.thxmasj.backend.core.internal.EventTypes;
 import com.github.thxmasj.backend.core.message.http.HttpMessageParser;
 import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
 import com.github.thxmasj.backend.core.message.http.HttpRequestMessage.Method;
@@ -868,7 +868,7 @@ public class HttpInboxTest {
   /// types triggered on the group
   @Test
   public void eventTypesAreRegisteredForInboxRequestsNotForTheGroup() {
-    var eventTypes = Mappers.eventTypesByEntityModel(HttpInbox.transitions(requests, Map.of(Lamp, lampTransitions())));
+    var eventTypes = EventTypes.eventTypesByEntityModel(HttpInbox.transitions(requests, Map.of(Lamp, lampTransitions())));
     assertFalse(eventTypes.containsKey(Request));
     for (HttpInboxRequest<?> request : requests)
       assertThat(eventTypes.get(request)).contains(RequestCompleted, FailedRequestCompleted, InvalidRequestCompleted);

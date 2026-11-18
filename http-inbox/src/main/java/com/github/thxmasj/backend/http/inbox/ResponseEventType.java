@@ -3,7 +3,7 @@ package com.github.thxmasj.backend.http.inbox;
 import com.github.thxmasj.backend.core.*;
 import com.github.thxmasj.backend.core.EventReference;
 import com.github.thxmasj.backend.core.Tuples.Tuple2;
-import com.github.thxmasj.backend.core.internal.http.HttpDataType;
+import com.github.thxmasj.backend.core.http.HttpDataType;
 import com.github.thxmasj.backend.core.message.http.*;
 import java.util.*;
 

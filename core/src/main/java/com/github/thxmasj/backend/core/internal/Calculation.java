@@ -1,9 +1,11 @@
-package com.github.thxmasj.backend.core;
+package com.github.thxmasj.backend.core.internal;
 
+import com.github.thxmasj.backend.core.Event;
+import com.github.thxmasj.backend.core.IdEntityModel;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.Accepted;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.IdExists;
-import com.github.thxmasj.backend.core.TransitionStep.OutputStep;
-import com.github.thxmasj.backend.core.TransitionStep.RejectedStep;
+import com.github.thxmasj.backend.core.internal.TransitionStep.OutputStep;
+import com.github.thxmasj.backend.core.internal.TransitionStep.RejectedStep;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -38,7 +40,7 @@ public final class Calculation {
   /// calculated again and the step was executed before the trigger they are calculated from. The steps must be taken
   /// one at a time, i.e. the execution of a step can't take other steps.
   @SuppressWarnings("unchecked")
-  <T> Mono<T> step(TransitionStep<?> context, Supplier<Mono<T>> execution) {
+  public <T> Mono<T> step(TransitionStep<?> context, Supplier<Mono<T>> execution) {
     return Mono.defer(() -> {
       if (position < steps.size()) {
         Step recorded = steps.get(position);
@@ -61,7 +63,7 @@ public final class Calculation {
   }
 
   /// The ids found to exist when storing the changes
-  List<IdExists<?>> existingIds() {
+  public List<IdExists<?>> existingIds() {
     return Collections.unmodifiableList(existingIds);
   }
 
@@ -70,7 +72,7 @@ public final class Calculation {
   ///
   /// @return false if calculating again would not change anything, as the id is not triggered by a step, or as it was
   ///         found to exist before
-  boolean recalculateWith(IdExists<?> existing) {
+  public boolean recalculateWith(IdExists<?> existing) {
     // The triggers of an id found to exist result in it existing. So when it is found to exist once more, it is not
     // recognised by the data it is triggered with, and would be found to exist over and over again.
     if (existingIds.stream().anyMatch(known -> isSameId(known.idEvent(), existing.idEvent())))
@@ -116,7 +118,7 @@ public final class Calculation {
 
 
   /// Whether the failure is new to the calculation, which it is the first time it is given
-  boolean isNewFailure(Throwable failure) {
+  public boolean isNewFailure(Throwable failure) {
     return failures.add(failure);
   }
 

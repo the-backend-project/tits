@@ -2,14 +2,14 @@ package com.github.thxmasj.backend.database.mssql;
 
 import static java.util.stream.Collectors.joining;
 
-import com.github.thxmasj.backend.core.ConditionalTrigger;
-import com.github.thxmasj.backend.core.DelayedEvent;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.Event;
 import com.github.thxmasj.backend.core.IdEntityModel;
 import com.github.thxmasj.backend.core.IndexEntityModel;
 import com.github.thxmasj.backend.core.TriggerType;
 import com.github.thxmasj.backend.core.database.DatabaseClient;
+import com.github.thxmasj.backend.core.internal.DelayedEvent;
+import com.github.thxmasj.backend.core.internal.database.ConditionalTrigger;
 import java.time.Clock;
 import java.util.HexFormat;
 import java.util.List;

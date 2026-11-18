@@ -10,7 +10,7 @@ import tools.jackson.databind.ObjectWriter;
 import tools.jackson.databind.cfg.DateTimeFeature;
 import tools.jackson.databind.json.JsonMapper;
 
-public class HttpResponseCreator {
+class HttpResponseCreator {
 
   private static final ObjectWriter jsonWriter = JsonMapper.builderWithJackson2Defaults()
       .disable(DateTimeFeature.ADJUST_DATES_TO_CONTEXT_TIME_ZONE)

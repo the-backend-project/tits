@@ -8,8 +8,8 @@ import java.util.List;
 ///
 /// The output holds data the libraries have no control of, such as the request an entity is triggered with. Every
 /// line after the first of a text is therefore marked, so that data can't make up a line of its own in the output,
-/// e.g. one passing for an event written by [JsonLinesListener]. The first line is to begin with words of the
-/// library.
+/// e.g. one passing for an event written by [com.github.thxmasj.backend.core.JsonLinesListener]. The first line is to
+/// begin with words of the library.
 public final class Debug {
 
   private static final String MARK = "  | ";

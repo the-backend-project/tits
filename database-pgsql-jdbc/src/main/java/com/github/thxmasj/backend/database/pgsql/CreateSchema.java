@@ -16,7 +16,7 @@ import reactor.core.scheduler.Schedulers;
 
 /// The same tables as for SQL Server, with PostgreSQL types. Index names are prefixed with their table, as they are
 /// unique within the schema and not only within the table.
-public class CreateSchema {
+class CreateSchema {
 
   private final String schema;
   private final String role;

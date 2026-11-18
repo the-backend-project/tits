@@ -5,9 +5,10 @@ import static com.github.thxmasj.backend.core.TransitionModelBuilder.log;
 import com.github.thxmasj.backend.core.BasicEventType.Rollback.Data;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.Filter;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.ModelContext;
-import com.github.thxmasj.backend.core.TransitionStep.InputStep;
-import com.github.thxmasj.backend.core.TransitionStep.OutputStep;
 import com.github.thxmasj.backend.core.Tuples.Tuple4;
+import com.github.thxmasj.backend.core.internal.TransitionStep.InputStep;
+import com.github.thxmasj.backend.core.internal.TransitionStep.OutputStep;
+import com.github.thxmasj.backend.core.internal.Transitions;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -57,11 +58,20 @@ public class TransitionModel<I, O> {
     return modelContext.reverseModel();
   }
 
-  public TransitionModel<Tuple4<I, EntityModel, EventType<?, ?>, String>, O> rejectModel() {
+  TransitionModel<Tuple4<I, EntityModel, EventType<?, ?>, String>, O> rejectModel() {
     return null;
   }
 
-  public Mono<OutputStep<O>> calculate(InputStep<I> inputStep) {
+  static {
+    Transitions.register(new Transitions.Calculator() {
+      @Override
+      public <I, O> Mono<OutputStep<O>> calculate(TransitionModel<I, O> transition, InputStep<I> inputStep) {
+        return transition.calculate(inputStep);
+      }
+    });
+  }
+
+  Mono<OutputStep<O>> calculate(InputStep<I> inputStep) {
     log(modelContext, "calculate [" + eventType().name() + "] on [" + inputStep.log().entityModel().name() + ":" + inputStep.log().entityId() + "] (input: " + inputStep.input() + ")");
     return chain.apply(Mono.just(inputStep))
         .doOnError(e -> inputStep.stateMachine().transitionFailed(inputStep, e));
