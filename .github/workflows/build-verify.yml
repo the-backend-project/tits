@@ -94,16 +94,19 @@ jobs:
         run: |
           docker compose logs --no-log-prefix app \
             | jq -Rce 'fromjson? | objects | select(.eventType == "Greeting requested" and .severity == "INFO")'
-      # The provider can't be reached, but the sign-in starts and the files are served, which checks the reachability
-      # metadata of the backoffice
+      # The provider can't be reached, but the sign-in starts, a session cookie is looked up and the files are served,
+      # which checks the reachability metadata of the backoffice
       - name: Check that the backoffice starts signing in
         working-directory: apps/hello-world
         run: |
           for i in $(seq 1 120); do curl -sf localhost:8081/health && break; sleep 1; done
           curl -sf localhost:8081/backoffice/static/htmx.min.js | grep -q htmx
           test "$(curl -s -o /dev/null -w '%{http_code}' localhost:8081/backoffice/)" = 502
-          docker compose --profile backoffice logs --no-log-prefix backoffice \
-            | jq -Rce 'fromjson? | objects | select(.eventType == "Sign-in started")'
+          # A cookie of no session is looked up in the backoffice's schema, which writes nothing, before signing in
+          test "$(curl -s -o /dev/null -w '%{http_code}' -b backoffice_session=none localhost:8081/backoffice/)" = 502
+          docker compose --profile backoffice logs --no-log-prefix backoffice > backoffice.log
+          grep -q 'Listening on port' backoffice.log
+          ! jq -Rce 'fromjson? | objects | select(.severity == "ERROR")' backoffice.log
       - name: Show the logs
         if: always()
         working-directory: apps/hello-world
@@ -134,16 +137,19 @@ jobs:
           curl -sf -u "ci:$secret" -d grant_type=client_credentials -d scope=a localhost:8080/token | jq -e '.scope == "a"'
           curl -sf localhost:8080/.well-known/jwks.json | jq -e '.keys | length == 1'
       # Without an upstream provider no user can sign in, and the identity provider publishes no OpenID Connect metadata
-      # for the backoffice to discover, but the sign-in starts and the files of the backoffice are served, which checks
-      # the reachability metadata of the backoffice
+      # for the backoffice to discover, but the sign-in starts, a session cookie is looked up and the files of the
+      # backoffice are served, which checks the reachability metadata of the backoffice
       - name: Check that the backoffice starts signing in
         working-directory: apps/identity-provider
         run: |
           for i in $(seq 1 120); do curl -sf localhost:8081/health && break; sleep 1; done
           curl -sf localhost:8081/backoffice/static/htmx.min.js | grep -q htmx
           test "$(curl -s -o /dev/null -w '%{http_code}' localhost:8081/backoffice/)" = 502
-          docker compose logs --no-log-prefix backoffice \
-            | jq -Rce 'fromjson? | objects | select(.eventType == "Sign-in started")'
+          # A cookie of no session is looked up in the backoffice's schema, which writes nothing, before signing in
+          test "$(curl -s -o /dev/null -w '%{http_code}' -b backoffice_session=none localhost:8081/backoffice/)" = 502
+          docker compose logs --no-log-prefix backoffice > backoffice.log
+          grep -q 'Listening on port' backoffice.log
+          ! jq -Rce 'fromjson? | objects | select(.severity == "ERROR")' backoffice.log
       # jq fails if no line is the event
       - name: Check that it warns of a refused token request
         working-directory: apps/identity-provider
