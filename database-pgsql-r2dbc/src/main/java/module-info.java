@@ -8,4 +8,5 @@ module com.github.thxmasj.backend.database.pgsql.r2dbc {
   exports com.github.thxmasj.backend.database.pgsql.r2dbc;
 
   provides com.github.thxmasj.backend.core.database.Database with com.github.thxmasj.backend.database.pgsql.r2dbc.PgsqlR2dbcDatabase;
+  provides com.github.thxmasj.backend.core.internal.database.StorageProvider with com.github.thxmasj.backend.database.pgsql.r2dbc.internal.PgsqlR2dbcStorage;
 }

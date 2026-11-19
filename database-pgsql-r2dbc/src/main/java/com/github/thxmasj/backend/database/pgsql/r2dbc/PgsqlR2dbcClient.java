@@ -7,8 +7,8 @@ import com.github.thxmasj.backend.core.database.DatabaseClient;
 import com.github.thxmasj.backend.core.database.MappingFailure;
 import com.github.thxmasj.backend.core.database.Parameter;
 import com.github.thxmasj.backend.core.database.Row;
-import com.github.thxmasj.backend.database.pgsql.NumberedStatement;
-import com.github.thxmasj.backend.database.pgsql.PgsqlClient;
+import com.github.thxmasj.backend.database.pgsql.internal.ConstraintViolations;
+import com.github.thxmasj.backend.database.pgsql.internal.NumberedStatement;
 import io.r2dbc.pool.ConnectionPool;
 import io.r2dbc.pool.ConnectionPoolConfiguration;
 import io.r2dbc.postgresql.PostgresqlConnectionConfiguration;
@@ -31,8 +31,8 @@ import reactor.core.publisher.Mono;
 ///
 /// R2DBC runs one statement with parameters at a time, so SQL of several statements, separated by a semicolon at the
 /// end of a line, is run statement by statement in a transaction. The rows of the last statement are given, as by
-/// [com.github.thxmasj.backend.core.database.jdbc.JDBCClient].
-public class PgsqlR2dbcClient implements DatabaseClient {
+/// the client of the JDBC driver.
+class PgsqlR2dbcClient implements DatabaseClient {
 
   private final ConnectionPool pool;
 
@@ -146,7 +146,7 @@ public class PgsqlR2dbcClient implements DatabaseClient {
       Throwable violation = null;
       if (error instanceof PostgresqlException e) {
         ErrorDetails details = e.getErrorDetails();
-        violation = PgsqlClient.constraintViolation(
+        violation = ConstraintViolations.constraintViolation(
             details.getCode(),
             details.getDetail().orElse(null),
             details.getTableName().orElse(null),

@@ -13,6 +13,15 @@
 An application depends on core, the database module of its database, and http-inbox and http-outbox if it receives or
 sends HTTP requests. See the [apps](apps.md) for complete applications.
 
+Core exports only what applications use: the packages `com.github.thxmasj.backend.core` (the state machine and the
+building of entity models), `core.database` (the databases, their clients and `DataSourceBuilder`), `core.http` (HTTP
+clients and the data types of HTTP messages) and `core.message.http` (HTTP messages). The packages under
+`core.internal`, such as the queries and updates of the databases and the steps of a transition, are exported only to
+the other modules of the library. A database module exports only its `Database`, and provides the queries and updates
+of its schema to the state machine as a service from an internal package. The internal package of database-pgsql-jdbc
+is exported to the other PostgreSQL modules, which share it. To create a schema or look into a database without a
+state machine, use `Database.createSchema` and the [test API](testing.md).
+
 ## Java version
 
 The libraries require Java 25, the latest long-term support (LTS) release, and are compiled for it. They use no

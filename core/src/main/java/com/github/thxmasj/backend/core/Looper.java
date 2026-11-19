@@ -7,7 +7,7 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import reactor.core.publisher.Flux;
 
-public class Looper<STATUS> {
+class Looper<STATUS> {
 
   private final String name;
   private final Supplier<Flux<STATUS>> runnable;

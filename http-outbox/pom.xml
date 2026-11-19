@@ -70,4 +70,31 @@
     </dependency>
   </dependencies>
 
+  <build>
+    <plugins>
+      <!-- A test looks up the outbox request a process dispatched in the storage, which core exports only to the database
+           modules and test-api, so the tests are given access to it -->
+      <plugin>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>default-testCompile</id>
+            <configuration>
+              <compilerArgs combine.children="append">
+                <arg>--add-exports=com.github.thxmasj.backend.core/com.github.thxmasj.backend.core.internal.database=${java.module.name},ALL-UNNAMED</arg>
+              </compilerArgs>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <!-- The arguments of the parent, and the access to the storage -->
+          <argLine>--add-modules=jdk.httpserver,java.net.http --add-reads=${java.module.name}=jdk.httpserver,java.net.http --add-exports=com.github.thxmasj.backend.core/com.github.thxmasj.backend.core.internal.database=${java.module.name},ALL-UNNAMED</argLine>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+
 </project>
