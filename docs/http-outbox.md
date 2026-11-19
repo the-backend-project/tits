@@ -74,8 +74,8 @@ stateDiagram-v2
     Compensating --> InFlight: Request redispatched, after the backoff
     InFlight --> Dead: Permanent rejection
     InFlight --> Dead: Attempts exhausted
-    Accepted --> Repeating: Request repeated
-    Repeating --> Accepted: Response, connection failed or dropped, or timeout
+    Accepted --> InFlight: Request redispatched, on demand
+    Dead --> InFlight: Request redispatched, on demand
     Accepted --> [*]
     Dead --> [*]
 ```
@@ -85,11 +85,11 @@ stateDiagram-v2
 | `InFlight`     | The request is sent, or about to be, and waits for its response                                    |
 | `Compensating` | The attempt failed, and the request will be sent again after the backoff                           |
 | `Accepted`     | The receiver accepted the request. The process is told by the success callback, if there is one   |
-| `Repeating`    | The accepted request is sent again, like a retry, and waits for its response                      |
 | `Dead`         | The receiver rejected the request permanently, or the attempts ran out                             |
 
 Nothing tells the process of a request which is `Dead`. The events leading there have the
-[severity](monitoring.md#severity) `Error`, so monitoring does.
+[severity](monitoring.md#severity) `Error`, so monitoring does. Once the cause is fixed, the request can be
+[redispatched](#redispatching-an-accepted-or-dead-request).
 
 The response is parsed by the content parser of the outbox, and the predicates of the outbox decide the outcome:
 
@@ -105,37 +105,45 @@ The response is parsed by the content parser of the outbox, and the predicates o
 
 A retry asks `isAttemptAvailable` with a `RetryContext` of when the request was dispatched, the time now and the number
 of the attempt. If an attempt is available, `backoffAlgorithm` gives the delay until the request is sent again, by a
-delayed trigger; otherwise the request is `Dead`. The repeated request is the original one, or what the
-`repeatMessageCreator` makes of it, e.g. with a new timestamp. Like the first attempt, every repeated attempt has the
-inflight timeout.
+delayed trigger; otherwise the request is `Dead`. The redispatched request is the dispatched one, or what the
+`repeatMessageCreator` makes of it, e.g. with a new timestamp. Like the first attempt, every redispatched attempt has
+the inflight timeout.
 
-### Repeating an accepted request
+### Redispatching an accepted or dead request
 
-An application can send an accepted request again, e.g. from a backoffice function, or a simulator of a partner system
-repeating a callback to test how the receiver handles a duplicate. The request is sent like a retry: what the
-`repeatMessageCreator` makes of the stored request message, so that the receiver gets what it would get from a retry,
-such as the resend variant a protocol expects. Without a `repeatMessageCreator`, it is the stored request message as it
-was dispatched, which creating a new request message wouldn't give, as the creator of the message may generate values
-such as random ids.
+An application can send a request which is `Dead` again, e.g. from a backoffice function handling the requests given up
+once the cause is fixed, or an accepted request, e.g. a simulator of a partner system repeating a callback to test how
+the receiver handles a duplicate. The request is redispatched as by a retry, and is `InFlight` again: it is sent as the
+`repeatMessageCreator` makes it of the dispatched request, so that the receiver gets what it would get from a retry,
+such as the variant of a message a protocol expects when it is sent again. Without a `repeatMessageCreator`, it is the
+dispatched request as it is stored.
 
-A transition of the process that dispatched the request triggers `requestRepeated()` of the dispatcher on the request,
-selected by `HttpOutboxRequest.dispatchedBy(processId)`, the request of the outbox the process dispatched last:
+A transition of the process that dispatched the request triggers `requestRedispatched()` of the dispatcher on the
+request, selected by `HttpOutboxRequest.dispatchedBy(processId)`, the request of the outbox the process dispatched last:
 
 ```java
 onEvent(CallbackRepeatRequested).to(Done)
     .assemble(c -> c.entityId())
-    .trigger(callbacks.requestRepeated())
+    .trigger(callbacks.requestRedispatched())
     .on(callbacks.outbox())
     .identifiedBy(HttpOutboxRequest::dispatchedBy)
     .output()
 ```
 
 The request is sent with the method, URI, headers and body of the message the `repeatMessageCreator` makes, and the
-headers the forwarder adds when it sends a request. It is sent once, without retries, and has the inflight timeout. Its
-response is stored as an event of its own, `Repeat response received`, while the response of the request stays the one
-it was accepted with. The request goes back to `Accepted` whatever the outcome, and the success callback isn't
-triggered again. A request which is `Repeating` rejects another repeat until it is `Accepted` again, as does a request
-which isn't accepted.
+headers the forwarder adds when it sends a request. From then on, it is like any other attempt:
+
+* It has the inflight timeout, and is retried as the predicates of the outbox decide. A retry asks `isAttemptAvailable`
+  with the `RetryContext` of the request, which counts from when it was dispatched and the attempts before, so a
+  request redispatched long after it was dispatched may have no attempt available.
+* If it is accepted, it is `Accepted`, and the success callback tells the process, unless the request was accepted
+  before, as the process has been told already. The response of the request, `response(log)`, is the one it was first
+  accepted with.
+* If the receiver rejects it permanently, e.g. as a duplicate, or its attempts run out, it is `Dead`, with the
+  severity `Error`, also if it was accepted before.
+
+A request which waits for a retry is sent right away by a redispatch on demand, and the scheduled retry is dropped. A
+request which is in flight rejects it.
 
 ### Example
 
