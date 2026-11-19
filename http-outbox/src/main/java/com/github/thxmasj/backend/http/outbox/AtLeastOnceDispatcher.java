@@ -30,10 +30,10 @@ public final class AtLeastOnceDispatcher<X, RQ> extends BaseDispatcher<X, TypedH
     return new AtLeastOnceDispatcher<>(outbox, inputCreator);
   }
 
-  /// Sends an accepted request again, like a retry, on the entity selected by [HttpOutboxRequest#dispatchedBy]. See
-  /// [AtLeastOnce#requestRepeated()].
-  public EventType<Void, TypedHttpRequest<RQ>> requestRepeated() {
-    return atLeastOnce.requestRepeated();
+  /// Sends an accepted request again, as a retry would, on the entity selected by [HttpOutboxRequest#dispatchedBy]. See
+  /// [AtLeastOnce#requestRedispatched()].
+  public EventType<Void, TypedHttpRequest<RQ>> requestRedispatched() {
+    return atLeastOnce.requestRedispatched();
   }
 
 }
