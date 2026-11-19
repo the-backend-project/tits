@@ -120,6 +120,8 @@ deploying), the scripts in [bin](bin), and the `git` and `gh` commands that only
   permissions and other settings in `.claude/settings.local.json`, which git ignores.
 - **Mistral Vibe** takes its settings from [.vibe/config.toml](.vibe/config.toml), which also lets commands run for
   up to an hour, because builds with tests take longer than Vibe's default of five minutes. Vibe loads the project's
-  settings and skills only once you trust the folder. Put your own settings in `~/.vibe/config.toml`, and your own
+  settings and skills only once you trust the folder. It matches commands by their beginning, so it refuses
+  `mvn deploy`, but not a deploy after other goals or options, e.g. `mvn clean deploy`. The file lists the migrations
+  Vibe has applied to it, so that Vibe doesn't rewrite it. Put your own settings in `~/.vibe/config.toml`, and your own
   instructions, such as how tools get on the PATH, in `~/.vibe/AGENTS.md`. Vibe can't keep the docs server running, so
   `/serve-docs` only does the strict build there; run `bin/serve-docs.sh` yourself for live reload.

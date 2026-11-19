@@ -1,6 +1,10 @@
 # Project settings for Mistral Vibe. Vibe loads them only when the folder is trusted. Put your own settings in
 # ~/.vibe/config.toml.
 
+# The migrations Vibe has applied to this file. Without them, Vibe rewrites the file when it starts, which removes the
+# comments and re-sorts the lists.
+applied_migrations = ["bash_read_only_defaults_v1"]
+
 [tools.bash]
 # Builds with tests take longer than Vibe's default of 300 seconds.
 default_timeout = 1800
@@ -34,7 +38,8 @@ allowlist = [
 ]
 
 # Commands that are refused. This list replaces Vibe's default list, so the first two lines repeat the defaults.
-# Matching by prefix only catches deploying when `deploy` comes right after `mvn`.
+# Matching by prefix only catches deploying when `deploy` comes right after `mvn`: `mvn clean deploy` is allowed by
+# `mvn` above, and runs without asking.
 denylist = [
   "gdb", "pdb", "passwd",
   "nano", "vim", "vi", "emacs", "bash -i", "sh -i", "zsh -i", "fish -i", "dash -i", "screen", "tmux",
