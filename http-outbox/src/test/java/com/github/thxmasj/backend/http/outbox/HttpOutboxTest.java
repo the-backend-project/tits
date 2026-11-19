@@ -62,6 +62,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiFunction;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
@@ -657,6 +658,91 @@ public class HttpOutboxTest {
     var redispatched = redispatchAcceptedRequest(null);
     List<String> sent = List.of(redispatched.messageId(), "fixed", "payload");
     assertEquals(List.of(sent, sent, sent), redispatched.received());
+  }
+
+  /// A request given up, here as the receiver rejected it permanently, is sent again on demand, e.g. by a backoffice
+  /// handling the requests given up, and when it is accepted, the process is told by the success callback
+  @Test
+  public void atLeastOnceDeadRequestRedispatched() {
+    EntityModel process = EntityModel.of("Process", UUID.randomUUID());
+    EventType<Void, Void> processStarted = BasicEventType.of("Process started", UUID.randomUUID());
+    EventType<Void, Void> processSucceeded = BasicEventType.of("Process succeeded", UUID.randomUUID());
+    EventType<Void, Void> redispatchRequested = BasicEventType.of("Redispatch requested", UUID.randomUUID());
+    String path = "/" + UUID.randomUUID();
+    AtomicInteger status = new AtomicInteger(400);
+    server.createContext(path, exchange -> {
+      exchange.getRequestBody().readAllBytes();
+      exchange.sendResponseHeaders(status.get(), -1);
+      exchange.close();
+    });
+    AtLeastOnce<String> notification = HttpOutboxRequest.atLeastOnce()
+        .requestPayloadType(DataType.string())
+        .responsePayloadType(DataType.none())
+        .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
+        .inflightTimeout(Duration.ofSeconds(10))
+        .processModel(process)
+        .contentParser(_ -> valid(null))
+        .onSuccess(processSucceeded)
+        .isAccepted(r -> r.statusCode() == 200)
+        .isFailureTransient(_ -> false)
+        .isRejectedByInvalidResponse(_ -> false)
+        .isFailureByInvalidResponseTransient(_ -> false)
+        .isAttemptAvailable(_ -> true)
+        .backoffAlgorithm(_ -> Duration.ofSeconds(1))
+        .build("Notification", UUID.randomUUID());
+    var dispatcher = AtLeastOnceDispatcher.of(
+        notification,
+        (Void _) -> TypedHttpRequest.create(POST, URI.create("http://localhost:" + server.getAddress().getPort() + path), Map.of(), "payload")
+    );
+    Map<State, List<TransitionModel<?, ?>>> processTransitions = Map.of(
+        Begin, List.of(
+            onEvent(processStarted).to(States.WaitingForResponse)
+                .assemble(DispatchContext::of)
+                .trigger(dispatcher.requestDispatched()).withReactive(d -> dispatcher.input(d, null)).on(dispatcher.outbox()).identifiedBy(newEntityId())
+                .output()
+        ),
+        States.WaitingForResponse, List.of(
+            onEvent(processSucceeded).to(States.Done).output(),
+            onEvent(redispatchRequested).to(States.WaitingForResponse)
+                .assemble(c -> c.entityId())
+                .trigger(dispatcher.requestRedispatched()).on(dispatcher.outbox()).identifiedBy(HttpOutboxRequest::dispatchedBy)
+                .output()
+        )
+    );
+    String schema = UUID.randomUUID().toString();
+    Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions = new HashMap<>(dispatcher.transitions());
+    transitions.put(process, processTransitions);
+    transitions.put(Index, Index.transitions());
+    var machine = Init.stateMachine(schema, transitions);
+    var storage = Init.storage(schema, transitions);
+
+    UUID processId = machine.onEvent(trigger(processStarted, process)).blockFirst(Duration.ofSeconds(10)).entityId();
+    awaitOutboxLog(storage, processId, l -> l.events().stream().anyMatch(e -> e.type().name().equals("Request rejected permanently")));
+    status.set(200);
+    machine.onEvent(trigger(redispatchRequested, process, processId)).blockFirst();
+    EventLog log = awaitOutboxLog(storage, processId, l -> l.exists(HttpOutboxRequest.requestAccepted()));
+    assertEquals(
+        List.of("Request dispatched", "Request rejected permanently", "Request redispatched", "Request accepted"),
+        log.events().stream().map(e -> e.type().name()).toList()
+    );
+    assertEquals(States.Done, awaitProcessState(machine, process, processId, States.Done));
+  }
+
+  /// The state of the process, once it is the expected one, or after a while
+  private static State awaitProcessState(StateMachine machine, EntityModel process, UUID processId, State expected) {
+    long deadline = System.currentTimeMillis() + 10_000;
+    State state;
+    do {
+      state = machine.onStatus(entityId(processId), process).block();
+      if (expected.equals(state))
+        return state;
+      try {
+        Thread.sleep(50);
+      } catch (InterruptedException e) {
+        throw new RuntimeException(e);
+      }
+    } while (System.currentTimeMillis() < deadline);
+    return state;
   }
 
   private record Redispatched(String messageId, List<List<String>> received, EventLog log) {}

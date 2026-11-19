@@ -197,11 +197,11 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
     return shape.batchedRequestDispatched();
   }
 
-  /// Sends the request again, when it has been accepted, as a retry would: what the repeat message creator makes of the
-  /// dispatched request, with the headers the forwarder adds. The request is in flight again, with the inflight timeout
-  /// and the retries of the first attempt. If it is accepted again, the success callback isn't triggered again, and if
-  /// it is rejected permanently or its attempts run out, it is dead. Select the request by
-  /// [HttpOutboxRequest#dispatchedBy].
+  /// Sends the request again, when it has been accepted or is dead, as a retry would: what the repeat message creator
+  /// makes of the dispatched request, with the headers the forwarder adds. The request is in flight again, with the
+  /// inflight timeout and the retries of the first attempt, which count from when it was dispatched. If it is accepted,
+  /// the success callback is triggered unless the request was accepted before, and if it is rejected permanently or its
+  /// attempts run out, it is dead. Select the request by [HttpOutboxRequest#dispatchedBy].
   public EventType<Void, TypedHttpRequest<RQ>> requestRedispatched() {
     return shape.requestRedispatched();
   }
@@ -434,13 +434,13 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
         ),
         Compensating, List.of(redispatchTransition(shape)),
         Intermediate, List.of(),
-        Dead, List.of(),
-        Accepted, List.of(redispatchTransition(shape))
+        Accepted, List.of(redispatchTransition(shape)),
+        Dead, List.of(redispatchTransition(shape))
     );
   }
 
   /// The request is sent again, as the repeat message creator makes it of the dispatched request, whether by a retry or
-  /// on demand when it has been accepted
+  /// on demand when it has been accepted or given up
   private TransitionModel<Void, TypedHttpRequest<RQ>> redispatchTransition(Shape<RQ, ?, ?> shape) {
     return onEvent(shape.requestRedispatched()).to(InFlight)
         .assemble(c -> shape.repeatMessageCreator().apply(c, shape.dispatched(c.log()).t1()))
@@ -600,7 +600,8 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
     InFlight,
     Accepted,
     Compensating,
-    /// The request is given up, so the events leading here are of severity [Severity#Error]
+    /// The request is given up, so the events leading here are of severity [Severity#Error]. It can be redispatched on
+    /// demand, e.g. from a backoffice handling the requests given up.
     Dead
   }
 
