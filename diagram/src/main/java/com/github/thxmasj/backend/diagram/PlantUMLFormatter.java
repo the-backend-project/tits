@@ -210,6 +210,8 @@ public class PlantUMLFormatter {
       @startuml
       !pragma svginteractive true
       skinparam backgroundColor transparent
+      ' Straight edges, with bends around nodes, read better than the curves Graphviz draws by default
+      skinparam linetype polyline
       skinparam state {
         BackgroundColor #9bb08a
         BorderColor #4b5320

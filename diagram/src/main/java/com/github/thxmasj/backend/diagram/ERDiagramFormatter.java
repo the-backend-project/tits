@@ -105,6 +105,8 @@ public class ERDiagramFormatter {
         """
         @startuml
         skinparam backgroundColor transparent
+        ' Straight edges, as in the state diagrams
+        skinparam linetype polyline
         skinparam class {
           BackgroundColor #9bb08a
           BorderColor #4b5320
