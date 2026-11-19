@@ -31,6 +31,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpRequest.BodyPublishers;
 import java.net.http.HttpResponse;
 import java.net.http.HttpResponse.BodyHandlers;
+import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -44,6 +45,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Mono;
 import reactor.netty.DisposableServer;
 
 /// Runs an application with the backoffice against the test database, with users signing in with a stub provider
@@ -96,7 +98,20 @@ public class BackofficeTest {
     transitions = HttpInbox.transitions(List.of(PlaceOrder), application);
     stateMachine = Init.stateMachine(schema, transitions);
     BackofficeTest.application = new HttpInboxListener(stateMachine).listen(0);
-    backofficeStateMachine = Init.stateMachine(backofficeSchema, Backoffice.transitions());
+    // The backoffice has a database client of its own, as when it is deployed. Closing a state machine closes its
+    // client, which must not be the one of the application's state machine.
+    backofficeStateMachine = new StateMachine(
+        _ -> Mono.empty(),
+        Backoffice.transitions(),
+        Init.database(),
+        Init.newClient(),
+        Init.migrationDataSource(),
+        backofficeSchema,
+        "Test",
+        Clock.systemUTC(),
+        null,
+        true
+    );
     server = listen(config(Duration.ofHours(1)));
     shortLived = listen(config(Duration.ofSeconds(1)));
   }
