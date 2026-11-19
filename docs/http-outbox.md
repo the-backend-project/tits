@@ -85,7 +85,7 @@ stateDiagram-v2
 | `InFlight`     | The request is sent, or about to be, and waits for its response                                    |
 | `Compensating` | The attempt failed, and the request will be sent again after the backoff                           |
 | `Accepted`     | The receiver accepted the request. The process is told by the success callback, if there is one   |
-| `Repeating`    | The accepted request is sent again, as it was dispatched, and waits for its response              |
+| `Repeating`    | The accepted request is sent again, like a retry, and waits for its response                      |
 | `Dead`         | The receiver rejected the request permanently, or the attempts ran out                             |
 
 Nothing tells the process of a request which is `Dead`. The events leading there have the
@@ -111,9 +111,12 @@ inflight timeout.
 
 ### Repeating an accepted request
 
-An application can send an accepted request again, exactly as it was dispatched, e.g. a simulator of a partner system
-repeating a callback to test how the receiver handles a duplicate. Creating a new request message isn't the same, as
-the creator of the message, or the `repeatMessageCreator`, may generate values such as random ids.
+An application can send an accepted request again, e.g. from a backoffice function, or a simulator of a partner system
+repeating a callback to test how the receiver handles a duplicate. The request is sent like a retry: what the
+`repeatMessageCreator` makes of the stored request message, so that the receiver gets what it would get from a retry,
+such as the resend variant a protocol expects. Without a `repeatMessageCreator`, it is the stored request message as it
+was dispatched, which creating a new request message wouldn't give, as the creator of the message may generate values
+such as random ids.
 
 A transition of the process that dispatched the request triggers `requestRepeated()` of the dispatcher on the request,
 selected by `HttpOutboxRequest.dispatchedBy(processId)`, the request of the outbox the process dispatched last:
@@ -127,11 +130,12 @@ onEvent(CallbackRepeatRequested).to(Done)
     .output()
 ```
 
-The request is sent with the method, URI, headers and body of the stored request message, and the headers the forwarder
-adds when it sends a request. It is sent once, without retries, and has the inflight timeout. Its response is stored as
-an event of its own, `Repeat response received`, while the response of the request stays the one it was accepted with.
-The request goes back to `Accepted` whatever the outcome, and the success callback isn't triggered again. A request
-which is `Repeating` rejects another repeat until it is `Accepted` again, as does a request which isn't accepted.
+The request is sent with the method, URI, headers and body of the message the `repeatMessageCreator` makes, and the
+headers the forwarder adds when it sends a request. It is sent once, without retries, and has the inflight timeout. Its
+response is stored as an event of its own, `Repeat response received`, while the response of the request stays the one
+it was accepted with. The request goes back to `Accepted` whatever the outcome, and the success callback isn't
+triggered again. A request which is `Repeating` rejects another repeat until it is `Accepted` again, as does a request
+which isn't accepted.
 
 ### Example
 
