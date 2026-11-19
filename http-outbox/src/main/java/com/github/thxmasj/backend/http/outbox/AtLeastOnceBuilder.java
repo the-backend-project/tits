@@ -42,7 +42,8 @@ public final class AtLeastOnceBuilder {
     <RS> RepeatMessageCreatorStep<RQ, RS> responsePayloadType(DataType<RS> responsePayloadType);
   }
 
-  /// Optional: the repeated message defaults to the message of the original attempt.
+  /// Optional: the message of a retry, or of a repeat of an accepted request, defaults to the message of the original
+  /// attempt.
   public interface RepeatMessageCreatorStep<RQ, RS> extends ForwarderStep<RQ, RS> {
 
     ForwarderStep<RQ, RS> repeatMessageCreator(

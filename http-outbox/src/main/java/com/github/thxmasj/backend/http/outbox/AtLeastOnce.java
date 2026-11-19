@@ -215,11 +215,11 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
     return shape.batchedRequestDispatched();
   }
 
-  /// Sends the request again, exactly as it was dispatched, when it has been accepted: the stored request message,
-  /// without the repeat message creator, with the headers the forwarder adds. The request stays accepted whatever the
-  /// outcome. Its response is stored as an event of its own, and a request that is being repeated can't be repeated
-  /// again until it has a response, or the connection fails, or the inflight timeout expires. Select the request to
-  /// repeat by [HttpOutboxRequest#dispatchedBy].
+  /// Sends the request again when it has been accepted, like a retry: what the repeat message creator makes of the
+  /// stored request message, which is the stored one if there is no creator, with the headers the forwarder adds. The
+  /// request stays accepted whatever the outcome. Its response is stored as an event of its own, and a request that is
+  /// being repeated can't be repeated again until it has a response, or the connection fails, or the inflight timeout
+  /// expires. Select the request to repeat by [HttpOutboxRequest#dispatchedBy].
   public EventType<Void, TypedHttpRequest<RQ>> requestRepeated() {
     return shape.requestRepeated();
   }
@@ -461,7 +461,7 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
         Dead, List.of(),
         Accepted, List.of(
             onEvent(shape.requestRepeated()).to(Repeating)
-                .assemble(c -> shape.dispatched(c.log()).t1())
+                .assemble(c -> shape.repeatMessageCreator().apply(c, shape.dispatched(c.log()).t1()))
                 .trigger(shape.forward()).with(d -> toHttpRequest(d, shape.requestPayloadType()))
                 .trigger(TimeoutExpired).after(_ -> shape.inflightTimeout())
                 .output(d -> d)
@@ -615,7 +615,7 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
   public enum States implements State {
     InFlight,
     Accepted,
-    /// The accepted request is sent again, as it was dispatched, and waits for its response
+    /// The accepted request is sent again, like a retry, and waits for its response
     Repeating,
     Compensating,
     /// The request is given up, so the events leading here are of severity [Severity#Error]

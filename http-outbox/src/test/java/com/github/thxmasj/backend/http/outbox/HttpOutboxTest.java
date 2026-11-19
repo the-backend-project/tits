@@ -632,10 +632,10 @@ public class HttpOutboxTest {
     assertEquals(TimeoutExpired, timeoutTransition.triggers().getFirst().eventSpec().eventType());
   }
 
-  /// An accepted request is sent again exactly as it was dispatched, not as the repeat message creator would make it,
-  /// with the headers the forwarder adds, and stays accepted, so it can be repeated again
+  /// An accepted request is sent again like a retry, as the repeat message creator makes it of the stored request, with
+  /// the headers the forwarder adds, and stays accepted, so it can be repeated again
   @Test
-  public void atLeastOnceAcceptedRequestRepeatedAsStored() {
+  public void atLeastOnceAcceptedRequestRepeatedLikeRetry() {
     EntityModel process = EntityModel.of("Process", UUID.randomUUID());
     EventType<Void, Void> processStarted = BasicEventType.of("Process started", UUID.randomUUID());
     EventType<Void, Void> processSucceeded = BasicEventType.of("Process succeeded", UUID.randomUUID());
@@ -655,7 +655,7 @@ public class HttpOutboxTest {
     AtLeastOnce<String> notification = HttpOutboxRequest.atLeastOnce()
         .requestPayloadType(DataType.string())
         .responsePayloadType(DataType.none())
-        .repeatMessageCreator((_, r) -> TypedHttpRequest.create(r.method(), r.uri(), Map.of("Message-Id", UUID.randomUUID().toString()), "changed"))
+        .repeatMessageCreator((_, r) -> TypedHttpRequest.create(r.method(), r.uri(), Map.of("Message-Id", r.headers().get("Message-Id") + "-repeat"), r.payload() + " again"))
         .forwarder(r -> {
           var headers = new HashMap<>(r.headers());
           headers.put("Forwarder", "fixed");
@@ -714,7 +714,8 @@ public class HttpOutboxTest {
       log = awaitOutboxLog(storage, processId, l -> l.events().stream().filter(e -> e.type().name().equals("Repeat response received")).count() == repeats);
     }
     List<String> sent = List.of(messageId, "fixed", "payload");
-    assertEquals(List.of(sent, sent, sent), received);
+    List<String> repeated = List.of(messageId + "-repeat", "fixed", "payload again");
+    assertEquals(List.of(sent, repeated, repeated), received);
     assertEquals(
         List.of("Request dispatched", "Request accepted", "Request repeated", "Repeat response received", "Request repeated", "Repeat response received"),
         log.events().stream().map(e -> e.type().name()).toList()
