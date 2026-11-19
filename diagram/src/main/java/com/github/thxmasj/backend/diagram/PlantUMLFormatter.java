@@ -30,7 +30,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.MatchResult;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -267,8 +266,33 @@ public class PlantUMLFormatter {
     return List.copyOf(arrows.values());
   }
 
-  AtomicInteger choiceCounter1 = new AtomicInteger();
-  AtomicInteger choiceCounter2 = new AtomicInteger();
+  // The names of the choices by their branches, see choiceName
+  private final Map<String, String> choiceNames = new HashMap<>();
+  private final Set<String> declaredChoices = new HashSet<>();
+  private final Set<String> formattedChoices = new HashSet<>();
+
+  // The name of the choice a transition with filters leads to. Choices with the same branches, i.e. the same transitions
+  // to the same states and the same choices after them, have the same name, so they are one node in the diagram, and the
+  // transitions into it from a state are merged into one arrow. The retry of an outbox request is such a choice, which
+  // a connection failure, a dropped connection and a timeout lead to.
+  private String choiceName(State ownerState, TransitionModel<?, ?> transition) {
+    return choiceNames.computeIfAbsent(choiceBranches(ownerState, transition), _ -> "Choice" + (choiceNames.size() + 1));
+  }
+
+  // The branches of a choice as they are drawn, from a placeholder for the choice
+  private String choiceBranches(State ownerState, TransitionModel<?, ?> transition) {
+    State choice = new Choice("?");
+    return transition.filters().stream()
+        .map(filter -> {
+          TransitionModel<?, ?> alternative = filter.alternative().model();
+          if (!alternative.filters().isEmpty())
+            return formatTransition(choice, choice, alternative.eventType(), alternative)
+                + "[" + choiceBranches(ownerState, alternative) + "]";
+          State target = alternative.toState() != null ? alternative.toState() : ownerState;
+          return formatTransition(choice, target, alternative.eventType(), alternative);
+        })
+        .collect(joining());
+  }
 
   private String choices(State state, Set<State> visited) {
     if (visited.contains(state)) return "";
@@ -277,21 +301,24 @@ public class PlantUMLFormatter {
     List<TransitionModel<?, ?>> transitionsForState = this.transitions.get(state);
     if (transitionsForState == null) throw new IllegalStateException(state.toString());
     for (TransitionModel<?, ?> transition : transitionsForState) {
-      s.append(traverseForChoices(transition, visited));
+      s.append(traverseForChoices(state, transition, visited));
     }
     return s.toString();
   }
 
-  private String traverseForChoices(TransitionModel<?, ?> transition, Set<State> visited) {
+  private String traverseForChoices(State ownerState, TransitionModel<?, ?> transition, Set<State> visited) {
     StringBuilder s = new StringBuilder();
     if (transition.toState() == null)
       // Self transitions can't have choices
       return "";
     State targetState = transition.toState();
     if (!transition.filters().isEmpty()) {
-      s.append(String.format("state Choice%d <<choice>>\n", choiceCounter1.incrementAndGet()));
+      String choiceName = choiceName(ownerState, transition);
+      if (!declaredChoices.add(choiceName))
+        return "";
+      s.append(String.format("state %s <<choice>>\n", choiceName));
       for (var filter : transition.filters()) {
-        s.append(traverseForChoices(filter.alternative().model(), visited));
+        s.append(traverseForChoices(ownerState, filter.alternative().model(), visited));
       }
     } else {
       s.append(choices(targetState, visited));
@@ -323,13 +350,14 @@ public class PlantUMLFormatter {
     State targetState = transition.toState() != null ? transition.toState() : ownerState;
     if (!transition.filters().isEmpty()) {
       System.out.println("Formatting transition with choice from " + sourceState);
-      String choiceName = "Choice" + choiceCounter2.incrementAndGet();
-      State choiceState = new Choice(choiceName); //choiceName(state, transition);
-//        s.append(String.format("%s -down-> %s: %s\n", state.name(), choiceName, transition.eventType().name()));
+      String choiceName = choiceName(ownerState, transition);
+      State choiceState = new Choice(choiceName);
       s.append(formatTransition(sourceState, choiceState, transition.eventType(), transition));
-      for (var filter : transition.filters()) {
-        s.append(formatTransitionTree(ownerState, choiceState, visited, filter.alternative().model()));
-        //s.append(formatTransitionsFrom(choiceName, this.transitions.get(targetState), visited));
+      // The branches of a choice shared by several transitions are drawn once
+      if (formattedChoices.add(choiceName)) {
+        for (var filter : transition.filters()) {
+          s.append(formatTransitionTree(ownerState, choiceState, visited, filter.alternative().model()));
+        }
       }
     } else {
       s.append(formatTransition(sourceState, targetState, transition.eventType(), transition));

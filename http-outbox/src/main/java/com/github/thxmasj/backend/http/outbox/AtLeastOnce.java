@@ -21,16 +21,16 @@ import com.github.thxmasj.backend.core.EventLog;
 import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.Severity;
 import com.github.thxmasj.backend.core.State;
-import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionContext;
 import com.github.thxmasj.backend.core.TransitionModel;
+import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionContext;
 import com.github.thxmasj.backend.core.Tuples.Tuple2;
 import com.github.thxmasj.backend.core.Validated;
 import com.github.thxmasj.backend.core.http.HttpClient;
 import com.github.thxmasj.backend.core.http.HttpDataType;
-import com.github.thxmasj.backend.http.outbox.HttpOutboxRequest.BatchedRequest;
 import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
 import com.github.thxmasj.backend.core.message.http.TypedHttpRequest;
 import com.github.thxmasj.backend.core.message.http.TypedHttpResponse;
+import com.github.thxmasj.backend.http.outbox.HttpOutboxRequest.BatchedRequest;
 import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.List;
@@ -128,9 +128,10 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
           HttpDataType.forRequest(requestPayloadType)
       );
     }
-    
+
     // Intermediate
-    EventType<TypedHttpResponse<RS>, TypedHttpResponse<RS>> validResponse() {
+    /// The valid response, and whether the request has been accepted before, i.e. is accepted again after a redispatch
+    EventType<TypedHttpResponse<RS>, Tuple2<TypedHttpResponse<RS>, Boolean>> validResponse() {
       return BasicEventType.of(
           "Valid response received",
           UUID.fromString("c9fcf4d6-95f8-418f-aa6b-c3d987d3a3c3"),
@@ -194,6 +195,15 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
   @Override
   public EventType<BatchedRequest<RQ>, ?> batchedRequestDispatched() {
     return shape.batchedRequestDispatched();
+  }
+
+  /// Sends the request again, when it has been accepted or is dead, as a retry would: what the repeat message creator
+  /// makes of the dispatched request, with the headers the forwarder adds. The request is in flight again, with the
+  /// inflight timeout and the retries of the first attempt, which count from when it was dispatched. If it is accepted,
+  /// the success callback is triggered unless the request was accepted before, and if it is rejected permanently or its
+  /// attempts run out, it is dead. Select the request by [HttpOutboxRequest#dispatchedBy].
+  public EventType<Void, TypedHttpRequest<RQ>> requestRedispatched() {
+    return shape.requestRedispatched();
   }
 
   @Override
@@ -422,17 +432,21 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
                     d -> tuple(d.t1(), d.t2().invalidReason())
                 )
         ),
-        Compensating, List.of(
-            onEvent(shape.requestRedispatched()).to(InFlight)
-                .assemble(c -> shape.repeatMessageCreator().apply(c, shape.dispatched(c.log()).t1()))
-                .trigger(shape.forward()).with(d -> toHttpRequest(d, shape.requestPayloadType()))
-                .trigger(TimeoutExpired).after(_ -> shape.inflightTimeout())
-                .output(d -> d)
-        ),
+        Compensating, List.of(redispatchTransition(shape)),
         Intermediate, List.of(),
-        Dead, List.of(),
-        Accepted, List.of()
+        Accepted, List.of(redispatchTransition(shape)),
+        Dead, List.of(redispatchTransition(shape))
     );
+  }
+
+  /// The request is sent again, as the repeat message creator makes it of the dispatched request, whether by a retry or
+  /// on demand when it has been accepted or given up
+  private TransitionModel<Void, TypedHttpRequest<RQ>> redispatchTransition(Shape<RQ, ?, ?> shape) {
+    return onEvent(shape.requestRedispatched()).to(InFlight)
+        .assemble(c -> shape.repeatMessageCreator().apply(c, shape.dispatched(c.log()).t1()))
+        .trigger(shape.forward()).with(d -> toHttpRequest(d, shape.requestPayloadType()))
+        .trigger(TimeoutExpired).after(_ -> shape.inflightTimeout())
+        .output(d -> d);
   }
 
   /// The request is given up, as no attempt is available
@@ -440,14 +454,18 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
     return onEvent(shape.attemptsExhausted()).to(Dead).severity(Severity.Error).output();
   }
 
-  private <RS, S> TransitionModel<TypedHttpResponse<RS>, TypedHttpResponse<RS>> validResponseTransition(
+  private <RS, S> TransitionModel<TypedHttpResponse<RS>, Tuple2<TypedHttpResponse<RS>, Boolean>>
+  validResponseTransition(
       Shape<RQ, RS, S> shape
   ) {
     return onEvent(shape.validResponse()).to(Intermediate)
-            .assemble(c -> c.input())
-            .when(shape.isAccepted)
-            .then(requestAcceptedTransition(shape))
-            .otherwise(requestReceivedAndRejectedTransition(shape));
+            .assemble(c -> tuple(c.input(), c.log().exists(shape.requestAccepted())))
+            .when(d -> shape.isAccepted.test(d.t1()) && !d.t2())
+            .then(requestAcceptedTransition(shape), d -> d.t1())
+            // A redispatched accepted request is accepted again without the success callback, which the process has had
+            .when(d -> shape.isAccepted.test(d.t1()))
+            .then(requestAcceptedAgainTransition(shape), d -> d.t1())
+            .otherwise(requestReceivedAndRejectedTransition(shape), d -> d.t1());
   }
 
   private <RS, S> TransitionModel<TypedHttpResponse<RS>, TypedHttpResponse<RS>> requestAcceptedTransition(
@@ -464,6 +482,14 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
         onEvent(shape.requestAccepted()).to(Accepted)
             .assembleInput()
             .output(d -> d);
+  }
+
+  private <RS, S> TransitionModel<TypedHttpResponse<RS>, TypedHttpResponse<RS>> requestAcceptedAgainTransition(
+      Shape<RQ, RS, S> shape
+  ) {
+    return onEvent(shape.requestAccepted()).to(Accepted)
+        .assembleInput()
+        .output(d -> d);
   }
 
   private <RS, S> TransitionModel<TypedHttpResponse<RS>, TypedHttpResponse<RS>> requestReceivedAndRejectedTransition(
@@ -574,7 +600,8 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
     InFlight,
     Accepted,
     Compensating,
-    /// The request is given up, so the events leading here are of severity [Severity#Error]
+    /// The request is given up, so the events leading here are of severity [Severity#Error]. It can be redispatched on
+    /// demand, e.g. from a backoffice handling the requests given up.
     Dead
   }
 

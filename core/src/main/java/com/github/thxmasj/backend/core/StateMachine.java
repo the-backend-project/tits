@@ -13,36 +13,45 @@ import com.github.thxmasj.backend.core.EntitySelector.ById;
 import com.github.thxmasj.backend.core.EntitySelector.ByIdEvent;
 import com.github.thxmasj.backend.core.EntitySelector.ByIdFromSession;
 import com.github.thxmasj.backend.core.EntitySelector.ByLastIndexed;
+import com.github.thxmasj.backend.core.EntitySelector.ByLastReferencing;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.Accepted;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.Completed;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.IdExists;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.Pending;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.Rejected;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.UnknownId;
-import com.github.thxmasj.backend.core.TransitionStep.ActionStep;
-import com.github.thxmasj.backend.core.TransitionStep.AssembleStep;
-import com.github.thxmasj.backend.core.TransitionStep.ChoiceStep;
-import com.github.thxmasj.backend.core.TransitionStep.ConditionalTriggerStep;
-import com.github.thxmasj.backend.core.TransitionStep.DelayedTriggerStep;
-import com.github.thxmasj.backend.core.TransitionStep.IdExistsStep;
-import com.github.thxmasj.backend.core.TransitionStep.InputStep;
-import com.github.thxmasj.backend.core.TransitionStep.OutputStep;
-import com.github.thxmasj.backend.core.TransitionStep.PendingStep;
-import com.github.thxmasj.backend.core.TransitionStep.RejectedStep;
-import com.github.thxmasj.backend.core.TransitionStep.TriggerStep;
-import com.github.thxmasj.backend.core.TransitionStep.UnknownIdStep;
 import com.github.thxmasj.backend.core.Tuples.Tuple3;
-import com.github.thxmasj.backend.core.database.ChangeState.Change;
-import com.github.thxmasj.backend.core.database.ChangeState;
 import com.github.thxmasj.backend.core.database.Database;
 import com.github.thxmasj.backend.core.database.DatabaseClient;
 import com.github.thxmasj.backend.core.database.EntityGroupNotInitialised;
-import com.github.thxmasj.backend.core.database.EventAlreadyExists;
-import com.github.thxmasj.backend.core.database.IdEventAlreadyExists;
-import com.github.thxmasj.backend.core.database.Mappers;
 import com.github.thxmasj.backend.core.database.MappingFailure;
-import com.github.thxmasj.backend.core.database.Storage;
 import com.github.thxmasj.backend.core.database.UnknownEntity;
+import com.github.thxmasj.backend.core.internal.ActionTrigger;
+import com.github.thxmasj.backend.core.internal.Calculation;
+import com.github.thxmasj.backend.core.internal.Debug;
+import com.github.thxmasj.backend.core.internal.DelayedEvent;
+import com.github.thxmasj.backend.core.internal.EventTypes;
+import com.github.thxmasj.backend.core.internal.TransitionStep;
+import com.github.thxmasj.backend.core.internal.TransitionStep.ActionStep;
+import com.github.thxmasj.backend.core.internal.TransitionStep.AssembleStep;
+import com.github.thxmasj.backend.core.internal.TransitionStep.ChoiceStep;
+import com.github.thxmasj.backend.core.internal.TransitionStep.ConditionalTriggerStep;
+import com.github.thxmasj.backend.core.internal.TransitionStep.DelayedTriggerStep;
+import com.github.thxmasj.backend.core.internal.TransitionStep.IdExistsStep;
+import com.github.thxmasj.backend.core.internal.TransitionStep.InputStep;
+import com.github.thxmasj.backend.core.internal.TransitionStep.OutputStep;
+import com.github.thxmasj.backend.core.internal.TransitionStep.PendingStep;
+import com.github.thxmasj.backend.core.internal.TransitionStep.RejectedStep;
+import com.github.thxmasj.backend.core.internal.TransitionStep.TriggerStep;
+import com.github.thxmasj.backend.core.internal.TransitionStep.UnknownIdStep;
+import com.github.thxmasj.backend.core.internal.database.ChangeState;
+import com.github.thxmasj.backend.core.internal.database.ChangeState.Change;
+import com.github.thxmasj.backend.core.internal.database.ConditionalTrigger;
+import com.github.thxmasj.backend.core.internal.database.DelayedTrigger;
+import com.github.thxmasj.backend.core.internal.database.EventAlreadyExists;
+import com.github.thxmasj.backend.core.internal.database.IdEventAlreadyExists;
+import com.github.thxmasj.backend.core.internal.database.Storage;
+import com.github.thxmasj.backend.core.internal.database.StorageProvider;
 import jakarta.annotation.Nullable;
 import jakarta.validation.constraints.NotNull;
 import java.time.Clock;
@@ -50,6 +59,7 @@ import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -138,7 +148,7 @@ public class StateMachine implements AutoCloseable {
   ) {
     Debug.log("Supported entity models:\n" + transitions.keySet().stream().map(EntityModel::name).collect(joining("\n")));
     this.traversers = transitions.entrySet().stream().collect(toMap(Entry::getKey, e -> new Traverser(e.getValue())));
-    this.eventTypesByEntityModel = Mappers.eventTypesByEntityModel(transitions);
+    this.eventTypesByEntityModel = EventTypes.eventTypesByEntityModel(transitions);
     this.delayer = delayer != null ? delayer : _ -> Mono.empty();
     if (schemaDataSource != null) {
       database.createSchema(schemaDataSource, schemaName, role)
@@ -147,7 +157,7 @@ public class StateMachine implements AutoCloseable {
     }
     this.clock = clock;
     this.client = client;
-    this.storage = database.storage(client, transitions, schemaName, clock);
+    this.storage = StorageProvider.storage(database, client, transitions, schemaName, clock);
     this.listener = listener;
     if (withResolving) {
       Looper<ResolverStatus> resolverLooper = new Looper<>(
@@ -193,7 +203,7 @@ public class StateMachine implements AutoCloseable {
     return new EventLog(entityModel, entityId, List.of());
   }
 
-  public enum ResolverStatus {Ok, Empty, Error}
+  enum ResolverStatus {Ok, Empty, Error}
 
   private <T> InputEvent<T> inputEvent(DelayedTrigger<T> delayedTrigger) {
     return new InputEvent<>(delayedTrigger.eventType(), delayedTrigger.data());
@@ -202,7 +212,7 @@ public class StateMachine implements AutoCloseable {
   /**
    * Process the next delayed event that has reached its delayedTrigger.
    */
-  public Mono<ResolverStatus> resolveState() {
+  Mono<ResolverStatus> resolveState() {
     var backoff = new DelaySpecification(ofSeconds(10), ofMinutes(10), ofHours(5), 1.5);
     return storage.nextDelayedTrigger().execute(backoff)
         .doOnNext(d -> Debug.log(ZonedDateTime.now() + ": Next delayed trigger: " + d))
@@ -610,14 +620,6 @@ public class StateMachine implements AutoCloseable {
         .orElse(null);
   }
 
-  public static String chainToString(TransitionStep<?> tail) {
-    StringBuilder b = new StringBuilder();
-    for (TransitionStep<?> c = tail; c != null; c = c.previous()) {
-      b.append(c).append("\n");
-    }
-    return b.toString();
-  }
-
   private ProcessResult<?> finalResult(@NotNull TransitionStep<? extends ProcessResult<?>> tail) {
     for (TransitionStep<?> current = tail; current != null; current = current.previous()) {
       if (current instanceof RejectedStep<?> p && !p.stepOutput().isHandled()) return p.stepOutput();
@@ -682,7 +684,7 @@ public class StateMachine implements AutoCloseable {
    * Fire waiting conditional triggers whose condition is now met. The waiting row is deleted together with the change
    * of the fired event. Returns Ok if an event was fired, otherwise Empty (or Error).
    */
-  public Mono<ResolverStatus> fireConditionalTriggers() {
+  Mono<ResolverStatus> fireConditionalTriggers() {
     Debug.log("fireConditionalTriggers()");
     return storage.conditionalTriggers().execute(MAX_CONDITIONAL_TRIGGERS_PER_POLL)
         .doOnNext(t -> Debug.log("fireConditionalTriggers() found trigger: " + t))
@@ -740,6 +742,7 @@ public class StateMachine implements AutoCloseable {
       }
       case ByIdEvent<?> s -> eventLog(s, entityModel, transitionStep);
       case ByLastIndexed<?> s -> eventLog(s, entityModel);
+      case ByLastReferencing s -> eventLog(s, entityModel);
       case EntitySelector s -> throw new IllegalStateException("Unexpected value: " + s);
     };
   }
@@ -773,6 +776,15 @@ public class StateMachine implements AutoCloseable {
       case CreateIfNotExists -> log.switchIfEmpty(Mono.fromSupplier(() -> emptyEventLog(entityModel)));
       case AlwaysCreate -> throw new IllegalStateException("Unexpected value: " + selector.creationMode());
     };
+  }
+
+  /// The entity of the model created last of those referencing the id, by entity id if they were created at the same
+  /// time, as entity ids are time-ordered
+  private Mono<EventLog> eventLog(ByLastReferencing selector, EntityModel entityModel) {
+    return storage.entitiesByIndex().execute(selector.id(), selector.type())
+        .filter(log -> log.entityModel().equals(entityModel))
+        .reduce((a, b) -> Comparator.comparing(EventLog::created).thenComparing(EventLog::entityId).compare(a, b) >= 0 ? a : b)
+        .switchIfEmpty(Mono.error(() -> new UnknownEntity(entityModel, selector.type(), selector.id())));
   }
 
   private EventLog logFromSteps(TransitionStep<?> context, EntityModel entityModel) {
@@ -819,7 +831,7 @@ public class StateMachine implements AutoCloseable {
     }
   }
 
-  public <T, I, O> Mono<TransitionStep<ProcessResult<O>>> calculateTriggeredEvent(
+  <T, I, O> Mono<TransitionStep<ProcessResult<O>>> calculateTriggeredEvent(
       EventTrigger<T, I, O> eventTrigger,
       TransitionStep<?> tail,
       T data,
@@ -1146,7 +1158,7 @@ public class StateMachine implements AutoCloseable {
         );
   }
 
-  public Traverser traverser(EntityModel entityModel) {
+  Traverser traverser(EntityModel entityModel) {
     return traversers.get(entityModel);
   }
 

@@ -1,5 +1,6 @@
 package com.github.thxmasj.backend.http.outbox;
 
+import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.message.http.TypedHttpRequest;
 import java.util.Map;
 import java.util.function.BiFunction;
@@ -9,8 +10,11 @@ import reactor.core.publisher.Mono;
 /// A [Dispatcher] of requests to an [AtLeastOnce] outbox request.
 public final class AtLeastOnceDispatcher<X, RQ> extends BaseDispatcher<X, TypedHttpRequest<RQ>> implements Dispatcher<X, TypedHttpRequest<RQ>> {
 
+  private final AtLeastOnce<RQ> atLeastOnce;
+
   private AtLeastOnceDispatcher(AtLeastOnce<RQ> outbox, BiFunction<DispatchContext, X, Mono<TypedHttpRequest<RQ>>> inputCreator) {
     super(outbox, outbox.requestDispatched(), inputCreator, Map.of(outbox, outbox.transitions()));
+    this.atLeastOnce = outbox;
   }
 
   public static <X, RQ> AtLeastOnceDispatcher<X, RQ> of(AtLeastOnce<RQ> outbox, Function<X, TypedHttpRequest<RQ>> inputCreator) {
@@ -24,6 +28,12 @@ public final class AtLeastOnceDispatcher<X, RQ> extends BaseDispatcher<X, TypedH
       BiFunction<DispatchContext, X, Mono<TypedHttpRequest<RQ>>> inputCreator
   ) {
     return new AtLeastOnceDispatcher<>(outbox, inputCreator);
+  }
+
+  /// Sends an accepted or dead request again, as a retry would, on the entity selected by
+  /// [HttpOutboxRequest#dispatchedBy]. See [AtLeastOnce#requestRedispatched()].
+  public EventType<Void, TypedHttpRequest<RQ>> requestRedispatched() {
+    return atLeastOnce.requestRedispatched();
   }
 
 }

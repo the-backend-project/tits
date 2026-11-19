@@ -74,6 +74,8 @@ stateDiagram-v2
     Compensating --> InFlight: Request redispatched, after the backoff
     InFlight --> Dead: Permanent rejection
     InFlight --> Dead: Attempts exhausted
+    Accepted --> InFlight: Request redispatched, on demand
+    Dead --> InFlight: Request redispatched, on demand
     Accepted --> [*]
     Dead --> [*]
 ```
@@ -86,7 +88,8 @@ stateDiagram-v2
 | `Dead`         | The receiver rejected the request permanently, or the attempts ran out                             |
 
 Nothing tells the process of a request which is `Dead`. The events leading there have the
-[severity](monitoring.md#severity) `Error`, so monitoring does.
+[severity](monitoring.md#severity) `Error`, so monitoring does. Once the cause is fixed, the request can be
+[redispatched](#redispatching-an-accepted-or-dead-request).
 
 The response is parsed by the content parser of the outbox, and the predicates of the outbox decide the outcome:
 
@@ -102,15 +105,45 @@ The response is parsed by the content parser of the outbox, and the predicates o
 
 A retry asks `isAttemptAvailable` with a `RetryContext` of when the request was dispatched, the time now and the number
 of the attempt. If an attempt is available, `backoffAlgorithm` gives the delay until the request is sent again, by a
-delayed trigger; otherwise the request is `Dead`. The repeated request is the original one, or what the
-`repeatMessageCreator` makes of it, e.g. with a new timestamp. Like the first attempt, every repeated attempt has the
-inflight timeout.
+delayed trigger; otherwise the request is `Dead`. The redispatched request is the dispatched one, or what the
+`repeatMessageCreator` makes of it, e.g. with a new timestamp. Like the first attempt, every redispatched attempt has
+the inflight timeout.
 
-The diagram generated from the model shows every event, including the intermediate ones of the choices above:
+### Redispatching an accepted or dead request
 
-<object data="../images/com.github.thxmasj.backend.http.outbox.AtLeastOnce.svg" type="image/svg+xml"></object>
+An application can send a request which is `Dead` again, e.g. from a backoffice function handling the requests given up
+once the cause is fixed, or an accepted request, e.g. a simulator of a partner system repeating a callback to test how
+the receiver handles a duplicate. The request is redispatched as by a retry, and is `InFlight` again: it is sent as the
+`repeatMessageCreator` makes it of the dispatched request, so that the receiver gets what it would get from a retry,
+such as the variant of a message a protocol expects when it is sent again. Without a `repeatMessageCreator`, it is the
+dispatched request as it is stored.
 
-[Open the diagram in full size](images/com.github.thxmasj.backend.http.outbox.AtLeastOnce.svg)
+A transition of the process that dispatched the request triggers `requestRedispatched()` of the dispatcher on the
+request, selected by `HttpOutboxRequest.dispatchedBy(processId)`, the request of the outbox the process dispatched last:
+
+```java
+onEvent(CallbackRepeatRequested).to(Done)
+    .assemble(c -> c.entityId())
+    .trigger(callbacks.requestRedispatched())
+    .on(callbacks.outbox())
+    .identifiedBy(HttpOutboxRequest::dispatchedBy)
+    .output()
+```
+
+The request is sent with the method, URI, headers and body of the message the `repeatMessageCreator` makes, and the
+headers the forwarder adds when it sends a request. From then on, it is like any other attempt:
+
+* It has the inflight timeout, and is retried as the predicates of the outbox decide. A retry asks `isAttemptAvailable`
+  with the `RetryContext` of the request, which counts from when it was dispatched and the attempts before, so a
+  request redispatched long after it was dispatched may have no attempt available.
+* If it is accepted, it is `Accepted`, and the success callback tells the process, unless the request was accepted
+  before, as the process has been told already. The response of the request, `response(log)`, is the one it was first
+  accepted with.
+* If the receiver rejects it permanently, e.g. as a duplicate, or its attempts run out, it is `Dead`, with the
+  severity `Error`, also if it was accepted before.
+
+A request which waits for a retry is sent right away by a redispatch on demand, and the scheduled retry is dropped. A
+request which is in flight rejects it.
 
 ### Example
 
@@ -131,6 +164,12 @@ AtLeastOnce<Notification> notification = HttpOutboxRequest.atLeastOnce()
     .backoffAlgorithm(_ -> Duration.ofSeconds(30))
     .build("MerchantNotification", notificationId);
 ```
+
+The diagram generated from it shows every event, including the intermediate ones of the choices above:
+
+<object data="../images/com.github.thxmasj.backend.http.outbox.MerchantNotification.svg" type="image/svg+xml"></object>
+
+[Open the MerchantNotification diagram in full size](images/com.github.thxmasj.backend.http.outbox.MerchantNotification.svg)
 
 ## AtMostOnce
 
@@ -193,12 +232,6 @@ request, by the rollback message creator of the dispatcher (see [dispatching](#d
 rollback model is `AtLeastOnce`, the receiver must tolerate a duplicate rollback, as well as a rollback of a request it
 never received.
 
-The diagram generated from the model, with both rollback models:
-
-<object data="../images/com.github.thxmasj.backend.http.outbox.AtMostOnce.svg" type="image/svg+xml"></object>
-
-[Open the diagram in full size](images/com.github.thxmasj.backend.http.outbox.AtMostOnce.svg)
-
 ### Example
 
 An authorisation of a card payment, reversed by an `AtLeastOnce` reversal if it is accepted or its outcome is unknown:
@@ -220,6 +253,12 @@ AtMostOnce<AuthorisationRequest, ReversalRequest> authorisation = HttpOutboxRequ
     .rollbackOnUnknownModel(reversal)
     .build("Authorisation", authorisationId);
 ```
+
+The diagram generated from it:
+
+<object data="../images/com.github.thxmasj.backend.http.outbox.Authorisation.svg" type="image/svg+xml"></object>
+
+[Open the Authorisation diagram in full size](images/com.github.thxmasj.backend.http.outbox.Authorisation.svg)
 
 ## Dispatching a request
 
@@ -272,6 +311,7 @@ transitions.putAll(authorisations.transitions());
 ## Finding the requests of a process
 
 Every request is indexed by the id of the entity which dispatched it, `ProcessReferenced`, and a batched request also
-by the id of its batch, `BatchReferenced`. A process can thereby find its requests, and wait for all the requests of a
+by the id of its batch, `BatchReferenced`. A process can thereby find its requests, select the last one it dispatched to
+an outbox by `HttpOutboxRequest.dispatchedBy(processId)`, and wait for all the requests of a
 batch to complete by a conditional trigger on `HttpOutboxRequest.requestAccepted()`, which is the same event type for
 every outbox.

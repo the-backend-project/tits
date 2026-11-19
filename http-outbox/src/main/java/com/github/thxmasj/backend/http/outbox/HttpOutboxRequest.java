@@ -1,10 +1,13 @@
 package com.github.thxmasj.backend.http.outbox;
 
+import static com.github.thxmasj.backend.core.EntitySelector.lastReferencing;
 import static com.github.thxmasj.backend.core.IndexEntityModel.referenceEventType;
-import static com.github.thxmasj.backend.core.database.Mappers.eventTypesFor;
+import static com.github.thxmasj.backend.core.internal.EventTypes.eventTypesFor;
 
 import com.github.thxmasj.backend.core.BasicEventType;
 import com.github.thxmasj.backend.core.DataType;
+import com.github.thxmasj.backend.core.EntityId;
+import com.github.thxmasj.backend.core.EntitySelector;
 import com.github.thxmasj.backend.core.EventLog;
 import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.IndexEntityModel;
@@ -89,6 +92,12 @@ public sealed interface HttpOutboxRequest<RQ> extends com.github.thxmasj.backend
       ProcessReferenced,
       BatchReferenced
   );
+
+  /// The request of the triggered outbox model that the process dispatched last, found by its [#ProcessReferenced]
+  /// index, e.g. to send it again by [AtLeastOnce#requestRedispatched()]
+  static EntitySelector dispatchedBy(EntityId processId) {
+    return lastReferencing(ProcessReferenced, processId.value());
+  }
 
   static Map<State, List<TransitionModel<?, ?>>> combine(
       Map<State, List<TransitionModel<?, ?>>> m1,

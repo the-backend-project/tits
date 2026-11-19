@@ -1,6 +1,7 @@
 package com.github.thxmasj.backend.core.test;
 
 import static com.github.thxmasj.backend.core.EntityModel.Begin;
+import static com.github.thxmasj.backend.core.EntitySelector.lastReferencing;
 import static com.github.thxmasj.backend.core.EntitySelector.newEntityId;
 import static com.github.thxmasj.backend.core.EventTrigger.trigger;
 import static com.github.thxmasj.backend.core.TransitionModelBuilder.WithEvent.onEvent;
@@ -18,7 +19,8 @@ import com.github.thxmasj.backend.core.IndexEntityModel;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.StateMachine;
 import com.github.thxmasj.backend.core.TransitionModel;
-import com.github.thxmasj.backend.core.database.EntitiesByIndex;
+import com.github.thxmasj.backend.core.internal.database.EntitiesByIndex;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -103,6 +105,78 @@ public class EntitiesByIndexTest {
     List<UUID> returnedIds = logs3.stream().map(l -> l.entityId()).toList();
     assertTrue(returnedIds.contains(orderId));
     assertTrue(returnedIds.contains(orderId2));
+  }
+
+  enum ShipperStates implements State { Requested }
+
+  static EntityModel Invoice = EntityModel.of("Invoice", UUID.fromString("0c0f4d0e-2a7b-4f53-9a43-b8f1e0b8d3a5"));
+  static EntityModel Shipper = EntityModel.of("Shipper", UUID.fromString("8a0d6c5e-5a8f-4d1f-8f25-0a7d1d0c6f4b"));
+  static EventType<UUID, UUID> InvoiceCreated = BasicEventType.of("Invoice created", UUID.fromString("4b8e2f0a-6c1d-4e7b-9a3f-2d5c8b1e7f60"), DataType.uuid());
+  static EventType<UUID, UUID> ShippingRequested = BasicEventType.of("Shipping requested", UUID.fromString("c3a9e1d7-0f4b-4c8e-b2d6-7e1f5a9c3b80"), DataType.uuid());
+
+  /// The last created entity of the triggered model referencing the id is selected, not an earlier one or one of
+  /// another model referencing the same id
+  @Test
+  public void lastReferencingSelectsLastEntityOfModel() {
+    Map<State, List<TransitionModel<?, ?>>> orderTransitions = Map.of(
+        Begin, List.of(
+            onEvent(OrderCreated).to(OrderStates.Created)
+                .assemble(c -> tuple(c.input(), c.entityId()))
+                .trigger(customerReferenced).with(t -> t.t1()).on(Index).identifiedBy(t -> newEntityId(t.t2()))
+                .output()
+        ),
+        OrderStates.Created, List.of(
+            onEvent(OrderShipped).to(OrderStates.Shipped).output()
+        ),
+        OrderStates.Shipped, List.of()
+    );
+    Map<State, List<TransitionModel<?, ?>>> invoiceTransitions = Map.of(
+        Begin, List.of(
+            onEvent(InvoiceCreated).to(OrderStates.Created)
+                .assemble(c -> tuple(c.input(), c.entityId()))
+                .trigger(customerReferenced).with(t -> t.t1()).on(Index).identifiedBy(t -> newEntityId(t.t2()))
+                .output()
+        ),
+        OrderStates.Created, List.of()
+    );
+    Map<State, List<TransitionModel<?, ?>>> shipperTransitions = Map.of(
+        Begin, List.of(
+            onEvent(ShippingRequested).to(ShipperStates.Requested)
+                .assembleInput()
+                .trigger(OrderShipped).on(Order).identifiedBy(customerId -> lastReferencing(customerReferenced, customerId))
+                .output(d -> d.t1())
+        ),
+        ShipperStates.Requested, List.of()
+    );
+    var transitions = Map.of(
+        Order, orderTransitions,
+        Invoice, invoiceTransitions,
+        Shipper, shipperTransitions,
+        Index, Index.transitions()
+    );
+    String schema = UUID.randomUUID().toString();
+    StateMachine machine = Init.stateMachine(schema, transitions);
+    EntitiesByIndex entitiesByIndex = Init.storage(schema, transitions).entitiesByIndex();
+
+    UUID customerId = UUID.randomUUID();
+    machine.onEvent(trigger(OrderCreated, Order), customerId).blockFirst(Duration.ofSeconds(10));
+    UUID lastOrderId = machine.onEvent(trigger(OrderCreated, Order), customerId).blockFirst(Duration.ofSeconds(10)).entityId();
+    machine.onEvent(trigger(InvoiceCreated, Invoice), customerId).blockFirst(Duration.ofSeconds(10));
+
+    machine.onEvent(trigger(ShippingRequested, Shipper), customerId).blockFirst(Duration.ofSeconds(10));
+
+    List<UUID> shipped = entitiesByIndex.execute(customerId, customerReferenced)
+        .filter(log -> log.exists(OrderShipped))
+        .map(EventLog::entityId)
+        .collectList()
+        .block(Duration.ofSeconds(10));
+    assertEquals(List.of(lastOrderId), shipped);
+
+    // No order references an unknown customer, so the trigger is rejected, like one on an entity id that doesn't exist,
+    // while the transition triggering it is accepted
+    var unknown = machine.onEvent(trigger(ShippingRequested, Shipper), UUID.randomUUID()).blockFirst(Duration.ofSeconds(10));
+    assertNotNull(unknown);
+    assertEquals(ShippingRequested, unknown.type());
   }
 
 }

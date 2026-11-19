@@ -10,9 +10,25 @@ The diagrams in this documentation, of the [card payment template](cardpayments.
 `doc-diagrams` module. It is the only module depending on the diagram module, so PlantUML is never a dependency of the
 libraries or the apps.
 
+A code example in this documentation which creates an entity model has the diagram of that model under it. The
+example is written out in `DocExamples` in `doc-diagrams`, as the documentation shows it, so the diagram is drawn from
+the model the example creates and the example is known to compile. A change to such an example is made in both places.
+The examples of the [getting started](getting-started.md) guide are taken from the hello world demo, whose diagrams are
+drawn from the demo itself.
+
+A diagram of something other than an entity model, such as how a [rollback](http-inbox.md#rollback) relates the event
+logs of several entities, is drawn by hand in the DOT language of Graphviz, in the resources of `doc-diagrams`, and
+rendered by `GraphvizFormatter` with `dot`.
+
 A state diagram shows the details of an event when the mouse hovers over its name: its data and the events and actions
 it triggers. An event whose transition has a [severity](monitoring.md#severity) above `Info` is named in bold, after a
 symbol and in a colour for its severity: ⚠ in amber for `Warning`, ✖ in orange for `Error` and ‼ in red for `Critical`.
+
+To keep a state diagram small, the transitions between the same two states are drawn as one arrow with their events
+stacked, and the self transitions of a state as one loop. Choices with the same branches, i.e. the same events to the
+same states, are drawn as one choice. Several transitions leading to the same choice from a state are thereby one
+arrow: in the diagram of an [outbox request](http-outbox.md#atleastonce), a failed or dropped connection and a timeout
+lead to one choice between retrying the request and giving it up.
 
 The diagrams follow the colour scheme of the page. In dark mode, their arrows and the text on them are drawn in light
 colours.

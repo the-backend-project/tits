@@ -10,11 +10,11 @@ import static com.github.thxmasj.backend.core.TransitionModelBuilder.assemble;
 import static com.github.thxmasj.backend.core.Tuples.tuple;
 import static com.github.thxmasj.backend.core.Validated.invalid;
 import static com.github.thxmasj.backend.core.Validated.valid;
+import static com.github.thxmasj.backend.core.message.http.HttpRequestMessage.Method.POST;
 import static com.github.thxmasj.backend.http.outbox.EventTypes.InvalidResponseReceived;
 import static com.github.thxmasj.backend.http.outbox.EventTypes.ResponseReceived;
 import static com.github.thxmasj.backend.http.outbox.EventTypes.TimeoutExpired;
 import static com.github.thxmasj.backend.http.outbox.HttpOutboxRequest.Index;
-import static com.github.thxmasj.backend.core.message.http.HttpRequestMessage.Method.POST;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -22,7 +22,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.github.thxmasj.backend.core.BasicEventType;
 import com.github.thxmasj.backend.core.BasicEventType.Rollback.Data;
-import com.github.thxmasj.backend.core.Calculation;
 import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.DelaySpecification;
 import com.github.thxmasj.backend.core.EntityModel;
@@ -30,25 +29,30 @@ import com.github.thxmasj.backend.core.Event;
 import com.github.thxmasj.backend.core.EventLog;
 import com.github.thxmasj.backend.core.EventReference;
 import com.github.thxmasj.backend.core.EventType;
-import com.github.thxmasj.backend.core.test.Init;
 import com.github.thxmasj.backend.core.Severity;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.StateMachine;
-import com.github.thxmasj.backend.core.TransitionStep;
-import com.github.thxmasj.backend.core.TransitionStep.DelayedTriggerStep;
-import com.github.thxmasj.backend.core.TransitionStep.InputStep;
-import com.github.thxmasj.backend.core.TransitionStep.TriggerStep;
 import com.github.thxmasj.backend.core.TransitionModel;
+import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionContext;
 import com.github.thxmasj.backend.core.Tuples.Tuple2;
 import com.github.thxmasj.backend.core.http.NettyHttpClient;
 import com.github.thxmasj.backend.core.http.NettyHttpClientBuilder;
-import com.github.thxmasj.backend.http.outbox.AtMostOnceWithRollbackDispatcher;
-import com.github.thxmasj.backend.http.outbox.HttpOutboxRequest.BatchedRequest;
+import com.github.thxmasj.backend.core.internal.Calculation;
+import com.github.thxmasj.backend.core.internal.TransitionStep;
+import com.github.thxmasj.backend.core.internal.TransitionStep.DelayedTriggerStep;
+import com.github.thxmasj.backend.core.internal.TransitionStep.InputStep;
+import com.github.thxmasj.backend.core.internal.TransitionStep.TriggerStep;
+import com.github.thxmasj.backend.core.internal.Transitions;
+import com.github.thxmasj.backend.core.internal.database.Storage;
 import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
 import com.github.thxmasj.backend.core.message.http.TypedHttpRequest;
 import com.github.thxmasj.backend.core.message.http.TypedHttpResponse;
+import com.github.thxmasj.backend.core.test.Init;
+import com.github.thxmasj.backend.http.outbox.HttpOutboxRequest.BatchedRequest;
 import com.sun.net.httpserver.HttpServer;
+import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.net.URI;
 import java.time.Clock;
 import java.time.Duration;
@@ -57,6 +61,10 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiFunction;
+import java.util.function.Predicate;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -426,7 +434,7 @@ public class HttpOutboxTest {
     );
     var log = new EventLog(model.exchange(), UUID.randomUUID(), List.of(reqDispatchedEvent));
     var initialContext = new InputStep<Void>(null, null, null, timeoutTransition, AtMostOnce.States.InFlight, 2, log, ZonedDateTime.now(), "corr-1", null, model.machine(), new Calculation());
-    var occ = timeoutTransition.calculate(initialContext).block();
+    var occ = Transitions.calculate(timeoutTransition, initialContext).block();
     assertNotNull(occ);
 
     var triggerContext = (TriggerStep<?, ?>) occ.previous();
@@ -449,7 +457,7 @@ public class HttpOutboxTest {
     var triggerEvent = new EventReference(triggerEntityId, 1);
     var log = new EventLog(model.exchange(), UUID.randomUUID(), List.of());
     var initialContext = new InputStep<>(null, null, triggerEvent, reqDispatchedTransition, Begin, 1, log, ZonedDateTime.now(), "corr-1", HttpOutboxTest.<Void>requestMessage("/test"), model.machine(), new Calculation());
-    var occ = reqDispatchedTransition.calculate(initialContext).block();
+    var occ = Transitions.calculate(reqDispatchedTransition, initialContext).block();
     assertNotNull(occ);
     assertTrue(occ.stepOutput().isAccepted());
     var acceptedEvent = occ.stepOutput().accepted().event();
@@ -502,7 +510,7 @@ public class HttpOutboxTest {
     var log = new EventLog(alo, UUID.randomUUID(), List.of(reqDispatchedEvent));
     var responseMessage = new HttpResponseMessage(200, "OK", Map.of(), null);
     var initialContext = new InputStep<HttpResponseMessage>(null, null, null, responseReceivedTransition, AtLeastOnce.States.InFlight, 2, log, ZonedDateTime.now(), "corr-1", responseMessage, machine, new Calculation());
-    var occ = responseReceivedTransition.calculate(initialContext).block();
+    var occ = Transitions.calculate(responseReceivedTransition, initialContext).block();
     assertNotNull(occ);
 
     TriggerStep<?, ?> triggerContext = null;
@@ -548,7 +556,7 @@ public class HttpOutboxTest {
     var triggerEvent = new EventReference(triggerEntityId, 1);
     var log = new EventLog(alo, UUID.randomUUID(), List.of());
     var initialContext = new InputStep<>(null, null, triggerEvent, reqDispatchedTransition, Begin, 1, log, ZonedDateTime.now(), "corr-1", HttpOutboxTest.<Void>requestMessage("/test"), machine, new Calculation());
-    var occ = reqDispatchedTransition.calculate(initialContext).block();
+    var occ = Transitions.calculate(reqDispatchedTransition, initialContext).block();
     assertNotNull(occ);
     assertTrue(occ.stepOutput().isAccepted());
     var acceptedEvent = occ.stepOutput().accepted().event();
@@ -597,7 +605,7 @@ public class HttpOutboxTest {
     var log = new EventLog(alo, requestId, List.of(reqDispatchedEvent));
     var now = ZonedDateTime.now();
     var initialContext = new InputStep<Void>(null, null, null, redispatchedTransition, AtLeastOnce.States.Compensating, 4, log, now, "corr-1", null, machine, new Calculation());
-    var occ = redispatchedTransition.calculate(initialContext).block();
+    var occ = Transitions.calculate(redispatchedTransition, initialContext).block();
     assertNotNull(occ);
 
     DelayedTriggerStep<?, ?> delayedTriggerStep = null;
@@ -625,6 +633,253 @@ public class HttpOutboxTest {
         .orElseThrow();
     assertEquals(1, timeoutTransition.triggers().size());
     assertEquals(TimeoutExpired, timeoutTransition.triggers().getFirst().eventSpec().eventType());
+  }
+
+  /// An accepted request is sent again on demand as a retry would send it, as the repeat message creator makes it of
+  /// the dispatched request, with the headers the forwarder adds, and is accepted again, so it can be sent again once
+  /// more. The process, which is done, isn't told by the success callback again.
+  @Test
+  public void atLeastOnceAcceptedRequestRedispatched() {
+    var redispatched = redispatchAcceptedRequest(
+        (_, r) -> TypedHttpRequest.create(r.method(), r.uri(), Map.of("Message-Id", r.headers().get("Message-Id") + "-again"), r.payload() + " again")
+    );
+    List<String> sent = List.of(redispatched.messageId(), "fixed", "payload");
+    List<String> again = List.of(redispatched.messageId() + "-again", "fixed", "payload again");
+    assertEquals(List.of(sent, again, again), redispatched.received());
+    assertEquals(
+        List.of("Request dispatched", "Request accepted", "Request redispatched", "Request accepted", "Request redispatched", "Request accepted"),
+        redispatched.log().events().stream().map(e -> e.type().name()).toList()
+    );
+  }
+
+  /// Without a repeat message creator, an accepted request is sent again as it was dispatched
+  @Test
+  public void atLeastOnceAcceptedRequestRedispatchedUnchangedWithoutRepeatMessageCreator() {
+    var redispatched = redispatchAcceptedRequest(null);
+    List<String> sent = List.of(redispatched.messageId(), "fixed", "payload");
+    assertEquals(List.of(sent, sent, sent), redispatched.received());
+  }
+
+  /// A request given up, here as the receiver rejected it permanently, is sent again on demand, e.g. by a backoffice
+  /// handling the requests given up, and when it is accepted, the process is told by the success callback
+  @Test
+  public void atLeastOnceDeadRequestRedispatched() {
+    assertEquals(
+        List.of("Request dispatched", "Request rejected permanently", "Request redispatched", "Request accepted"),
+        redispatchDeadRequest(false)
+    );
+  }
+
+  /// A request accepted, redispatched and given up, and then redispatched again and accepted, doesn't tell the process
+  /// by the success callback again, as the process was told when the request was first accepted
+  @Test
+  public void atLeastOnceDeadRequestAcceptedBeforeRedispatched() {
+    assertEquals(
+        List.of("Request dispatched", "Request accepted", "Request redispatched", "Request rejected permanently", "Request redispatched", "Request accepted"),
+        redispatchDeadRequest(true)
+    );
+  }
+
+  /// Dispatches a request, which ends dead, and redispatches it by a transition of the process, which is then accepted.
+  /// The process takes the success callback only when it waits for the response, so a second callback would fail.
+  ///
+  /// @param acceptedBefore whether the request is accepted, and then redispatched and rejected, before it is dead
+  /// @return the names of the events of the request
+  private List<String> redispatchDeadRequest(boolean acceptedBefore) {
+    EntityModel process = EntityModel.of("Process", UUID.randomUUID());
+    EventType<Void, Void> processStarted = BasicEventType.of("Process started", UUID.randomUUID());
+    EventType<Void, Void> processSucceeded = BasicEventType.of("Process succeeded", UUID.randomUUID());
+    EventType<Void, Void> redispatchRequested = BasicEventType.of("Redispatch requested", UUID.randomUUID());
+    String path = "/" + UUID.randomUUID();
+    AtomicInteger status = new AtomicInteger(acceptedBefore ? 200 : 400);
+    server.createContext(path, exchange -> {
+      exchange.getRequestBody().readAllBytes();
+      exchange.sendResponseHeaders(status.get(), -1);
+      exchange.close();
+    });
+    AtLeastOnce<String> notification = HttpOutboxRequest.atLeastOnce()
+        .requestPayloadType(DataType.string())
+        .responsePayloadType(DataType.none())
+        .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
+        .inflightTimeout(Duration.ofSeconds(10))
+        .processModel(process)
+        .contentParser(_ -> valid(null))
+        .onSuccess(processSucceeded)
+        .isAccepted(r -> r.statusCode() == 200)
+        .isFailureTransient(_ -> false)
+        .isRejectedByInvalidResponse(_ -> false)
+        .isFailureByInvalidResponseTransient(_ -> false)
+        .isAttemptAvailable(_ -> true)
+        .backoffAlgorithm(_ -> Duration.ofSeconds(1))
+        .build("Notification", UUID.randomUUID());
+    var dispatcher = AtLeastOnceDispatcher.of(
+        notification,
+        (Void _) -> TypedHttpRequest.create(POST, URI.create("http://localhost:" + server.getAddress().getPort() + path), Map.of(), "payload")
+    );
+    Map<State, List<TransitionModel<?, ?>>> processTransitions = Map.of(
+        Begin, List.of(
+            onEvent(processStarted).to(States.WaitingForResponse)
+                .assemble(DispatchContext::of)
+                .trigger(dispatcher.requestDispatched()).withReactive(d -> dispatcher.input(d, null)).on(dispatcher.outbox()).identifiedBy(newEntityId())
+                .output()
+        ),
+        States.WaitingForResponse, List.of(
+            onEvent(processSucceeded).to(States.Done).output(),
+            redispatchTransition(redispatchRequested, States.WaitingForResponse, dispatcher)
+        ),
+        States.Done, List.of(
+            redispatchTransition(redispatchRequested, States.Done, dispatcher)
+        )
+    );
+    String schema = UUID.randomUUID().toString();
+    Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions = new HashMap<>(dispatcher.transitions());
+    transitions.put(process, processTransitions);
+    transitions.put(Index, Index.transitions());
+    var machine = Init.stateMachine(schema, transitions);
+    var storage = Init.storage(schema, transitions);
+
+    UUID processId = machine.onEvent(trigger(processStarted, process)).blockFirst(Duration.ofSeconds(10)).entityId();
+    if (acceptedBefore) {
+      awaitOutboxLog(storage, processId, l -> l.exists(HttpOutboxRequest.requestAccepted()));
+      assertEquals(States.Done, awaitProcessState(machine, process, processId, States.Done));
+      status.set(400);
+      machine.onEvent(trigger(redispatchRequested, process, processId)).blockFirst();
+    }
+    awaitOutboxLog(storage, processId, l -> l.events().stream().anyMatch(e -> e.type().name().equals("Request rejected permanently")));
+    status.set(200);
+    machine.onEvent(trigger(redispatchRequested, process, processId)).blockFirst();
+    long acceptances = acceptedBefore ? 2 : 1;
+    EventLog log = awaitOutboxLog(storage, processId, l -> l.events().stream().filter(e -> e.type().name().equals("Request accepted")).count() == acceptances);
+    assertEquals(States.Done, awaitProcessState(machine, process, processId, States.Done));
+    return log.events().stream().map(e -> e.type().name()).toList();
+  }
+
+  private static TransitionModel<?, ?> redispatchTransition(EventType<Void, Void> redispatchRequested, State state, AtLeastOnceDispatcher<?, ?> dispatcher) {
+    return onEvent(redispatchRequested).to(state)
+        .assemble(c -> c.entityId())
+        .trigger(dispatcher.requestRedispatched()).on(dispatcher.outbox()).identifiedBy(HttpOutboxRequest::dispatchedBy)
+        .output();
+  }
+
+  /// The state of the process, once it is the expected one, or after a while
+  private static State awaitProcessState(StateMachine machine, EntityModel process, UUID processId, State expected) {
+    long deadline = System.currentTimeMillis() + 10_000;
+    State state;
+    do {
+      state = machine.onStatus(entityId(processId), process).block();
+      if (expected.equals(state))
+        return state;
+      try {
+        Thread.sleep(50);
+      } catch (InterruptedException e) {
+        throw new RuntimeException(e);
+      }
+    } while (System.currentTimeMillis() < deadline);
+    return state;
+  }
+
+  private record Redispatched(String messageId, List<List<String>> received, EventLog log) {}
+
+  /// Dispatches a request, which is accepted, and then redispatches it twice by a transition of the process
+  ///
+  /// @param repeatMessageCreator the repeat message creator of the outbox, or null for none
+  private Redispatched redispatchAcceptedRequest(
+      BiFunction<TransitionContext<Void>, TypedHttpRequest<String>, TypedHttpRequest<String>> repeatMessageCreator
+  ) {
+    EntityModel process = EntityModel.of("Process", UUID.randomUUID());
+    EventType<Void, Void> processStarted = BasicEventType.of("Process started", UUID.randomUUID());
+    EventType<Void, Void> processSucceeded = BasicEventType.of("Process succeeded", UUID.randomUUID());
+    EventType<Void, Void> redispatchRequested = BasicEventType.of("Redispatch requested", UUID.randomUUID());
+    String path = "/" + UUID.randomUUID();
+    List<List<String>> received = new CopyOnWriteArrayList<>();
+    server.createContext(path, exchange -> {
+      received.add(List.of(
+          exchange.getRequestHeaders().getFirst("Message-Id"),
+          exchange.getRequestHeaders().getFirst("Forwarder"),
+          new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8)
+      ));
+      exchange.sendResponseHeaders(200, -1);
+      exchange.close();
+    });
+    var netty = new NettyHttpClient(new NettyHttpClientBuilder().build());
+    var payloadTypes = HttpOutboxRequest.atLeastOnce()
+        .requestPayloadType(DataType.string())
+        .responsePayloadType(DataType.none());
+    AtLeastOnce<String> notification = (repeatMessageCreator != null ? payloadTypes.repeatMessageCreator(repeatMessageCreator) : payloadTypes)
+        .forwarder(r -> {
+          var headers = new HashMap<>(r.headers());
+          headers.put("Forwarder", "fixed");
+          return netty.exchange(new HttpRequestMessage(r.method(), r.uri(), headers, r.body()));
+        })
+        .inflightTimeout(Duration.ofSeconds(10))
+        .processModel(process)
+        .contentParser(_ -> valid(null))
+        .onSuccess(processSucceeded)
+        .isAccepted(r -> r.statusCode() == 200)
+        .isFailureTransient(_ -> true)
+        .isRejectedByInvalidResponse(_ -> false)
+        .isFailureByInvalidResponseTransient(_ -> false)
+        .isAttemptAvailable(_ -> true)
+        .backoffAlgorithm(_ -> Duration.ofSeconds(1))
+        .build("Notification", UUID.randomUUID());
+    String messageId = UUID.randomUUID().toString();
+    var dispatcher = AtLeastOnceDispatcher.of(
+        notification,
+        (Void _) -> TypedHttpRequest.create(POST, URI.create("http://localhost:" + server.getAddress().getPort() + path), Map.of("Message-Id", messageId), "payload")
+    );
+    Map<State, List<TransitionModel<?, ?>>> processTransitions = Map.of(
+        Begin, List.of(
+            onEvent(processStarted).to(States.WaitingForResponse)
+                .assemble(DispatchContext::of)
+                .trigger(dispatcher.requestDispatched()).withReactive(d -> dispatcher.input(d, null)).on(dispatcher.outbox()).identifiedBy(newEntityId())
+                .output()
+        ),
+        States.WaitingForResponse, List.of(
+            onEvent(processSucceeded).to(States.Done).output()
+        ),
+        // Done doesn't take the success callback, so the request is accepted again without it
+        States.Done, List.of(
+            onEvent(redispatchRequested).to(States.Done)
+                .assemble(c -> c.entityId())
+                .trigger(dispatcher.requestRedispatched()).on(dispatcher.outbox()).identifiedBy(HttpOutboxRequest::dispatchedBy)
+                .output()
+        )
+    );
+    String schema = UUID.randomUUID().toString();
+    Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions = new HashMap<>(dispatcher.transitions());
+    transitions.put(process, processTransitions);
+    transitions.put(Index, Index.transitions());
+    var machine = Init.stateMachine(schema, transitions);
+    var storage = Init.storage(schema, transitions);
+
+    UUID processId = machine.onEvent(trigger(processStarted, process))
+        .takeUntil(e -> e.type().equals(processSucceeded))
+        .blockLast(Duration.ofSeconds(10))
+        .entityId();
+    EventLog log = awaitOutboxLog(storage, processId, l -> l.exists(HttpOutboxRequest.requestAccepted()));
+    for (int redispatch = 1; redispatch <= 2; redispatch++) {
+      machine.onEvent(trigger(redispatchRequested, process, processId)).blockFirst();
+      long accepted = redispatch + 1;
+      log = awaitOutboxLog(storage, processId, l -> l.events().stream().filter(e -> e.type().name().equals("Request accepted")).count() == accepted);
+    }
+    return new Redispatched(messageId, received, log);
+  }
+
+  /// The event log of the outbox request the process dispatched, once it satisfies the condition
+  private static EventLog awaitOutboxLog(Storage storage, UUID processId, Predicate<EventLog> condition) {
+    long deadline = System.currentTimeMillis() + 10_000;
+    while (true) {
+      EventLog log = storage.entitiesByIndex().execute(processId, HttpOutboxRequest.ProcessReferenced).blockFirst();
+      if (log != null && condition.test(log))
+        return log;
+      if (System.currentTimeMillis() > deadline)
+        throw new AssertionError("Outbox request of process " + processId + " not as expected: " + log);
+      try {
+        Thread.sleep(50);
+      } catch (InterruptedException e) {
+        throw new RuntimeException(e);
+      }
+    }
   }
 
   /// A request which is given up is an error for monitoring, and nothing else of an AtLeastOnce request is

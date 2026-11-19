@@ -8,7 +8,7 @@ import java.util.UUID;
 /// milliseconds, followed by random bits. New rows are then inserted at the end of the B-tree indexes their ids lead,
 /// instead of at random places in them, which keeps the pages of the indexes full and the recently used ones in memory.
 /// See [identifiers](https://the-backend-project.github.io/tits/identifiers/).
-public final class Identifiers {
+final class Identifiers {
 
   private Identifiers() {}
 
