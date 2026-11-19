@@ -253,10 +253,13 @@ either `Authorized` with the subject or `Refused` with the status code, challeng
 `Authorization.refused(reason)` refuses with 400.
 
 `AccessTokenVerifier.fetchingKeys` fetches the keys from the `jwks_uri` with the HTTP client of the JDK when it is
-created, and fails if it can't. It follows the key rotation of the issuer: a token signed with a key it doesn't know
-makes it fetch the keys again, but at most every 30 seconds, so tokens of random key ids can't make it fetch more
-often. That fetch blocks the request until the issuer answers, for at most 10 seconds. A verifier created with a JWK
-set, `new AccessTokenVerifier(jwkSet, issuer, audience, clock)`, only knows those keys.
+created, and fails if it can't. It follows the key rotation of the issuer: a token signed with a key it doesn't know is
+refused, and makes it fetch the keys again in the background, but at most every 30 seconds after the last attempt, so
+tokens of random key ids can't make it fetch more often. Verifying a token never waits for the issuer. Keys fetched
+again which are not valid, e.g. none, are not used, and the keys fetched before are kept. As the first token signed
+with a new key may be refused, an issuer should publish a new key before signing with it, as the
+[identity provider](identity-provider.md#running) is rotated. A verifier created with a JWK set,
+`new AccessTokenVerifier(jwkSet, issuer, audience, clock)`, only knows those keys.
 
 ## Signing users in with OpenID Connect
 
@@ -284,17 +287,20 @@ Mono<JWTClaimsSet> claims = client.redeem(code, secret);
 - The endpoints are found by [OpenID Connect Discovery](https://openid.net/specs/openid-connect-discovery-1_0.html)
   when first needed, so an app can be a client of itself, and discovery is tried again if it failed. `discover()`
   discovers them at once, e.g. to fail at startup.
-- The secret of a sign-in, 43 to 128 characters of base64url such as 32 random bytes, is kept in the browser the
-  sign-in was started in. The PKCE verifier (S256) and the nonce are derived from it, which binds the sign-in to that
-  browser.
+- The secret of a sign-in, e.g. of `Secrets.generate()`, is kept in the browser the sign-in was started in. The PKCE
+  verifier (S256) and the nonce are derived from it, which binds the sign-in to that browser. A secret which is not a
+  valid PKCE verifier, 43 to 128 characters of letters, digits and `-._~`, fails the sign-in at once.
 - `redeem` sends the token request with the HTTP client of the JDK. To send it otherwise, e.g. by an at-most-once
   [outbox](http-outbox.md) as a code can be redeemed only once, take the request from `tokenRequest(code, secret)`
   and verify the response with `verify(tokenResponse, secret)`.
 - A confidential client authenticates with its secret by HTTP Basic, a public client without a secret sends its
   `client_id` instead.
 - The ID token must be signed with RS256, ES256 or PS256 by a key of the provider, issued by the provider for the client,
-  not expired, and have the nonce of the secret. The keys are fetched like those of `AccessTokenVerifier.fetchingKeys`:
-  again for a key not among them, at most every 30 seconds.
+  not expired, and have the nonce of the secret. The keys of the provider are fetched again for a key not among them,
+  at most every 30 seconds, while the ID token is verified on a worker thread.
+
+`Secrets` generates and hashes secrets of 256 bits, such as the secret of a sign-in, a code or a session token, and
+`Form` parses and encodes forms and queries, as the identity provider and the backoffice do.
 
 The sign-in is not an authorizer of inbox requests, like `bearerToken`: an authorizer checks one request, while a
 sign-in takes several, redirecting the user, keeping a secret in a cookie, and redeeming the code. It is done in a

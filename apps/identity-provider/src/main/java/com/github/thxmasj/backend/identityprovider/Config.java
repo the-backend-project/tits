@@ -1,6 +1,7 @@
 package com.github.thxmasj.backend.identityprovider;
 
 import com.github.thxmasj.backend.core.database.DatabaseClient;
+import com.github.thxmasj.backend.http.inbox.OpenIdConnectClient;
 import com.github.thxmasj.backend.identityprovider.ImportedClients.ImportedClient;
 import java.net.URI;
 import java.time.Duration;
@@ -32,10 +33,24 @@ public record Config(
     String audience,
     BootstrapClient bootstrapClient,
     List<ImportedClient> clients,
-    Upstream.Config upstream
+    Upstream upstream
 ) {
 
   public record BootstrapClient(String id, String secret) {}
+
+  /// The upstream OpenID Connect provider users sign in with
+  ///
+  /// @param issuer   the issuer of the upstream provider, at which its discovery document is found
+  /// @param clientId the client id of the identity provider at the upstream provider
+  /// @param scope    the scope requested from the upstream provider
+  public record Upstream(URI issuer, String clientId, String clientSecret, String scope) {
+
+    /// The client of the upstream provider, whose redirect URI is the `/callback` of the identity provider
+    OpenIdConnectClient.Config client(URI identityProviderIssuer) {
+      return new OpenIdConnectClient.Config(issuer, clientId, clientSecret, scope, URI.create(identityProviderIssuer + "/callback"));
+    }
+
+  }
 
   public static Config fromEnvironment(Map<String, String> env) {
     String database = env.getOrDefault("DATABASE", "mssql");
@@ -55,7 +70,7 @@ public record Config(
     );
   }
 
-  private static Upstream.Config upstream(Map<String, String> env) {
+  private static Upstream upstream(Map<String, String> env) {
     String issuer = env.get("UPSTREAM_ISSUER");
     String clientId = env.get("UPSTREAM_CLIENT_ID");
     String secret = env.get("UPSTREAM_CLIENT_SECRET");
@@ -69,7 +84,7 @@ public record Config(
     String scope = env.getOrDefault("UPSTREAM_SCOPE", "openid email profile");
     if (!Scopes.isValid(scope) || !Scopes.parse(scope).contains("openid"))
       throw new IllegalArgumentException("Environment variable UPSTREAM_SCOPE must be a space separated list of scopes with openid");
-    return new Upstream.Config(uri, clientId, secret, scope);
+    return new Upstream(uri, clientId, secret, scope);
   }
 
   private static List<ImportedClient> importedClients(Map<String, String> env) {

@@ -16,6 +16,7 @@ import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.crypto.MACSigner;
 import com.nimbusds.jose.crypto.RSASSASigner;
 import com.nimbusds.jose.jwk.JWKSet;
+import com.nimbusds.jose.jwk.KeyUse;
 import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jose.jwk.gen.RSAKeyGenerator;
 import com.nimbusds.jwt.JWTClaimsSet;
@@ -160,47 +161,47 @@ public class AccessTokenVerifierTest {
   }
 
   @Test
-  public void whenIssuerAddsKeyThenFetchingVerifierAcceptsTokensSignedWithItAfterAtMost30Seconds() throws IOException {
-    var served = new AtomicReference<>(new JWKSet(key).toPublicJWKSet().toString());
-    var fetches = new AtomicInteger();
-    var server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
-    server.createContext("/jwks.json", exchange -> {
-      fetches.incrementAndGet();
-      byte[] body = served.get().getBytes(UTF_8);
-      exchange.getResponseHeaders().add("Content-Type", "application/json");
-      exchange.sendResponseHeaders(200, body.length);
-      try (var out = exchange.getResponseBody()) {
-        out.write(body);
-      }
-    });
-    server.start();
-    try {
-      var time = new AtomicReference<>(now);
-      var clock = new Clock() {
-        @Override public ZoneOffset getZone() { return ZoneOffset.UTC; }
-        @Override public Clock withZone(ZoneId zone) { throw new UnsupportedOperationException(); }
-        @Override public Instant instant() { return time.get(); }
-      };
-      URI jwksUri = URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/jwks.json");
-      var verifier = AccessTokenVerifier.fetchingKeys(jwksUri, issuer, null, clock);
-      assertThat(fetches).hasValue(1);
+  public void whenIssuerAddsKeyThenFetchingVerifierFetchesItInTheBackgroundAtMostEvery30Seconds() throws Exception {
+    try (var issuerKeys = new IssuerKeys(new JWKSet(key))) {
+      var verifier = AccessTokenVerifier.fetchingKeys(issuerKeys.uri(), issuer, null, issuerKeys.clock);
+      assertThat(issuerKeys.fetches).hasValue(1);
       assertThat(verifier.verify(token(key, c -> c))).isPresent();
-      // The new key is not fetched before 30 seconds after the last fetch
+      issuerKeys.served.set(new JWKSet(List.of(key, otherKey)).toPublicJWKSet().toString());
+      // Not fetched before 30 seconds after the last fetch, however many tokens of unknown keys come
+      issuerKeys.time.set(now.plusSeconds(29));
       assertThat(verifier.verify(token(otherKey, c -> c))).isEmpty();
-      assertThat(fetches).hasValue(1);
-      served.set(new JWKSet(List.of(key, otherKey)).toPublicJWKSet().toString());
-      time.set(now.plusSeconds(29));
       assertThat(verifier.verify(token(otherKey, c -> c))).isEmpty();
-      assertThat(fetches).hasValue(1);
-      time.set(now.plusSeconds(30));
+      assertThat(issuerKeys.fetches).hasValue(1);
+      // Refused while fetched in the background, and accepted once it has been
+      issuerKeys.time.set(now.plusSeconds(30));
+      assertThat(verifier.verify(token(otherKey, c -> c))).isEmpty();
+      issuerKeys.awaitFetches(2);
       assertThat(verifier.verify(token(otherKey, c -> c))).isPresent();
-      assertThat(fetches).hasValue(2);
       // A known key is not fetched again
       assertThat(verifier.verify(token(key, c -> c))).isPresent();
-      assertThat(fetches).hasValue(2);
-    } finally {
-      server.stop(0);
+      Thread.sleep(100);
+      assertThat(issuerKeys.fetches).hasValue(2);
     }
+  }
+
+  @Test
+  public void whenKeysFetchedAgainAreInvalidThenTheKeysFetchedBeforeAreKept() throws Exception {
+    try (var issuerKeys = new IssuerKeys(new JWKSet(key))) {
+      var verifier = AccessTokenVerifier.fetchingKeys(issuerKeys.uri(), issuer, null, issuerKeys.clock);
+      issuerKeys.served.set("{\"keys\":[]}");
+      issuerKeys.time.set(now.plusSeconds(30));
+      assertThat(verifier.verify(token(otherKey, c -> c))).isEmpty();
+      issuerKeys.awaitFetches(2);
+      Thread.sleep(100);
+      assertThat(verifier.verify(token(key, c -> c))).isPresent();
+    }
+  }
+
+  @Test
+  public void whenKeyIdIsRepeatedThenTheFirstKeyIsUsed() throws JOSEException {
+    var encryptionKey = new RSAKeyGenerator(2048).keyID(key.getKeyID()).keyUse(KeyUse.ENCRYPTION).generate();
+    var verifier = new AccessTokenVerifier(new JWKSet(List.of(key, encryptionKey)).toPublicJWKSet().toString(), issuer, null, clock());
+    assertThat(verifier.verify(token(key, c -> c))).isPresent();
   }
 
   @Test
@@ -253,6 +254,51 @@ public class AccessTokenVerifierTest {
     } catch (JOSEException e) {
       throw new IllegalStateException(e);
     }
+  }
+
+  /// A `jwks_uri` serving the keys of the issuer, and a clock the test moves
+  private static final class IssuerKeys implements AutoCloseable {
+
+    final AtomicReference<String> served;
+    final AtomicInteger fetches = new AtomicInteger();
+    final AtomicReference<Instant> time = new AtomicReference<>(now);
+    final Clock clock = new Clock() {
+      @Override public ZoneOffset getZone() { return ZoneOffset.UTC; }
+      @Override public Clock withZone(ZoneId zone) { throw new UnsupportedOperationException(); }
+      @Override public Instant instant() { return time.get(); }
+    };
+    private final HttpServer server;
+
+    IssuerKeys(JWKSet keys) throws IOException {
+      served = new AtomicReference<>(keys.toPublicJWKSet().toString());
+      server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+      server.createContext("/jwks.json", exchange -> {
+        byte[] body = served.get().getBytes(UTF_8);
+        exchange.getResponseHeaders().add("Content-Type", "application/json");
+        exchange.sendResponseHeaders(200, body.length);
+        try (var out = exchange.getResponseBody()) {
+          out.write(body);
+        }
+        fetches.incrementAndGet();
+      });
+      server.start();
+    }
+
+    URI uri() {
+      return URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/jwks.json");
+    }
+
+    void awaitFetches(int count) throws InterruptedException {
+      for (int i = 0; i < 100 && fetches.get() < count; i++)
+        Thread.sleep(50);
+      assertThat(fetches).hasValue(count);
+    }
+
+    @Override
+    public void close() {
+      server.stop(0);
+    }
+
   }
 
 }

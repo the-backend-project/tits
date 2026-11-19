@@ -293,7 +293,7 @@ The identity provider is configured by environment variables:
 | Variable | Description |
 |---|---|
 | `ISSUER` | Required to serve. The URL the identity provider is reached at, which is the `iss` of its tokens, e.g. `https://idp.example.com`. |
-| `SIGNING_KEYS` | Required to serve. A JWK set with private RSA keys with key ids. The first key signs, and the public keys of all are published. To rotate, add the new key last, wait for the services to have fetched it, then move it first, and remove the old key once its tokens have expired. Services verifying the tokens with `AccessTokenVerifier.fetchingKeys` fetch the keys again when they see a token signed with a key they don't know, at most every 30 seconds. |
+| `SIGNING_KEYS` | Required to serve. A JWK set with private RSA keys with key ids. The first key signs, and the public keys of all are published. To rotate, add the new key last, wait for the services to have fetched it, then move it first, and remove the old key once its tokens have expired. Services verifying the tokens with `AccessTokenVerifier.fetchingKeys` fetch the keys again in the background when they see a token signed with a key they don't know, at most every 30 seconds, and refuse that token, so publishing the key before signing with it avoids refused tokens. |
 | `TOKEN_LIFETIME_SECONDS` | How long the tokens are valid, access tokens and ID tokens. Default 300. |
 | `TOKEN_AUDIENCE` | The `aud` of the tokens. Default none. |
 | `BOOTSTRAP_CLIENT_ID`, `BOOTSTRAP_CLIENT_SECRET` | A client registered at startup with the scope `client-registration`, so the first clients can be registered. The secret must have at least 32 characters. If the client id is taken, e.g. by an earlier start, the registered client is kept as is. |

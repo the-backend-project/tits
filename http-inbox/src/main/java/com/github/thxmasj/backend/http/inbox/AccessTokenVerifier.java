@@ -6,14 +6,8 @@ import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.KeySourceException;
 import com.nimbusds.jose.crypto.RSASSAVerifier;
 import com.nimbusds.jose.jwk.JWK;
-import com.nimbusds.jose.jwk.JWKMatcher;
-import com.nimbusds.jose.jwk.JWKSelector;
 import com.nimbusds.jose.jwk.JWKSet;
-import com.nimbusds.jose.jwk.KeyType;
 import com.nimbusds.jose.jwk.RSAKey;
-import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
-import com.nimbusds.jose.jwk.source.JWKSource;
-import com.nimbusds.jose.proc.SecurityContext;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import java.net.URI;
@@ -23,6 +17,7 @@ import java.time.Clock;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 /// Verifies access tokens issued by an OAuth 2.0 authorization server such as `apps/identity-provider`: JWTs as profiled
 /// by RFC 9068, of type `at+jwt` and signed with RS256 by one of the keys of the issuer.
@@ -31,7 +26,8 @@ public final class AccessTokenVerifier {
   /// The `typ` of an access token, RFC 9068 section 2.1
   private static final JOSEObjectType accessTokenType = new JOSEObjectType("at+jwt");
 
-  private final JWKSource<SecurityContext> keys;
+  private final Supplier<JWKSet> keys;
+  private final Runnable onUnknownKey;
   private final String issuer;
   private final String audience;
   private final Clock clock;
@@ -48,11 +44,13 @@ public final class AccessTokenVerifier {
   /// @param issuer   the `iss` the tokens must have
   /// @param audience the `aud` the tokens must have, or null to accept tokens of any or no audience
   public AccessTokenVerifier(String jwkSet, URI issuer, String audience, Clock clock) {
-    this(new ImmutableJWKSet<>(validated(parse(jwkSet)).toPublicJWKSet()), issuer, audience, clock);
+    JWKSet keys = validated(parse(jwkSet)).toPublicJWKSet();
+    this(() -> keys, () -> {}, issuer, audience, clock);
   }
 
-  private AccessTokenVerifier(JWKSource<SecurityContext> keys, URI issuer, String audience, Clock clock) {
+  private AccessTokenVerifier(Supplier<JWKSet> keys, Runnable onUnknownKey, URI issuer, String audience, Clock clock) {
     this.keys = keys;
+    this.onUnknownKey = onUnknownKey;
     this.issuer = issuer.toString();
     this.audience = audience;
     this.clock = clock;
@@ -60,16 +58,20 @@ public final class AccessTokenVerifier {
 
   /// A verifier with the keys fetched from the `jwks_uri` of the issuer, e.g.
   /// `https://idp.example.com/.well-known/jwks.json`. The keys are fetched when the verifier is created, which fails
-  /// if they can't be. They are fetched again for a token signed with a key not among them, as the issuer may have
-  /// added a key since, but at most every 30 seconds. Such a fetch blocks the verification of the token.
+  /// if they can't be.
+  ///
+  /// The verifier follows the key rotation of the issuer. A token signed with a key not among the keys is refused,
+  /// and makes the verifier fetch the keys again in the background, but at most every 30 seconds, so that tokens
+  /// signed with the issuer's new key are accepted once they have been fetched. Verifying never waits for a fetch.
+  /// Keys fetched again which are not valid are not used, and the keys fetched before are kept.
   public static AccessTokenVerifier fetchingKeys(URI jwksUri, URI issuer, String audience, Clock clock) {
-    var keys = new RemoteKeys(jwksUri, HttpClient.newBuilder().connectTimeout(RemoteKeys.timeout).build(), clock);
+    var keys = new RemoteKeys(jwksUri, HttpClient.newBuilder().connectTimeout(RemoteKeys.timeout).build(), clock, AccessTokenVerifier::validated);
     try {
-      validated(keys.fetch());
+      keys.fetch();
     } catch (KeySourceException e) {
       throw new IllegalStateException(e.getMessage(), e);
     }
-    return new AccessTokenVerifier(keys, issuer, audience, clock);
+    return new AccessTokenVerifier(keys::current, keys::refreshInBackground, issuer, audience, clock);
   }
 
   private static JWKSet parse(String jwkSet) {
@@ -98,10 +100,10 @@ public final class AccessTokenVerifier {
       if (!JWSAlgorithm.RS256.equals(jwt.getHeader().getAlgorithm()) || !accessTokenType.equals(jwt.getHeader().getType()))
         return Optional.empty();
       String keyId = jwt.getHeader().getKeyID();
-      if (keyId == null)
-        return Optional.empty();
-      List<JWK> found = keys.get(new JWKSelector(new JWKMatcher.Builder().keyType(KeyType.RSA).keyID(keyId).build()), null);
-      if (found.size() != 1 || !(found.getFirst() instanceof RSAKey rsaKey) || !jwt.verify(new RSASSAVerifier(rsaKey.toRSAPublicKey())))
+      JWK key = keyId != null ? keys.get().getKeyByKeyId(keyId) : null;
+      if (key == null && keyId != null)
+        onUnknownKey.run();
+      if (!(key instanceof RSAKey rsaKey) || !jwt.verify(new RSASSAVerifier(rsaKey.toRSAPublicKey())))
         return Optional.empty();
       JWTClaimsSet claims = jwt.getJWTClaimsSet();
       if (!issuer.equals(claims.getIssuer())
@@ -113,9 +115,6 @@ public final class AccessTokenVerifier {
         return Optional.empty();
       String scope = claims.getStringClaim("scope");
       return Optional.of(new AccessToken(claims.getSubject(), claims.getStringClaim("client_id"), scopes(scope)));
-    } catch (KeySourceException e) {
-      System.err.println("Failed to verify an access token, as the keys of the issuer can't be fetched: " + e.getMessage());
-      return Optional.empty();
     } catch (ParseException | JOSEException e) {
       return Optional.empty();
     }

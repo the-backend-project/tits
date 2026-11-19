@@ -27,10 +27,12 @@ import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
 import com.github.thxmasj.backend.core.message.http.HttpRequestMessage.Method;
 import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
 import com.github.thxmasj.backend.core.message.http.TypedHttpResponse;
+import com.github.thxmasj.backend.http.inbox.Form;
 import com.github.thxmasj.backend.http.inbox.HttpInbox;
 import com.github.thxmasj.backend.http.inbox.HttpInboxRequest;
 import com.github.thxmasj.backend.http.inbox.OpenIdConnectClient;
 import com.github.thxmasj.backend.http.inbox.ResponseEventType;
+import com.github.thxmasj.backend.http.inbox.Secrets;
 import com.github.thxmasj.backend.http.outbox.AtMostOnce;
 import com.github.thxmasj.backend.http.outbox.AtMostOnceDispatcher;
 import com.github.thxmasj.backend.http.outbox.DispatchContext;
@@ -39,8 +41,6 @@ import com.nimbusds.jwt.JWTClaimsSet;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
-import java.net.URLDecoder;
-import java.security.MessageDigest;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.HashMap;
@@ -401,7 +401,7 @@ final class Sessions {
         States.SigningIn, List.of(
             onEvent(CallbackReceived).to(States.Redeeming)
                 .assemble(c -> tuple(c.input(), c.log().one(SignInStarted)))
-                .when(d -> d.t1().secret() == null || !matches(d.t1().secret(), d.t2().secret())).then(
+                .when(d -> d.t1().secret() == null || !Secrets.matches(d.t1().secret(), d.t2().secret())).then(
                     signInFailed(),
                     _ -> new Failure("invalid_request", "The sign-in has expired, or was started in another browser. Please sign in again.", 400)
                 )
@@ -552,11 +552,6 @@ final class Sessions {
     return claims.getClaim(name) instanceof String s ? s : null;
   }
 
-  /// Compares in constant time, so the time taken doesn't tell how much of the secret is right
-  private static boolean matches(String secret, String expected) {
-    return MessageDigest.isEqual(secret.getBytes(UTF_8), expected.getBytes(UTF_8));
-  }
-
   /// The session of the cookie of a request, by the hash of its token, or a new one if it has no cookie or the cookie
   /// is of no session
   private static EntitySelector session(HttpRequestMessage request) {
@@ -573,7 +568,7 @@ final class Sessions {
   private static Validated<Callback> callback(HttpRequestMessage request) {
     Map<String, String> query;
     try {
-      query = parse(request.uri().getRawQuery());
+      query = Form.parse(request.uri().getRawQuery());
     } catch (IllegalArgumentException e) {
       return invalid("The response of the identity provider is invalid");
     }
@@ -585,7 +580,7 @@ final class Sessions {
 
   private static Map<String, String> query(String rawQuery) {
     try {
-      return parse(rawQuery);
+      return Form.parse(rawQuery);
     } catch (IllegalArgumentException e) {
       return Map.of();
     }
@@ -744,22 +739,6 @@ final class Sessions {
       case 502 -> "Bad Gateway";
       default -> "Status " + status;
     };
-  }
-
-  /// The parameters of a query, of which the first of each name is kept. Fails on an invalid encoding.
-  static Map<String, String> parse(String query) {
-    var parameters = new LinkedHashMap<String, String>();
-    if (query == null || query.isEmpty())
-      return parameters;
-    for (String pair : query.split("&")) {
-      if (pair.isEmpty())
-        continue;
-      int i = pair.indexOf('=');
-      String name = URLDecoder.decode(i < 0 ? pair : pair.substring(0, i), UTF_8);
-      String value = i < 0 ? "" : URLDecoder.decode(pair.substring(i + 1), UTF_8);
-      parameters.putIfAbsent(name, value);
-    }
-    return parameters;
   }
 
 }
