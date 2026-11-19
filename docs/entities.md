@@ -18,9 +18,9 @@ onEvent(GreetingRequested).to(States.Greeted)
 ```
 
 The entity an event is triggered on is selected by an `EntitySelector`: by its entity id, as a new entity, by an id it
-has, or as the last one of a group it is indexed in. The ids and index keys of entities are events of their own, of
-id entity models (`IdEntityModel`) and index entity models (`IndexEntityModel`). An id is unique among the ids of its
-type, so an event claiming an id that is taken is rejected.
+has, as the last one of a group it is indexed in, or as the last one referencing an id by an index event. The ids and
+index keys of entities are events of their own, of id entity models (`IdEntityModel`) and index entity models
+(`IndexEntityModel`). An id is unique among the ids of its type, so an event claiming an id that is taken is rejected.
 
 ## Naming event types
 

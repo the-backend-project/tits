@@ -74,6 +74,8 @@ stateDiagram-v2
     Compensating --> InFlight: Request redispatched, after the backoff
     InFlight --> Dead: Permanent rejection
     InFlight --> Dead: Attempts exhausted
+    Accepted --> Repeating: Request repeated
+    Repeating --> Accepted: Response, connection failed or dropped, or timeout
     Accepted --> [*]
     Dead --> [*]
 ```
@@ -83,6 +85,7 @@ stateDiagram-v2
 | `InFlight`     | The request is sent, or about to be, and waits for its response                                    |
 | `Compensating` | The attempt failed, and the request will be sent again after the backoff                           |
 | `Accepted`     | The receiver accepted the request. The process is told by the success callback, if there is one   |
+| `Repeating`    | The accepted request is sent again, as it was dispatched, and waits for its response              |
 | `Dead`         | The receiver rejected the request permanently, or the attempts ran out                             |
 
 Nothing tells the process of a request which is `Dead`. The events leading there have the
@@ -105,6 +108,30 @@ of the attempt. If an attempt is available, `backoffAlgorithm` gives the delay u
 delayed trigger; otherwise the request is `Dead`. The repeated request is the original one, or what the
 `repeatMessageCreator` makes of it, e.g. with a new timestamp. Like the first attempt, every repeated attempt has the
 inflight timeout.
+
+### Repeating an accepted request
+
+An application can send an accepted request again, exactly as it was dispatched, e.g. a simulator of a partner system
+repeating a callback to test how the receiver handles a duplicate. Creating a new request message isn't the same, as
+the creator of the message, or the `repeatMessageCreator`, may generate values such as random ids.
+
+A transition of the process that dispatched the request triggers `requestRepeated()` of the dispatcher on the request,
+selected by `HttpOutboxRequest.dispatchedBy(processId)`, the request of the outbox the process dispatched last:
+
+```java
+onEvent(CallbackRepeatRequested).to(Done)
+    .assemble(c -> c.entityId())
+    .trigger(callbacks.requestRepeated())
+    .on(callbacks.outbox())
+    .identifiedBy(HttpOutboxRequest::dispatchedBy)
+    .output()
+```
+
+The request is sent with the method, URI, headers and body of the stored request message, and the headers the forwarder
+adds when it sends a request. It is sent once, without retries, and has the inflight timeout. Its response is stored as
+an event of its own, `Repeat response received`, while the response of the request stays the one it was accepted with.
+The request goes back to `Accepted` whatever the outcome, and the success callback isn't triggered again. A request
+which is `Repeating` rejects another repeat until it is `Accepted` again, as does a request which isn't accepted.
 
 ### Example
 
@@ -272,6 +299,7 @@ transitions.putAll(authorisations.transitions());
 ## Finding the requests of a process
 
 Every request is indexed by the id of the entity which dispatched it, `ProcessReferenced`, and a batched request also
-by the id of its batch, `BatchReferenced`. A process can thereby find its requests, and wait for all the requests of a
+by the id of its batch, `BatchReferenced`. A process can thereby find its requests, select the last one it dispatched to
+an outbox by `HttpOutboxRequest.dispatchedBy(processId)`, and wait for all the requests of a
 batch to complete by a conditional trigger on `HttpOutboxRequest.requestAccepted()`, which is the same event type for
 every outbox.
