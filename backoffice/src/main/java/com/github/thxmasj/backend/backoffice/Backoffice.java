@@ -5,8 +5,6 @@ import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.core.database.DatabaseClient;
 import com.github.thxmasj.backend.core.http.HttpClient;
-import com.github.thxmasj.backend.core.http.NettyHttpClient;
-import com.github.thxmasj.backend.core.http.NettyHttpClientBuilder;
 import java.net.URI;
 import java.time.Duration;
 import java.util.Arrays;
@@ -49,14 +47,7 @@ public final class Backoffice {
       String applicationSchema,
       Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> applicationTransitions
   ) {
-    this(service, config, client, applicationSchema, applicationTransitions, lazyForwarder());
-  }
-
-  /// An HTTP client created when the first request is sent, so a backoffice made only for its model, e.g. to draw its
-  /// diagrams, starts no network client
-  private static HttpClient lazyForwarder() {
-    var client = new java.util.concurrent.atomic.AtomicReference<HttpClient>();
-    return message -> client.updateAndGet(c -> c != null ? c : new NettyHttpClient(new NettyHttpClientBuilder().build())).exchange(message);
+    this(service, config, client, applicationSchema, applicationTransitions, new JdkHttpClient());
   }
 
   /// @param forwarder the HTTP client the token requests to the provider are sent with
