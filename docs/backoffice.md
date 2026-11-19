@@ -129,7 +129,8 @@ docker build -f apps/identity-provider-backoffice/Dockerfile -t tits-identity-pr
 ```
 
 The [deploy](azure-functions.md) module doesn't yet deploy a backoffice to Azure Functions, as it creates a database
-for every application, while a backoffice uses the database of its application.
+for every application, while a backoffice uses the database of its application
+([#282](https://github.com/the-backend-project/tits/issues/282)).
 
 ## Configuration
 
