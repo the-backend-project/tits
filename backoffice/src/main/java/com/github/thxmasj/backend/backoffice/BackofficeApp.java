@@ -1,7 +1,5 @@
 package com.github.thxmasj.backend.backoffice;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
-
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.JsonLinesListener;
 import com.github.thxmasj.backend.core.State;
@@ -10,15 +8,12 @@ import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.core.database.DataSourceBuilder;
 import com.github.thxmasj.backend.core.database.Database;
 import com.github.thxmasj.backend.core.database.DatabaseClient;
-import com.github.thxmasj.backend.core.message.http.HttpRequestMessage.Method;
-import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
 import com.github.thxmasj.backend.http.inbox.HttpInboxListener;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import javax.sql.DataSource;
-import reactor.core.publisher.Mono;
 import reactor.netty.DisposableServer;
 
 /// Runs the backoffice of an application as an application of its own, following the conventions of the apps: it is
@@ -98,8 +93,8 @@ public final class BackofficeApp {
         try {
           Config config = Config.fromEnvironment(env, defaultApplicationSchema, true);
           DataSource dataSource = new DataSourceBuilder(Database.named(config.database()), config.databaseConfig()).buildPooled();
-          stateMachine = stateMachine(config, dataSource);
-          server = serve(service, config, stateMachine, dataSource, applicationTransitions);
+          stateMachine = stateMachine(config, dataSource, backoffice(service, config, dataSource, applicationTransitions));
+          server = serve(config, stateMachine);
         } catch (RuntimeException e) {
           // The workers of the state machine would keep the process running without serving
           e.printStackTrace();
@@ -145,11 +140,21 @@ public final class BackofficeApp {
         .block();
   }
 
-  /// The backoffice's own state machine, with the sessions of its users
-  public static StateMachine stateMachine(Config config, DataSource dataSource) {
+  /// The model of the backoffice, reading the application's schema
+  public static Backoffice backoffice(
+      String service,
+      Config config,
+      DataSource dataSource,
+      Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> applicationTransitions
+  ) {
+    return new Backoffice(service, config.backoffice(), Database.of(dataSource).client(dataSource), config.applicationSchema(), applicationTransitions);
+  }
+
+  /// The backoffice's own state machine, of the model of the backoffice, in the backoffice's schema
+  public static StateMachine stateMachine(Config config, DataSource dataSource, Backoffice backoffice) {
     return new StateMachine(
         null,
-        Backoffice.transitions(),
+        backoffice.transitions(),
         dataSource,
         null, // The schema is created by the migrate admin process
         config.schema(),
@@ -160,21 +165,9 @@ public final class BackofficeApp {
     );
   }
 
-  /// Serves the backoffice and its health check
-  public static DisposableServer serve(
-      String service,
-      Config config,
-      StateMachine stateMachine,
-      DataSource dataSource,
-      Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> applicationTransitions
-  ) {
-    var backoffice = new Backoffice(service, config.backoffice(), Database.of(dataSource).client(dataSource), config.schema(), config.applicationSchema(), applicationTransitions);
-    return new HttpInboxListener(stateMachine)
-        .filter((request, next) -> request.method() == Method.GET && request.uri().getPath().equals("/health")
-            ? Mono.just(new HttpResponseMessage(200, "OK", Map.of("Content-Type", "text/plain"), "OK".getBytes(UTF_8)))
-            : next.apply(request))
-        .filter(backoffice)
-        .listen(config.port());
+  /// Serves the backoffice: every request goes to the inbox of its state machine
+  public static DisposableServer serve(Config config, StateMachine stateMachine) {
+    return new HttpInboxListener(stateMachine).listen(config.port());
   }
 
 }

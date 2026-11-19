@@ -1,19 +1,31 @@
 {
   "reflection": [
     {
-      "type": "com.github.thxmasj.backend.backoffice.Sessions$Start",
-      "allDeclaredFields": true,
-      "allDeclaredMethods": true,
-      "allDeclaredConstructors": true
-    },
-    {
       "type": "com.github.thxmasj.backend.backoffice.Sessions$User",
       "allDeclaredFields": true,
       "allDeclaredMethods": true,
       "allDeclaredConstructors": true
     },
     {
-      "type": "com.github.thxmasj.backend.backoffice.Sessions$SignIn",
+      "type": "com.github.thxmasj.backend.backoffice.Sessions$View",
+      "allDeclaredFields": true,
+      "allDeclaredMethods": true,
+      "allDeclaredConstructors": true
+    },
+    {
+      "type": "com.github.thxmasj.backend.backoffice.Sessions$Start",
+      "allDeclaredFields": true,
+      "allDeclaredMethods": true,
+      "allDeclaredConstructors": true
+    },
+    {
+      "type": "com.github.thxmasj.backend.backoffice.Sessions$Callback",
+      "allDeclaredFields": true,
+      "allDeclaredMethods": true,
+      "allDeclaredConstructors": true
+    },
+    {
+      "type": "com.github.thxmasj.backend.backoffice.Sessions$Redemption",
       "allDeclaredFields": true,
       "allDeclaredMethods": true,
       "allDeclaredConstructors": true
@@ -37,7 +49,7 @@
       "allDeclaredConstructors": true
     },
     {
-      "type": "com.github.thxmasj.backend.backoffice.Sessions$View",
+      "type": "com.github.thxmasj.backend.backoffice.Sessions$ResourceRequest",
       "allDeclaredFields": true,
       "allDeclaredMethods": true,
       "allDeclaredConstructors": true

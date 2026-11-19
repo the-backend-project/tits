@@ -3,6 +3,8 @@ package com.github.thxmasj.backend.backoffice;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 import com.github.thxmasj.backend.core.DataType;
+import com.github.thxmasj.backend.core.message.http.HttpRequestMessage.Method;
+import com.github.thxmasj.backend.core.message.http.TypedHttpRequest;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.KeySourceException;
 import com.nimbusds.jose.jwk.JWK;
@@ -19,7 +21,6 @@ import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
-import java.net.http.HttpRequest.BodyPublishers;
 import java.net.http.HttpResponse.BodyHandlers;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -38,7 +39,8 @@ import reactor.core.scheduler.Schedulers;
 import tools.jackson.databind.JsonNode;
 
 /// The OpenID Connect provider users sign in to the backoffice with, as a client of it with the authorization code
-/// flow. The code, the client secret and the ID token never enter the event log, only the claims of the user.
+/// flow. It builds the requests and verifies the responses, while the transitions of the sessions decide, and an
+/// outbox sends the token request.
 ///
 /// The endpoints are found by OpenID Connect Discovery when the first user signs in, rather than when the application
 /// starts, so the application may be its own provider, as the identity provider is. The user is bound to the browser
@@ -86,40 +88,45 @@ final class OpenIdConnect {
     });
   }
 
-  /// The claims of the user who signed in, by redeeming the code and verifying the ID token the provider gives. Fails
-  /// if the code is refused or the ID token is invalid.
-  Mono<JWTClaimsSet> signIn(String code, String secret) {
-    return metadata.flatMap(metadata -> {
+  /// The request redeeming the code at the token endpoint, which an at-most-once outbox sends, as a code can be
+  /// redeemed only once
+  Mono<TypedHttpRequest<String>> tokenRequest(String code, String secret) {
+    return metadata.map(metadata -> {
       var parameters = new LinkedHashMap<String, String>();
       parameters.put("grant_type", "authorization_code");
       parameters.put("code", code);
       parameters.put("redirect_uri", redirectUri.toString());
       parameters.put("code_verifier", verifier(secret));
-      var request = HttpRequest.newBuilder(metadata.tokenEndpoint())
-          .timeout(timeout)
-          .header("Content-Type", "application/x-www-form-urlencoded")
-          .header("Accept", "application/json");
+      var headers = new LinkedHashMap<String, String>();
+      headers.put("Content-Type", "application/x-www-form-urlencoded");
+      headers.put("Accept", "application/json");
       if (config.clientSecret() != null) {
         // HTTP Basic, which RFC 6749 section 2.3.1 requires every provider to support
         String credentials = URLEncoder.encode(config.clientId(), UTF_8) + ":" + URLEncoder.encode(config.clientSecret(), UTF_8);
-        request.header("Authorization", "Basic " + Base64.getEncoder().encodeToString(credentials.getBytes(UTF_8)));
+        headers.put("Authorization", "Basic " + Base64.getEncoder().encodeToString(credentials.getBytes(UTF_8)));
       } else {
         // A public client, RFC 6749 section 4.1.3
         parameters.put("client_id", config.clientId());
       }
-      var built = request.POST(BodyPublishers.ofString(form(parameters))).build();
-      return Mono.fromFuture(() -> httpClient.sendAsync(built, BodyHandlers.ofString()))
-          .flatMap(response -> {
-            if (response.statusCode() != 200)
-              return Mono.error(new IllegalStateException("The token endpoint responded " + response.statusCode() + ": " + response.body()));
-            JsonNode body = DataType.objectMapper.readTree(response.body());
-            JsonNode idToken = body.get("id_token");
-            if (idToken == null || !idToken.isString())
-              return Mono.error(new IllegalStateException("The token response has no id_token"));
-            // The keys may be fetched, which blocks
-            return Mono.fromCallable(() -> verified(metadata.idTokenProcessor().process(idToken.asString(), null), secret))
-                .subscribeOn(Schedulers.boundedElastic());
-          });
+      return TypedHttpRequest.create(Method.POST, metadata.tokenEndpoint(), headers, form(parameters));
+    });
+  }
+
+  /// The claims of the ID token of a token response, verified with the keys of the provider and against the nonce of
+  /// the secret. Fails if the response has no ID token or it is invalid.
+  Mono<JWTClaimsSet> verify(String tokenResponse, String secret) {
+    return metadata.flatMap(metadata -> {
+      JsonNode idToken;
+      try {
+        idToken = DataType.objectMapper.readTree(tokenResponse).get("id_token");
+      } catch (RuntimeException e) {
+        return Mono.error(new IllegalStateException("The token response is not JSON"));
+      }
+      if (idToken == null || !idToken.isString())
+        return Mono.error(new IllegalStateException("The token response has no id_token"));
+      // The keys may be fetched, which blocks
+      return Mono.fromCallable(() -> verified(metadata.idTokenProcessor().process(idToken.asString(), null), secret))
+          .subscribeOn(Schedulers.boundedElastic());
     });
   }
 

@@ -1,94 +1,44 @@
 package com.github.thxmasj.backend.backoffice;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
-
-import com.github.thxmasj.backend.backoffice.Sessions.Refusal;
-import com.github.thxmasj.backend.backoffice.Sessions.SignIn;
-import com.github.thxmasj.backend.backoffice.Sessions.User;
-import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.core.database.DatabaseClient;
-import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
-import com.github.thxmasj.backend.core.message.http.HttpRequestMessage.Method;
-import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
-import com.github.thxmasj.backend.http.inbox.HttpInboxListener;
-import com.github.thxmasj.backend.http.inbox.HttpInbox;
-import com.nimbusds.jwt.JWTClaimsSet;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.UncheckedIOException;
+import com.github.thxmasj.backend.core.http.HttpClient;
+import com.github.thxmasj.backend.core.http.NettyHttpClient;
+import com.github.thxmasj.backend.core.http.NettyHttpClientBuilder;
 import java.net.URI;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.Arrays;
-import java.util.Base64;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.UUID;
-import java.util.function.Function;
 import java.util.stream.Collectors;
-import reactor.core.publisher.Mono;
 
 /// A backoffice for an application built with the HTTP inbox and the state machine: a web application where users,
 /// signed in with OpenID Connect, look up the entities of the application and follow the graph of an entity, with its
 /// event log, its ids, the events it waits for, and the entities it refers to and is referred to by, such as its inbox
 /// and outbox requests. It only reads the application.
 ///
-/// The backoffice is an application of its own, deployed apart from the application it looks into. It has a state
-/// machine of its own, in a schema of its own, whose entities are the sessions of its users: every sign-in is a
-/// `BackofficeSession`, whose event log tells who signed in and which pages they viewed. It reads the schema of the
-/// application, with the application's entity models, with a role which may only read it. [BackofficeApp] runs it:
+/// The backoffice is an application of its own, deployed apart from the application it looks into. It is a state
+/// machine of its own, in a schema of its own, whose model this class gives: every request it receives is an inbox
+/// request, and every decision a transition, from signing users in with the provider to rendering the pages. Every
+/// sign-in is a `BackofficeSession`, whose event log tells who signed in and which pages they viewed. It reads the
+/// schema of the application, with the application's entity models, with a role which may only read it.
+/// [BackofficeApp] runs it:
 ///
 /// ```java
 /// BackofficeApp.run("Orders", "orders", Orders.transitions(), args, System.getenv());
 /// ```
-///
-/// This class is the filter in front of the inbox of the backoffice's state machine. It is the edge between the
-/// browser and the state machine: it signs the users in with the provider, keeps the cookies out of the event log and
-/// renders the pages of the users the state machine lets in.
-public final class Backoffice implements HttpInboxListener.Filter {
+public final class Backoffice {
 
-  /// How long a user has to sign in with the provider
-  private static final Duration signInLifetime = Duration.ofMinutes(10);
-  /// The longest page returned to after signing in, which is kept in a cookie meanwhile
-  private static final int maxReturnPathLength = 1000;
-  private static final String sessionCookie = "backoffice_session";
-  private static final String signInCookiePrefix = "backoffice_signin_";
-  /// The errors of a provider shown to the user, OpenID Connect Core section 3.1.2.6. Others are shown as
-  /// `server_error`, so the text of an attacker is not shown.
-  private static final Set<String> providerErrors = Set.of(
-      "access_denied", "temporarily_unavailable", "interaction_required", "login_required", "account_selection_required", "consent_required"
-  );
-  private static final Map<String, String> staticFiles = Map.of(
-      "htmx.min.js", "text/javascript;charset=UTF-8",
-      "backoffice.css", "text/css;charset=UTF-8"
-  );
-  private static final Map<String, String> securityHeaders = Map.of(
-      "Content-Security-Policy", "default-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
-      "X-Content-Type-Options", "nosniff",
-      "Referrer-Policy", "same-origin"
-  );
-
-  private final Config config;
-  private final OpenIdConnect provider;
-  private final Pages pages;
-  private final Map<String, byte[]> files;
-  private final DatabaseClient client;
-  private final String schema;
+  private final Sessions sessions;
 
   /// @param service                the name of the application, e.g. `Identity provider`, after which the backoffice is
   ///                               named in the header and the title of its pages, e.g. "Identity provider backoffice"
   /// @param config                 how the users sign in
-  /// @param client                 a client of the database, whose role may use the backoffice's schema and read the
-  ///                               application's
-  /// @param schema                 the backoffice's own schema, of its state machine with the sessions
+  /// @param client                 a client of the database, whose role may read the schema of the application
   /// @param applicationSchema      the schema of the application's state machine
   /// @param applicationTransitions the transitions of the application's state machine, which give the entity models and
   ///                               event types of the entities read
@@ -96,21 +46,36 @@ public final class Backoffice implements HttpInboxListener.Filter {
       String service,
       Config config,
       DatabaseClient client,
-      String schema,
       String applicationSchema,
       Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> applicationTransitions
   ) {
-    this.config = Objects.requireNonNull(config, "config");
-    this.client = client;
-    this.schema = schema;
-    this.provider = new OpenIdConnect(config);
-    this.pages = new Pages(new Graph(client, applicationSchema, applicationTransitions), service + " backoffice");
-    this.files = staticFiles.keySet().stream().collect(Collectors.toMap(name -> name, Backoffice::read));
+    this(service, config, client, applicationSchema, applicationTransitions, lazyForwarder());
   }
 
-  /// The transitions of the backoffice's own state machine: those of the sessions, with its inbox
-  public static Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions() {
-    return HttpInbox.transitions(Sessions.requests, Sessions.transitions());
+  /// An HTTP client created when the first request is sent, so a backoffice made only for its model, e.g. to draw its
+  /// diagrams, starts no network client
+  private static HttpClient lazyForwarder() {
+    var client = new java.util.concurrent.atomic.AtomicReference<HttpClient>();
+    return message -> client.updateAndGet(c -> c != null ? c : new NettyHttpClient(new NettyHttpClientBuilder().build())).exchange(message);
+  }
+
+  /// @param forwarder the HTTP client the token requests to the provider are sent with
+  Backoffice(
+      String service,
+      Config config,
+      DatabaseClient client,
+      String applicationSchema,
+      Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> applicationTransitions,
+      HttpClient forwarder
+  ) {
+    Objects.requireNonNull(config, "config");
+    var pages = new Pages(new Graph(client, applicationSchema, applicationTransitions), service + " backoffice");
+    this.sessions = new Sessions(config, new OpenIdConnect(config), pages, Sessions.files(), forwarder);
+  }
+
+  /// The transitions of the backoffice's state machine: of its sessions, its other requests and its inbox
+  public Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions() {
+    return sessions.transitions();
   }
 
   /// The entity model of the sessions, e.g. to draw their state diagram
@@ -183,348 +148,6 @@ public final class Backoffice implements HttpInboxListener.Filter {
       return "https".equals(url.getScheme());
     }
 
-  }
-
-  @Override
-  public Mono<HttpResponseMessage> filter(HttpRequestMessage request, Function<HttpRequestMessage, Mono<HttpResponseMessage>> next) {
-    // Only the backoffice tells the state machine who signed in
-    request = withoutHeaders(request, Sessions.trustedHeaders);
-    String path = request.uri().getRawPath();
-    // The backoffice is the whole application, whose only requests of the state machine are those it makes itself
-    if ("/".equals(path))
-      return Mono.just(redirect(Sessions.Path + "/", null));
-    if (path == null || !(path.equals(Sessions.Path) || path.startsWith(Sessions.Path + "/")))
-      return Mono.just(response(404, "Not Found", "text/plain;charset=UTF-8", "Not Found\n"));
-    // The cookies hold the token of the session and the secrets of sign-ins, so they are kept out of the event log
-    String cookies = request.headerValue("Cookie");
-    request = withoutHeaders(request, List.of("Cookie", "Authorization"));
-    String rest = path.substring(Sessions.Path.length());
-    if (rest.isEmpty())
-      return Mono.just(redirect(Sessions.Path + "/", null));
-    if (rest.startsWith("/static/"))
-      return Mono.just(request.method() == Method.GET ? staticFile(rest.substring("/static/".length())) : methodNotAllowed("GET"));
-    if (rest.equals("/callback"))
-      return request.method() == Method.GET ? callback(request, cookies, next) : Mono.just(methodNotAllowed("GET"));
-    if (rest.equals("/signout"))
-      return request.method() == Method.POST ? signOut(cookies, next) : Mono.just(methodNotAllowed("POST"));
-    if (rest.equals("/signin") || rest.startsWith("/signin/"))
-      return Mono.just(response(404, "Not Found", "text/plain;charset=UTF-8", "Not Found\n"));
-    return request.method() == Method.GET ? view(request, cookies, next) : Mono.just(methodNotAllowed("GET"));
-  }
-
-  /// A page, for the user of the session cookie. The state machine records the view and tells who the user is, or
-  /// that the session has ended, in which case the user signs in again. A cookie of no session is not passed on to the
-  /// state machine, whose inbox would record the request, so a request of someone who hasn't signed in writes nothing.
-  private Mono<HttpResponseMessage> view(HttpRequestMessage request, String cookies, Function<HttpRequestMessage, Mono<HttpResponseMessage>> next) {
-    String token = cookie(cookies, sessionCookie);
-    if (token == null)
-      return signIn(request);
-    String tokenHash = OpenIdConnect.hash(token);
-    return hasSession(tokenHash).flatMap(exists -> {
-      if (!exists)
-        return signIn(request).map(r -> withHeader(r, "Set-Cookie", sessionCookie("", Duration.ZERO)));
-      var headers = new HashMap<String, String>();
-      headers.put(Sessions.TokenHashHeader, tokenHash);
-      copyHeader(request, headers, "X-Correlation-Id");
-      return next.apply(new HttpRequestMessage(Method.GET, request.uri(), headers, null))
-          .flatMap(response -> {
-            User user = user(response);
-            if (user == null)
-              return signIn(request).map(r -> withHeader(r, "Set-Cookie", sessionCookie("", Duration.ZERO)));
-            Map<String, String> query;
-            try {
-              query = OpenIdConnect.parse(request.uri().getRawQuery());
-            } catch (IllegalArgumentException e) {
-              query = Map.of();
-            }
-            boolean fragment = request.headerValue("HX-Request") != null
-                && request.headerValue("HX-Boosted") == null
-                && request.headerValue("HX-History-Restore-Request") == null;
-            return pages.page(request.uri().getRawPath(), query, user, fragment).map(page -> html(page.status(), page.html()));
-          });
-    });
-  }
-
-  /// Whether a session has the hash of the token, as an id, read from the backoffice's schema
-  private Mono<Boolean> hasSession(String tokenHash) {
-    return client.sql(
-            "SELECT EntityId FROM \"{schema}\".\"IdEvent\" WHERE Type=:type AND Data=:data".replace("{schema}", schema)
-        )
-        .name("Backoffice.Session")
-        .bind("type", Sessions.TokenClaimed.id())
-        .bind("data", Sessions.TokenClaimed.outputDataType().marshal(tokenHash))
-        .map(row -> row.get("EntityId", UUID.class))
-        .all()
-        .hasElements();
-  }
-
-  /// The user the state machine let in, or null if it did not
-  private static User user(HttpResponseMessage response) {
-    if (response.statusCode() != 200 || response.body() == null)
-      return null;
-    try {
-      User user = DataType.objectMapper.readValue(response.body(), User.class);
-      return user.subject() != null ? user : null;
-    } catch (RuntimeException e) {
-      return null;
-    }
-  }
-
-  /// Starts a sign-in, without the state machine: the user is sent to the provider, with a secret and the page to return
-  /// to kept in a cookie for the sign-in, which only the browser that started it has. A request of htmx, e.g. for a part
-  /// of a page after the session expired, reloads the page instead, since htmx doesn't follow a redirect to another site.
-  private Mono<HttpResponseMessage> signIn(HttpRequestMessage request) {
-    if (request.headerValue("HX-Request") != null) {
-      var headers = noStore();
-      headers.put("HX-Refresh", "true");
-      return Mono.just(new HttpResponseMessage(401, "Unauthorized", headers, null));
-    }
-    String query = request.uri().getRawQuery();
-    String returnPath = request.uri().getRawPath() + (query != null ? "?" + query : "");
-    // A cookie is at most a few kilobytes
-    if (returnPath.length() > maxReturnPathLength)
-      returnPath = Sessions.Path + "/";
-    String state = UUID.randomUUID().toString();
-    String secret = OpenIdConnect.generateSecret();
-    String value = secret + "." + Base64.getUrlEncoder().withoutPadding().encodeToString(returnPath.getBytes(UTF_8));
-    return provider.authorizationUrl(state, secret)
-        .map(url -> redirect(url.toString(), signInCookie(state, value, signInLifetime)))
-        .onErrorResume(e -> {
-          System.err.println("Backoffice sign-in failed to start: " + e);
-          return Mono.just(error(502, "The identity provider can't be reached. Please try again later."));
-        });
-  }
-
-  /// The redirect URI at the provider. The code is redeemed here, and the user the provider signed in passed on to the
-  /// state machine, which creates the session, letting the user in if the claims permit it. A sign-in which failed,
-  /// e.g. as the user cancelled at the provider, has no user, and is only logged, as anyone can make one.
-  private Mono<HttpResponseMessage> callback(HttpRequestMessage request, String cookies, Function<HttpRequestMessage, Mono<HttpResponseMessage>> next) {
-    Map<String, String> query;
-    try {
-      query = OpenIdConnect.parse(request.uri().getRawQuery());
-    } catch (IllegalArgumentException e) {
-      return Mono.just(error(400, "The response of the identity provider is invalid."));
-    }
-    String state = query.get("state");
-    if (Graph.uuid(state) == null)
-      return Mono.just(error(400, "The response of the identity provider is invalid."));
-    String value = cookie(cookies, signInCookiePrefix + state);
-    int dot = value != null ? value.indexOf('.') : -1;
-    if (dot < 0)
-      return Mono.just(error(400, "The sign-in has expired, or was started in another browser. Please sign in again."));
-    String secret = value.substring(0, dot);
-    String returnPath = returnPath(value.substring(dot + 1));
-    if (query.containsKey("error") || !query.containsKey("code")) {
-      String error = providerErrors.contains(query.get("error")) ? query.get("error") : "server_error";
-      log("Backoffice sign-in failed at the identity provider: " + error, request);
-      return Mono.just(error(401, "The sign-in failed at the identity provider: " + error));
-    }
-    var headers = new HashMap<String, String>();
-    headers.put("Content-Type", "application/json");
-    copyHeader(request, headers, "X-Correlation-Id");
-    return provider.signIn(query.get("code"), secret)
-        .flatMap(claims -> {
-          User user = user(claims);
-          String refusal = refusal(claims);
-          if (refusal != null) {
-            headers.put(Sessions.RefusedHeader, "true");
-            return next.apply(callbackRequest(headers, new Refusal(user, refusal)))
-                .map(_ -> error(403, "You are signed in as " + user.displayName() + ", who may not use the backoffice."));
-          }
-          String token = OpenIdConnect.generateSecret();
-          headers.put(Sessions.TokenHashHeader, OpenIdConnect.hash(token));
-          return next.apply(callbackRequest(headers, new SignIn(user, null, config.sessionLifetime().toSeconds())))
-              .map(response -> response.statusCode() == 200 ?
-                  redirect(returnPath, sessionCookie(token, config.sessionLifetime())) :
-                  error(400, "The sign-in is invalid. Please sign in again."));
-        })
-        .onErrorResume(e -> {
-          log("Backoffice sign-in failed with the identity provider: " + e, request);
-          return Mono.just(error(502, "The sign-in with the identity provider failed. Please try again."));
-        });
-  }
-
-  /// A line for monitoring, with the severity `INFO`, as anyone can make the sign-ins it tells about fail
-  private static void log(String message, HttpRequestMessage request) {
-    var line = new LinkedHashMap<String, Object>();
-    line.put("time", Instant.now().toString());
-    line.put("severity", "INFO");
-    line.put("message", message);
-    String correlationId = request.headerValue("X-Correlation-Id");
-    if (correlationId != null)
-      line.put("correlationId", correlationId);
-    System.out.println(DataType.objectMapper.writeValueAsString(line));
-  }
-
-  private static HttpRequestMessage callbackRequest(Map<String, String> headers, Object body) {
-    return new HttpRequestMessage(Method.POST, URI.create(Sessions.Path + "/callback"), headers, DataType.objectMapper.writeValueAsBytes(body));
-  }
-
-  /// The page to return to, from the cookie of the sign-in, which must be one of the backoffice, so the sign-in can't
-  /// redirect elsewhere
-  private static String returnPath(String encoded) {
-    try {
-      String path = new String(Base64.getUrlDecoder().decode(encoded), UTF_8);
-      return path.startsWith(Sessions.Path + "/") && !path.contains("//") && !path.contains("\\") ? path : Sessions.Path + "/";
-    } catch (IllegalArgumentException e) {
-      return Sessions.Path + "/";
-    }
-  }
-
-  private static User user(JWTClaimsSet claims) {
-    return new User(claims.getIssuer(), claims.getSubject(), string(claims, "name"), string(claims, "email"));
-  }
-
-  /// Why the claims don't permit the user to use the backoffice, or null if they do
-  private String refusal(JWTClaimsSet claims) {
-    Object value = claims.getClaim(config.claim());
-    if (value == null)
-      return "The ID token has no claim " + config.claim();
-    var values = value instanceof Collection<?> collection ? collection : List.of(value);
-    for (Object v : values) {
-      if (v instanceof String s && config.claimValues().contains(s))
-        return null;
-    }
-    return "The claim " + config.claim() + " has none of the permitted values";
-  }
-
-  private static String string(JWTClaimsSet claims, String name) {
-    return claims.getClaim(name) instanceof String s ? s : null;
-  }
-
-  /// Signs the user out of the session of the cookie, if there is one
-  private Mono<HttpResponseMessage> signOut(String cookies, Function<HttpRequestMessage, Mono<HttpResponseMessage>> next) {
-    String token = cookie(cookies, sessionCookie);
-    String tokenHash = token != null ? OpenIdConnect.hash(token) : null;
-    Mono<HttpResponseMessage> signedOut = token == null ?
-        Mono.empty() :
-        hasSession(tokenHash).filter(exists -> exists).flatMap(_ -> next.apply(new HttpRequestMessage(
-            Method.POST,
-            URI.create(Sessions.Path + "/signout"),
-            Map.of(Sessions.TokenHashHeader, tokenHash),
-            null
-        )));
-    return signedOut
-        .then(Mono.fromSupplier(() -> withHeader(
-            html(200, pages.message("Signed out", "You have signed out of the backoffice.", "Sign in again")),
-            "Set-Cookie",
-            sessionCookie("", Duration.ZERO)
-        )));
-  }
-
-  private HttpResponseMessage staticFile(String name) {
-    byte[] content = files.get(name);
-    if (content == null)
-      return response(404, "Not Found", "text/plain;charset=UTF-8", "Not Found\n");
-    var headers = new HashMap<>(securityHeaders);
-    headers.put("Content-Type", staticFiles.get(name));
-    headers.put("Cache-Control", "public, max-age=3600");
-    return new HttpResponseMessage(200, "OK", headers, content);
-  }
-
-  private static byte[] read(String name) {
-    try (InputStream in = Backoffice.class.getResourceAsStream(name)) {
-      if (in == null)
-        throw new IllegalStateException("The file " + name + " of the backoffice is missing");
-      return in.readAllBytes();
-    } catch (IOException e) {
-      throw new UncheckedIOException(e);
-    }
-  }
-
-  /// The cookie with the token of the session, sent with every page of the backoffice
-  private String sessionCookie(String token, Duration maxAge) {
-    return sessionCookie + "=" + token + "; Path=" + Sessions.Path + "; Max-Age=" + maxAge.toSeconds() + "; HttpOnly; SameSite=Lax" + (config.secure() ? "; Secure" : "");
-  }
-
-  /// The cookie with the secret of a sign-in and the page to return to, only sent to the callback. It is sent with the redirect from the provider,
-  /// which is a top-level navigation, with SameSite=Lax. It expires, rather than being removed, as a response can't
-  /// both remove it and set the cookie of the session.
-  private String signInCookie(String session, String secret, Duration maxAge) {
-    return signInCookiePrefix + session + "=" + secret + "; Path=" + Sessions.Path + "/callback; Max-Age=" + maxAge.toSeconds() + "; HttpOnly; SameSite=Lax" + (config.secure() ? "; Secure" : "");
-  }
-
-  /// The value of a cookie of a Cookie header, or null
-  private static String cookie(String cookies, String name) {
-    if (cookies == null)
-      return null;
-    for (String cookie : cookies.split(";")) {
-      int i = cookie.indexOf('=');
-      if (i > 0 && cookie.substring(0, i).trim().equals(name)) {
-        String value = cookie.substring(i + 1).trim();
-        return value.isEmpty() ? null : value;
-      }
-    }
-    return null;
-  }
-
-  private static HttpRequestMessage withoutHeaders(HttpRequestMessage request, List<String> names) {
-    if (request.headers().keySet().stream().noneMatch(header -> names.stream().anyMatch(header::equalsIgnoreCase)))
-      return request;
-    var headers = new HashMap<>(request.headers());
-    headers.keySet().removeIf(header -> names.stream().anyMatch(header::equalsIgnoreCase));
-    return new HttpRequestMessage(request.method(), request.uri(), headers, request.body());
-  }
-
-  private static void copyHeader(HttpRequestMessage request, Map<String, String> headers, String name) {
-    String value = request.headerValue(name);
-    if (value != null)
-      headers.put(name, value);
-  }
-
-  private static HttpResponseMessage html(int status, String html) {
-    var headers = noStore();
-    headers.put("Content-Type", "text/html;charset=UTF-8");
-    return new HttpResponseMessage(status, reasonPhrase(status), headers, html.getBytes(UTF_8));
-  }
-
-  private HttpResponseMessage error(int status, String message) {
-    return html(status, pages.message("Sign-in failed", message, "Sign in again"));
-  }
-
-  private static HttpResponseMessage redirect(String location, String cookie) {
-    var headers = noStore();
-    headers.put("Location", location);
-    if (cookie != null)
-      headers.put("Set-Cookie", cookie);
-    return new HttpResponseMessage(303, "See Other", headers, null);
-  }
-
-  private static HttpResponseMessage methodNotAllowed(String allowed) {
-    var headers = new HashMap<>(securityHeaders);
-    headers.put("Allow", allowed);
-    return new HttpResponseMessage(405, "Method Not Allowed", headers, null);
-  }
-
-  private static HttpResponseMessage response(int status, String reason, String contentType, String body) {
-    var headers = new HashMap<>(securityHeaders);
-    headers.put("Content-Type", contentType);
-    return new HttpResponseMessage(status, reason, headers, body.getBytes(UTF_8));
-  }
-
-  private static HttpResponseMessage withHeader(HttpResponseMessage response, String name, String value) {
-    var headers = new HashMap<>(response.headers());
-    headers.put(name, value);
-    return new HttpResponseMessage(response.statusCode(), response.reasonPhrase(), headers, response.body());
-  }
-
-  private static HashMap<String, String> noStore() {
-    var headers = new HashMap<>(securityHeaders);
-    headers.put("Cache-Control", "no-store");
-    return headers;
-  }
-
-  private static String reasonPhrase(int status) {
-    return switch (status) {
-      case 200 -> "OK";
-      case 400 -> "Bad Request";
-      case 401 -> "Unauthorized";
-      case 403 -> "Forbidden";
-      case 404 -> "Not Found";
-      case 500 -> "Internal Server Error";
-      case 502 -> "Bad Gateway";
-      default -> "Status " + status;
-    };
   }
 
 }

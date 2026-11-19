@@ -7,10 +7,10 @@ in with [OpenID Connect](https://openid.net/specs/openid-connect-core-1_0.html),
 permitted claim value get in. The backoffice only reads.
 
 The backoffice of an application is an application of its own, packaged and deployed apart from the application it
-looks into, with the application's entity models, which it needs to unmarshal the data of the events. It is built
-with the HTTP inbox and a state machine of its own, whose entities are the sessions of its users, in a schema of its
-own: every sign-in is an entity whose event log tells who signed in and which pages they viewed. It reads the
-application's schema with a role which may only read it. The pages are HTML, made interactive with
+looks into, with the application's entity models, which it needs to unmarshal the data of the events. It is a state
+machine of its own, in a schema of its own: every request it receives is an inbox request, and every decision a
+transition, from signing users in with the provider to rendering the pages. Every sign-in is an entity whose event log
+tells who signed in and which pages they viewed. It reads the application's schema with a role which may only read it. The pages are HTML, made interactive with
 [htmx](https://htmx.org), which the backoffice serves itself.
 
 Both [apps](apps.md) have one, `apps/identity-provider-backoffice` and `apps/hello-world-backoffice`. The backoffice of
@@ -24,16 +24,17 @@ change the application's data. Its sessions and the load of its users stay out o
 
 | Entity | Description |
 |---|---|
-| `BackofficeSession` | A sign-in of a user: who signed in, or was refused, every page viewed, and the sign-out or expiry. Found by the hash of the token of the session cookie, which is an id event of `BackofficeTokens`. |
+| `BackofficeSession` | A sign-in of a user: the sign-in started, the code redeemed, who signed in, or was refused, every page viewed, and the sign-out or expiry. Found by the hash of the token of the session cookie, which is an id event of `BackofficeTokens`. |
+| `BackofficeTokenRequest` | The request redeeming the code of a sign-in at the provider, an at-most-once [outbox](http-outbox.md) request, as a code can be redeemed only once |
+| `BackofficeResource` | A request not of a session: a static file, the health check, a redirect to the start page, or a page not found |
 
 <object data="../images/com.github.thxmasj.backend.backoffice.BackofficeSession.svg" type="image/svg+xml"></object>
 
 [Open the diagram in full size](images/com.github.thxmasj.backend.backoffice.BackofficeSession.svg)
 
-A session is created when the provider has signed a user in, so a request of someone who hasn't signed in writes
-nothing (see [Signing in](#signing-in)). A refused sign-in is an event of [severity](monitoring.md#severity)
-`Warning`, so attempts to get in show up in the monitoring. A session expires after its lifetime, or after 30,000
-events, as the event numbers of an entity are `SMALLINT`.
+A refused sign-in is an event of [severity](monitoring.md#severity) `Warning`, so attempts to get in show up in the
+monitoring. A session expires after its lifetime, or after 30,000 events, as the event numbers of an entity are
+`SMALLINT`.
 
 ## The backoffice of an application
 
@@ -52,11 +53,18 @@ The application exports the package of its entity models to the module of its ba
 [apps](apps.md): a native executable in an image built from `scratch`, with a migrate admin process. It is named after
 the application, e.g. "Orders backoffice", in the header and the title of its pages.
 
-The `Backoffice` filter in front of the inbox of its state machine is the edge between the browser and the state
-machine, as the [edge](identity-provider.md) of the identity provider is: it signs the users in with the provider, and
-passes what it found to the state machine in headers which it removes from every request it receives. The cookies, the
-codes and ID tokens of the provider, and the token of the session never enter the event log, only the claims of the
-user and the hash of the token. It serves the pages under `/backoffice`, and nothing else but `/health`.
+`Backoffice` gives the model of the backoffice's state machine, which `BackofficeApp` runs with no filter in front of
+its inbox. The inbox requests read the cookies, and the transitions decide everything: whether a session is valid,
+whether the provider signed the user in and the claims permit the user, and what the response is, the pages included,
+which they render from the application's schema. Calling the provider is the only work outside the transitions: they
+find its endpoints and check ID tokens against its keys through a helper, and an outbox sends the token request. The
+backoffice serves the pages under `/backoffice`, its static files and `/health`.
+
+As every request and response is stored, the event log of the backoffice holds the cookies, the secret of each sign-in,
+the codes and token responses of the provider and the pages, and every request creates entities, also requests of
+someone who hasn't signed in. Keeping such data out of the event log is
+[#285](https://github.com/the-backend-project/tits/issues/285). Until then, give the backoffice's schema the
+protection of its credentials, and keep the backoffice where only its users reach it.
 
 ## The database
 
@@ -102,26 +110,29 @@ configured not to evaluate scripts or add styles. The sign-out is a form posted 
 Users sign in with the authorization code flow and PKCE, the backoffice being a client of the provider, confidential
 with a client secret or public without one:
 
-1. A page requested without a session starts a sign-in. The user is redirected to the provider with a random `state`,
-   and a secret, from which the PKCE verifier and the nonce are derived, is kept in a cookie named after the state and
-   only sent to `/backoffice/callback`, with the page to return to.
-2. The provider redirects the user back to `/backoffice/callback`, where the code is redeemed and the ID token
-   verified with the keys of the provider.
-3. If the configured claim of the ID token has one of the permitted values, e.g. the claim `roles` the value
-   `backoffice`, the user is signed in: a new `BackofficeSession` is created, a new token is set in the session cookie,
-   and the user is sent back to the page first requested. Otherwise a `BackofficeSession` records that the sign-in was
-   refused, with the claims of the user.
+1. A page requested without a session, or with the cookie of no session, starts a sign-in in a new `BackofficeSession`.
+   The user is redirected to the provider with the entity id of the session as `state`, and a secret, from which the
+   PKCE verifier and the nonce are derived, is kept with the session and in a cookie named after it, only sent to
+   `/backoffice/callback`.
+2. The provider redirects the user back to `/backoffice/callback`, which is an event of the session. The session
+   checks the cookie against its secret, which binds the sign-in to the browser it was started in, and dispatches the
+   token request redeeming the code, an at-most-once outbox request, so that a code is never redeemed twice, also if
+   the transition is computed again.
+3. The outbox tells the session the response of the provider. The session verifies the ID token with the keys of the
+   provider and against its nonce, and decides by the claims: if the configured claim has one of the permitted
+   values, e.g. the claim `roles` the value `backoffice`, the user is signed in, with a new token in the session cookie,
+   and sent back to the page first requested. Otherwise the session records that the sign-in was refused, with the
+   claims of the user. The browser's request at the callback waits for this answer.
 
-Nothing is written before the provider has signed the user in. A sign-in failing at the provider, e.g. as the user
-cancelled, is logged for [monitoring](monitoring.md) with the severity `INFO`, but not recorded, as anyone can make one.
-A request with the cookie of no session is not passed on to the state machine, whose inbox records every request it
-receives: the backoffice reads its schema for the session first.
+A sign-in failing at the provider, e.g. as the user cancelled, or of a browser without the cookie, fails the session
+with a page telling the user.
 
 The provider is found by [OpenID Connect Discovery](https://openid.net/specs/openid-connect-discovery-1_0.html) at the
 first sign-in rather than at startup, so the backoffice starts also when its provider is not up yet, e.g. the identity
-provider it is the backoffice of. Every page viewed is an event of the session, which the state machine accepts only while the session is valid, so a session
-which has expired or been signed out of is refused, and the user signs in again. A request of htmx for a part of a
-page is answered with `HX-Refresh`, so the page is reloaded and the user signs in.
+provider it is the backoffice of. Every page viewed is an event of the session, rendered by its transition while the
+session is valid. A session which has expired or been signed out of removes the cookie and redirects to the page
+requested, which then starts a new sign-in. A request of htmx for a part of a page is answered with `HX-Refresh`
+instead, so the page is reloaded.
 
 ## Running
 
@@ -179,6 +190,8 @@ organisation's accounts.
   ([#281](https://github.com/the-backend-project/tits/issues/281)).
 - The backoffice shows the entities of the application, not its own sessions, which are in its own schema and in its
   [monitoring](monitoring.md) events.
+- Every request and response is stored, credentials and pages included, and every request creates entities
+  ([#285](https://github.com/the-backend-project/tits/issues/285)).
 - The current state of an entity is not shown, as it is computed by the transitions, not stored. Its last event tells
   it.
 - A `RequestRouting` entity has no reference to the inbox request it routed a request to, so the two aren't linked.
