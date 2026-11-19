@@ -664,12 +664,34 @@ public class HttpOutboxTest {
   /// handling the requests given up, and when it is accepted, the process is told by the success callback
   @Test
   public void atLeastOnceDeadRequestRedispatched() {
+    assertEquals(
+        List.of("Request dispatched", "Request rejected permanently", "Request redispatched", "Request accepted"),
+        redispatchDeadRequest(false)
+    );
+  }
+
+  /// A request accepted, redispatched and given up, and then redispatched again and accepted, doesn't tell the process
+  /// by the success callback again, as the process was told when the request was first accepted
+  @Test
+  public void atLeastOnceDeadRequestAcceptedBeforeRedispatched() {
+    assertEquals(
+        List.of("Request dispatched", "Request accepted", "Request redispatched", "Request rejected permanently", "Request redispatched", "Request accepted"),
+        redispatchDeadRequest(true)
+    );
+  }
+
+  /// Dispatches a request, which ends dead, and redispatches it by a transition of the process, which is then accepted.
+  /// The process takes the success callback only when it waits for the response, so a second callback would fail.
+  ///
+  /// @param acceptedBefore whether the request is accepted, and then redispatched and rejected, before it is dead
+  /// @return the names of the events of the request
+  private List<String> redispatchDeadRequest(boolean acceptedBefore) {
     EntityModel process = EntityModel.of("Process", UUID.randomUUID());
     EventType<Void, Void> processStarted = BasicEventType.of("Process started", UUID.randomUUID());
     EventType<Void, Void> processSucceeded = BasicEventType.of("Process succeeded", UUID.randomUUID());
     EventType<Void, Void> redispatchRequested = BasicEventType.of("Redispatch requested", UUID.randomUUID());
     String path = "/" + UUID.randomUUID();
-    AtomicInteger status = new AtomicInteger(400);
+    AtomicInteger status = new AtomicInteger(acceptedBefore ? 200 : 400);
     server.createContext(path, exchange -> {
       exchange.getRequestBody().readAllBytes();
       exchange.sendResponseHeaders(status.get(), -1);
@@ -703,10 +725,10 @@ public class HttpOutboxTest {
         ),
         States.WaitingForResponse, List.of(
             onEvent(processSucceeded).to(States.Done).output(),
-            onEvent(redispatchRequested).to(States.WaitingForResponse)
-                .assemble(c -> c.entityId())
-                .trigger(dispatcher.requestRedispatched()).on(dispatcher.outbox()).identifiedBy(HttpOutboxRequest::dispatchedBy)
-                .output()
+            redispatchTransition(redispatchRequested, States.WaitingForResponse, dispatcher)
+        ),
+        States.Done, List.of(
+            redispatchTransition(redispatchRequested, States.Done, dispatcher)
         )
     );
     String schema = UUID.randomUUID().toString();
@@ -717,15 +739,26 @@ public class HttpOutboxTest {
     var storage = Init.storage(schema, transitions);
 
     UUID processId = machine.onEvent(trigger(processStarted, process)).blockFirst(Duration.ofSeconds(10)).entityId();
+    if (acceptedBefore) {
+      awaitOutboxLog(storage, processId, l -> l.exists(HttpOutboxRequest.requestAccepted()));
+      assertEquals(States.Done, awaitProcessState(machine, process, processId, States.Done));
+      status.set(400);
+      machine.onEvent(trigger(redispatchRequested, process, processId)).blockFirst();
+    }
     awaitOutboxLog(storage, processId, l -> l.events().stream().anyMatch(e -> e.type().name().equals("Request rejected permanently")));
     status.set(200);
     machine.onEvent(trigger(redispatchRequested, process, processId)).blockFirst();
-    EventLog log = awaitOutboxLog(storage, processId, l -> l.exists(HttpOutboxRequest.requestAccepted()));
-    assertEquals(
-        List.of("Request dispatched", "Request rejected permanently", "Request redispatched", "Request accepted"),
-        log.events().stream().map(e -> e.type().name()).toList()
-    );
+    long acceptances = acceptedBefore ? 2 : 1;
+    EventLog log = awaitOutboxLog(storage, processId, l -> l.events().stream().filter(e -> e.type().name().equals("Request accepted")).count() == acceptances);
     assertEquals(States.Done, awaitProcessState(machine, process, processId, States.Done));
+    return log.events().stream().map(e -> e.type().name()).toList();
+  }
+
+  private static TransitionModel<?, ?> redispatchTransition(EventType<Void, Void> redispatchRequested, State state, AtLeastOnceDispatcher<?, ?> dispatcher) {
+    return onEvent(redispatchRequested).to(state)
+        .assemble(c -> c.entityId())
+        .trigger(dispatcher.requestRedispatched()).on(dispatcher.outbox()).identifiedBy(HttpOutboxRequest::dispatchedBy)
+        .output();
   }
 
   /// The state of the process, once it is the expected one, or after a while
