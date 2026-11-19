@@ -13,6 +13,7 @@ import com.github.thxmasj.backend.core.EntitySelector.ById;
 import com.github.thxmasj.backend.core.EntitySelector.ByIdEvent;
 import com.github.thxmasj.backend.core.EntitySelector.ByIdFromSession;
 import com.github.thxmasj.backend.core.EntitySelector.ByLastIndexed;
+import com.github.thxmasj.backend.core.EntitySelector.ByLastReferencing;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.Accepted;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.Completed;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.IdExists;
@@ -50,6 +51,7 @@ import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -740,6 +742,7 @@ public class StateMachine implements AutoCloseable {
       }
       case ByIdEvent<?> s -> eventLog(s, entityModel, transitionStep);
       case ByLastIndexed<?> s -> eventLog(s, entityModel);
+      case ByLastReferencing s -> eventLog(s, entityModel);
       case EntitySelector s -> throw new IllegalStateException("Unexpected value: " + s);
     };
   }
@@ -773,6 +776,15 @@ public class StateMachine implements AutoCloseable {
       case CreateIfNotExists -> log.switchIfEmpty(Mono.fromSupplier(() -> emptyEventLog(entityModel)));
       case AlwaysCreate -> throw new IllegalStateException("Unexpected value: " + selector.creationMode());
     };
+  }
+
+  /// The entity of the model created last of those referencing the id, by entity id if they were created at the same
+  /// time, as entity ids are time-ordered
+  private Mono<EventLog> eventLog(ByLastReferencing selector, EntityModel entityModel) {
+    return storage.entitiesByIndex().execute(selector.id(), selector.type())
+        .filter(log -> log.entityModel().equals(entityModel))
+        .reduce((a, b) -> Comparator.comparing(EventLog::created).thenComparing(EventLog::entityId).compare(a, b) >= 0 ? a : b)
+        .switchIfEmpty(Mono.error(() -> new UnknownEntity(entityModel, selector.type(), selector.id())));
   }
 
   private EventLog logFromSteps(TransitionStep<?> context, EntityModel entityModel) {

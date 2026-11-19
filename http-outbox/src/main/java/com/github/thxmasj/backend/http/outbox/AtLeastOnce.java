@@ -9,6 +9,7 @@ import static com.github.thxmasj.backend.http.outbox.AtLeastOnce.States.Compensa
 import static com.github.thxmasj.backend.http.outbox.AtLeastOnce.States.Dead;
 import static com.github.thxmasj.backend.http.outbox.AtLeastOnce.States.InFlight;
 import static com.github.thxmasj.backend.http.outbox.AtLeastOnce.States.Intermediate;
+import static com.github.thxmasj.backend.http.outbox.AtLeastOnce.States.Repeating;
 import static com.github.thxmasj.backend.http.outbox.EventTypes.ConnectionDropped;
 import static com.github.thxmasj.backend.http.outbox.EventTypes.ConnectionFailed;
 import static com.github.thxmasj.backend.http.outbox.EventTypes.ResponseReceived;
@@ -128,7 +129,25 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
           HttpDataType.forRequest(requestPayloadType)
       );
     }
-    
+
+    EventType<Void, TypedHttpRequest<RQ>> requestRepeated() {
+      return BasicEventType.of(
+          "Request repeated",
+          UUID.fromString("58df0de1-afe3-4dc1-9c8f-1b5fb1a698c9"),
+          DataType.none(),
+          HttpDataType.forRequest(requestPayloadType)
+      );
+    }
+
+    EventType<HttpResponseMessage, HttpResponseMessage> repeatResponseReceived() {
+      return BasicEventType.of(
+          "Repeat response received",
+          UUID.fromString("db3210b3-b038-41ec-9b5e-f4fbea631e2b"),
+          HttpDataType.forResponse(),
+          HttpDataType.forResponse()
+      );
+    }
+
     // Intermediate
     EventType<TypedHttpResponse<RS>, TypedHttpResponse<RS>> validResponse() {
       return BasicEventType.of(
@@ -194,6 +213,15 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
   @Override
   public EventType<BatchedRequest<RQ>, ?> batchedRequestDispatched() {
     return shape.batchedRequestDispatched();
+  }
+
+  /// Sends the request again, exactly as it was dispatched, when it has been accepted: the stored request message,
+  /// without the repeat message creator, with the headers the forwarder adds. The request stays accepted whatever the
+  /// outcome. Its response is stored as an event of its own, and a request that is being repeated can't be repeated
+  /// again until it has a response, or the connection fails, or the inflight timeout expires. Select the request to
+  /// repeat by [HttpOutboxRequest#dispatchedBy].
+  public EventType<Void, TypedHttpRequest<RQ>> requestRepeated() {
+    return shape.requestRepeated();
   }
 
   @Override
@@ -431,7 +459,21 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
         ),
         Intermediate, List.of(),
         Dead, List.of(),
-        Accepted, List.of()
+        Accepted, List.of(
+            onEvent(shape.requestRepeated()).to(Repeating)
+                .assemble(c -> shape.dispatched(c.log()).t1())
+                .trigger(shape.forward()).with(d -> toHttpRequest(d, shape.requestPayloadType()))
+                .trigger(TimeoutExpired).after(_ -> shape.inflightTimeout())
+                .output(d -> d)
+        ),
+        Repeating, List.of(
+            onEvent(ResponseReceived).to(Intermediate)
+                .assembleInput()
+                .otherwise(onEvent(shape.repeatResponseReceived()).to(Accepted).assembleInput().output(d -> d)),
+            onEvent(ConnectionFailed).to(Accepted).output(),
+            onEvent(ConnectionDropped).to(Accepted).output(),
+            onEvent(TimeoutExpired).to(Accepted).output()
+        )
     );
   }
 
@@ -573,6 +615,8 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
   public enum States implements State {
     InFlight,
     Accepted,
+    /// The accepted request is sent again, as it was dispatched, and waits for its response
+    Repeating,
     Compensating,
     /// The request is given up, so the events leading here are of severity [Severity#Error]
     Dead
