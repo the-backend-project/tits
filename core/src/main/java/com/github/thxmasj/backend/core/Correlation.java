@@ -1,14 +1,14 @@
 package com.github.thxmasj.backend.core;
 
 import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
+import java.util.UUID;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
 import reactor.util.annotation.NonNull;
 import reactor.util.context.Context;
 import reactor.util.context.ContextView;
-import java.util.UUID;
 
-public class Correlation {
+class Correlation {
 
   private static final String CORRELATION_ID = "correlationId";
   private static final String RESPONSE_SINK = "responseSink";

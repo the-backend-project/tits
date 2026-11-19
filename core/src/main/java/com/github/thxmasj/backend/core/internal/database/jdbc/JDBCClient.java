@@ -1,0 +1,136 @@
+package com.github.thxmasj.backend.core.internal.database.jdbc;
+
+import static com.github.thxmasj.backend.core.internal.database.jdbc.PreparedStatementSupport.prepare;
+import static java.util.stream.Collectors.joining;
+
+import com.github.thxmasj.backend.core.database.DatabaseClient;
+import com.github.thxmasj.backend.core.database.MappingFailure;
+import com.github.thxmasj.backend.core.database.Parameter;
+import com.github.thxmasj.backend.core.database.Row;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.Executors;
+import java.util.function.Function;
+import javax.sql.DataSource;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
+
+/// A client of a JDBC data source, which is closed with the client if it is closeable, e.g. a connection pool
+public class JDBCClient implements DatabaseClient {
+
+  private final DataSource dataSource;
+  private final Scheduler scheduler = Schedulers.fromExecutorService(Executors.newVirtualThreadPerTaskExecutor());
+
+  public JDBCClient(DataSource dataSource) {
+    this.dataSource = dataSource;
+  }
+
+  @Override
+  public <T> Mono<T> one(String name, String sql, Map<String, Parameter<?>> parameters, Function<Row, T> rowMapper) {
+    return all(name, sql, parameters, rowMapper).singleOrEmpty();
+  }
+
+  @Override
+  public <T> Flux<T> all(String name, String sql, Map<String, Parameter<?>> parameters, Function<Row, T> rowMapper) {
+    return Mono.fromCallable(() -> {
+          try (
+              Connection connection = dataSource.getConnection();
+              PreparedStatement statement = prepare(sql, parameters, connection, this::setParameter)
+          ) {
+            return mapResult(statement, rowMapper);
+          }
+        })
+        .flatMapMany(Flux::fromIterable)
+        .onErrorMap(errorMapper(name, sql, parameters))
+        .subscribeOn(scheduler);
+  }
+
+  @Override
+  public Mono<Integer> update(String name, String sql, Map<String, Parameter<?>> parameters) {
+    return Mono.fromCallable(() -> {
+          try (
+              Connection connection = dataSource.getConnection();
+              PreparedStatement statement = prepare(sql, parameters, connection, this::setParameter)
+          ){
+            return statement.executeUpdate();
+          }
+        })
+        .onErrorMap(errorMapper(name, sql, parameters))
+        .subscribeOn(scheduler);
+  }
+
+  @Override
+  public void close() throws Exception {
+    if (dataSource instanceof AutoCloseable closeable)
+      closeable.close();
+  }
+
+  /**
+   * Extract the last result set if the result is "complex", i.e. has multiple result sets and/or update counts. This
+   * behaviour is similar to the R2DBCClient's behavior.
+   * <p>
+   * Note that the SQL Server driver does not support java.sql.Statement.getMoreResults(int), which means every result
+   * set must be extracted. That might fail if extractor is not compatible with any of the results.
+   */
+  private <T> List<T> mapResult(PreparedStatement statement, Function<Row, T> rowMapper) throws SQLException {
+    // Inspired by https://learn.microsoft.com/en-us/sql/connect/jdbc/handling-complex-statements?view=sql-server-ver16
+    List<T> lastResult = new ArrayList<>();
+    boolean results = statement.execute();
+    int count = 0;
+    do {
+      if (results) {
+        try (ResultSet rs = statement.getResultSet()) {
+          while (rs.next()) {
+            lastResult.add(rowMapper.apply(new JDBCRow(rs, this::getColumn)));
+          }
+        }
+      } else {
+        count = statement.getUpdateCount();
+      }
+      results = statement.getMoreResults(); // This closes current result set
+    } while (results || count != -1);
+    return lastResult;
+  }
+
+  private Function<? super Throwable, ? extends Throwable> errorMapper(String queryName, String sql, Map<String, Parameter<?>> parameters) {
+    return error -> {
+      // Failing to map a row is not a failure of the query
+      if (error instanceof MappingFailure)
+        return error;
+      String message = errorMessage(error.getMessage(), queryName, sql, parameters);
+      Throwable violation = error instanceof SQLException e ? constraintViolation(e, queryName, message) : null;
+      return violation != null ? violation : new RuntimeException(message, error);
+    };
+  }
+
+  /// Sets a parameter of a statement. Without a database specific client, the value is set as is, and null with the
+  /// JDBC type of the parameter's class.
+  protected void setParameter(PreparedStatement statement, int index, Parameter<?> parameter) throws SQLException {
+    PreparedStatementSupport.setParameter(statement, index, parameter);
+  }
+
+  /// Gets a column of a row. Without a database specific client, the driver converts it to the type.
+  protected <T> T getColumn(ResultSet resultSet, String name, Class<T> type) throws SQLException {
+    return resultSet.getObject(name, type);
+  }
+
+  /// The constraint violation the error is, as reported by the database, or null if it is not a constraint violation.
+  /// Without a database specific client, no error is a constraint violation.
+  ///
+  /// @param errorMessage the error's message with the query and its parameters
+  protected Throwable constraintViolation(SQLException error, String queryName, String errorMessage) {
+    return null;
+  }
+
+  private String errorMessage(String message, String queryName, String sql, Map<String, Parameter<?>> parameters) {
+    return "Query "+queryName+" failed: " + message + "\nParameters:\n" + parameters.entrySet().stream().map(e -> e.getKey() + "\t" + e.getValue()).collect(joining("\n")) + "\nSQL:\n" + sql;
+  }
+
+}

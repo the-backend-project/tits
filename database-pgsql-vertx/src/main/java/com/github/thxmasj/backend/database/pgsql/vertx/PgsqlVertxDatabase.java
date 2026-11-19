@@ -1,16 +1,9 @@
 package com.github.thxmasj.backend.database.pgsql.vertx;
 
-import com.github.thxmasj.backend.core.EntityModel;
-import com.github.thxmasj.backend.core.State;
-import com.github.thxmasj.backend.core.TransitionModel;
+import com.github.thxmasj.backend.core.database.Database;
 import com.github.thxmasj.backend.core.database.DatabaseClient;
 import com.github.thxmasj.backend.core.database.DatabaseClient.Config;
-import com.github.thxmasj.backend.core.database.Database;
-import com.github.thxmasj.backend.core.database.Storage;
 import com.github.thxmasj.backend.database.pgsql.PgsqlDatabase;
-import java.time.Clock;
-import java.util.List;
-import java.util.Map;
 import javax.sql.DataSource;
 import reactor.core.publisher.Mono;
 
@@ -45,16 +38,6 @@ public class PgsqlVertxDatabase implements Database {
   @Override
   public DatabaseClient client(Config config) {
     return PgsqlVertxClient.of(config);
-  }
-
-  @Override
-  public Storage storage(
-      DatabaseClient client,
-      Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions,
-      String schemaName,
-      Clock clock
-  ) {
-    return pgsql.storage(client, transitions, schemaName, clock);
   }
 
   @Override

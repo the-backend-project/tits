@@ -5,7 +5,6 @@ import com.github.thxmasj.backend.core.EventReference;
 import com.github.thxmasj.backend.core.Tuples.Tuple2;
 import com.github.thxmasj.backend.core.http.HttpDataType;
 import com.github.thxmasj.backend.core.message.http.*;
-
 import java.util.*;
 
 public class ResponseEventType<I> implements EventType<I, Tuple2<HttpResponseMessage, EventReference>> {

@@ -20,7 +20,7 @@ import com.github.thxmasj.backend.core.IndexEntityModel;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.StateMachine;
 import com.github.thxmasj.backend.core.TransitionModel;
-import com.github.thxmasj.backend.core.database.EventsByEntityId;
+import com.github.thxmasj.backend.core.internal.database.EventsByEntityId;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
