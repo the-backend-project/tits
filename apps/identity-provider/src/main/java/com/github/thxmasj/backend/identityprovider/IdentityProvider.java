@@ -14,6 +14,8 @@ import com.github.thxmasj.backend.core.message.http.HttpRequestMessage.Method;
 import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
 import com.github.thxmasj.backend.http.inbox.HttpInbox;
 import com.github.thxmasj.backend.http.inbox.HttpInboxListener;
+import com.github.thxmasj.backend.http.inbox.OpenIdConnectClient;
+import com.github.thxmasj.backend.http.inbox.Secrets;
 import com.github.thxmasj.backend.identityprovider.Config.BootstrapClient;
 import com.github.thxmasj.backend.identityprovider.ImportedClients.ImportedClient;
 import java.net.URI;
@@ -64,7 +66,7 @@ public final class IdentityProvider {
           if (config.bootstrapClient() != null)
             bootstrap(stateMachine, config.bootstrapClient());
           importClients(stateMachine, config.clients());
-          Upstream upstream = config.upstream() != null ? new Upstream(config.upstream(), config.issuer()) : null;
+          OpenIdConnectClient upstream = config.upstream() != null ? upstream(config.upstream(), config.issuer()) : null;
           server = serve(stateMachine, keys, upstream, config.port(), config.clients());
         } catch (RuntimeException e) {
           // The workers of the state machine would keep the process running without serving
@@ -126,8 +128,18 @@ public final class IdentityProvider {
     return new Keys(config.signingKeys(), config.issuer(), config.audience(), clock);
   }
 
-  /// @param upstream the provider users sign in with, or null if users can't sign in
-  static DisposableServer serve(StateMachine stateMachine, Keys keys, Upstream upstream, int port, List<ImportedClient> importedClients) {
+  /// The client of the upstream provider, which is discovered at once, so that the identity provider fails to start
+  /// if the upstream provider is misconfigured or can't be reached
+  static OpenIdConnectClient upstream(Config.Upstream upstream, URI issuer) {
+    var client = new OpenIdConnectClient(upstream.client(issuer));
+    client.discover()
+        .onErrorMap(e -> new IllegalStateException("The upstream provider of UPSTREAM_ISSUER can't be used: " + e.getMessage(), e))
+        .block();
+    return client;
+  }
+
+  /// @param upstream the client of the provider users sign in with, or null if users can't sign in
+  static DisposableServer serve(StateMachine stateMachine, Keys keys, OpenIdConnectClient upstream, int port, List<ImportedClient> importedClients) {
     var importedSecretHashes = importedClients.stream().collect(toMap(ImportedClient::clientId, ImportedClient::secretHash));
     return new HttpInboxListener(stateMachine).filter(new Edge(keys, upstream, importedSecretHashes)).listen(port);
   }

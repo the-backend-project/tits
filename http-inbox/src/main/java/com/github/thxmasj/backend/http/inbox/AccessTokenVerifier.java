@@ -3,23 +3,21 @@ package com.github.thxmasj.backend.http.inbox;
 import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JOSEObjectType;
 import com.nimbusds.jose.JWSAlgorithm;
+import com.nimbusds.jose.KeySourceException;
 import com.nimbusds.jose.crypto.RSASSAVerifier;
 import com.nimbusds.jose.jwk.JWK;
 import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
-import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse.BodyHandlers;
 import java.text.ParseException;
 import java.time.Clock;
-import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 /// Verifies access tokens issued by an OAuth 2.0 authorization server such as `apps/identity-provider`: JWTs as profiled
 /// by RFC 9068, of type `at+jwt` and signed with RS256 by one of the keys of the issuer.
@@ -28,7 +26,8 @@ public final class AccessTokenVerifier {
   /// The `typ` of an access token, RFC 9068 section 2.1
   private static final JOSEObjectType accessTokenType = new JOSEObjectType("at+jwt");
 
-  private final JWKSet keys;
+  private final Supplier<JWKSet> keys;
+  private final Runnable onUnknownKey;
   private final String issuer;
   private final String audience;
   private final Clock clock;
@@ -45,46 +44,52 @@ public final class AccessTokenVerifier {
   /// @param issuer   the `iss` the tokens must have
   /// @param audience the `aud` the tokens must have, or null to accept tokens of any or no audience
   public AccessTokenVerifier(String jwkSet, URI issuer, String audience, Clock clock) {
-    JWKSet parsed;
-    try {
-      parsed = JWKSet.parse(jwkSet);
-    } catch (ParseException e) {
-      throw new IllegalArgumentException("The keys are not a JWK set: " + e.getMessage());
-    }
-    if (parsed.getKeys().isEmpty())
-      throw new IllegalArgumentException("The keys are empty");
-    for (JWK key : parsed.getKeys()) {
-      if (!(key instanceof RSAKey) || key.getKeyID() == null)
-        throw new IllegalArgumentException("The keys must be RSA keys with key ids");
-    }
-    this.keys = parsed.toPublicJWKSet();
+    JWKSet keys = validated(parse(jwkSet)).toPublicJWKSet();
+    this(() -> keys, () -> {}, issuer, audience, clock);
+  }
+
+  private AccessTokenVerifier(Supplier<JWKSet> keys, Runnable onUnknownKey, URI issuer, String audience, Clock clock) {
+    this.keys = keys;
+    this.onUnknownKey = onUnknownKey;
     this.issuer = issuer.toString();
     this.audience = audience;
     this.clock = clock;
   }
 
   /// A verifier with the keys fetched from the `jwks_uri` of the issuer, e.g.
-  /// `https://idp.example.com/.well-known/jwks.json`. The keys are fetched once, so a verifier must be created again
-  /// to see keys the issuer has added since.
+  /// `https://idp.example.com/.well-known/jwks.json`. The keys are fetched when the verifier is created, which fails
+  /// if they can't be.
+  ///
+  /// The verifier follows the key rotation of the issuer. A token signed with a key not among the keys is refused,
+  /// and makes the verifier fetch the keys again in the background, but at most every 30 seconds, so that tokens
+  /// signed with the issuer's new key are accepted once they have been fetched. Verifying never waits for a fetch.
+  /// Keys fetched again which are not valid are not used, and the keys fetched before are kept.
   public static AccessTokenVerifier fetchingKeys(URI jwksUri, URI issuer, String audience, Clock clock) {
-    return new AccessTokenVerifier(fetch(jwksUri), issuer, audience, clock);
+    var keys = new RemoteKeys(jwksUri, HttpClient.newBuilder().connectTimeout(RemoteKeys.timeout).build(), clock, AccessTokenVerifier::validated);
+    try {
+      keys.fetch();
+    } catch (KeySourceException e) {
+      throw new IllegalStateException(e.getMessage(), e);
+    }
+    return new AccessTokenVerifier(keys::current, keys::refreshInBackground, issuer, audience, clock);
   }
 
-  private static String fetch(URI jwksUri) {
-    try (HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build()) {
-      var response = client.send(
-          HttpRequest.newBuilder(jwksUri).timeout(Duration.ofSeconds(10)).header("Accept", "application/json").GET().build(),
-          BodyHandlers.ofString()
-      );
-      if (response.statusCode() != 200)
-        throw new IllegalStateException("Failed to fetch the keys from " + jwksUri + ": status " + response.statusCode());
-      return response.body();
-    } catch (IOException e) {
-      throw new IllegalStateException("Failed to fetch the keys from " + jwksUri, e);
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-      throw new IllegalStateException("Interrupted while fetching the keys from " + jwksUri, e);
+  private static JWKSet parse(String jwkSet) {
+    try {
+      return JWKSet.parse(jwkSet);
+    } catch (ParseException e) {
+      throw new IllegalArgumentException("The keys are not a JWK set: " + e.getMessage());
     }
+  }
+
+  private static JWKSet validated(JWKSet keys) {
+    if (keys.getKeys().isEmpty())
+      throw new IllegalArgumentException("The keys are empty");
+    for (JWK key : keys.getKeys()) {
+      if (!(key instanceof RSAKey) || key.getKeyID() == null)
+        throw new IllegalArgumentException("The keys must be RSA keys with key ids");
+    }
+    return keys;
   }
 
   /// The claims of the token if it is valid: signed by a key of the issuer, issued by the issuer, for the audience if
@@ -95,7 +100,9 @@ public final class AccessTokenVerifier {
       if (!JWSAlgorithm.RS256.equals(jwt.getHeader().getAlgorithm()) || !accessTokenType.equals(jwt.getHeader().getType()))
         return Optional.empty();
       String keyId = jwt.getHeader().getKeyID();
-      JWK key = keyId != null ? keys.getKeyByKeyId(keyId) : null;
+      JWK key = keyId != null ? keys.get().getKeyByKeyId(keyId) : null;
+      if (key == null && keyId != null)
+        onUnknownKey.run();
       if (!(key instanceof RSAKey rsaKey) || !jwt.verify(new RSASSAVerifier(rsaKey.toRSAPublicKey())))
         return Optional.empty();
       JWTClaimsSet claims = jwt.getJWTClaimsSet();

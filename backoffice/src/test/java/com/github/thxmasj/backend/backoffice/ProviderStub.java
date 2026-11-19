@@ -3,6 +3,8 @@ package com.github.thxmasj.backend.backoffice;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 import com.github.thxmasj.backend.core.DataType;
+import com.github.thxmasj.backend.http.inbox.Form;
+import com.github.thxmasj.backend.http.inbox.Secrets;
 import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
@@ -83,10 +85,10 @@ final class ProviderStub implements AutoCloseable {
         status = 200;
         body = new JWKSet(key.toPublicJWK()).toString();
       } else if (method.equals("GET") && path.equals("/authorize")) {
-        location = authorize(OpenIdConnect.parse(exchange.getRequestURI().getRawQuery()));
+        location = authorize(Form.parse(exchange.getRequestURI().getRawQuery()));
         status = location != null ? 302 : 400;
       } else if (method.equals("POST") && path.equals("/token")) {
-        String[] response = token(exchange.getRequestHeaders().getFirst("Authorization"), OpenIdConnect.parse(new String(exchange.getRequestBody().readAllBytes(), UTF_8)));
+        String[] response = token(exchange.getRequestHeaders().getFirst("Authorization"), Form.parse(exchange.getRequestBody().readAllBytes()));
         status = Integer.parseInt(response[0]);
         body = response[1];
       } else {
@@ -129,7 +131,7 @@ final class ProviderStub implements AutoCloseable {
       error = null;
       return redirectUri + "?error=" + failure + "&state=" + state;
     }
-    String code = OpenIdConnect.generateSecret();
+    String code = Secrets.generate();
     codes.put(code, new Pending(redirectUri, query.get("nonce"), query.get("code_challenge"), user));
     issued.add(code);
     return redirectUri + "?code=" + code + "&state=" + state;
@@ -143,7 +145,7 @@ final class ProviderStub implements AutoCloseable {
     if (pending == null
         || !pending.redirectUri().equals(form.get("redirect_uri"))
         || form.get("code_verifier") == null
-        || !pending.challenge().equals(OpenIdConnect.hash(form.get("code_verifier"))))
+        || !pending.challenge().equals(Secrets.hash(form.get("code_verifier"))))
       return new String[] {"400", "{\"error\":\"invalid_grant\"}"};
     Instant now = Instant.now();
     var claims = new JWTClaimsSet.Builder()

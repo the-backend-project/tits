@@ -12,6 +12,8 @@ import com.github.thxmasj.backend.core.http.AccessTokenSupplier;
 import com.github.thxmasj.backend.core.http.NettyHttpClient;
 import com.github.thxmasj.backend.core.http.NettyHttpClientBuilder;
 import com.github.thxmasj.backend.core.test.Init;
+import com.github.thxmasj.backend.http.inbox.Form;
+import com.github.thxmasj.backend.http.inbox.Secrets;
 import com.github.thxmasj.backend.identityprovider.Config.BootstrapClient;
 import com.github.thxmasj.backend.identityprovider.ImportedClients.ImportedClient;
 import com.nimbusds.jose.JOSEObjectType;
@@ -114,8 +116,8 @@ public class IdentityProviderTest {
       port = socket.getLocalPort();
     }
     issuer = URI.create("http://localhost:" + port);
-    var upstreamConfig = new Upstream.Config(URI.create(upstream.issuer()), UpstreamStub.clientId, UpstreamStub.clientSecret, "openid email profile");
-    server = IdentityProvider.serve(stateMachine, new Keys(Keys.generate(), issuer, null, Clock.systemUTC()), new Upstream(upstreamConfig, issuer), port, importedClients);
+    var upstreamConfig = new Config.Upstream(URI.create(upstream.issuer()), UpstreamStub.clientId, UpstreamStub.clientSecret, "openid email profile");
+    server = IdentityProvider.serve(stateMachine, new Keys(Keys.generate(), issuer, null, Clock.systemUTC()), IdentityProvider.upstream(upstreamConfig, issuer), port, importedClients);
     adminToken = json(token(adminId, adminSecret, "grant_type=client_credentials")).get("access_token").asString();
   }
 
@@ -709,7 +711,7 @@ public class IdentityProviderTest {
       parameters.put("code_challenge", Secrets.hash(verifier));
       parameters.put("code_challenge_method", "S256");
     }
-    return URI.create(issuer + "/authorize?" + Upstream.form(parameters));
+    return URI.create(issuer + "/authorize?" + Form.encode(parameters));
   }
 
   /// Signs the user in to the client, and returns the code the client gets

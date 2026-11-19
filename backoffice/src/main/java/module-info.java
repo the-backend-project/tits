@@ -3,7 +3,7 @@ module com.github.thxmasj.backend.backoffice {
   // The code of a sign-in is redeemed by an outbox request
   requires com.github.thxmasj.backend.http.outbox;
   requires com.nimbusds.jose.jwt;
-  // The OpenID Connect provider is called with the HTTP client of the JDK
+  // The token requests are sent with the HTTP client of the JDK
   requires java.net.http;
   requires java.sql;
 

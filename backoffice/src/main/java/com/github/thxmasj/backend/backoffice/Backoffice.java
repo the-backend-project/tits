@@ -5,6 +5,7 @@ import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.core.database.DatabaseClient;
 import com.github.thxmasj.backend.core.http.HttpClient;
+import com.github.thxmasj.backend.http.inbox.OpenIdConnectClient;
 import java.net.URI;
 import java.time.Duration;
 import java.util.Arrays;
@@ -61,7 +62,18 @@ public final class Backoffice {
   ) {
     Objects.requireNonNull(config, "config");
     var pages = new Pages(new Graph(client, applicationSchema, applicationTransitions), service + " backoffice");
-    this.sessions = new Sessions(config, new OpenIdConnect(config), pages, Sessions.files(), forwarder);
+    this.sessions = new Sessions(config, openIdConnectClient(config), pages, Sessions.files(), forwarder);
+  }
+
+  /// The provider is discovered when the first user signs in, so the application may be its own provider
+  private static OpenIdConnectClient openIdConnectClient(Config config) {
+    return new OpenIdConnectClient(new OpenIdConnectClient.Config(
+        config.issuer(),
+        config.clientId(),
+        config.clientSecret(),
+        config.scope(),
+        URI.create(config.url() + Sessions.Path + "/callback")
+    ));
   }
 
   /// The transitions of the backoffice's state machine: of its sessions, its other requests and its inbox

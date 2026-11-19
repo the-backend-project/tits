@@ -9,9 +9,14 @@ import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
 import com.github.thxmasj.backend.core.message.http.HttpRequestMessage.Method;
 import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
-import com.github.thxmasj.backend.http.inbox.HttpInboxListener;
 import com.github.thxmasj.backend.http.inbox.AccessTokenVerifier.AccessToken;
+import com.github.thxmasj.backend.http.inbox.Form;
+import com.github.thxmasj.backend.http.inbox.HttpInboxListener;
+import com.github.thxmasj.backend.http.inbox.OpenIdConnectClient;
+import com.github.thxmasj.backend.http.inbox.Secrets;
+import com.nimbusds.jwt.JWTClaimsSet;
 import java.net.URI;
+import java.text.ParseException;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.HashMap;
@@ -48,13 +53,13 @@ final class Edge implements HttpInboxListener.Filter {
   );
 
   private final Keys keys;
-  private final Upstream upstream;
+  private final OpenIdConnectClient upstream;
   private final String metadata;
   /// The BCrypt hashes of the secrets of the imported clients, by client id
   private final Map<String, String> importedSecretHashes;
 
-  /// @param upstream the provider users sign in with, or null if users can't sign in
-  Edge(Keys keys, Upstream upstream, Map<String, String> importedSecretHashes) {
+  /// @param upstream the client of the provider users sign in with, or null if users can't sign in
+  Edge(Keys keys, OpenIdConnectClient upstream, Map<String, String> importedSecretHashes) {
     this.keys = keys;
     this.upstream = upstream;
     this.metadata = metadata(keys, upstream != null);
@@ -97,18 +102,20 @@ final class Edge implements HttpInboxListener.Filter {
   /// redirected to the upstream provider to sign in, or back to the client with an error. The secret of the sign-in
   /// with the upstream provider is kept in a cookie, which binds it to the browser the user started it in.
   private Mono<HttpResponseMessage> authorize(HttpRequestMessage request, Function<HttpRequestMessage, Mono<HttpResponseMessage>> next) {
-    return next.apply(request).map(response -> switch (response.statusCode()) {
+    return next.apply(request).flatMap(response -> switch (response.statusCode()) {
       case 200 -> {
         String authorization = DataType.objectMapper.readTree(response.body()).get("authorization").asString();
         String secret = Secrets.generate();
-        var headers = noStore(Map.of());
-        headers.remove("Content-Type");
-        headers.put("Location", upstream.authorizationUrl(authorization, secret).toString());
-        headers.put("Set-Cookie", cookie(authorization, secret, signInLifetime));
-        yield new HttpResponseMessage(302, "Found", headers, null);
+        yield upstream.authorizationUrl(authorization, secret).map(url -> {
+          var headers = noStore(Map.of());
+          headers.remove("Content-Type");
+          headers.put("Location", url.toString());
+          headers.put("Set-Cookie", cookie(authorization, secret, signInLifetime));
+          return new HttpResponseMessage(302, "Found", headers, null);
+        });
       }
-      case 302 -> redirect(response, null);
-      default -> errorPage(response);
+      case 302 -> Mono.just(redirect(response, null));
+      default -> Mono.just(errorPage(response));
     });
   }
 
@@ -142,8 +149,8 @@ final class Edge implements HttpInboxListener.Filter {
       passed = Mono.just(signInFailed(authorization, new Authorizations.Failure(error, "The sign-in failed at the identity provider: " + error)));
     } else {
       code = Secrets.generate();
-      passed = upstream.signIn(query.get("code"), secret)
-          .map(user -> signedIn(authorization, user, Secrets.hash(code)))
+      passed = upstream.redeem(query.get("code"), secret)
+          .map(claims -> signedIn(authorization, user(claims), Secrets.hash(code)))
           .onErrorResume(e -> {
             System.err.println("Sign-in with the upstream provider failed for authorization " + authorization + ": " + e);
             return Mono.just(signInFailed(authorization, new Authorizations.Failure("server_error", "The sign-in with the identity provider failed")));
@@ -152,6 +159,22 @@ final class Edge implements HttpInboxListener.Filter {
     return passed.flatMap(next)
         .map(response -> response.statusCode() == 302 ? redirect(response, code) : errorPage(response))
         .map(response -> withHeader(response, "Set-Cookie", clearCookie));
+  }
+
+  /// The user of the claims of the upstream ID token. The upstream provider's code and tokens never enter the event
+  /// log, only these claims.
+  private static Authorizations.User user(JWTClaimsSet claims) {
+    try {
+      return new Authorizations.User(
+          claims.getSubject(),
+          claims.getStringClaim("email"),
+          claims.getBooleanClaim("email_verified"),
+          claims.getStringClaim("name"),
+          claims.getClaim("auth_time") instanceof Number authTime ? authTime.longValue() : null
+      );
+    } catch (ParseException e) {
+      throw new IllegalStateException("The upstream ID token has an invalid claim: " + e.getMessage(), e);
+    }
   }
 
   private static HttpRequestMessage signedIn(String authorization, Authorizations.User user, String codeHash) {
@@ -233,7 +256,7 @@ final class Edge implements HttpInboxListener.Filter {
       var rest = new LinkedHashMap<>(form);
       rest.remove("code");
       rest.remove("code_verifier");
-      body = Upstream.form(rest).getBytes(UTF_8);
+      body = Form.encode(rest).getBytes(UTF_8);
     }
     if (!Clients.isValidClientId(clientId))
       return Mono.just(tokenError(401, "invalid_client", "Client authentication failed"));
@@ -370,7 +393,7 @@ final class Edge implements HttpInboxListener.Filter {
     String uri = redirect.redirectUri();
     var headers = noStore(Map.of());
     headers.remove("Content-Type");
-    headers.put("Location", uri + (uri.contains("?") ? "&" : "?") + Upstream.form(parameters));
+    headers.put("Location", uri + (uri.contains("?") ? "&" : "?") + Form.encode(parameters));
     return new HttpResponseMessage(302, "Found", headers, null);
   }
 

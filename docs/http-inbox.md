@@ -250,8 +250,62 @@ with the claims `sub` and `client_id`. A refused request is answered as
 challenge `Bearer` without a bearer token, 401 and the error `invalid_token` with a token that is invalid or expired,
 and 403 and the error `insufficient_scope` with a token lacking a scope. An authorizer returns an `Authorization`,
 either `Authorized` with the subject or `Refused` with the status code, challenge and reason of the response;
-`Authorization.refused(reason)` refuses with 400. The keys are fetched once, so the verifier must be created again to see keys the
-issuer has added since.
+`Authorization.refused(reason)` refuses with 400.
+
+`AccessTokenVerifier.fetchingKeys` fetches the keys from the `jwks_uri` with the HTTP client of the JDK when it is
+created, and fails if it can't. It follows the key rotation of the issuer: a token signed with a key it doesn't know is
+refused, and makes it fetch the keys again in the background, but at most every 30 seconds after the last attempt, so
+tokens of random key ids can't make it fetch more often. Verifying a token never waits for the issuer. Keys fetched
+again which are not valid, e.g. none, are not used, and the keys fetched before are kept. As the first token signed
+with a new key may be refused, an issuer should publish a new key before signing with it, as the
+[identity provider](identity-provider.md#running) is rotated. A verifier created with a JWK set,
+`new AccessTokenVerifier(jwkSet, issuer, audience, clock)`, only knows those keys.
+
+## Signing users in with OpenID Connect
+
+`OpenIdConnectClient` signs users of a web app in with an OpenID Connect provider, e.g. Microsoft Entra ID or the
+[identity provider](identity-provider.md), with the
+[authorization code flow](https://openid.net/specs/openid-connect-core-1_0.html#CodeFlowAuth). The
+[identity provider](identity-provider.md#signing-users-in) signs its users in with its upstream provider by it, and the
+[backoffice](backoffice.md#signing-in) its users. It builds the requests and verifies the responses, while the app
+keeps the state of the sign-in, in a cookie or an entity:
+
+```java
+var client = new OpenIdConnectClient(new OpenIdConnectClient.Config(
+    URI.create("https://login.microsoftonline.com/<tenant>/v2.0"),
+    "my-app",
+    clientSecret,  // or null for a public client
+    "openid email profile",
+    URI.create("https://app.example.com/callback")
+));
+// A sign-in: redirect the user, and keep the secret in a cookie
+Mono<URI> url = client.authorizationUrl(state, secret);
+// The callback: redeem the code, and get the verified claims of the ID token
+Mono<JWTClaimsSet> claims = client.redeem(code, secret);
+```
+
+- The endpoints are found by [OpenID Connect Discovery](https://openid.net/specs/openid-connect-discovery-1_0.html)
+  when first needed, so an app can be a client of itself, and discovery is tried again if it failed. `discover()`
+  discovers them at once, e.g. to fail at startup.
+- The secret of a sign-in, e.g. of `Secrets.generate()`, is kept in the browser the sign-in was started in. The PKCE
+  verifier (S256) and the nonce are derived from it, which binds the sign-in to that browser. A secret which is not a
+  valid PKCE verifier, 43 to 128 characters of letters, digits and `-._~`, fails the sign-in at once.
+- `redeem` sends the token request with the HTTP client of the JDK. To send it otherwise, e.g. by an at-most-once
+  [outbox](http-outbox.md) as a code can be redeemed only once, take the request from `tokenRequest(code, secret)`
+  and verify the response with `verify(tokenResponse, secret)`.
+- A confidential client authenticates with its secret by HTTP Basic, a public client without a secret sends its
+  `client_id` instead.
+- The ID token must be signed with RS256, ES256 or PS256 by a key of the provider, issued by the provider for the client,
+  not expired, and have the nonce of the secret. The keys of the provider are fetched again for a key not among them,
+  at most every 30 seconds, while the ID token is verified on a worker thread.
+
+`Secrets` generates and hashes secrets of 256 bits, such as the secret of a sign-in, a code or a session token, and
+`Form` parses and encodes forms and queries, as the identity provider and the backoffice do.
+
+The sign-in is not an authorizer of inbox requests, like `bearerToken`: an authorizer checks one request, while a
+sign-in takes several, redirecting the user, keeping a secret in a cookie, and redeeming the code. It is done in a
+filter in front of the inbox, such as the identity provider's `Edge`, or in the transitions of an entity, such as the
+backoffice's sessions.
 
 ## State diagrams
 
