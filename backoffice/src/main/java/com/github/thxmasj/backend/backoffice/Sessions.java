@@ -175,10 +175,7 @@ public interface Sessions {
   String TokenHashHeader = "X-Backoffice-Token-Hash";
   /// Tells that the user signed in, but is refused
   String RefusedHeader = "X-Backoffice-Refused";
-  /// The id of a page view. Without a message id of its own, the inbox would take every view of a session after the
-  /// first as a duplicate of it, as they trigger the same event on the same entity.
-  String ViewIdHeader = "X-Backoffice-View-Id";
-  List<String> trustedHeaders = List.of(SessionHeader, TokenHashHeader, RefusedHeader, ViewIdHeader);
+  List<String> trustedHeaders = List.of(SessionHeader, TokenHashHeader, RefusedHeader);
 
   /// A sign-in started by the filter for a user without a session
   HttpInboxRequest<Start> SignInRequest = HttpInboxRequest
@@ -224,7 +221,6 @@ public interface Sessions {
   HttpInboxRequest<View> ViewRequest = HttpInboxRequest
       .matching(m -> m.method() == Method.GET && m.uri().getPath().startsWith(Path + "/") && m.headerValue(TokenHashHeader) != null)
       .contentParser(Sessions::view)
-      .messageIdParser((m, _) -> m.headerValue(ViewIdHeader) != null ? valid(m.headerValue(ViewIdHeader)) : invalid("View id missing"))
       .process(ViewRequested, Session, r -> r.body(), (m, _) -> valid(idEvent(TokenClaimed, m.headerValue(TokenHashHeader))))
       .response(ReplyCreated, c -> reply(c.input(), c.correlationId()))
       .build("BackofficeViewRequest", UUID.fromString("7f2d5a8e-3b6c-4e19-b4a7-0c8e1f5d9b62"));

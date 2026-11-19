@@ -30,7 +30,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import javax.sql.DataSource;
@@ -223,7 +222,6 @@ public final class Backoffice implements HttpInboxListener.Filter {
       return signIn(request, next);
     var headers = new HashMap<String, String>();
     headers.put(Sessions.TokenHashHeader, OpenIdConnect.hash(token));
-    headers.put(Sessions.ViewIdHeader, UUID.randomUUID().toString());
     copyHeader(request, headers, "X-Correlation-Id");
     return next.apply(new HttpRequestMessage(Method.GET, request.uri(), headers, null))
         .flatMap(response -> {

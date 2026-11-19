@@ -24,6 +24,7 @@ module com.github.thxmasj.backend.core {
   // Internals shared with the other modules of the library only. The modules are not dependencies of this one, so the
   // compiler would warn that they are not found.
   exports com.github.thxmasj.backend.core.internal to
+      com.github.thxmasj.backend.backoffice,
       com.github.thxmasj.backend.database.mssql,
       com.github.thxmasj.backend.database.pgsql.jdbc,
       com.github.thxmasj.backend.http.inbox,
