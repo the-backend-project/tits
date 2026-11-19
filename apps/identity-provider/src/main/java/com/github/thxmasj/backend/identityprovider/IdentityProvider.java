@@ -68,7 +68,7 @@ public final class IdentityProvider {
             bootstrap(stateMachine, config.bootstrapClient());
           importClients(stateMachine, config.clients());
           Upstream upstream = config.upstream() != null ? new Upstream(config.upstream(), config.issuer()) : null;
-          var backoffice = new Backoffice(config.backoffice(), dataSource, config.schema(), Inbox.transitions(config.tokenLifetime()));
+          var backoffice = new Backoffice("Identity provider", config.backoffice(), dataSource, config.schema(), Inbox.transitions(config.tokenLifetime()));
           server = serve(stateMachine, keys, upstream, config.port(), config.clients(), backoffice);
         } catch (RuntimeException e) {
           // The workers of the state machine would keep the process running without serving

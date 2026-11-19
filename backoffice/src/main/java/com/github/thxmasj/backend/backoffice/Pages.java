@@ -46,9 +46,13 @@ final class Pages {
   private static final DateTimeFormatter timeFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS");
 
   private final Graph graph;
+  /// The name of the backoffice, e.g. "Identity provider backoffice"
+  private final String name;
 
-  Pages(Graph graph) {
+  /// @param name the name of the backoffice, in the header and the title of every page
+  Pages(Graph graph, String name) {
     this.graph = graph;
+    this.name = name;
   }
 
   /// A page or fragment, with its status code
@@ -60,7 +64,7 @@ final class Pages {
   Mono<Page> page(String path, Map<String, String> query, User user, boolean fragment) {
     String rest = path.substring(Sessions.Path.length());
     if (rest.equals("/"))
-      return Mono.just(new Page(200, document("Backoffice", user, home(query.getOrDefault("q", "")))));
+      return Mono.just(new Page(200, document(name, user, home(query.getOrDefault("q", "")))));
     if (rest.equals("/search")) {
       String q = query.getOrDefault("q", "").trim();
       return search(q).map(results -> new Page(200, fragment ? results : document("Search", user, home(q).replace("<!--results-->", results))));
@@ -86,7 +90,7 @@ final class Pages {
   }
 
   /// The page telling that the user has signed out, or must sign in
-  static String message(String title, String message, String linkText) {
+  String message(String title, String message, String linkText) {
     return document(title, null, """
         <section class="message">
         <p>%s</p>
@@ -376,7 +380,7 @@ final class Pages {
   }
 
   /// A whole document, with the user signed in, if any, in its header
-  static String document(String title, User user, String main) {
+  String document(String title, User user, String main) {
     String signedIn = user == null ? "" : """
         <form class="user" action="%s/signout" method="post" hx-boost="false">
           <span>%s</span> <button type="submit">Sign out</button>
@@ -389,21 +393,21 @@ final class Pages {
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="htmx-config" content='{"includeIndicatorStyles":false,"allowEval":false,"allowScriptTags":false,"historyCacheSize":0}'>
-        <title>%2$s – Backoffice</title>
+        <title>%2$s</title>
         <link rel="stylesheet" href="%1$s/static/backoffice.css">
         <script src="%1$s/static/htmx.min.js"></script>
         </head>
         <body hx-boost="true">
         <header>
-        <a class="home" href="%1$s/">Backoffice</a>
-        %3$s
+        <a class="home" href="%1$s/">%3$s</a>
+        %4$s
         </header>
         <main>
-        %4$s
+        %5$s
         </main>
         </body>
         </html>
-        """.formatted(Sessions.Path, escape(title), signedIn, main);
+        """.formatted(Sessions.Path, escape(title.equals(name) ? name : title + " – " + name), escape(name), signedIn, main);
   }
 
   static String escape(String s) {

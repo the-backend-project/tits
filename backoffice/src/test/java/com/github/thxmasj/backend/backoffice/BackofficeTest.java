@@ -115,7 +115,7 @@ public class BackofficeTest {
     DisposableServer listening = new HttpInboxListener(stateMachine)
         .filter((request, next) -> backoffice[0].filter(request, next))
         .listen(0);
-    backoffice[0] = new Backoffice(withUrl(config, "http://localhost:" + listening.port()), Init.client(), schema, transitions);
+    backoffice[0] = new Backoffice("Orders", withUrl(config, "http://localhost:" + listening.port()), Init.client(), schema, transitions);
     return listening;
   }
 
@@ -157,6 +157,8 @@ public class BackofficeTest {
     var page = get(server, path, cookie);
     assertThat(page.statusCode()).isEqualTo(200);
     assertThat(page.body()).contains("<h1>Order</h1>", "Ada Lovelace", "htmx.min.js");
+    // Named after the service, in the header and in the title with the page
+    assertThat(page.body()).contains("<a class=\"home\" href=\"/backoffice/\">Orders backoffice</a>", "<title>Order – Orders backoffice</title>");
     // Nothing is loaded from other sites
     assertThat(page.headers().firstValue("Content-Security-Policy")).hasValueSatisfying(csp -> assertThat(csp)
         .contains("default-src 'self'")

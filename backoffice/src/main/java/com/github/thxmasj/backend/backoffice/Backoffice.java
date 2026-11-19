@@ -46,7 +46,7 @@ import tools.jackson.databind.JsonNode;
 ///
 /// ```java
 /// var transitions = HttpInbox.transitions(concat(requests, Backoffice.requests()), withAll(application, Backoffice.transitions()));
-/// var listener = new HttpInboxListener(stateMachine).filter(new Backoffice(config, dataSource, schema, transitions));
+/// var listener = new HttpInboxListener(stateMachine).filter(new Backoffice("Orders", config, dataSource, schema, transitions));
 /// ```
 ///
 /// Every sign-in of a user is an entity of the state machine, a `BackofficeSession`, whose event log tells who signed
@@ -81,27 +81,29 @@ public final class Backoffice implements HttpInboxListener.Filter {
 
   /// The backoffice as configured, or one which is not found, if `config` is null
   ///
+  /// @param service     the name of the application, e.g. `Identity provider`, after which the backoffice is named in
+  ///                    the header and the title of its pages, e.g. "Identity provider backoffice"
   /// @param config      how the users sign in, or null if the application has no backoffice
   /// @param dataSource  the database of the application, which the backoffice reads with the role of the application
   /// @param schema      the schema of the state machine
   /// @param transitions the transitions given to the state machine, which give the entity models and event types
-  public Backoffice(Config config, DataSource dataSource, String schema, Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions) {
-    this(config, config != null ? Database.of(dataSource).client(dataSource) : null, schema, transitions);
+  public Backoffice(String service, Config config, DataSource dataSource, String schema, Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions) {
+    this(service, config, config != null ? Database.of(dataSource).client(dataSource) : null, schema, transitions);
   }
 
   /// @param client a client of the database of the application
-  public Backoffice(Config config, DatabaseClient client, String schema, Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions) {
+  public Backoffice(String service, Config config, DatabaseClient client, String schema, Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions) {
     this.config = config;
     if (config != null && !transitions.containsKey(Sessions.Session))
       throw new IllegalArgumentException("The transitions lack those of the backoffice, Backoffice.transitions()");
     this.provider = config != null ? new OpenIdConnect(config) : null;
-    this.pages = config != null ? new Pages(new Graph(client, schema, transitions)) : null;
+    this.pages = config != null ? new Pages(new Graph(client, schema, transitions), service + " backoffice") : null;
     this.files = config != null ? staticFiles.keySet().stream().collect(Collectors.toMap(name -> name, Backoffice::read)) : Map.of();
   }
 
   /// No backoffice: its pages are not found, and the other requests pass
   public static Backoffice none() {
-    return new Backoffice(null, (DatabaseClient) null, null, Map.of());
+    return new Backoffice(null, null, (DatabaseClient) null, null, Map.of());
   }
 
   /// The inbox requests of the backoffice, to add to those of the application's inbox
@@ -388,7 +390,7 @@ public final class Backoffice implements HttpInboxListener.Filter {
         ));
     return signedOut
         .then(Mono.fromSupplier(() -> withHeader(
-            html(200, Pages.message("Signed out", "You have signed out of the backoffice.", "Sign in again")),
+            html(200, pages.message("Signed out", "You have signed out of the backoffice.", "Sign in again")),
             "Set-Cookie",
             sessionCookie("", Duration.ZERO)
         )));
@@ -460,8 +462,8 @@ public final class Backoffice implements HttpInboxListener.Filter {
     return new HttpResponseMessage(status, reasonPhrase(status), headers, html.getBytes(UTF_8));
   }
 
-  private static HttpResponseMessage error(int status, String message) {
-    return html(status, Pages.message("Sign-in failed", message, "Sign in again"));
+  private HttpResponseMessage error(int status, String message) {
+    return html(status, pages.message("Sign-in failed", message, "Sign in again"));
   }
 
   private static HttpResponseMessage redirect(String location, String cookie) {

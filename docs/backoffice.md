@@ -42,9 +42,12 @@ requests.addAll(Backoffice.requests());
 var transitions = HttpInbox.transitions(requests, application);
 
 var stateMachine = new StateMachine(..., transitions, dataSource, ...);
-var backoffice = new Backoffice(Backoffice.Config.fromEnvironment(System.getenv()), dataSource, schema, transitions);
+var backoffice = new Backoffice("Orders", Backoffice.Config.fromEnvironment(System.getenv()), dataSource, schema, transitions);
 new HttpInboxListener(stateMachine).filter(backoffice).listen(port);
 ```
+
+The backoffice is named after the application, e.g. "Orders backoffice", in the header and the title of its pages. The
+apps are the "Identity provider backoffice" and the "Hello world backoffice".
 
 The filter takes the requests under `/backoffice` and passes the others on. Without a configuration, i.e. when
 `BACKOFFICE_ISSUER` is not set, or with `Backoffice.none()`, the backoffice is not found, but its entity models are

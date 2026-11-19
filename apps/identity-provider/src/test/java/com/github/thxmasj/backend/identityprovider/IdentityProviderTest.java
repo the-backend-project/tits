@@ -121,6 +121,7 @@ public class IdentityProviderTest {
     var upstreamConfig = new Upstream.Config(URI.create(upstream.issuer()), UpstreamStub.clientId, UpstreamStub.clientSecret, "openid email profile");
     // The backoffice signs its users in with the identity provider itself, which permits Ada by her email address
     var backoffice = new Backoffice(
+        "Identity provider",
         new Backoffice.Config(issuer, issuer, backofficeClientId, legacySecret, "openid email profile", "email", Set.of("ada@example.com"), Duration.ofHours(1)),
         Init.client(),
         schema,
@@ -705,7 +706,7 @@ public class IdentityProviderTest {
     var cookies = new LinkedHashMap<String, String>();
     HttpResponse<String> page = browseBackoffice(uri("/backoffice/"), cookies);
     assertThat(page.statusCode()).as(page.body()).isEqualTo(200);
-    assertThat(page.body()).contains("Ada Lovelace", "Sign out", ">Client<", ">Authorization<", ">BackofficeSession<");
+    assertThat(page.body()).contains("Identity provider backoffice", "Ada Lovelace", "Sign out", ">Client<", ">Authorization<", ">BackofficeSession<");
     var clients = browseBackoffice(uri("/backoffice/search?q=" + adminId), cookies);
     assertThat(clients.body()).contains("Client id claimed");
   }

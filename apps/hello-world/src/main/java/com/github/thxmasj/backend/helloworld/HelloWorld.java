@@ -38,7 +38,7 @@ public final class HelloWorld {
       case "serve" -> {
         DataSource dataSource = dataSource(config);
         StateMachine stateMachine = stateMachine(config, dataSource);
-        var backoffice = new Backoffice(config.backoffice(), dataSource, config.schema(), Greetings.transitions());
+        var backoffice = new Backoffice("Hello world", config.backoffice(), dataSource, config.schema(), Greetings.transitions());
         DisposableServer server = serve(stateMachine, config.port(), backoffice);
         System.out.println("Listening on port " + server.port() + " after " + Duration.ofNanos(System.nanoTime() - t0).toMillis() + " ms");
         // A container runtime stops the process with SIGTERM, which runs the shutdown hooks
