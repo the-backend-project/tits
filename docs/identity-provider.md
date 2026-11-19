@@ -198,7 +198,10 @@ it with the grant type `authorization_code` and the redirect URI `<backoffice UR
 [Imported clients](#imported-clients)), and set `BACKOFFICE_ISSUER` of the backoffice to the issuer,
 `BACKOFFICE_CLIENT_ID` and `BACKOFFICE_CLIENT_SECRET` to the client, and `BACKOFFICE_CLAIM` to `email` and
 `BACKOFFICE_CLAIM_VALUES` to the email addresses of its users. The ID tokens of the identity provider have the email
-address of the user if the scope `email` is granted.
+address of the user if the scope `email` is granted. The identity provider passes on the address the upstream provider
+gives, so permitting users by it relies on the upstream provider verifying the addresses and not letting users choose
+them, as with the work accounts of an organisation in Microsoft Entra ID. The identity provider passes on no roles or
+groups to permit users by instead (see [Which claim to permit users by](backoffice.md#which-claim-to-permit-users-by)).
 
 ## Credentials
 

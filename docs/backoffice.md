@@ -30,9 +30,10 @@ change the application's data. Its sessions and the load of its users stay out o
 
 [Open the diagram in full size](images/com.github.thxmasj.backend.backoffice.BackofficeSession.svg)
 
-A refused or failed sign-in is an event of [severity](monitoring.md#severity) `Warning`, so attempts to get in show
-up in the monitoring. A session expires after its lifetime, or after 30,000 events, as the event numbers of an entity
-are `SMALLINT`.
+A session is created when the provider has signed a user in, so a request of someone who hasn't signed in writes
+nothing (see [Signing in](#signing-in)). A refused sign-in is an event of [severity](monitoring.md#severity)
+`Warning`, so attempts to get in show up in the monitoring. A session expires after its lifetime, or after 30,000
+events, as the event numbers of an entity are `SMALLINT`.
 
 ## The backoffice of an application
 
@@ -101,19 +102,24 @@ configured not to evaluate scripts or add styles. The sign-out is a form posted 
 Users sign in with the authorization code flow and PKCE, the backoffice being a client of the provider, confidential
 with a client secret or public without one:
 
-1. A page requested without a session starts a sign-in: a new `BackofficeSession`, whose entity id is the `state` of
-   the authorization request. The user is redirected to the provider, with a secret, from which the PKCE verifier and
-   the nonce are derived, in a cookie only sent to `/backoffice/callback`.
+1. A page requested without a session starts a sign-in. The user is redirected to the provider with a random `state`,
+   and a secret, from which the PKCE verifier and the nonce are derived, is kept in a cookie named after the state and
+   only sent to `/backoffice/callback`, with the page to return to.
 2. The provider redirects the user back to `/backoffice/callback`, where the code is redeemed and the ID token
    verified with the keys of the provider.
 3. If the configured claim of the ID token has one of the permitted values, e.g. the claim `roles` the value
-   `backoffice`, the user is signed in: a new token is set in the session cookie, and the user is sent back to the page
-   first requested. Otherwise the sign-in is refused, with the claims of the user recorded.
+   `backoffice`, the user is signed in: a new `BackofficeSession` is created, a new token is set in the session cookie,
+   and the user is sent back to the page first requested. Otherwise a `BackofficeSession` records that the sign-in was
+   refused, with the claims of the user.
+
+Nothing is written before the provider has signed the user in. A sign-in failing at the provider, e.g. as the user
+cancelled, is logged for [monitoring](monitoring.md) with the severity `INFO`, but not recorded, as anyone can make one.
+A request with the cookie of no session is not passed on to the state machine, whose inbox records every request it
+receives: the backoffice reads its schema for the session first.
 
 The provider is found by [OpenID Connect Discovery](https://openid.net/specs/openid-connect-discovery-1_0.html) at the
 first sign-in rather than at startup, so the backoffice starts also when its provider is not up yet, e.g. the identity
-provider it is the backoffice of. Every
-page viewed is an event of the session, which the state machine accepts only while the session is valid, so a session
+provider it is the backoffice of. Every page viewed is an event of the session, which the state machine accepts only while the session is valid, so a session
 which has expired or been signed out of is refused, and the user signs in again. A request of htmx for a part of a
 page is answered with `HX-Refresh`, so the page is reloaded and the user signs in.
 
@@ -153,9 +159,19 @@ The backoffice is configured by environment variables:
 | `BACKOFFICE_CLAIM_VALUES` | | The values of the claim permitted, separated by commas. A claim with several values, e.g. the roles of a user, needs one of them. |
 | `BACKOFFICE_SESSION_LIFETIME` | `PT8H` | How long a user stays signed in, as an ISO 8601 duration |
 
-With Microsoft Entra ID, for example, register an app with the redirect URI, define an app role `backoffice` and
-assign it to the users of the backoffice, and set `BACKOFFICE_CLAIM` to `roles` and `BACKOFFICE_CLAIM_VALUES` to
-`backoffice`.
+### Which claim to permit users by
+
+Permit users by a claim the provider controls and means for authorisation, such as the `roles` of the app or the
+`groups` of the user, rather than by their email address. With Microsoft Entra ID, for example, register an app with the
+redirect URI, define an app role `backoffice` and assign it to the users of the backoffice, and set `BACKOFFICE_CLAIM`
+to `roles` and `BACKOFFICE_CLAIM_VALUES` to `backoffice`. Removing the role of a user, or the user from the group,
+then takes the backoffice from the user at the next sign-in, at the latest when the session expires.
+
+The `email` claim is weak for authorisation: a provider may let users set or change it, need not verify it, and may give
+the same address to more than one account. Microsoft advises against authorising by it, and with Microsoft Entra ID it
+is an [optional claim](https://learn.microsoft.com/entra/identity-platform/optional-claims), not verified. Permit users
+by `email` only if the provider verifies the addresses and doesn't let users choose them, e.g. a provider of your own
+organisation's accounts.
 
 ## Gaps
 

@@ -33,7 +33,8 @@ import java.util.UUID;
 import tools.jackson.core.JacksonException;
 
 /// The sessions of the users of the backoffice. Every sign-in is an entity of its own, which records who signed in,
-/// or was refused, and every page they viewed, so the event log tells who looked at what.
+/// or was refused, and every page they viewed, so the event log tells who looked at what. A session is created only
+/// when the provider has signed a user in, so a request of someone who hasn't signed in writes nothing.
 ///
 /// The requests reach the state machine through the [Backoffice] filter only, which signs the users in with the
 /// OpenID Connect provider and puts what it found in trusted headers. The token in the session cookie never enters the
@@ -47,18 +48,11 @@ public interface Sessions {
   EntityModel Session = EntityModel.of("BackofficeSession", UUID.fromString("4b6f2c8e-1d3a-4f57-9e0b-7a2c5d8f3e61"));
 
   enum States implements State {
-    SigningIn,
     SignedIn,
     Refused,
-    Failed,
     SignedOut,
     Expired
   }
-
-  /// A sign-in started, for a user who requested a page of the backoffice
-  ///
-  /// @param returnPath the page the user requested, to return to after signing in
-  record Start(String returnPath) {}
 
   /// A user signed in with the OpenID Connect provider, as told by the claims of the ID token
   ///
@@ -86,9 +80,6 @@ public interface Sessions {
   /// @param reason why the user is refused, e.g. the claim missing
   record Refusal(User user, String reason) {}
 
-  /// The user failed to sign in with the provider, e.g. by cancelling, or the provider failed
-  record Failure(String error, String description) {}
-
   /// A page the user requested
   ///
   /// @param path the path and query of the page
@@ -103,11 +94,6 @@ public interface Sessions {
 
   }
 
-  EventType<Start, Start> SignInStarted = BasicEventType.of(
-      "Sign-in started",
-      UUID.fromString("c3f1a8e2-6b4d-4c79-8a15-2e9d7f0b5c46"),
-      DataType.json(Start.class)
-  );
   EventType<SignIn, SignedIn> UserSignedIn = BasicEventType.of(
       "User signed in",
       UUID.fromString("7e2b9d4f-3c18-4a6e-b5f0-1d8c6a2e9b73"),
@@ -118,11 +104,6 @@ public interface Sessions {
       "Sign-in refused",
       UUID.fromString("a5d0c7e3-9f21-4b84-8e6a-3c1f5b9d7e20"),
       DataType.json(Refusal.class)
-  );
-  EventType<Failure, Failure> SignInFailed = BasicEventType.of(
-      "Sign-in failed",
-      UUID.fromString("e8b4f2a6-0d7c-4e39-9a51-6f3d1c8b2e94"),
-      DataType.json(Failure.class)
   );
   /// A page requested, which is viewed if the session is valid. It is never stored, as one of its outcomes always is.
   EventType<View, Void> ViewRequested = BasicEventType.of(
@@ -169,27 +150,17 @@ public interface Sessions {
 
   /// The path of the backoffice, under which its pages are served
   String Path = "/backoffice";
-  /// The entity id of the session a user returns to from the provider
-  String SessionHeader = "X-Backoffice-Session";
   /// The hash of the token of the session cookie
   String TokenHashHeader = "X-Backoffice-Token-Hash";
   /// Tells that the user signed in, but is refused
   String RefusedHeader = "X-Backoffice-Refused";
-  List<String> trustedHeaders = List.of(SessionHeader, TokenHashHeader, RefusedHeader);
-
-  /// A sign-in started by the filter for a user without a session
-  HttpInboxRequest<Start> SignInRequest = HttpInboxRequest
-      .matching(m -> m.method() == Method.POST && m.uri().getPath().equals(Path + "/signin"))
-      .contentParser(r -> json(r, Start.class))
-      .process(SignInStarted, Session, r -> r.body(), newEntity())
-      .response(ReplyCreated, c -> reply(c.input(), c.correlationId()))
-      .build("BackofficeSignInRequest", UUID.fromString("8b5e2c7f-4d1a-4e96-a3b8-0c9f6d2e4a71"));
+  List<String> trustedHeaders = List.of(TokenHashHeader, RefusedHeader);
 
   /// The user returning from the provider, signed in and permitted to use the backoffice
   HttpInboxRequest<SignIn> SignedInRequest = HttpInboxRequest
       .matching(m -> isCallback(m) && m.headerValue(TokenHashHeader) != null)
       .contentParser(Sessions::signIn)
-      .process(UserSignedIn, Session, r -> r.body(), (m, _) -> HttpInboxRequest.entityId(m.headerValue(SessionHeader)))
+      .process(UserSignedIn, Session, r -> r.body(), newEntity())
       .response(ReplyCreated, c -> reply(c.input(), c.correlationId()))
       .build("BackofficeSignedInRequest", UUID.fromString("2d7a4f9c-6e3b-4b15-8c02-9a5e1d7f3b48"));
 
@@ -197,17 +168,9 @@ public interface Sessions {
   HttpInboxRequest<Refusal> RefusedRequest = HttpInboxRequest
       .matching(m -> isCallback(m) && m.headerValue(RefusedHeader) != null)
       .contentParser(r -> json(r, Refusal.class))
-      .process(SignInRefused, Session, r -> r.body(), (m, _) -> HttpInboxRequest.entityId(m.headerValue(SessionHeader)))
+      .process(SignInRefused, Session, r -> r.body(), newEntity())
       .response(ReplyCreated, c -> reply(c.input(), c.correlationId()))
       .build("BackofficeRefusedRequest", UUID.fromString("c9f3b6e1-2a8d-4f47-9e05-6b1d4c8a2f93"));
-
-  /// The user returning from the provider without signing in
-  HttpInboxRequest<Failure> FailedRequest = HttpInboxRequest
-      .matching(Sessions::isCallback)
-      .contentParser(r -> json(r, Failure.class))
-      .process(SignInFailed, Session, r -> r.body(), (m, _) -> HttpInboxRequest.entityId(m.headerValue(SessionHeader)))
-      .response(ReplyCreated, c -> reply(c.input(), c.correlationId()))
-      .build("BackofficeFailedRequest", UUID.fromString("4a8c1f6d-9b3e-4d72-a5c0-3e7f2b9d6c14"));
 
   /// A user signing out
   HttpInboxRequest<String> SignOutRequest = HttpInboxRequest
@@ -225,46 +188,32 @@ public interface Sessions {
       .response(ReplyCreated, c -> reply(c.input(), c.correlationId()))
       .build("BackofficeViewRequest", UUID.fromString("7f2d5a8e-3b6c-4e19-b4a7-0c8e1f5d9b62"));
 
-  /// The inbox requests of the backoffice, which the application adds to those of its inbox
+  /// The inbox requests of the backoffice
   List<HttpInboxRequest<?>> requests = List.of(
-      SignInRequest,
       SignedInRequest,
       RefusedRequest,
-      FailedRequest,
       SignOutRequest,
       ViewRequest
   );
 
-  /// The transitions of the sessions and their tokens, which the application adds to its own
+  /// The transitions of the sessions and their tokens
   static Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions() {
     return Map.of(
         Session, Map.of(
             Begin, List.of(
-                onEvent(SignInStarted).to(States.SigningIn)
-                    .assemble(c -> tuple(c.input(), c.log().entityId()))
-                    // The filter sends the user to the provider, with the session as state
-                    .trigger(ReplyCreated).with(d -> Reply.json(200, Map.of("session", d.t2().toString()))).on(Request).identifiedBy(entityIdFromSession())
-                    .output(d -> d.t1().t1())
-            ),
-            States.SigningIn, List.of(
                 onEvent(UserSignedIn).to(States.SignedIn)
                     .assemble(c -> tuple(
                         new SignedIn(c.input().user(), c.timestamp().toEpochSecond() + c.input().lifetimeSeconds()),
                         c.input().tokenHash(),
-                        c.entityId(),
-                        c.log().one(SignInStarted).returnPath()
+                        c.entityId()
                     ))
                     .trigger(TokenClaimed).with(d -> d.t2()).on(Tokens).identifiedBy(d -> newEntityId(d.t3()))
-                    .trigger(ReplyCreated).with(d -> Reply.json(200, Map.of("returnPath", d.t1().t4()))).on(Request).identifiedBy(entityIdFromSession())
+                    .trigger(ReplyCreated).with(_ -> Reply.json(200, Map.of())).on(Request).identifiedBy(entityIdFromSession())
                     .output(d -> d.t1().t1().t1()),
                 // Many of them may be an attempt to get in, so each is a warning
                 onEvent(SignInRefused).to(States.Refused).severity(Severity.Warning)
                     .assembleInput()
                     .trigger(ReplyCreated).with(d -> Reply.json(403, Map.of("error", d.reason()))).on(Request).identifiedBy(entityIdFromSession())
-                    .output(Tuple2::t1),
-                onEvent(SignInFailed).to(States.Failed).severity(Severity.Warning)
-                    .assembleInput()
-                    .trigger(ReplyCreated).with(d -> Reply.json(401, Map.of("error", d.description()))).on(Request).identifiedBy(entityIdFromSession())
                     .output(Tuple2::t1)
             ),
             States.SignedIn, List.of(
@@ -291,8 +240,7 @@ public interface Sessions {
             ),
             States.SignedOut, ended(),
             States.Expired, ended(),
-            States.Refused, List.of(),
-            States.Failed, List.of()
+            States.Refused, List.of()
         ),
         Tokens, Tokens.transitions()
     );
@@ -318,7 +266,7 @@ public interface Sessions {
   }
 
   private static boolean isCallback(HttpRequestMessage m) {
-    return m.method() == Method.POST && m.uri().getPath().equals(Path + "/callback") && m.headerValue(SessionHeader) != null;
+    return m.method() == Method.POST && m.uri().getPath().equals(Path + "/callback");
   }
 
   private static Validated<SignIn> signIn(HttpRequestMessage request) {

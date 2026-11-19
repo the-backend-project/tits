@@ -168,7 +168,7 @@ public final class BackofficeApp {
       DataSource dataSource,
       Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> applicationTransitions
   ) {
-    var backoffice = new Backoffice(service, config.backoffice(), Database.of(dataSource).client(dataSource), config.applicationSchema(), applicationTransitions);
+    var backoffice = new Backoffice(service, config.backoffice(), Database.of(dataSource).client(dataSource), config.schema(), config.applicationSchema(), applicationTransitions);
     return new HttpInboxListener(stateMachine)
         .filter((request, next) -> request.method() == Method.GET && request.uri().getPath().equals("/health")
             ? Mono.just(new HttpResponseMessage(200, "OK", Map.of("Content-Type", "text/plain"), "OK".getBytes(UTF_8)))

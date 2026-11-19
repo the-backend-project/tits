@@ -132,7 +132,7 @@ public class BackofficeTest {
     DisposableServer listening = new HttpInboxListener(backofficeStateMachine)
         .filter((request, next) -> backoffice[0].filter(request, next))
         .listen(0);
-    backoffice[0] = new Backoffice("Orders", withUrl(config, "http://localhost:" + listening.port()), Init.client(), schema, transitions);
+    backoffice[0] = new Backoffice("Orders", withUrl(config, "http://localhost:" + listening.port()), Init.client(), backofficeSchema, schema, transitions);
     return listening;
   }
 
@@ -198,6 +198,33 @@ public class BackofficeTest {
     var failed = signIn(server, "/backoffice/");
     assertThat(failed.statusCode()).isEqualTo(401);
     assertThat(failed.body()).contains("access_denied");
+  }
+
+  @Test
+  void requestsOfSomeoneNotSignedInWriteNothing() throws Exception {
+    long before = rows(backofficeSchema) + rows(schema);
+    // Starting a sign-in, with a cookie of no session, and a sign-in failing at the provider
+    assertThat(get(server, "/backoffice/entities/" + UUID.randomUUID(), null).statusCode()).isEqualTo(303);
+    assertThat(get(server, "/backoffice/", "backoffice_session=" + OpenIdConnect.generateSecret()).statusCode()).isEqualTo(303);
+    assertThat(get(server, "/backoffice/search?q=x", "backoffice_session=forged", Map.of("HX-Request", "true")).statusCode()).isEqualTo(401);
+    provider.failWith("access_denied");
+    assertThat(signIn(server, "/backoffice/").statusCode()).isEqualTo(401);
+    var signedOut = http.send(request(server, "/backoffice/signout", "backoffice_session=forged", Map.of()).POST(BodyPublishers.noBody()).build(), BodyHandlers.ofString());
+    assertThat(signedOut.statusCode()).isEqualTo(200);
+    assertThat(rows(backofficeSchema) + rows(schema)).isEqualTo(before);
+  }
+
+  /// The number of events, id events and index events in a schema
+  private static long rows(String schemaName) {
+    long rows = 0;
+    for (String table : List.of("Event", "IdEvent", "IndexEvent")) {
+      rows += Init.client().sql("SELECT COUNT(*) AS Rows FROM \"" + schemaName + "\".\"" + table + "\"")
+          .name("Test.Rows")
+          .map(row -> row.get("Rows", Long.class))
+          .one()
+          .block();
+    }
+    return rows;
   }
 
   @Test
