@@ -873,6 +873,15 @@ public class HttpInboxTest {
     assertTrue(ProblemDetail.parse(other.body()).detail().startsWith("Light is on!"));
   }
 
+  /// Another inbox of the same requests has a routing model of its own, which the state machine doesn't run
+  @Test
+  public void listenerOfAnotherInboxThanTheStateMachineIsRejected() {
+    var otherInbox = HttpInbox.of(requests, inbox.entityModels());
+    assertThatThrownBy(() -> new HttpInboxListener(stateMachine, otherInbox))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("doesn't run the request routing of the inbox");
+  }
+
   @Test
   public void requestGroupIncludesInboxRequestsOnly() {
     assertTrue(Request.includes(InternalRequest));

@@ -303,8 +303,10 @@ onEvent(Authorise).to(Authorising)
 A process rolling the request back triggers `rollbackDispatched()` of the dispatcher on the entity of the request,
 e.g. by the entity id it got back when it was dispatched.
 
-The dispatcher has the entity models of the outbox, and of its rollback models, to give the state machine along with
-those of the application:
+The dispatcher has the entity models to give the state machine along with those of the application: the outbox
+request, its rollback models and `HttpOutboxRequest.Index`, which the requests are indexed in (see
+[below](#finding-the-requests-of-a-process)). The index is shared by all outbox requests, and an entity model given
+more than once is run once:
 
 ```java
 entityModels.addAll(authorisations.entityModels());
@@ -313,7 +315,8 @@ entityModels.addAll(authorisations.entityModels());
 The outbox request is built with its process model, `processModel(Payment)`, whose transitions in turn trigger the
 request on the dispatcher's outbox. A process model declared as a constant with `EntityModel.of(name, id, transitions)`
 takes care of that, as its transitions are created when the state machine first asks for them, after the outbox
-requests are built.
+requests are built. A trigger on the outbox request the dispatcher was created with, rather than on its `outbox()`, is
+found when the state machine is created, which fails with a message naming the trigger.
 
 ## Finding the requests of a process
 

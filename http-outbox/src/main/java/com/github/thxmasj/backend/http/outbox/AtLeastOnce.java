@@ -46,6 +46,7 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
   private final String name;
   private final UUID id;
   private final Shape<RQ, ?, ?> shape;
+  private Map<State, List<TransitionModel<?, ?>>> transitions;
 
   private record Shape<RQ, RS, S>(
       DataType<RQ> requestPayloadType,
@@ -533,9 +534,12 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
     return id;
   }
 
+  /// The transitions, created when they are first asked for
   @Override
-  public Map<State, List<TransitionModel<?, ?>>> transitions() {
-    return transitions(shape);
+  public synchronized Map<State, List<TransitionModel<?, ?>>> transitions() {
+    if (transitions == null)
+      transitions = transitions(shape);
+    return transitions;
   }
 
   private <RS, S> Map<State, List<TransitionModel<?, ?>>> transitions(Shape<RQ, RS, S> shape) {

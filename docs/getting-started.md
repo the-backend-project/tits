@@ -102,9 +102,9 @@ HttpInboxRequest<Void> GreetingRequest = HttpInboxRequest
 The [transitions](transition-models.md) say what happens on each event type in each state. A greeting starts in
 `Begin`, and `GreetingRequested` takes it to `Greeted`. On the way, the transition triggers the response on the request
 that is waiting for it, `HttpInbox.Request`, which stands for whichever inbox request the greeting was requested by.
-The model is given the method creating its transitions, `Greetings::transitions`, which is called when the state
-machine first asks for them. The transitions can thereby refer to the model itself and to other models declared the same
-way, wherever they are declared:
+The model is given the method creating its transitions, `Greetings::transitions`, which is called when they are first
+asked for. The transitions can thereby refer to the model itself and to other models declared the same way (see
+[Entities](entities.md)):
 
 ```java
 private static Map<State, List<TransitionModel<?, ?>>> transitions() {
@@ -126,7 +126,8 @@ The diagram of `Greeting`, drawn from these transitions:
 
 [Open the Greeting diagram in full size](images/com.github.thxmasj.backend.helloworld.Greeting.svg)
 
-The inbox of the application is created from its inbox requests and its entity models:
+The inbox of the application is created from its inbox requests and its entity models. It asks for the transitions
+of the models to check the responses, so it is declared after the models and everything their transitions refer to:
 
 ```java
 HttpInbox Inbox = HttpInbox.of(List.of(GreetingRequest), List.of(Greeting));

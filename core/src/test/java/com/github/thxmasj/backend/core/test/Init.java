@@ -7,6 +7,7 @@ import com.github.thxmasj.backend.core.database.DataSourceBuilder;
 import com.github.thxmasj.backend.core.database.Database;
 import com.github.thxmasj.backend.core.database.DatabaseClient;
 import com.github.thxmasj.backend.core.database.DatabaseClient.Config;
+import com.github.thxmasj.backend.core.internal.EntityModels;
 import com.github.thxmasj.backend.core.internal.database.Storage;
 import com.github.thxmasj.backend.core.internal.database.StorageProvider;
 import com.sun.net.httpserver.HttpContext;
@@ -64,7 +65,7 @@ public class Init {
 
   /// The storage of a schema in the test database
   public static Storage storage(String schemaName, List<? extends EntityModel> entityModels) {
-    return StorageProvider.storage(database, client, List.copyOf(entityModels), schemaName, Clock.systemUTC());
+    return StorageProvider.storage(database, client, EntityModels.validated(entityModels), schemaName, Clock.systemUTC());
   }
 
   public static StateMachine stateMachine(

@@ -25,7 +25,9 @@ abstract class BaseDispatcher<X, I> {
     this.outbox = outbox;
     this.requestDispatched = requestDispatched;
     this.inputCreator = inputCreator;
-    this.entityModels = entityModels;
+    var withIndex = new ArrayList<EntityModel>(entityModels);
+    withIndex.add(HttpOutboxRequest.Index);
+    this.entityModels = List.copyOf(withIndex);
   }
 
   public HttpOutboxRequest<?> outbox() {

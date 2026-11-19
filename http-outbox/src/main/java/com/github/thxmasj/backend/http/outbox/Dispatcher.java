@@ -27,7 +27,8 @@ public sealed interface Dispatcher<X, I> permits AtLeastOnceDispatcher, BatchedA
   /// both assembled in its assemble step.
   Mono<I> input(DispatchContext context, X data);
 
-  /// The entity models to give the state machine: the outbox request and its rollback models, if any.
+  /// The entity models to give the state machine: the outbox request, its rollback models, if any, and the index of
+  /// the outbox requests, [HttpOutboxRequest#Index], which the requests are indexed in by the process dispatching them.
   List<EntityModel> entityModels();
 
 }

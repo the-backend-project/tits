@@ -10,6 +10,7 @@ import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.IdEntityModel;
 import com.github.thxmasj.backend.core.IndexEntityModel;
 import com.github.thxmasj.backend.core.database.DatabaseClient;
+import com.github.thxmasj.backend.core.internal.EntityModels;
 import com.github.thxmasj.backend.core.internal.EventTypes;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -49,7 +50,7 @@ final class Graph {
   private final List<EventType<?, ?>> searchableIndexTypes;
 
   Graph(DatabaseClient client, String schema, List<? extends EntityModel> entityModels) {
-    List<EntityModel> models = List.copyOf(entityModels);
+    List<EntityModel> models = EntityModels.validated(entityModels);
     this.client = client;
     this.schema = schema;
     this.entityModels = models.stream().collect(toMap(EntityModel::id, identity()));

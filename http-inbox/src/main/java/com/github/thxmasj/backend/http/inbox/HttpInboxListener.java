@@ -46,6 +46,7 @@ public class HttpInboxListener {
   private final List<Filter> filters;
 
   /// @param stateMachine the state machine created with the entity models of the inbox, see [HttpInbox#entityModels()]
+  /// @throws IllegalArgumentException if the state machine doesn't run the request routing of the inbox
   public HttpInboxListener(StateMachine stateMachine, HttpInbox inbox) {
     this(stateMachine, inbox, Duration.ofSeconds(30));
   }
@@ -61,6 +62,11 @@ public class HttpInboxListener {
       String correlationIdHeader,
       List<Filter> filters
   ) {
+    if (!stateMachine.entityModels().contains(inbox.requestRouting()))
+      throw new IllegalArgumentException(
+          "The state machine doesn't run the request routing of the inbox. Create it with the entity models of the same " +
+          "inbox the listener is given."
+      );
     this.stateMachine = stateMachine;
     this.inbox = inbox;
     this.responseTimeout = responseTimeout;

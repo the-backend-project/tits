@@ -86,6 +86,7 @@ public class StateMachine implements AutoCloseable {
   private final List<Looper<?>> workers = new ArrayList<>();
   private final DatabaseClient client;
   private final Storage storage;
+  private final List<EntityModel> entityModels;
   private final Map<EntityModel, Traverser> traversers;
   private final Map<EntityModel, List<EventType<?, ?>>> eventTypesByEntityModel;
 
@@ -132,7 +133,9 @@ public class StateMachine implements AutoCloseable {
   ///                event is identified by its [EventType#id()], which stays the same when the event type is renamed.
   ///                Null for no delay.
   /// @param entityModels the entity models to run, each with its transitions. An [EntityModelGroup] is not one of
-  ///                     them, since it has no entities of its own.
+  ///                     them, since it has no entities of its own. A model given more than once is run once.
+  /// @throws IllegalArgumentException if two entity models have the same id, or if a transition triggers an event on
+  ///                                  an entity model which is not given
   /// @param client a client of the database, which is closed with the state machine
   /// @param schemaDataSource a data source of the database to create the schema with, or null if it is created
   ///                         elsewhere
@@ -149,6 +152,7 @@ public class StateMachine implements AutoCloseable {
       boolean withResolving
   ) {
     List<EntityModel> models = EntityModels.validated(entityModels);
+    this.entityModels = models;
     Debug.log("Supported entity models:\n" + models.stream().map(EntityModel::name).collect(joining("\n")));
     this.traversers = models.stream().collect(toMap(m -> m, m -> new Traverser(m.transitions())));
     this.eventTypesByEntityModel = EventTypes.eventTypesByEntityModel(models);
@@ -1159,6 +1163,11 @@ public class StateMachine implements AutoCloseable {
             )
 
         );
+  }
+
+  /// The entity models the state machine runs, each once
+  public List<EntityModel> entityModels() {
+    return entityModels;
   }
 
   Traverser traverser(EntityModel entityModel) {

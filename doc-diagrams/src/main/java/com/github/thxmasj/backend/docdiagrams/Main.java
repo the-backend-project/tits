@@ -1,7 +1,6 @@
 package com.github.thxmasj.backend.docdiagrams;
 
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.MessageIds;
-import static com.github.thxmasj.backend.http.inbox.HttpInbox.RequestRouting;
 import static com.github.thxmasj.backend.templates.cardpayment.Identifiers.Ids;
 
 import com.github.thxmasj.backend.backoffice.Backoffice;

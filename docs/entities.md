@@ -17,6 +17,25 @@ onEvent(GreetingRequested).to(States.Greeted)
     .output()
 ```
 
+An entity model carries its transitions, by the state they are taken from. `EntityModel.of(name, id, transitions)`
+takes a method creating them, which is called when they are first asked for, so the transitions can refer to the model
+itself and to other models declared the same way, e.g. constants which refer to each other:
+
+```java
+EntityModel Greeting = EntityModel.of("Greeting", UUID.fromString("..."), Greetings::transitions);
+```
+
+They are first asked for by the state machine, or by `HttpInbox.of`, which checks the responses of the inbox requests
+(see [HTTP inboxes](http-inbox.md)). Whatever the transitions refer to must be created by then, e.g. declared before an
+inbox created as a constant.
+
+The state machine is given the entity models it runs, and takes the transitions of each from the model. A model given
+more than once is run once. When the state machine is created, it checks that every model has an id of its own, and
+that the transitions trigger events only on the models it is given, or on a group of them. A model whose transitions
+depend on configuration, e.g. a lifetime, or the [outbox requests](http-outbox.md) it sends, is created from the
+configuration rather than declared as a constant. That instance is both the one given to the state machine and the one
+triggered on, so it is passed to the code triggering events on it, e.g. the inbox requests processing on it.
+
 The entity an event is triggered on is selected by an `EntitySelector`: by its entity id, as a new entity, by an id it
 has, as the last one of a group it is indexed in, or as the last one referencing an id by an index event. The ids and
 index keys of entities are events of their own, of id entity models (`IdEntityModel`) and index entity models
