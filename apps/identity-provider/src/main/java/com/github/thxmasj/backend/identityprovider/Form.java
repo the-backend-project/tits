@@ -3,8 +3,10 @@ package com.github.thxmasj.backend.identityprovider;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 import java.net.URLDecoder;
+import java.net.URLEncoder;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /// The parameters of an `application/x-www-form-urlencoded` body
 final class Form {
@@ -32,6 +34,13 @@ final class Form {
   static String decode(String value) {
     // Throws IllegalArgumentException on malformed escapes
     return URLDecoder.decode(value, UTF_8);
+  }
+
+  /// The parameters encoded as a form, or the query of a URI
+  static String encode(Map<String, String> parameters) {
+    return parameters.entrySet().stream()
+        .map(e -> URLEncoder.encode(e.getKey(), UTF_8) + "=" + URLEncoder.encode(e.getValue(), UTF_8))
+        .collect(Collectors.joining("&"));
   }
 
 }

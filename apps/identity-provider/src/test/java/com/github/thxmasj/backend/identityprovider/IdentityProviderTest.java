@@ -709,7 +709,7 @@ public class IdentityProviderTest {
       parameters.put("code_challenge", Secrets.hash(verifier));
       parameters.put("code_challenge_method", "S256");
     }
-    return URI.create(issuer + "/authorize?" + Upstream.form(parameters));
+    return URI.create(issuer + "/authorize?" + Form.encode(parameters));
   }
 
   /// Signs the user in to the client, and returns the code the client gets

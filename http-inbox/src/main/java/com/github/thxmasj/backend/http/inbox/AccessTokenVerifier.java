@@ -3,20 +3,23 @@ package com.github.thxmasj.backend.http.inbox;
 import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JOSEObjectType;
 import com.nimbusds.jose.JWSAlgorithm;
+import com.nimbusds.jose.KeySourceException;
 import com.nimbusds.jose.crypto.RSASSAVerifier;
 import com.nimbusds.jose.jwk.JWK;
+import com.nimbusds.jose.jwk.JWKMatcher;
+import com.nimbusds.jose.jwk.JWKSelector;
 import com.nimbusds.jose.jwk.JWKSet;
+import com.nimbusds.jose.jwk.KeyType;
 import com.nimbusds.jose.jwk.RSAKey;
+import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
+import com.nimbusds.jose.jwk.source.JWKSource;
+import com.nimbusds.jose.proc.SecurityContext;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
-import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse.BodyHandlers;
 import java.text.ParseException;
 import java.time.Clock;
-import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
@@ -28,7 +31,7 @@ public final class AccessTokenVerifier {
   /// The `typ` of an access token, RFC 9068 section 2.1
   private static final JOSEObjectType accessTokenType = new JOSEObjectType("at+jwt");
 
-  private final JWKSet keys;
+  private final JWKSource<SecurityContext> keys;
   private final String issuer;
   private final String audience;
   private final Clock clock;
@@ -45,46 +48,46 @@ public final class AccessTokenVerifier {
   /// @param issuer   the `iss` the tokens must have
   /// @param audience the `aud` the tokens must have, or null to accept tokens of any or no audience
   public AccessTokenVerifier(String jwkSet, URI issuer, String audience, Clock clock) {
-    JWKSet parsed;
-    try {
-      parsed = JWKSet.parse(jwkSet);
-    } catch (ParseException e) {
-      throw new IllegalArgumentException("The keys are not a JWK set: " + e.getMessage());
-    }
-    if (parsed.getKeys().isEmpty())
-      throw new IllegalArgumentException("The keys are empty");
-    for (JWK key : parsed.getKeys()) {
-      if (!(key instanceof RSAKey) || key.getKeyID() == null)
-        throw new IllegalArgumentException("The keys must be RSA keys with key ids");
-    }
-    this.keys = parsed.toPublicJWKSet();
+    this(new ImmutableJWKSet<>(validated(parse(jwkSet)).toPublicJWKSet()), issuer, audience, clock);
+  }
+
+  private AccessTokenVerifier(JWKSource<SecurityContext> keys, URI issuer, String audience, Clock clock) {
+    this.keys = keys;
     this.issuer = issuer.toString();
     this.audience = audience;
     this.clock = clock;
   }
 
   /// A verifier with the keys fetched from the `jwks_uri` of the issuer, e.g.
-  /// `https://idp.example.com/.well-known/jwks.json`. The keys are fetched once, so a verifier must be created again
-  /// to see keys the issuer has added since.
+  /// `https://idp.example.com/.well-known/jwks.json`. The keys are fetched when the verifier is created, which fails
+  /// if they can't be. They are fetched again for a token signed with a key not among them, as the issuer may have
+  /// added a key since, but at most every 30 seconds. Such a fetch blocks the verification of the token.
   public static AccessTokenVerifier fetchingKeys(URI jwksUri, URI issuer, String audience, Clock clock) {
-    return new AccessTokenVerifier(fetch(jwksUri), issuer, audience, clock);
+    var keys = new RemoteKeys(jwksUri, HttpClient.newBuilder().connectTimeout(RemoteKeys.timeout).build(), clock);
+    try {
+      validated(keys.fetch());
+    } catch (KeySourceException e) {
+      throw new IllegalStateException(e.getMessage(), e);
+    }
+    return new AccessTokenVerifier(keys, issuer, audience, clock);
   }
 
-  private static String fetch(URI jwksUri) {
-    try (HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build()) {
-      var response = client.send(
-          HttpRequest.newBuilder(jwksUri).timeout(Duration.ofSeconds(10)).header("Accept", "application/json").GET().build(),
-          BodyHandlers.ofString()
-      );
-      if (response.statusCode() != 200)
-        throw new IllegalStateException("Failed to fetch the keys from " + jwksUri + ": status " + response.statusCode());
-      return response.body();
-    } catch (IOException e) {
-      throw new IllegalStateException("Failed to fetch the keys from " + jwksUri, e);
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-      throw new IllegalStateException("Interrupted while fetching the keys from " + jwksUri, e);
+  private static JWKSet parse(String jwkSet) {
+    try {
+      return JWKSet.parse(jwkSet);
+    } catch (ParseException e) {
+      throw new IllegalArgumentException("The keys are not a JWK set: " + e.getMessage());
     }
+  }
+
+  private static JWKSet validated(JWKSet keys) {
+    if (keys.getKeys().isEmpty())
+      throw new IllegalArgumentException("The keys are empty");
+    for (JWK key : keys.getKeys()) {
+      if (!(key instanceof RSAKey) || key.getKeyID() == null)
+        throw new IllegalArgumentException("The keys must be RSA keys with key ids");
+    }
+    return keys;
   }
 
   /// The claims of the token if it is valid: signed by a key of the issuer, issued by the issuer, for the audience if
@@ -95,8 +98,10 @@ public final class AccessTokenVerifier {
       if (!JWSAlgorithm.RS256.equals(jwt.getHeader().getAlgorithm()) || !accessTokenType.equals(jwt.getHeader().getType()))
         return Optional.empty();
       String keyId = jwt.getHeader().getKeyID();
-      JWK key = keyId != null ? keys.getKeyByKeyId(keyId) : null;
-      if (!(key instanceof RSAKey rsaKey) || !jwt.verify(new RSASSAVerifier(rsaKey.toRSAPublicKey())))
+      if (keyId == null)
+        return Optional.empty();
+      List<JWK> found = keys.get(new JWKSelector(new JWKMatcher.Builder().keyType(KeyType.RSA).keyID(keyId).build()), null);
+      if (found.size() != 1 || !(found.getFirst() instanceof RSAKey rsaKey) || !jwt.verify(new RSASSAVerifier(rsaKey.toRSAPublicKey())))
         return Optional.empty();
       JWTClaimsSet claims = jwt.getJWTClaimsSet();
       if (!issuer.equals(claims.getIssuer())
@@ -108,6 +113,9 @@ public final class AccessTokenVerifier {
         return Optional.empty();
       String scope = claims.getStringClaim("scope");
       return Optional.of(new AccessToken(claims.getSubject(), claims.getStringClaim("client_id"), scopes(scope)));
+    } catch (KeySourceException e) {
+      System.err.println("Failed to verify an access token, as the keys of the issuer can't be fetched: " + e.getMessage());
+      return Optional.empty();
     } catch (ParseException | JOSEException e) {
       return Optional.empty();
     }

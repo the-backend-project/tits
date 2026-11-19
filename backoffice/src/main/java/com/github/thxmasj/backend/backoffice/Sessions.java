@@ -29,6 +29,7 @@ import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
 import com.github.thxmasj.backend.core.message.http.TypedHttpResponse;
 import com.github.thxmasj.backend.http.inbox.HttpInbox;
 import com.github.thxmasj.backend.http.inbox.HttpInboxRequest;
+import com.github.thxmasj.backend.http.inbox.OpenIdConnectClient;
 import com.github.thxmasj.backend.http.inbox.ResponseEventType;
 import com.github.thxmasj.backend.http.outbox.AtMostOnce;
 import com.github.thxmasj.backend.http.outbox.AtMostOnceDispatcher;
@@ -38,6 +39,7 @@ import com.nimbusds.jwt.JWTClaimsSet;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
+import java.net.URLDecoder;
 import java.security.MessageDigest;
 import java.time.Duration;
 import java.util.Collection;
@@ -313,13 +315,13 @@ final class Sessions {
   );
 
   private final Backoffice.Config config;
-  private final OpenIdConnect provider;
+  private final OpenIdConnectClient provider;
   private final Pages pages;
   private final Map<String, String> files;
   private final AtMostOnceDispatcher<Redemption, String> tokenRequests;
 
   /// @param forwarder the HTTP client the token requests are sent with
-  Sessions(Backoffice.Config config, OpenIdConnect provider, Pages pages, Map<String, String> files, HttpClient forwarder) {
+  Sessions(Backoffice.Config config, OpenIdConnectClient provider, Pages pages, Map<String, String> files, HttpClient forwarder) {
     this.config = config;
     this.provider = provider;
     this.pages = pages;
@@ -370,7 +372,7 @@ final class Sessions {
             // A page requested without a session starts a sign-in, with the session as the state at the provider
             onEvent(ViewRequested).to(States.SigningIn)
                 .assembleReactive(c -> {
-                  String secret = OpenIdConnect.generateSecret();
+                  String secret = Secrets.generate();
                   String returnPath = c.input().pathAndQuery().length() > maxReturnPathLength ? Path + "/" : c.input().pathAndQuery();
                   return provider.authorizationUrl(c.log().entityId().toString(), secret)
                       .map(url -> Optional.of(new Start(returnPath, secret, c.input().htmx(), url)))
@@ -444,8 +446,8 @@ final class Sessions {
                 .otherwise(
                     onEvent(UserSignedIn).to(States.SignedIn)
                         // The token of the session cookie, of which only the hash is the id of the session
-                        .assemble(c -> tuple(c.input(), OpenIdConnect.generateSecret(), c.entityId()))
-                        .trigger(TokenClaimed).with(d -> OpenIdConnect.hash(d.t2())).on(Tokens).identifiedBy(d -> newEntityId(d.t3()))
+                        .assemble(c -> tuple(c.input(), Secrets.generate(), c.entityId()))
+                        .trigger(TokenClaimed).with(d -> Secrets.hash(d.t2())).on(Tokens).identifiedBy(d -> newEntityId(d.t3()))
                         .trigger(ReplyCreated).with(d -> redirect(d.t1().t1().returnPath(), sessionCookie(d.t1().t2(), config.sessionLifetime()))).on(Request).identifiedBy(entityIdFromSession())
                         .output(d -> d.t1().t1().t1()),
                     d -> new SignedIn(user(d.t1().get()), d.t3() + config.sessionLifetime().toSeconds(), d.t2().returnPath())
@@ -559,7 +561,7 @@ final class Sessions {
   /// is of no session
   private static EntitySelector session(HttpRequestMessage request) {
     String token = cookie(request.headerValue("Cookie"), sessionCookie);
-    return token != null ? idEvent(TokenClaimed, OpenIdConnect.hash(token), EntitySelector.newEntity()) : EntitySelector.newEntity();
+    return token != null ? idEvent(TokenClaimed, Secrets.hash(token), EntitySelector.newEntity()) : EntitySelector.newEntity();
   }
 
   private static Validated<View> view(HttpRequestMessage request) {
@@ -571,7 +573,7 @@ final class Sessions {
   private static Validated<Callback> callback(HttpRequestMessage request) {
     Map<String, String> query;
     try {
-      query = OpenIdConnect.parse(request.uri().getRawQuery());
+      query = parse(request.uri().getRawQuery());
     } catch (IllegalArgumentException e) {
       return invalid("The response of the identity provider is invalid");
     }
@@ -583,7 +585,7 @@ final class Sessions {
 
   private static Map<String, String> query(String rawQuery) {
     try {
-      return OpenIdConnect.parse(rawQuery);
+      return parse(rawQuery);
     } catch (IllegalArgumentException e) {
       return Map.of();
     }
@@ -742,6 +744,22 @@ final class Sessions {
       case 502 -> "Bad Gateway";
       default -> "Status " + status;
     };
+  }
+
+  /// The parameters of a query, of which the first of each name is kept. Fails on an invalid encoding.
+  static Map<String, String> parse(String query) {
+    var parameters = new LinkedHashMap<String, String>();
+    if (query == null || query.isEmpty())
+      return parameters;
+    for (String pair : query.split("&")) {
+      if (pair.isEmpty())
+        continue;
+      int i = pair.indexOf('=');
+      String name = URLDecoder.decode(i < 0 ? pair : pair.substring(0, i), UTF_8);
+      String value = i < 0 ? "" : URLDecoder.decode(pair.substring(i + 1), UTF_8);
+      parameters.putIfAbsent(name, value);
+    }
+    return parameters;
   }
 
 }

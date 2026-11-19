@@ -97,18 +97,20 @@ final class Edge implements HttpInboxListener.Filter {
   /// redirected to the upstream provider to sign in, or back to the client with an error. The secret of the sign-in
   /// with the upstream provider is kept in a cookie, which binds it to the browser the user started it in.
   private Mono<HttpResponseMessage> authorize(HttpRequestMessage request, Function<HttpRequestMessage, Mono<HttpResponseMessage>> next) {
-    return next.apply(request).map(response -> switch (response.statusCode()) {
+    return next.apply(request).flatMap(response -> switch (response.statusCode()) {
       case 200 -> {
         String authorization = DataType.objectMapper.readTree(response.body()).get("authorization").asString();
         String secret = Secrets.generate();
-        var headers = noStore(Map.of());
-        headers.remove("Content-Type");
-        headers.put("Location", upstream.authorizationUrl(authorization, secret).toString());
-        headers.put("Set-Cookie", cookie(authorization, secret, signInLifetime));
-        yield new HttpResponseMessage(302, "Found", headers, null);
+        yield upstream.authorizationUrl(authorization, secret).map(url -> {
+          var headers = noStore(Map.of());
+          headers.remove("Content-Type");
+          headers.put("Location", url.toString());
+          headers.put("Set-Cookie", cookie(authorization, secret, signInLifetime));
+          return new HttpResponseMessage(302, "Found", headers, null);
+        });
       }
-      case 302 -> redirect(response, null);
-      default -> errorPage(response);
+      case 302 -> Mono.just(redirect(response, null));
+      default -> Mono.just(errorPage(response));
     });
   }
 
@@ -233,7 +235,7 @@ final class Edge implements HttpInboxListener.Filter {
       var rest = new LinkedHashMap<>(form);
       rest.remove("code");
       rest.remove("code_verifier");
-      body = Upstream.form(rest).getBytes(UTF_8);
+      body = Form.encode(rest).getBytes(UTF_8);
     }
     if (!Clients.isValidClientId(clientId))
       return Mono.just(tokenError(401, "invalid_client", "Client authentication failed"));
@@ -370,7 +372,7 @@ final class Edge implements HttpInboxListener.Filter {
     String uri = redirect.redirectUri();
     var headers = noStore(Map.of());
     headers.remove("Content-Type");
-    headers.put("Location", uri + (uri.contains("?") ? "&" : "?") + Upstream.form(parameters));
+    headers.put("Location", uri + (uri.contains("?") ? "&" : "?") + Form.encode(parameters));
     return new HttpResponseMessage(302, "Found", headers, null);
   }
 

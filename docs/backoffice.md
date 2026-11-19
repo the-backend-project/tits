@@ -129,7 +129,9 @@ with a page telling the user.
 
 The provider is found by [OpenID Connect Discovery](https://openid.net/specs/openid-connect-discovery-1_0.html) at the
 first sign-in rather than at startup, so the backoffice starts also when its provider is not up yet, e.g. the identity
-provider it is the backoffice of. Every page viewed is an event of the session, rendered by its transition while the
+provider it is the backoffice of. The backoffice is a client of the provider by the
+[`OpenIdConnectClient`](http-inbox.md#signing-users-in-with-openid-connect) of `http-inbox`, which also fetches the keys
+of the provider again when it signs an ID token with a new key. Every page viewed is an event of the session, rendered by its transition while the
 session is valid. A session which has expired or been signed out of removes the cookie and redirects to the page
 requested, which then starts a new sign-in. A request of htmx for a part of a page is answered with `HX-Refresh`
 instead, so the page is reloaded.

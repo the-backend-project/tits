@@ -1,5 +1,6 @@
 package com.github.thxmasj.backend.http.inbox;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -19,13 +20,20 @@ import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jose.jwk.gen.RSAKeyGenerator;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
+import com.sun.net.httpserver.HttpServer;
+import java.io.IOException;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.URI;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.Test;
 
@@ -149,6 +157,57 @@ public class AccessTokenVerifierTest {
     assertThat(authorize(Map.of())).isEqualTo(new Refused(401, "Bearer", "Authorization header missing"));
     assertThat(authorize(Map.of("Authorization", "Basic d2FsbGV0OnNlY3JldA==")))
         .isEqualTo(new Refused(401, "Bearer", "Authorization token is not of type Bearer"));
+  }
+
+  @Test
+  public void whenIssuerAddsKeyThenFetchingVerifierAcceptsTokensSignedWithItAfterAtMost30Seconds() throws IOException {
+    var served = new AtomicReference<>(new JWKSet(key).toPublicJWKSet().toString());
+    var fetches = new AtomicInteger();
+    var server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+    server.createContext("/jwks.json", exchange -> {
+      fetches.incrementAndGet();
+      byte[] body = served.get().getBytes(UTF_8);
+      exchange.getResponseHeaders().add("Content-Type", "application/json");
+      exchange.sendResponseHeaders(200, body.length);
+      try (var out = exchange.getResponseBody()) {
+        out.write(body);
+      }
+    });
+    server.start();
+    try {
+      var time = new AtomicReference<>(now);
+      var clock = new Clock() {
+        @Override public ZoneOffset getZone() { return ZoneOffset.UTC; }
+        @Override public Clock withZone(ZoneId zone) { throw new UnsupportedOperationException(); }
+        @Override public Instant instant() { return time.get(); }
+      };
+      URI jwksUri = URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/jwks.json");
+      var verifier = AccessTokenVerifier.fetchingKeys(jwksUri, issuer, null, clock);
+      assertThat(fetches).hasValue(1);
+      assertThat(verifier.verify(token(key, c -> c))).isPresent();
+      // The new key is not fetched before 30 seconds after the last fetch
+      assertThat(verifier.verify(token(otherKey, c -> c))).isEmpty();
+      assertThat(fetches).hasValue(1);
+      served.set(new JWKSet(List.of(key, otherKey)).toPublicJWKSet().toString());
+      time.set(now.plusSeconds(29));
+      assertThat(verifier.verify(token(otherKey, c -> c))).isEmpty();
+      assertThat(fetches).hasValue(1);
+      time.set(now.plusSeconds(30));
+      assertThat(verifier.verify(token(otherKey, c -> c))).isPresent();
+      assertThat(fetches).hasValue(2);
+      // A known key is not fetched again
+      assertThat(verifier.verify(token(key, c -> c))).isPresent();
+      assertThat(fetches).hasValue(2);
+    } finally {
+      server.stop(0);
+    }
+  }
+
+  @Test
+  public void whenKeysCantBeFetchedThenFetchingVerifierFailsToBeCreated() {
+    assertThatThrownBy(() -> AccessTokenVerifier.fetchingKeys(URI.create("http://localhost:1/jwks.json"), issuer, null, clock()))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("Failed to fetch the keys from http://localhost:1/jwks.json");
   }
 
   private Authorization authorize(Map<String, String> headers, String... requiredScopes) {
