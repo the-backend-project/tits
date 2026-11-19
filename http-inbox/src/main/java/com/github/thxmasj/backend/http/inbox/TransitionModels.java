@@ -483,7 +483,7 @@ interface TransitionModels {
                 .output(d -> tuple(d.t1().t1().request(), d.t1().t2())),
             d -> tuple(d.t1(), new EventReference(d.t2().completed().entityId(), d.t2().completed().eventNumber()))
         )
-        .when(d -> d.t2() instanceof ProcessResult.Pending<?, ?, ?> p && p.exception().entityModel().equals(RequestRouting)).then(
+        .when(d -> d.t2() instanceof ProcessResult.Pending<?, ?, ?> p && RequestRouting.includes(p.exception().entityModel())).then(
             // TODO: Can immediate reply in router be handled like this?
             onEvent(RequestAccepted).to(Dispatched)
                 .assemble((input, log) -> tuple(input.t1(), input.t2(), log.entityId()))
@@ -592,16 +592,14 @@ interface TransitionModels {
   /// session, are followed in the same way. Delayed and conditional triggers, and actions such as sending an outbox
   /// request, are not followed, as what they lead to is calculated later, so a response given that way is checked when
   /// it is given.
-  static void checkResponses(
-      List<HttpInboxRequest<?>> requests,
-      Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions
-  ) {
+  static void checkResponses(List<HttpInboxRequest<?>> requests, List<EntityModel> entityModels) {
+    Set<EntityModel> models = Set.copyOf(entityModels);
     for (HttpInboxRequest<?> request : requests) {
       Set<UUID> taken = request.transitions().get(Dispatched).stream()
           .map(transition -> transition.eventType().id())
           .collect(toSet());
       for (Process<?, ?> process : request.processes()) {
-        for (var given : responsesGiven(new Event(process.entityModel(), process.eventType()), transitions, request)) {
+        for (var given : responsesGiven(new Event(process.entityModel(), process.eventType()), models, request)) {
           if (!taken.contains(given.response().id()))
             throw new IllegalArgumentException(String.format(
                 "The inbox request %s doesn't take the response %s, which %s on %s triggers on %s, on the way from " +
@@ -635,7 +633,7 @@ interface TransitionModels {
   /// once, except on the inbox's own entity models
   private static List<Given> responsesGiven(
       Event start,
-      Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions,
+      Set<EntityModel> models,
       HttpInboxRequest<?> request
   ) {
     var given = new ArrayList<Given>();
@@ -643,9 +641,9 @@ interface TransitionModels {
     var toVisit = new ArrayDeque<Event>(List.of(start));
     while (!toVisit.isEmpty()) {
       Event event = toVisit.removeFirst();
-      if (!visited.add(List.of(event.entityModel().id(), event.id())) || !transitions.containsKey(event.entityModel()))
+      if (!visited.add(List.of(event.entityModel().id(), event.id())) || !models.contains(event.entityModel()))
         continue;
-      var taken = transitions.get(event.entityModel()).values().stream()
+      var taken = event.entityModel().transitions().values().stream()
           .flatMap(List::stream)
           .filter(transition -> transition.eventType().id().equals(event.id()))
           .toList();
@@ -664,7 +662,7 @@ interface TransitionModels {
   }
 
   private static boolean isInboxModel(EntityModel model) {
-    return model instanceof HttpInboxRequest<?> || model.equals(RequestRouting) || model.equals(MessageIds) || model.equals(Index);
+    return model instanceof HttpInboxRequest<?> || RequestRouting.includes(model) || model.equals(MessageIds) || model.equals(Index);
   }
 
   /// The triggers of the transition and of the transitions it may choose, which trigger their events at once. A

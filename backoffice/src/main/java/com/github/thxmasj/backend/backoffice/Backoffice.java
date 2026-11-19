@@ -1,10 +1,9 @@
 package com.github.thxmasj.backend.backoffice;
 
 import com.github.thxmasj.backend.core.EntityModel;
-import com.github.thxmasj.backend.core.State;
-import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.core.database.DatabaseClient;
 import com.github.thxmasj.backend.core.http.HttpClient;
+import com.github.thxmasj.backend.http.inbox.HttpInbox;
 import com.github.thxmasj.backend.http.inbox.OpenIdConnectClient;
 import java.net.URI;
 import java.time.Duration;
@@ -39,16 +38,16 @@ public final class Backoffice {
   /// @param config                 how the users sign in
   /// @param client                 a client of the database, whose role may read the schema of the application
   /// @param applicationSchema      the schema of the application's state machine
-  /// @param applicationTransitions the transitions of the application's state machine, which give the entity models and
+  /// @param applicationModels      the entity models of the application's state machine, whose transitions give the
   ///                               event types of the entities read
   public Backoffice(
       String service,
       Config config,
       DatabaseClient client,
       String applicationSchema,
-      Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> applicationTransitions
+      List<? extends EntityModel> applicationModels
   ) {
-    this(service, config, client, applicationSchema, applicationTransitions, new JdkHttpClient());
+    this(service, config, client, applicationSchema, applicationModels, new JdkHttpClient());
   }
 
   /// @param forwarder the HTTP client the token requests to the provider are sent with
@@ -57,11 +56,11 @@ public final class Backoffice {
       Config config,
       DatabaseClient client,
       String applicationSchema,
-      Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> applicationTransitions,
+      List<? extends EntityModel> applicationModels,
       HttpClient forwarder
   ) {
     Objects.requireNonNull(config, "config");
-    var pages = new Pages(new Graph(client, applicationSchema, applicationTransitions), service + " backoffice");
+    var pages = new Pages(new Graph(client, applicationSchema, applicationModels), service + " backoffice");
     this.sessions = new Sessions(config, openIdConnectClient(config), pages, Sessions.files(), forwarder);
   }
 
@@ -76,14 +75,15 @@ public final class Backoffice {
     ));
   }
 
-  /// The transitions of the backoffice's state machine: of its sessions, its other requests and its inbox
-  public Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions() {
-    return sessions.transitions();
+  /// The inbox of the backoffice's state machine, whose entity models are those of its sessions, its other requests
+  /// and the inbox itself, see [HttpInbox#entityModels()]
+  public HttpInbox inbox() {
+    return sessions.inbox();
   }
 
   /// The entity model of the sessions, e.g. to draw their state diagram
-  public static EntityModel sessionModel() {
-    return Sessions.Session;
+  public EntityModel sessionModel() {
+    return sessions.session();
   }
 
   /// How the users sign in to the backoffice, and who may

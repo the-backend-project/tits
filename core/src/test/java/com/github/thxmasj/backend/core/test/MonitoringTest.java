@@ -37,10 +37,10 @@ public class MonitoringTest {
 
   enum States implements State { Sent, Lost, Delivered, Returned, Filed, Called, Arrived, Inspecting }
 
-  static EntityModel Parcel = EntityModel.of("Parcel", UUID.fromString("b4d6f8a0-1c3e-4a5b-9d7f-e1a3c5b7d9f1"));
-  static EntityModel Complaint = EntityModel.of("Complaint", UUID.fromString("5a7c9e1b-3d5f-4b6c-8e0a-f2b4d6c8e0a2"));
-  static EntityModel Inspection = EntityModel.of("Inspection", UUID.fromString("6c8e0a2b-4d6f-4e8a-b0c2-d4e6f8a0b2c5"));
-  static EntityModel Courier = EntityModel.of("Courier", UUID.fromString("0b2d4f6a-8c1e-4d3f-a5b7-c9e1a3b5d7f8"));
+  static EntityModel Parcel = EntityModel.of("Parcel", UUID.fromString("b4d6f8a0-1c3e-4a5b-9d7f-e1a3c5b7d9f1"), MonitoringTest::parcelTransitions);
+  static EntityModel Complaint = EntityModel.of("Complaint", UUID.fromString("5a7c9e1b-3d5f-4b6c-8e0a-f2b4d6c8e0a2"), MonitoringTest::complaintTransitions);
+  static EntityModel Inspection = EntityModel.of("Inspection", UUID.fromString("6c8e0a2b-4d6f-4e8a-b0c2-d4e6f8a0b2c5"), MonitoringTest::inspectionTransitions);
+  static EntityModel Courier = EntityModel.of("Courier", UUID.fromString("0b2d4f6a-8c1e-4d3f-a5b7-c9e1a3b5d7f8"), MonitoringTest::courierTransitions);
 
   static EventType<Void, Void> ParcelSent = BasicEventType.of("Parcel sent", UUID.fromString("c6e8a0b2-4d6f-4c7d-9f1b-a3c5e7d9f1b3"));
   static EventType<Void, Void> DeliveryTimedOut = BasicEventType.of("Delivery timed out", UUID.fromString("7b9d1f3a-5e7a-4d8e-a0c2-b4d6f8e0a2c4"));
@@ -66,71 +66,83 @@ public class MonitoringTest {
   private static final List<String> lines = new CopyOnWriteArrayList<>();
   private static final StateMachine machine = Init.stateMachine(
       UUID.randomUUID().toString(),
-      transitions(),
+      entityModels(),
       Clock.systemUTC(),
       new JsonLinesListener(lines::add, Clock.systemUTC())
   );
 
-  private static Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions() {
-    return Map.of(
-        Parcel, Map.<State, List<TransitionModel<?, ?>>>of(
-            Begin, List.of(
-                onEvent(ParcelSent).to(States.Sent)
-                    .trigger(DeliveryTimedOut).after(_ -> Duration.ofDays(1))
-                    .output()
-            ),
-            States.Sent, List.of(
-                onEvent(DeliveryTimedOut).toSelf().output(),
-                onEvent(ParcelInspected).toSelf()
-                    .assemble(c -> c.log().entityId())
-                    .trigger(InspectionStarted).with(parcel -> parcel).on(Inspection).identifiedBy(newEntityId())
-                    .output(),
-                onEvent(ParcelLost).to(States.Lost).severity(Severity.Error)
-                    .assemble(c -> c.log().entityId())
-                    .trigger(ComplaintFiled).with(parcel -> parcel).on(Complaint).identifiedBy(newEntityId())
-                    .output(),
-                // Always chooses another transition, so no event is accepted with its severity
-                onEvent(ParcelReceived).to(States.Delivered).severity(Severity.Critical)
-                    .assembleInput()
-                    .when(d -> d.equals("damaged")).then(
-                        onEvent(ParcelReturned).to(States.Returned).severity(Severity.Warning).assembleInput().output(d -> d)
-                    )
-                    .otherwise(onEvent(ParcelDelivered).to(States.Delivered).assembleInput().output(d -> d))
-            ),
-            States.Lost, List.of(onEvent(LossConfirmed).toSelf().output()),
-            States.Delivered, List.of(),
-            States.Returned, List.of()
+  private static List<EntityModel> entityModels() {
+    return List.of(Parcel, Complaint, Inspection, Courier);
+  }
+
+  private static Map<State, List<TransitionModel<?, ?>>> parcelTransitions() {
+    return Map.<State, List<TransitionModel<?, ?>>>of(
+        Begin, List.of(
+            onEvent(ParcelSent).to(States.Sent)
+                .trigger(DeliveryTimedOut).after(_ -> Duration.ofDays(1))
+                .output()
         ),
-        Complaint, Map.<State, List<TransitionModel<?, ?>>>of(
-            Begin, List.of(
-                // The parcel is in the middle of its transition, so the loss is confirmed on it after that one
-                onEvent(ComplaintFiled).to(States.Filed).severity(Severity.Warning)
-                    .assembleInput()
-                    .trigger(LossConfirmed).on(Parcel).identifiedBy(parcel -> entityId(parcel))
-                    .output(d -> d.t1())
-            ),
-            States.Filed, List.of()
+        States.Sent, List.of(
+            onEvent(DeliveryTimedOut).toSelf().output(),
+            onEvent(ParcelInspected).toSelf()
+                .assemble(c -> c.log().entityId())
+                .trigger(InspectionStarted).with(parcel -> parcel).on(Inspection).identifiedBy(newEntityId())
+                .output(),
+            onEvent(ParcelLost).to(States.Lost).severity(Severity.Error)
+                .assemble(c -> c.log().entityId())
+                .trigger(ComplaintFiled).with(parcel -> parcel).on(Complaint).identifiedBy(newEntityId())
+                .output(),
+            // Always chooses another transition, so no event is accepted with its severity
+            onEvent(ParcelReceived).to(States.Delivered).severity(Severity.Critical)
+                .assembleInput()
+                .when(d -> d.equals("damaged")).then(
+                    onEvent(ParcelReturned).to(States.Returned).severity(Severity.Warning).assembleInput().output(d -> d)
+                )
+                .otherwise(onEvent(ParcelDelivered).to(States.Delivered).assembleInput().output(d -> d))
         ),
-        Inspection, Map.<State, List<TransitionModel<?, ?>>>of(
-            Begin, List.of(
-                onEvent(InspectionStarted).to(States.Inspecting)
-                    .<UUID>assemble(_ -> {throw new IllegalStateException("Scanner broken");})
-                    .output()
-            ),
-            States.Inspecting, List.of()
-        ),
-        Courier, Map.<State, List<TransitionModel<?, ?>>>of(
-            Begin, List.of(
-                onEvent(CourierCalled).to(States.Called)
-                    .assemble(_ -> "")
-                    .trigger(arrival).with(d -> d)
-                    .output()
-            ),
-            States.Called, List.of(onEvent(CourierArrived).to(States.Arrived).severity(Severity.Warning).output()),
-            States.Arrived, List.of()
-        )
+        States.Lost, List.of(onEvent(LossConfirmed).toSelf().output()),
+        States.Delivered, List.of(),
+        States.Returned, List.of()
     );
   }
+
+  private static Map<State, List<TransitionModel<?, ?>>> complaintTransitions() {
+    return Map.<State, List<TransitionModel<?, ?>>>of(
+        Begin, List.of(
+            // The parcel is in the middle of its transition, so the loss is confirmed on it after that one
+            onEvent(ComplaintFiled).to(States.Filed).severity(Severity.Warning)
+                .assembleInput()
+                .trigger(LossConfirmed).on(Parcel).identifiedBy(parcel -> entityId(parcel))
+                .output(d -> d.t1())
+        ),
+        States.Filed, List.of()
+    );
+  }
+
+  private static Map<State, List<TransitionModel<?, ?>>> inspectionTransitions() {
+    return Map.<State, List<TransitionModel<?, ?>>>of(
+        Begin, List.of(
+            onEvent(InspectionStarted).to(States.Inspecting)
+                .<UUID>assemble(_ -> {throw new IllegalStateException("Scanner broken");})
+                .output()
+        ),
+        States.Inspecting, List.of()
+    );
+  }
+
+  private static Map<State, List<TransitionModel<?, ?>>> courierTransitions() {
+    return Map.<State, List<TransitionModel<?, ?>>>of(
+        Begin, List.of(
+            onEvent(CourierCalled).to(States.Called)
+                .assemble(_ -> "")
+                .trigger(arrival).with(d -> d)
+                .output()
+        ),
+        States.Called, List.of(onEvent(CourierArrived).to(States.Arrived).severity(Severity.Warning).output()),
+        States.Arrived, List.of()
+    );
+  }
+
 
   @Test
   public void anEventIsWrittenWithItsEntityAndTime() {

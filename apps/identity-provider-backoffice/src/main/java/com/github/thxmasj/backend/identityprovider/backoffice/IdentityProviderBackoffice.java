@@ -19,7 +19,7 @@ public final class IdentityProviderBackoffice {
 
   public static void main(String[] args) {
     // The token lifetime is configuration of the identity provider, and doesn't change its model
-    BackofficeApp.run("Identity provider", "identity_provider", Inbox.transitions(Duration.ofMinutes(5)), args, System.getenv());
+    BackofficeApp.run("Identity provider", "identity_provider", Inbox.inbox(Duration.ofMinutes(5)).entityModels(), args, System.getenv());
   }
 
 }

@@ -77,8 +77,8 @@ public class IdEventTest {
   static EventType<StatementNumber, StatementNumber> StatementOfAccountIndexed = BasicEventType.of("Statement of account indexed", UUID.fromString("b9f6e6a4-7a0d-4c1f-a5a9-1f7b0c8e3d42"), new StatementNumberDataType());
   static IndexEntityModel Index = IndexEntityModel.of("Index", UUID.fromString("2d4f6a8c-0e1b-4c3d-9e5f-7a9b1c3d5e7f"), StatementOfAccountIndexed);
 
-  static EntityModel Account = EntityModel.of("Account", UUID.fromString("5d1b3c86-1b0e-4f7e-8a8c-2d6c9f0b7e15"));
-  static EntityModel Statement = EntityModel.of("Statement", UUID.fromString("e4a7d2f9-6c3b-4e8a-9b1d-7f5c0a2e8d36"));
+  static EntityModel Account = EntityModel.of("Account", UUID.fromString("5d1b3c86-1b0e-4f7e-8a8c-2d6c9f0b7e15"), IdEventTest::accountTransitions);
+  static EntityModel Statement = EntityModel.of("Statement", UUID.fromString("e4a7d2f9-6c3b-4e8a-9b1d-7f5c0a2e8d36"), IdEventTest::statementTransitions);
 
   static EventType<String, String> AccountOpened = BasicEventType.of("Account opened", UUID.fromString("a2d4f6b8-1c3e-4a5b-8d7f-9e0a1b2c3d4e"), DataType.string());
   static EventType<Void, Void> AccountTouched = BasicEventType.of("Account touched", UUID.fromString("f1e2d3c4-b5a6-4978-8a6b-5c4d3e2f1a0b"));
@@ -89,42 +89,46 @@ public class IdEventTest {
   private static final StateMachine machine = stateMachine(schema, Clock.systemUTC());
 
   private static StateMachine stateMachine(String schema, Clock clock) {
-    return Init.stateMachine(schema, transitions(), clock);
+    return Init.stateMachine(schema, entityModels(), clock);
   }
 
-  private static Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions() {
-    return Map.of(
-      Account, Map.<State, List<TransitionModel<?, ?>>>of(
-          Begin, List.of(
-              onEvent(AccountOpened).to(States.Opened)
-                  .assemble(c -> tuple(c.input(), c.entityId()))
-                  .trigger(AccountNumberClaimed).with(Tuple2::t1).on(Ids).identifiedBy(d -> entityId(d.t2(), CreateIfNotExists))
-                  .trigger(AliasClaimed).with(d -> "alias-" + d.t1().t1()).on(Ids).identifiedBy(d -> entityId(d.t1().t2(), CreateIfNotExists))
-                  .output(d -> d.t1().t2().isIdExists() ?
-                      "Duplicate of " + d.t1().t2().idExists().log().entityId() :
-                      d.t1().t1().t1())
-          ),
-          States.Opened, List.of(onEvent(AccountTouched).toSelf().output())
-      ),
-      Statement, Map.<State, List<TransitionModel<?, ?>>>of(
-          Begin, List.of(
-              onEvent(StatementIssued).to(States.Issued)
-                  .assemble(c -> tuple(c.input(), c.entityId()))
-                  .trigger(StatementOfAccountIndexed).with(Tuple2::t1).on(Index).identifiedBy(d -> newEntityId(d.t2()))
-                  .output(d -> d.t1().t1())
-          ),
-          States.Issued, List.of(onEvent(StatementLookedUp).toSelf().assemble(c -> c.log().entityId().toString()).output(d -> d))
-      ),
-      Ids, Ids.transitions(),
-      Index, Index.transitions()
+  private static List<EntityModel> entityModels() {
+    return List.of(Account, Statement, Ids, Index);
+  }
+
+  private static Map<State, List<TransitionModel<?, ?>>> accountTransitions() {
+    return Map.<State, List<TransitionModel<?, ?>>>of(
+        Begin, List.of(
+            onEvent(AccountOpened).to(States.Opened)
+                .assemble(c -> tuple(c.input(), c.entityId()))
+                .trigger(AccountNumberClaimed).with(Tuple2::t1).on(Ids).identifiedBy(d -> entityId(d.t2(), CreateIfNotExists))
+                .trigger(AliasClaimed).with(d -> "alias-" + d.t1().t1()).on(Ids).identifiedBy(d -> entityId(d.t1().t2(), CreateIfNotExists))
+                .output(d -> d.t1().t2().isIdExists() ?
+                    "Duplicate of " + d.t1().t2().idExists().log().entityId() :
+                    d.t1().t1().t1())
+        ),
+        States.Opened, List.of(onEvent(AccountTouched).toSelf().output())
     );
   }
+
+  private static Map<State, List<TransitionModel<?, ?>>> statementTransitions() {
+    return Map.<State, List<TransitionModel<?, ?>>>of(
+        Begin, List.of(
+            onEvent(StatementIssued).to(States.Issued)
+                .assemble(c -> tuple(c.input(), c.entityId()))
+                .trigger(StatementOfAccountIndexed).with(Tuple2::t1).on(Index).identifiedBy(d -> newEntityId(d.t2()))
+                .output(d -> d.t1().t1())
+        ),
+        States.Issued, List.of(onEvent(StatementLookedUp).toSelf().assemble(c -> c.log().entityId().toString()).output(d -> d))
+    );
+  }
+
 
   @Test
   public void idsAreEventsOfASeparateIdEntity() {
     Event<?> opened = machine.onEvent(trigger(AccountOpened, Account), "123").blockFirst();
 
-    var eventsByEntityId = Init.storage(schema, transitions()).eventsByEntityId();
+    var eventsByEntityId = Init.storage(schema, entityModels()).eventsByEntityId();
     EventLog accountLog = eventsByEntityId.execute(Account, List.of(AccountOpened, AccountTouched), opened.entityId()).block();
     EventLog idLog = eventsByEntityId.execute(Ids, List.of(AccountNumberClaimed, AliasClaimed), opened.entityId()).block();
 
@@ -163,7 +167,7 @@ public class IdEventTest {
 
     assertEquals("Duplicate of " + first.entityId(), second.getUnmarshalledData());
     // Neither of the existing ids is stored again
-    var eventsByEntityId = Init.storage(schema, transitions()).eventsByEntityId();
+    var eventsByEntityId = Init.storage(schema, entityModels()).eventsByEntityId();
     assertEquals(
         List.of(),
         eventsByEntityId.execute(Ids, List.of(AccountNumberClaimed, AliasClaimed), second.entityId())

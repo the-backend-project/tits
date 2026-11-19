@@ -40,8 +40,8 @@ public interface Clients {
   /// The scope allowing a client to register clients
   String RegistrationScope = "client-registration";
 
-  EntityModel Client = EntityModel.of("Client", UUID.fromString("0f6d1c52-2b8e-4f3a-9d71-5a4c8e2b1f06"));
-  EntityModel ClientRegistration = EntityModel.of("Client registration", UUID.fromString("7b3e9a14-6c0d-4e85-a2f9-1d8c5b7e3a40"));
+  EntityModel Client = EntityModel.of("Client", UUID.fromString("0f6d1c52-2b8e-4f3a-9d71-5a4c8e2b1f06"), Clients::clientTransitions);
+  EntityModel ClientRegistration = EntityModel.of("Client registration", UUID.fromString("7b3e9a14-6c0d-4e85-a2f9-1d8c5b7e3a40"), Clients::registrationTransitions);
 
   enum States implements State {
     Registered,
@@ -165,42 +165,47 @@ public interface Clients {
     return null;
   }
 
-  static Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions() {
+  /// The entity models, each with its transitions
+  static List<EntityModel> entityModels() {
+    return List.of(Client, ClientIds, ClientRegistration);
+  }
+
+  private static Map<State, List<TransitionModel<?, ?>>> clientTransitions() {
     return Map.of(
-        Client, Map.of(
-            Begin, List.of(
-                onEvent(ClientRegistered).to(States.Registered).assembleInput().output(d -> d)
-            ),
-            States.Registered, List.of(
-                onEvent(ClientLookedUp).toSelf().assemble((_, log) -> log.one(ClientRegistered)).output(d -> d)
-            )
+        Begin, List.of(
+            onEvent(ClientRegistered).to(States.Registered).assembleInput().output(d -> d)
         ),
-        ClientIds, ClientIds.transitions(),
-        ClientRegistration, Map.of(
-            Begin, List.of(
-                // The client gets a new entity id, which its id entity is created with
-                onEvent(RegistrationRequested).to(States.Accepted)
-                    .assemble(c -> tuple(c.input(), EntityId.newId()))
-                    .trigger(ClientIdClaimed).with(d -> d.t1().clientId()).on(ClientIds).identifiedBy(d -> newEntityId(d.t2()))
-                    .when(d -> d.t2().isIdExists()).then(
-                        onEvent(RegistrationRejected).to(States.Rejected)
-                            .assembleInput()
-                            .trigger(Inbox.ReplyCreated).with(d -> Reply.error(409, "invalid_client_metadata", "Client id " + d.clientId() + " is taken")).on(Request).identifiedBy(entityIdFromSession())
-                            .output(Tuple2::t1),
-                        d -> d.t1().t1()
-                    )
-                    .otherwise(
-                        onEvent(RegistrationAccepted).to(States.Accepted)
-                            .assemble(c -> tuple(c.input(), c.timestamp().toEpochSecond()))
-                            .trigger(ClientRegistered).with(d -> d.t1().t1()).on(Client).identifiedBy(d -> newEntityId(d.t1().t2()))
-                            .trigger(Inbox.ReplyCreated).with(d -> Reply.json(201, registered(d.t1().t1().t1(), d.t1().t2()))).on(Request).identifiedBy(entityIdFromSession())
-                            .output(d -> d.t1().t1().t1().t1()),
-                        Tuple2::t1
-                    )
-            ),
-            States.Accepted, List.of(),
-            States.Rejected, List.of()
+        States.Registered, List.of(
+            onEvent(ClientLookedUp).toSelf().assemble((_, log) -> log.one(ClientRegistered)).output(d -> d)
         )
+    );
+  }
+
+  private static Map<State, List<TransitionModel<?, ?>>> registrationTransitions() {
+    return Map.of(
+        Begin, List.of(
+            // The client gets a new entity id, which its id entity is created with
+            onEvent(RegistrationRequested).to(States.Accepted)
+                .assemble(c -> tuple(c.input(), EntityId.newId()))
+                .trigger(ClientIdClaimed).with(d -> d.t1().clientId()).on(ClientIds).identifiedBy(d -> newEntityId(d.t2()))
+                .when(d -> d.t2().isIdExists()).then(
+                    onEvent(RegistrationRejected).to(States.Rejected)
+                        .assembleInput()
+                        .trigger(Inbox.ReplyCreated).with(d -> Reply.error(409, "invalid_client_metadata", "Client id " + d.clientId() + " is taken")).on(Request).identifiedBy(entityIdFromSession())
+                        .output(Tuple2::t1),
+                    d -> d.t1().t1()
+                )
+                .otherwise(
+                    onEvent(RegistrationAccepted).to(States.Accepted)
+                        .assemble(c -> tuple(c.input(), c.timestamp().toEpochSecond()))
+                        .trigger(ClientRegistered).with(d -> d.t1().t1()).on(Client).identifiedBy(d -> newEntityId(d.t1().t2()))
+                        .trigger(Inbox.ReplyCreated).with(d -> Reply.json(201, registered(d.t1().t1().t1(), d.t1().t2()))).on(Request).identifiedBy(entityIdFromSession())
+                        .output(d -> d.t1().t1().t1().t1()),
+                    Tuple2::t1
+                )
+        ),
+        States.Accepted, List.of(),
+        States.Rejected, List.of()
     );
   }
 

@@ -276,7 +276,9 @@ the creator of its request message, from data of the transition dispatching it:
 
 `of(...)` takes a function creating the request message from the data, and `reactive(...)` one creating it
 reactively, from the data and the `DispatchContext` of the dispatching transition. A dispatcher with rollback also
-takes the rollback message creator.
+takes the rollback message creator. The rollback message creator is part of the transitions of the outbox request, so
+the dispatcher's `outbox()` is a copy of the outbox request with it (see `AtMostOnce.withRollback(..)`), with the same
+name and id. Requests are triggered on the dispatcher's `outbox()`, and it is the one given to the state machine.
 
 ```java
 var authorisations = AtMostOnceWithRollbackDispatcher.of(
@@ -301,12 +303,17 @@ onEvent(Authorise).to(Authorising)
 A process rolling the request back triggers `rollbackDispatched()` of the dispatcher on the entity of the request,
 e.g. by the entity id it got back when it was dispatched.
 
-The dispatcher has the transitions of the outbox, and of its rollback models, to register along with those of the
-application:
+The dispatcher has the entity models of the outbox, and of its rollback models, to give the state machine along with
+those of the application:
 
 ```java
-transitions.putAll(authorisations.transitions());
+entityModels.addAll(authorisations.entityModels());
 ```
+
+The outbox request is built with its process model, `processModel(Payment)`, whose transitions in turn trigger the
+request on the dispatcher's outbox. A process model declared as a constant with `EntityModel.of(name, id, transitions)`
+takes care of that, as its transitions are created when the state machine first asks for them, after the outbox
+requests are built.
 
 ## Finding the requests of a process
 

@@ -24,7 +24,7 @@ import java.util.UUID;
 /// A greeting is an entity which is created for every `GET /`. Its creation responds with a hello world page.
 public interface Greetings {
 
-  EntityModel Greeting = EntityModel.of("Greeting", UUID.fromString("8a4c1d36-4f0e-4b8e-9a47-2f5f0c0b6d11"));
+  EntityModel Greeting = EntityModel.of("Greeting", UUID.fromString("8a4c1d36-4f0e-4b8e-9a47-2f5f0c0b6d11"), Greetings::transitions);
 
   enum States implements State {
     Greeted
@@ -54,18 +54,19 @@ public interface Greetings {
       )
       .build("GreetingRequest", UUID.fromString("5e3d4a8c-0f2b-4c6e-b1d7-9a8f7e6d5c4b"));
 
-  static Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions() {
-    return HttpInbox.transitions(List.of(GreetingRequest), Map.of(
-        Greeting, Map.of(
-            Begin, List.of(
-                onEvent(GreetingRequested).to(States.Greeted)
-                    .assemble(c -> c.log().entityId().toString())
-                    .trigger(GreetingResponseCreated).with(id -> id).on(Request).identifiedBy(entityIdFromSession())
-                    .output()
-            ),
-            States.Greeted, List.of()
-        )
-    ));
+  /// The inbox of the application, whose entity models are those to create the state machine with
+  HttpInbox Inbox = HttpInbox.of(List.of(GreetingRequest), List.of(Greeting));
+
+  private static Map<State, List<TransitionModel<?, ?>>> transitions() {
+    return Map.of(
+        Begin, List.of(
+            onEvent(GreetingRequested).to(States.Greeted)
+                .assemble(c -> c.log().entityId().toString())
+                .trigger(GreetingResponseCreated).with(id -> id).on(Request).identifiedBy(entityIdFromSession())
+                .output()
+        ),
+        States.Greeted, List.of()
+    );
   }
 
   private static String page(String greetingId, String correlationId) {

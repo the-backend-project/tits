@@ -49,9 +49,9 @@ public class RecalculationTest {
   static EventType<String, String> CodeClaimed = BasicEventType.of("Code claimed", UUID.fromString("0f2b4d6e-8a9c-4e1f-b3d5-7f9b1d3f5ad5"), DataType.string(), new CaseInsensitive());
   static IdEntityModel Ids = IdEntityModel.of("Ids", UUID.fromString("c2e8f4a6-0b1d-4c3e-9f5a-7b9d1e3f5a72"), OrderNumberClaimed, CodeClaimed);
 
-  static EntityModel Cart = EntityModel.of("Cart", UUID.fromString("8f3a5c7e-1b2d-4e6f-a8c0-3d5f7a9b1c24"));
-  static EntityModel Order = EntityModel.of("Order", UUID.fromString("1e3f5a7c-9b0d-4c2e-8a4f-6b8d0e2f4a65"));
-  static EntityModel Stock = EntityModel.of("Stock", UUID.fromString("6d8f0b2c-4e5a-4a7c-9e1b-3c5d7f9a1b38"));
+  static EntityModel Cart = EntityModel.of("Cart", UUID.fromString("8f3a5c7e-1b2d-4e6f-a8c0-3d5f7a9b1c24"), RecalculationTest::cartTransitions);
+  static EntityModel Order = EntityModel.of("Order", UUID.fromString("1e3f5a7c-9b0d-4c2e-8a4f-6b8d0e2f4a65"), RecalculationTest::orderTransitions);
+  static EntityModel Stock = EntityModel.of("Stock", UUID.fromString("6d8f0b2c-4e5a-4a7c-9e1b-3c5d7f9a1b38"), RecalculationTest::stockTransitions);
 
   static EventType<String, String> CartCheckedOut = BasicEventType.of("Cart checked out", UUID.fromString("a7c9e1b3-5d6f-4b8a-9c2e-4f6a8c0e2b47"), DataType.string());
   static EventType<String, String> CartForwarded = BasicEventType.of("Cart forwarded", UUID.fromString("3c5e7a9b-1d2f-4a4c-8e6b-0d2f4a6c8e59"), DataType.string());
@@ -64,7 +64,7 @@ public class RecalculationTest {
   static EventType<String, String> StockReserved = BasicEventType.of("Stock reserved", UUID.fromString("d1f3a5c7-9e0b-4b2d-a4f6-8b0d2f4a6cb1"), DataType.string());
   static EventType<String, String> ReservationRefused = BasicEventType.of("Reservation refused", UUID.fromString("9c1e3a5b-7d8f-4f0a-8c2e-4a6c8e0b2dc3"), DataType.string());
 
-  private static final StateMachine machine = Init.stateMachine(UUID.randomUUID().toString(), transitions());
+  private static final StateMachine machine = Init.stateMachine(UUID.randomUUID().toString(), entityModels());
   // The steps executed, in order
   private static final List<String> executed = new CopyOnWriteArrayList<>();
 
@@ -73,71 +73,79 @@ public class RecalculationTest {
     return result;
   }
 
-  private static Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions() {
-    return Map.of(
-        Cart, Map.<State, List<TransitionModel<?, ?>>>of(
-            Begin, List.of(
-                // The order is placed by a transition chosen by this one
-                onEvent(CartCheckedOut).to(States.CheckedOut)
-                    .assemble(c -> executed("Assemble checkout", c.input()))
-                    .otherwise(
-                        onEvent(CartForwarded).to(States.CheckedOut)
-                            .assemble(c -> executed("Assemble forward", c.input()))
-                            .trigger(OrderPlaced).with(d -> d).on(Order).identifiedBy(newEntityId())
-                            .output(d -> executed("Output forward", d.t2().accepted().event().getUnmarshalledData())),
-                        d -> executed("Forward data", d)
-                    )
-            )
-        ),
-        Order, Map.<State, List<TransitionModel<?, ?>>>of(
-            Begin, List.of(
-                onEvent(OrderPlaced).to(States.Placed)
-                    .assemble(c -> executed("Assemble order", tuple(c.input(), c.entityId())))
-                    .trigger(StockReserved).withReactive(d -> Mono.fromSupplier(() -> executed("Reserve data", d.t1()))).on(Stock).identifiedBy(newEntityId())
-                    .trigger(OrderNumberClaimed).with(d -> executed("Order number data", d.t1().t1())).on(Ids).identifiedBy(d -> entityId(d.t1().t2(), CreateIfNotExists))
-                    .output(d -> executed("Output order", d.t2().isIdExists() ?
-                        "Duplicate of " + d.t2().idExists().log().entityId() :
-                        d.t1().t1().t1())),
-                // The rejected reservation is handled by a step after the trigger of the order number, and only if the
-                // number does not exist
-                onEvent(OrderBought).to(States.Placed)
-                    .assemble(c -> tuple(c.input(), c.entityId()))
-                    .trigger(ReservationRefused).with(Tuple2::t1).on(Stock).identifiedBy(newEntityId())
-                    .trigger(OrderNumberClaimed).with(d -> d.t1().t1()).on(Ids).identifiedBy(d -> entityId(d.t1().t2(), CreateIfNotExists))
-                    .when(d -> d.t2().isIdExists()).then(
-                        onEvent(OrderRejectedAsDuplicate).to(States.Rejected).assembleInput().output(d -> d),
-                        d -> d.t1().t1().t1()
-                    )
-                    .when(d -> d.t1().t2().isRejected()).then(
-                        onEvent(OrderRejectedAsUnreserved).to(States.Rejected).assembleInput().output(d -> d),
-                        d -> d.t1().t1().t1()
-                    )
-                    .otherwise(
-                        onEvent(OrderAccepted).to(States.Placed).assembleInput().output(d -> d),
-                        d -> d.t1().t1().t1()
-                    ),
-                onEvent(OrderTagged).to(States.Placed)
-                    .assemble(c -> tuple(c.input(), c.entityId()))
-                    .trigger(CodeClaimed).with(Tuple2::t1).on(Ids).identifiedBy(d -> entityId(d.t2(), CreateIfNotExists))
-                    .output(d -> d.t1().t1())
-            ),
-            States.Placed, List.of(),
-            States.Rejected, List.of()
-        ),
-        Stock, Map.<State, List<TransitionModel<?, ?>>>of(
-            Begin, List.of(
-                onEvent(StockReserved).to(States.Reserved).assemble(c -> executed("Assemble reservation", c.input())).output(d -> d),
-                onEvent(ReservationRefused).to(States.Reserved)
-                    .<String>assemble(c -> {
-                      throw new RejectedEvent(ReservationRefused, c.log(), c.from());
-                    })
-                    .output(d -> d)
-            ),
-            States.Reserved, List.of()
-        ),
-        Ids, Ids.transitions()
+  private static List<EntityModel> entityModels() {
+    return List.of(Cart, Order, Stock, Ids);
+  }
+
+  private static Map<State, List<TransitionModel<?, ?>>> cartTransitions() {
+    return Map.<State, List<TransitionModel<?, ?>>>of(
+        Begin, List.of(
+            // The order is placed by a transition chosen by this one
+            onEvent(CartCheckedOut).to(States.CheckedOut)
+                .assemble(c -> executed("Assemble checkout", c.input()))
+                .otherwise(
+                    onEvent(CartForwarded).to(States.CheckedOut)
+                        .assemble(c -> executed("Assemble forward", c.input()))
+                        .trigger(OrderPlaced).with(d -> d).on(Order).identifiedBy(newEntityId())
+                        .output(d -> executed("Output forward", d.t2().accepted().event().getUnmarshalledData())),
+                    d -> executed("Forward data", d)
+                )
+        )
     );
   }
+
+  private static Map<State, List<TransitionModel<?, ?>>> orderTransitions() {
+    return Map.<State, List<TransitionModel<?, ?>>>of(
+        Begin, List.of(
+            onEvent(OrderPlaced).to(States.Placed)
+                .assemble(c -> executed("Assemble order", tuple(c.input(), c.entityId())))
+                .trigger(StockReserved).withReactive(d -> Mono.fromSupplier(() -> executed("Reserve data", d.t1()))).on(Stock).identifiedBy(newEntityId())
+                .trigger(OrderNumberClaimed).with(d -> executed("Order number data", d.t1().t1())).on(Ids).identifiedBy(d -> entityId(d.t1().t2(), CreateIfNotExists))
+                .output(d -> executed("Output order", d.t2().isIdExists() ?
+                    "Duplicate of " + d.t2().idExists().log().entityId() :
+                    d.t1().t1().t1())),
+            // The rejected reservation is handled by a step after the trigger of the order number, and only if the
+            // number does not exist
+            onEvent(OrderBought).to(States.Placed)
+                .assemble(c -> tuple(c.input(), c.entityId()))
+                .trigger(ReservationRefused).with(Tuple2::t1).on(Stock).identifiedBy(newEntityId())
+                .trigger(OrderNumberClaimed).with(d -> d.t1().t1()).on(Ids).identifiedBy(d -> entityId(d.t1().t2(), CreateIfNotExists))
+                .when(d -> d.t2().isIdExists()).then(
+                    onEvent(OrderRejectedAsDuplicate).to(States.Rejected).assembleInput().output(d -> d),
+                    d -> d.t1().t1().t1()
+                )
+                .when(d -> d.t1().t2().isRejected()).then(
+                    onEvent(OrderRejectedAsUnreserved).to(States.Rejected).assembleInput().output(d -> d),
+                    d -> d.t1().t1().t1()
+                )
+                .otherwise(
+                    onEvent(OrderAccepted).to(States.Placed).assembleInput().output(d -> d),
+                    d -> d.t1().t1().t1()
+                ),
+            onEvent(OrderTagged).to(States.Placed)
+                .assemble(c -> tuple(c.input(), c.entityId()))
+                .trigger(CodeClaimed).with(Tuple2::t1).on(Ids).identifiedBy(d -> entityId(d.t2(), CreateIfNotExists))
+                .output(d -> d.t1().t1())
+        ),
+        States.Placed, List.of(),
+        States.Rejected, List.of()
+    );
+  }
+
+  private static Map<State, List<TransitionModel<?, ?>>> stockTransitions() {
+    return Map.<State, List<TransitionModel<?, ?>>>of(
+        Begin, List.of(
+            onEvent(StockReserved).to(States.Reserved).assemble(c -> executed("Assemble reservation", c.input())).output(d -> d),
+            onEvent(ReservationRefused).to(States.Reserved)
+                .<String>assemble(c -> {
+                  throw new RejectedEvent(ReservationRefused, c.log(), c.from());
+                })
+                .output(d -> d)
+        ),
+        States.Reserved, List.of()
+    );
+  }
+
 
   @Test
   public void stepsBeforeTheTriggerOfAnExistingIdAreNotExecutedAgain() {

@@ -2,7 +2,6 @@ package com.github.thxmasj.backend.core;
 
 import static com.github.thxmasj.backend.core.EntitySelector.entityId;
 import static com.github.thxmasj.backend.core.TransitionModelBuilder.WithEvent.onEvent;
-import static com.github.thxmasj.backend.core.TransitionStreamTest.Entities.Lamp;
 import static com.github.thxmasj.backend.core.TransitionStreamTest.States.On;
 
 import java.util.UUID;
@@ -10,14 +9,7 @@ import org.junit.jupiter.api.Test;
 
 public class TransitionStreamTest {
 
-  enum Entities implements EntityModel {
-    Lamp {
-      @Override
-      public UUID id() {
-        return UUID.fromString("59d3158c-7b2a-4312-a293-325858c2673f");
-      }
-    }
-  }
+  static final EntityModel Lamp = EntityModel.of("Lamp", UUID.fromString("59d3158c-7b2a-4312-a293-325858c2673f"));
   enum States implements State {Off, On}
   static EventType<Void, Void>
       LampToggled = BasicEventType.of("Lamp toggled", UUID.fromString("46b0211e-f583-49b3-a6e7-8d13742e0260")),

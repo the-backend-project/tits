@@ -40,8 +40,15 @@ public class ERDiagramFormatter {
   private final boolean compact;
 
   /// @param name the name of the model, used for the names of the files the diagram is written to
-  public ERDiagramFormatter(String name, Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions) {
-    this(name, transitions, false);
+  /// @param entityModels the entity models given to the state machine
+  public ERDiagramFormatter(String name, List<? extends EntityModel> entityModels) {
+    this(name, transitions(entityModels), false);
+  }
+
+  private static Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions(List<? extends EntityModel> entityModels) {
+    var transitions = new LinkedHashMap<EntityModel, Map<State, List<TransitionModel<?, ?>>>>();
+    entityModels.forEach(m -> transitions.put(m, m.transitions()));
+    return transitions;
   }
 
   private ERDiagramFormatter(

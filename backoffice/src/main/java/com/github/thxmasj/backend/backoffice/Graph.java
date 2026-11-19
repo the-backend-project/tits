@@ -9,8 +9,6 @@ import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.IdEntityModel;
 import com.github.thxmasj.backend.core.IndexEntityModel;
-import com.github.thxmasj.backend.core.State;
-import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.core.database.DatabaseClient;
 import com.github.thxmasj.backend.core.internal.EventTypes;
 import java.time.LocalDateTime;
@@ -28,8 +26,8 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /// Reads the entities of a state machine for the backoffice: their event logs, ids, index keys and pending triggers,
-/// and the entities related to them. Like the test API, it knows the entity models and event types through the
-/// transitions given to the state machine, and only reads.
+/// and the entities related to them. Like the test API, it knows the entity models as given to the state machine,
+/// and the event types through their transitions, and only reads.
 ///
 /// An entity refers to other entities by their entity ids in the data of its events, e.g. an inbox request to the
 /// entity its request was processed on. It is referred to by the entities having an index event with its entity id as
@@ -50,13 +48,14 @@ final class Graph {
   /// The index event types whose keys are strings, which entities can be searched for by
   private final List<EventType<?, ?>> searchableIndexTypes;
 
-  Graph(DatabaseClient client, String schema, Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions) {
+  Graph(DatabaseClient client, String schema, List<? extends EntityModel> entityModels) {
+    List<EntityModel> models = List.copyOf(entityModels);
     this.client = client;
     this.schema = schema;
-    this.entityModels = transitions.keySet().stream().collect(toMap(EntityModel::id, identity()));
-    Map<UUID, EventType<?, ?>> eventTypesById = EventTypes.eventTypes(transitions).stream().collect(toMap(EventType::id, identity()));
+    this.entityModels = models.stream().collect(toMap(EntityModel::id, identity()));
+    Map<UUID, EventType<?, ?>> eventTypesById = EventTypes.eventTypes(models).stream().collect(toMap(EventType::id, identity()));
     this.eventTypeMapper = eventTypesById::get;
-    var eventTypesByModel = EventTypes.eventTypesByEntityModel(transitions);
+    var eventTypesByModel = EventTypes.eventTypesByEntityModel(models);
     var referenceTypes = new LinkedHashSet<EventType<?, ?>>();
     var idTypes = new LinkedHashSet<EventType<?, ?>>();
     var indexTypes = new LinkedHashSet<EventType<?, ?>>();

@@ -17,13 +17,10 @@ import static com.github.thxmasj.backend.http.inbox.HttpInbox.FailedRequestCompl
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.InvalidRequestCompleted;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.Request;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.RequestCompleted;
-import static com.github.thxmasj.backend.http.inbox.HttpInbox.RequestRouting;
-import static com.github.thxmasj.backend.http.inbox.HttpInbox.TRIGGER;
 import static com.github.thxmasj.backend.http.inbox.HttpInboxRequest.newEntity;
 import static com.github.thxmasj.backend.http.inbox.HttpInboxRequest.parseEntityId;
 import static com.github.thxmasj.backend.http.inbox.HttpInboxRequest.parseMessageId;
 import static com.github.thxmasj.backend.http.inbox.HttpInboxRequest.when;
-import static com.github.thxmasj.backend.http.inbox.HttpInboxTest.Entities.Lamp;
 import static com.github.thxmasj.backend.http.inbox.HttpInboxTest.States.Off;
 import static com.github.thxmasj.backend.http.inbox.HttpInboxTest.States.On;
 import static com.github.thxmasj.backend.http.inbox.HttpInboxTest.States.Processing;
@@ -103,15 +100,7 @@ public class HttpInboxTest {
 
   private static final Random random = new Random();
 
-  enum Entities implements EntityModel {
-    Lamp {
-      @Override
-      public UUID id() {
-        return UUID.fromString("59d3158c-7b2a-4312-a293-325858c2673f");
-      }
-
-    }
-  }
+  static final EntityModel Lamp = EntityModel.of("Lamp", UUID.fromString("59d3158c-7b2a-4312-a293-325858c2673f"), HttpInboxTest::lampTransitions);
 
   private static HttpOutboxRequest<Void> Process0Outbox;
   private static HttpOutboxRequest<Void> Process3Outbox;
@@ -369,25 +358,19 @@ public class HttpInboxTest {
           .build("CancelRequest", UUID.fromString("f5ef4720-c6bc-4686-be8b-85eeb0fdc372"))
   );
 
-  private static StateMachine createStateMachine(
-      EntityModel entityModel,
-      Map<State, List<TransitionModel<?, ?>>> processTransitions,
-      List<HttpInboxRequest<?>> requests,
-      List<HttpOutboxRequest<?>> outboxes
-  ) {
-    Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions = new HashMap<>();
-    transitions.put(entityModel, processTransitions);
+  private static StateMachine createStateMachine(List<HttpInboxRequest<?>> requests, List<HttpOutboxRequest<?>> outboxes) {
+    var entityModels = new ArrayList<EntityModel>(List.of(Lamp, Index));
     for (var outbox : outboxes) {
-      transitions.put(outbox, outbox.transitions());
+      entityModels.add(outbox);
       if (outbox instanceof AtMostOnce<?, ?> amo) {
         if (amo.rollbackOnAcceptedModel() != null)
-          transitions.put(amo.rollbackOnAcceptedModel(), amo.rollbackOnAcceptedModel().transitions());
+          entityModels.add(amo.rollbackOnAcceptedModel());
         if (amo.rollbackOnUnknownModel() != null)
-          transitions.put(amo.rollbackOnUnknownModel(), amo.rollbackOnUnknownModel().transitions());
+          entityModels.add(amo.rollbackOnUnknownModel());
       }
     }
-    transitions.put(Index, Index.transitions());
-    return Init.stateMachine(schema, HttpInbox.transitions(requests, transitions));
+    inbox = HttpInbox.of(requests, entityModels);
+    return Init.stateMachine(schema, inbox.entityModels());
   }
 
   private static TypedHttpRequest<Void> requestMessage(String path) {
@@ -399,6 +382,7 @@ public class HttpInboxTest {
 
 
   private static final String schema = UUID.randomUUID().toString();
+  private static HttpInbox inbox;
   private static StateMachine stateMachine;
   private static HttpServer server;
 
@@ -455,12 +439,7 @@ public class HttpInboxTest {
         .isAttemptAvailable(c -> Duration.between(c.enqueueTime(), c.now()).compareTo(Duration.ofHours(5)) < 0)
         .backoffAlgorithm(c -> new DelaySpecification(Duration.ofSeconds(10), Duration.ofMinutes(10), Duration.ofHours(5), 1.5).calculateDelay(c.attemptNumber()))
         .build("Process3Outbox", UUID.fromString("2e86f07c-50ed-4922-9839-54dca94be4b6"));
-    stateMachine = createStateMachine(
-        Lamp,
-        lampTransitions(),
-        requests,
-        List.of(Process0Outbox, Process3Outbox)
-    );
+    stateMachine = createStateMachine(requests, List.of(Process0Outbox, Process3Outbox));
   }
 
   @Test
@@ -513,7 +492,7 @@ public class HttpInboxTest {
 
   @Test
   public void whenInternalProcessRequestOverHttpThenInternalProcessResponse() throws IOException {
-    DisposableServer listener = new HttpInboxListener(stateMachine).listen(0);
+    DisposableServer listener = new HttpInboxListener(stateMachine, inbox).listen(0);
     try {
       HttpResponseMessage response = new NettyHttpClient(new NettyHttpClientBuilder().build())
           .exchange(new HttpRequestMessage(
@@ -532,14 +511,14 @@ public class HttpInboxTest {
 
   @Test
   public void whenCorrelationIdHeaderOverHttpThenResponseHasSameCorrelationId() throws IOException {
-    HttpResponseMessage response = exchangeOverHttp(new HttpInboxListener(stateMachine), Map.of("X-Correlation-Id", "abc-123"));
+    HttpResponseMessage response = exchangeOverHttp(new HttpInboxListener(stateMachine, inbox), Map.of("X-Correlation-Id", "abc-123"));
     assertEquals("abc-123", response.headerValue("X-Correlation-Id"));
   }
 
   @Test
   public void whenCustomCorrelationIdHeaderOverHttpThenResponseHasSameCorrelationId() throws IOException {
     HttpResponseMessage response = exchangeOverHttp(
-        new HttpInboxListener(stateMachine).correlationIdHeader("TID"),
+        new HttpInboxListener(stateMachine, inbox).correlationIdHeader("TID"),
         Map.of("TID", "tid-123", "X-Correlation-Id", "ignored")
     );
     assertEquals("tid-123", response.headerValue("X-Correlation-Id"));
@@ -547,7 +526,7 @@ public class HttpInboxTest {
 
   @Test
   public void whenNoCorrelationIdHeaderOverHttpThenGeneratedCorrelationId() throws IOException {
-    HttpResponseMessage response = exchangeOverHttp(new HttpInboxListener(stateMachine), Map.of());
+    HttpResponseMessage response = exchangeOverHttp(new HttpInboxListener(stateMachine, inbox), Map.of());
     assertThat(response.headerValue("X-Correlation-Id")).matches("SYS-\\d{19}");
   }
 
@@ -573,7 +552,7 @@ public class HttpInboxTest {
   /// fails the transition, and the request is answered with 500 Internal Server Error
   @Test
   public void whenNormalizerThrowsOnRetriedRequestOverHttpThenInternalServerError() {
-    DisposableServer listener = new HttpInboxListener(stateMachine).listen(0);
+    DisposableServer listener = new HttpInboxListener(stateMachine, inbox).listen(0);
     try {
       var client = new NettyHttpClient(new NettyHttpClientBuilder().build());
       URI uri = URI.create("http://localhost:" + listener.port() + "/normalized/" + UUID.randomUUID());
@@ -590,7 +569,7 @@ public class HttpInboxTest {
 
   @Test
   public void whenFilterRewritesRequestOverHttpThenRewrittenRequestIsRouted() throws IOException {
-    DisposableServer listener = new HttpInboxListener(stateMachine)
+    DisposableServer listener = new HttpInboxListener(stateMachine, inbox)
         .filter((request, next) -> next.apply(new HttpRequestMessage(
             PUT,
             URI.create(request.uri().getPath().replace("/rewritten/", "/internal/")),
@@ -616,7 +595,7 @@ public class HttpInboxTest {
   @Test
   public void whenFilterRespondsOverHttpThenLaterFiltersAndInboxAreSkipped() {
     List<String> applied = new ArrayList<>();
-    DisposableServer listener = new HttpInboxListener(stateMachine)
+    DisposableServer listener = new HttpInboxListener(stateMachine, inbox)
         .filter((request, next) -> {
           applied.add("first");
           return next.apply(request);
@@ -761,7 +740,7 @@ public class HttpInboxTest {
 
   @Test
   public void whenInvalidBearerTokenThenUnauthorizedWithInvalidToken() throws IOException {
-    Event<?> responseEvent = onRequest(TRIGGER, new HttpRequestMessage(
+    Event<?> responseEvent = onRequest(inbox.trigger(), new HttpRequestMessage(
         PUT,
         URI.create("/protected/" + UUID.randomUUID()),
         Map.of("Authorization", "Bearer not-a-token"),
@@ -898,14 +877,14 @@ public class HttpInboxTest {
   public void requestGroupIncludesInboxRequestsOnly() {
     assertTrue(Request.includes(InternalRequest));
     assertFalse(Request.includes(Lamp));
-    assertFalse(Request.includes(RequestRouting));
+    assertFalse(Request.includes(inbox.requestRouting()));
   }
 
   /// A group has no entities of its own, so it gets no event types, while each inbox request has the response event
   /// types triggered on the group
   @Test
   public void eventTypesAreRegisteredForInboxRequestsNotForTheGroup() {
-    var eventTypes = EventTypes.eventTypesByEntityModel(HttpInbox.transitions(requests, Map.of(Lamp, lampTransitions())));
+    var eventTypes = EventTypes.eventTypesByEntityModel(HttpInbox.of(requests, List.of(Lamp)).entityModels());
     assertFalse(eventTypes.containsKey(Request));
     for (HttpInboxRequest<?> request : requests)
       assertThat(eventTypes.get(request)).contains(RequestCompleted, FailedRequestCompleted, InvalidRequestCompleted);
@@ -964,7 +943,7 @@ public class HttpInboxTest {
 
   @Test
   public void diagramOfContentRequestShowsTheChoiceOfProcess() throws IOException {
-    File file = new PlantUMLFormatter(ContentRequest, ContentRequest.transitions()).formatToImage(Files.createTempDirectory("inbox").toString());
+    File file = new PlantUMLFormatter(ContentRequest).formatToImage(Files.createTempDirectory("inbox").toString());
     assertThat(Files.readString(file.toPath()))
         .contains("Request dispatched [a == internal]", "Request dispatched [a == unavailable]", "Request dispatched [a == zero]");
   }
@@ -1125,8 +1104,7 @@ public class HttpInboxTest {
         .hasMessageContaining("can't have an authorizer");
   }
 
-  static final EntityModel Bell = EntityModel.of("Bell", UUID.fromString("4c1e8a2f-7d36-4b95-a0f8-9e2d5b7c3a16"));
-  static final EntityModel Chime = EntityModel.of("Chime", UUID.fromString("b8d3f6a1-2e47-4c09-9b5a-6f1c8e4d2a73"));
+  static final EntityModel Chime = EntityModel.of("Chime", UUID.fromString("b8d3f6a1-2e47-4c09-9b5a-6f1c8e4d2a73"), HttpInboxTest::chimeTransitions);
   static final EventType<Void, Void> BellRung = BasicEventType.of("Bell rung", UUID.fromString("d6f2a9c4-1b85-4e37-8a0d-3c7e5f9b1a26"));
   static final EventType<Void, Void> ChimeRung = BasicEventType.of("Chime rung", UUID.fromString("7a4c2e9f-5d18-4b63-b1e0-8f6d3a2c9e54"));
   static final ResponseEventType<String> Rang = new ResponseEventType<>(
@@ -1138,39 +1116,42 @@ public class HttpInboxTest {
   static final EventType<Void, Void> BellPolished = BasicEventType.of("Bell polished", UUID.fromString("5e8a3c1f-9b26-4d70-a4e3-1c7f2b9d6e08"));
   static final EventType<Void, Void> BellScheduled = BasicEventType.of("Bell scheduled", UUID.fromString("c9f1b4e7-3a62-4d8c-8e05-7b2d6a9c1f34"));
 
-  /// The bell responds itself, or through the chime it rings, when it is rung. When it is polished it gives no
+  /// A bell, which responds itself, or through the chime it rings, when it is rung. When it is polished it gives no
   /// response, and when it is scheduled it is rung later, in another session.
-  private static Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> bellTransitions(boolean throughChime) {
-    return Map.of(
-        Bell, Map.of(Begin, List.of(
-            throughChime ?
-                onEvent(BellRung).toSelf().trigger(ChimeRung).on(Chime).identifiedBy(newEntityId()).output() :
-                onEvent(BellRung).toSelf().trigger(Rang).with(_ -> "Ding").on(Request).identifiedBy(entityIdFromSession()).output(),
-            onEvent(BellPolished).toSelf().output(),
-            onEvent(BellScheduled).toSelf().assembleInput().trigger(BellRung).after(_ -> Duration.ofMinutes(1)).output()
-        )),
-        Chime, Map.of(Begin, List.of(
-            onEvent(ChimeRung).toSelf().trigger(Rang).with(_ -> "Dong").on(Request).identifiedBy(entityIdFromSession()).output()
-        ))
-    );
+  private static EntityModel bell(boolean throughChime) {
+    return EntityModel.of("Bell", UUID.fromString("4c1e8a2f-7d36-4b95-a0f8-9e2d5b7c3a16"), () -> Map.of(Begin, List.of(
+        throughChime ?
+            onEvent(BellRung).toSelf().trigger(ChimeRung).on(Chime).identifiedBy(newEntityId()).output() :
+            onEvent(BellRung).toSelf().trigger(Rang).with(_ -> "Ding").on(Request).identifiedBy(entityIdFromSession()).output(),
+        onEvent(BellPolished).toSelf().output(),
+        onEvent(BellScheduled).toSelf().assembleInput().trigger(BellRung).after(_ -> Duration.ofMinutes(1)).output()
+    )));
   }
 
-  private static HttpInboxRequest.Builder<Void> bellRequest() {
-    return HttpInboxRequest.matching(m -> m.requestLine().matches("PUT /bell")).noContent().process(BellRung, Bell, newEntity());
+  private static Map<State, List<TransitionModel<?, ?>>> chimeTransitions() {
+    return Map.of(Begin, List.of(
+        onEvent(ChimeRung).toSelf().trigger(Rang).with(_ -> "Dong").on(Request).identifiedBy(entityIdFromSession()).output()
+    ));
+  }
+
+  private static HttpInboxRequest.Builder<Void> bellRequest(EntityModel bell) {
+    return HttpInboxRequest.matching(m -> m.requestLine().matches("PUT /bell")).noContent().process(BellRung, bell, newEntity());
   }
 
   @Test
   public void responseGivenByProcessMustBeTakenByTheRequest() {
-    var request = bellRequest().build("BellRequest", UUID.randomUUID());
-    assertThatThrownBy(() -> HttpInbox.transitions(List.of(request), bellTransitions(false)))
+    var bell = bell(false);
+    var request = bellRequest(bell).build("BellRequest", UUID.randomUUID());
+    assertThatThrownBy(() -> HttpInbox.of(List.of(request), List.of(bell)))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("The inbox request BellRequest doesn't take the response Rang, which Bell rung on Bell triggers on Request");
   }
 
   @Test
   public void responseGivenByEntityModelTheProcessTriggersMustBeTakenByTheRequest() {
-    var request = bellRequest().build("BellRequest", UUID.randomUUID());
-    assertThatThrownBy(() -> HttpInbox.transitions(List.of(request), bellTransitions(true)))
+    var bell = bell(true);
+    var request = bellRequest(bell).build("BellRequest", UUID.randomUUID());
+    assertThatThrownBy(() -> HttpInbox.of(List.of(request), List.of(bell, Chime)))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("The inbox request BellRequest doesn't take the response Rang, which Chime rung on Chime triggers on Request");
   }
@@ -1178,30 +1159,33 @@ public class HttpInboxTest {
   /// Two requests on the bell, where only ringing it gives a custom response: only the request ringing it takes it
   @Test
   public void requestTakesOnlyTheResponsesOfItsOwnProcesses() {
-    var ring = bellRequest().response(Rang, _ -> new HttpResponseMessage(200, "OK")).build("RingRequest", UUID.randomUUID());
+    var bell = bell(true);
+    var ring = bellRequest(bell).response(Rang, _ -> new HttpResponseMessage(200, "OK")).build("RingRequest", UUID.randomUUID());
     var polish = HttpInboxRequest.matching(m -> m.requestLine().matches("PUT /bell/polish")).noContent()
-        .process(BellPolished, Bell, newEntity())
+        .process(BellPolished, bell, newEntity())
         .build("PolishRequest", UUID.randomUUID());
-    assertThat(HttpInbox.transitions(List.of(polish, ring), bellTransitions(true))).containsKeys(ring, polish, Bell);
+    assertThat(HttpInbox.of(List.of(polish, ring), List.of(bell, Chime)).entityModels()).contains(ring, polish, bell);
   }
 
   /// Ringing the bell later is in another session, which the check doesn't follow
   @Test
   public void delayedTriggerIsNotFollowed() {
+    var bell = bell(false);
     var schedule = HttpInboxRequest.matching(m -> m.requestLine().matches("PUT /bell/schedule")).noContent()
-        .process(BellScheduled, Bell, newEntity())
+        .process(BellScheduled, bell, newEntity())
         .build("ScheduleRequest", UUID.randomUUID());
-    assertThat(HttpInbox.transitions(List.of(schedule), bellTransitions(false))).containsKeys(schedule, Bell);
+    assertThat(HttpInbox.of(List.of(schedule), List.of(bell)).entityModels()).contains(schedule, bell);
   }
 
   @Test
   public void responseTakenByTheRequestPassesTheCheck() {
-    var request = bellRequest().response(Rang, _ -> new HttpResponseMessage(200, "OK")).build("BellRequest", UUID.randomUUID());
-    assertThat(HttpInbox.transitions(List.of(request), bellTransitions(true))).containsKeys(request, Bell, Chime);
+    var bell = bell(true);
+    var request = bellRequest(bell).response(Rang, _ -> new HttpResponseMessage(200, "OK")).build("BellRequest", UUID.randomUUID());
+    assertThat(HttpInbox.of(List.of(request), List.of(bell, Chime)).entityModels()).contains(request, bell, Chime);
   }
 
   private HttpResponseMessage onOwnedRollback(String messageId, Map<String, String> headers) throws IOException {
-    return HttpMessageParser.parseResponse(onRequest(TRIGGER, new HttpRequestMessage(
+    return HttpMessageParser.parseResponse(onRequest(inbox.trigger(), new HttpRequestMessage(
         DELETE,
         URI.create("/owned/messages/" + messageId),
         headers,
@@ -1211,8 +1195,8 @@ public class HttpInboxTest {
 
   @Test
   public void formatModel() throws IOException {
-    System.out.println(new PlantUMLFormatter(RequestRouting, HttpInbox.requestRoutingTransitions(requests)).formatToImage("/tmp"));
-    System.out.println(new PlantUMLFormatter(InternalRequest, InternalRequest.transitions()).formatToImage("/tmp"));
+    System.out.println(new PlantUMLFormatter(HttpInbox.of(requests, List.of()).requestRouting()).formatToImage("/tmp"));
+    System.out.println(new PlantUMLFormatter(InternalRequest).formatToImage("/tmp"));
   }
 
   @JsonIgnoreProperties(ignoreUnknown = true)
@@ -1247,7 +1231,7 @@ public class HttpInboxTest {
   }
 
   private Event<?> onRequest(Method method, URI uri, byte[] body) {
-    return onRequest(TRIGGER, new HttpRequestMessage(method, uri, Map.of(), body));
+    return onRequest(inbox.trigger(), new HttpRequestMessage(method, uri, Map.of(), body));
   }
 
   private Event<?> onRollbackRequest(String messageId) {
@@ -1261,7 +1245,7 @@ public class HttpInboxTest {
   }
 
   private HttpResponseMessage onRollbackRequest(String messageId, Map<String, String> headers) throws IOException {
-    return HttpMessageParser.parseResponse(onRequest(TRIGGER, new HttpRequestMessage(
+    return HttpMessageParser.parseResponse(onRequest(inbox.trigger(), new HttpRequestMessage(
         DELETE,
         URI.create("/lamps/messages/" + messageId),
         headers,

@@ -10,8 +10,6 @@ import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.GroupedDataType;
 import com.github.thxmasj.backend.core.IdEntityModel;
 import com.github.thxmasj.backend.core.IndexEntityModel;
-import com.github.thxmasj.backend.core.State;
-import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.core.database.Database;
 import com.github.thxmasj.backend.core.database.DatabaseClient;
 import com.github.thxmasj.backend.core.database.UnknownEntity;
@@ -39,7 +37,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /// The API tests use to look into and manipulate the database of a state machine, instead of querying its tables
-/// directly. It knows the entity models only through the transitions given to the state machine, so it works with any
+/// directly. It knows the entity models only as given to the state machine, so it works with any
 /// of them, and the tests using it do not depend on how the data is stored.
 ///
 /// Some of its operations bypass the transitions, e.g. by appending events that no transition has accepted, and are
@@ -62,34 +60,35 @@ public class TestApi {
 
   /// The database is the one behind the data source (see [Database#of(DataSource)])
   ///
-  /// @param transitions the transitions of the state machine, which give the entity models and event types
+  /// @param entityModels the entity models of the state machine, whose transitions give the event types
   public TestApi(
       DataSource dataSource,
       String schemaName,
-      Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions,
+      List<? extends EntityModel> entityModels,
       Clock clock
   ) {
     Database database = Database.of(dataSource);
-    this(database, database.client(dataSource), schemaName, transitions, clock);
+    this(database, database.client(dataSource), schemaName, entityModels, clock);
   }
 
   /// @param client a client of the database
-  /// @param transitions the transitions of the state machine, which give the entity models and event types
+  /// @param entityModels the entity models of the state machine, whose transitions give the event types
   public TestApi(
       Database database,
       DatabaseClient client,
       String schemaName,
-      Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions,
+      List<? extends EntityModel> entityModels,
       Clock clock
   ) {
     this.client = client;
     this.schema = schemaName;
     this.clock = clock;
-    this.entityModels = transitions.keySet().stream().collect(toMap(EntityModel::id, identity()));
-    this.eventTypesByEntityModel = EventTypes.eventTypesByEntityModel(transitions);
-    List<EventType<?, ?>> eventTypes = EventTypes.eventTypes(transitions);
+    List<EntityModel> models = List.copyOf(entityModels);
+    this.entityModels = models.stream().collect(toMap(EntityModel::id, identity()));
+    this.eventTypesByEntityModel = EventTypes.eventTypesByEntityModel(models);
+    List<EventType<?, ?>> eventTypes = EventTypes.eventTypes(models);
     this.eventTypeMapper = Mappers.eventTypeMapper(eventTypes);
-    Storage storage = StorageProvider.storage(database, client, transitions, schemaName, clock);
+    Storage storage = StorageProvider.storage(database, client, models, schemaName, clock);
     this.eventsByEntityId = storage.eventsByEntityId();
     this.eventsByIdEvent = storage.eventsByIdEvent();
     this.eventsByLastIndexEvent = storage.eventsByLastIndexEvent();
@@ -292,21 +291,21 @@ public class TestApi {
   private EntityModel entityModel(UUID id) {
     EntityModel entityModel = entityModels.get(id);
     if (entityModel == null)
-      throw new IllegalStateException("Unknown entity model " + id + ". Is it in the transitions given to the test API?");
+      throw new IllegalStateException("Unknown entity model " + id + ". Is it in the entity models given to the test API?");
     return entityModel;
   }
 
   private List<EventType<?, ?>> eventTypes(EntityModel entityModel) {
     List<EventType<?, ?>> eventTypes = eventTypesByEntityModel.get(entityModel);
     if (eventTypes == null)
-      throw new IllegalArgumentException("Unknown entity model " + entityModel.name() + ". Is it in the transitions given to the test API?");
+      throw new IllegalArgumentException("Unknown entity model " + entityModel.name() + ". Is it in the entity models given to the test API?");
     return eventTypes;
   }
 
   private EventType<?, ?> eventType(UUID id) {
     EventType<?, ?> eventType = eventTypeMapper.apply(id);
     if (eventType == null)
-      throw new IllegalStateException("Unknown event type " + id + ". Is it in the transitions given to the test API?");
+      throw new IllegalStateException("Unknown event type " + id + ". Is it in the entity models given to the test API?");
     return eventType;
   }
 

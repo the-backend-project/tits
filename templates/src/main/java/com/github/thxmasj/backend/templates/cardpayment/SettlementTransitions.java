@@ -12,7 +12,6 @@ import static com.github.thxmasj.backend.core.Tuples.tuple;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.RequestCompleted;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.Request;
 import static com.github.thxmasj.backend.http.outbox.HttpOutboxRequest.BatchReferenced;
-import static com.github.thxmasj.backend.templates.cardpayment.Aggregate.Settlement;
 import static com.github.thxmasj.backend.templates.cardpayment.Identifiers.AcquirerBatchNumberClaimed;
 import static com.github.thxmasj.backend.templates.cardpayment.Identifiers.BatchNumberClaimed;
 import static com.github.thxmasj.backend.templates.cardpayment.Identifiers.Index;
@@ -77,8 +76,10 @@ public class SettlementTransitions {
     @Override public UUID id() {return id;}
   }
   private final Map<State, List<TransitionModel<?, ?>>> transitions;
+  private final EntityModel merchant;
+  private final EntityModel settlement;
   private final List<EntityModel> outboxRequestModels;
-  private final Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> outboxTransitions;
+  private final List<EntityModel> outboxEntityModels;
   private final Dispatcher<Tuple3<BatchNumber, AcquirerBatchNumber, Merchant>, ?> reconciliation;
   private final Dispatcher<Tuple2<CutOff, ReconciliationValues>, ?> approvedCutOff;
 
@@ -98,24 +99,31 @@ public class SettlementTransitions {
     return outboxRequestModels;
   }
 
-  /// The transitions to register for the outbox requests.
-  public Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> outboxTransitions() {
-    return outboxTransitions;
+  /// The entity models of the outbox requests
+  public List<EntityModel> outboxEntityModels() {
+    return outboxEntityModels;
   }
 
   /// The input types of the outbox requests are inferred from the dispatchers.
-  public <I1, I2> SettlementTransitions(
+  ///
+  /// @param merchantModel   the model of the merchants
+  /// @param settlementModel the model of the settlements, whose transitions these are
+  <I1, I2> SettlementTransitions(
+      EntityModel merchantModel,
+      EntityModel settlementModel,
       // validateSettlementResponse()
       Dispatcher<Tuple3<BatchNumber, AcquirerBatchNumber, Merchant>, I1> reconciliationToAcquirer,
       Dispatcher<Tuple2<CutOff, ReconciliationValues>, I2> approvedCutOffToMerchant
   ) {
+    this.merchant = merchantModel;
+    this.settlement = settlementModel;
     this.reconciliation = reconciliationToAcquirer;
     this.approvedCutOff = approvedCutOffToMerchant;
     this.outboxRequestModels = List.of(
         reconciliationToAcquirer.outbox(),
         approvedCutOffToMerchant.outbox()
     );
-    this.outboxTransitions = PaymentTransitions.transitions(List.of(reconciliationToAcquirer, approvedCutOffToMerchant));
+    this.outboxEntityModels = PaymentTransitions.entityModels(List.of(reconciliationToAcquirer, approvedCutOffToMerchant));
 
     this.transitions = Map.of(
         Begin, List.of(
@@ -248,14 +256,14 @@ public class SettlementTransitions {
                 c.log().entityId(),
                 DispatchContext.of(c)
             ))
-            .trigger(MerchantLookedUp).on(Aggregate.Merchant).identifiedBy(d -> idEvent(MerchantIdClaimed, d.t1().merchantId()))
+            .trigger(MerchantLookedUp).on(merchant).identifiedBy(d -> idEvent(MerchantIdClaimed, d.t1().merchantId()))
             .trigger(reconciliation.requestDispatched())
             // A rolled back request is settled too, as its reversal is a request referencing the batch on its own
             .when(BatchReferenced, d -> d.t1().t5()).is(HttpOutboxRequest.requestAccepted(), HttpOutboxRequest.rollbackDispatched())
             .withReactive(d -> reconciliation.input(d.t1().t6(), tuple(d.t1().t2(), d.t1().t3(), d.t2().accepted().event().getUnmarshalledData())))
             .on(reconciliation.outbox())
             .identifiedBy(newEntityId())
-            .trigger(SettlementEvent.SettlementOpened).with(d -> new Opened(d.t1().t2().next(), d.t1().t3().next())).on(Settlement).identifiedBy(newEntityId())
+            .trigger(SettlementEvent.SettlementOpened).with(d -> new Opened(d.t1().t2().next(), d.t1().t3().next())).on(settlement).identifiedBy(newEntityId())
             .trigger(RequestCompleted).with(d -> tuple("", d.t1().t1().t4())).on(Request).identifiedBy(entityIdFromSession())
             .output(d -> d.t1().t1().t1().t1())
     );

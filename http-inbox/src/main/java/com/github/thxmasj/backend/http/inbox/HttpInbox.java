@@ -1,7 +1,5 @@
 package com.github.thxmasj.backend.http.inbox;
 
-import static com.github.thxmasj.backend.core.EntitySelector.newEntityId;
-
 import com.github.thxmasj.backend.core.BasicEventType;
 import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.EntityModel;
@@ -9,12 +7,10 @@ import com.github.thxmasj.backend.core.EntityModelGroup;
 import com.github.thxmasj.backend.core.EntitySelector;
 import com.github.thxmasj.backend.core.EventReference;
 import com.github.thxmasj.backend.core.EventTrigger;
-import com.github.thxmasj.backend.core.EventTrigger.EventSpec;
 import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.IdEntityModel;
 import com.github.thxmasj.backend.core.IndexEntityModel;
 import com.github.thxmasj.backend.core.State;
-import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.core.Tuples.Tuple2;
 import com.github.thxmasj.backend.core.Tuples.Tuple3;
 import com.github.thxmasj.backend.core.Validated;
@@ -22,20 +18,31 @@ import com.github.thxmasj.backend.core.http.HttpDataType;
 import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
 import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
 import com.github.thxmasj.backend.http.inbox.Authorization.Refused;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
-/// The HTTP inbox of an application: the [HttpInboxRequest]s it receives, and the `RequestRouting` entity model
-/// routing a received request to the inbox request matching it.
+/// The HTTP inbox of an application: the [HttpInboxRequest]s it receives, and its `RequestRouting` entity model routing
+/// a received request to the inbox request matching it. The inbox is created from the requests and the entity models
+/// of the application with [#of(List, List)], and gives the entity models to create the state machine with:
+///
+/// ```java
+/// HttpInbox inbox = HttpInbox.of(List.of(PlaceOrder), List.of(Orders));
+/// StateMachine stateMachine = new StateMachine(inbox.entityModels(), dataSource, schemaName, true);
+/// DisposableServer server = new HttpInboxListener(stateMachine, inbox).listen(port);
+/// ```
 public interface HttpInbox {
 
-  /// Routes every received request to the inbox request matching it, and answers the request with the response the
-  /// inbox request gives it. A request matching no inbox request is answered with 400 Bad Request.
-  EntityModel RequestRouting = EntityModel.of("RequestRouting", UUID.fromString("20755705-fc81-4228-a1a7-5e13d6e3c153"));
+  /// The routing model of any inbox, which an inbox request responds to by triggering [#ResponseCreated] on it,
+  /// identified by the session. Every request received is routed to the inbox request matching it by an entity of the
+  /// inbox's [#requestRouting()], and answered with the response the inbox request gives it. A request matching no
+  /// inbox request is answered with 400 Bad Request.
+  EntityModelGroup RequestRouting = EntityModelGroup.of(
+      "RequestRouting",
+      UUID.fromString("7c2e9a41-5d8b-4f36-b0e7-1a4c6f8d2b95"),
+      model -> model instanceof RequestRoutingModel
+  );
 
   /// Any inbox request, which an application responds to by triggering a [ResponseEventType] such as
   /// [#RequestCompleted] on it, identified by the session, without knowing which inbox request it is:
@@ -54,14 +61,6 @@ public interface HttpInbox {
       UUID.fromString("e55c0077-eddd-4840-b880-2bf0ace4468a"),
       HttpDataType.forRequest(),
       DataType.none()
-  );
-
-  /// Triggers a received request on a new `RequestRouting` entity
-  EventTrigger<HttpRequestMessage, HttpRequestMessage, ?> TRIGGER = new EventTrigger<>(
-      new EventSpec<>(RequestReceived, Function.identity()),
-      List.of(newEntityId()),
-      RequestRouting,
-      false
   );
 
   /// The request is routed to the inbox request matching it
@@ -207,8 +206,8 @@ public interface HttpInbox {
       ProcessReferenced
   );
 
-  /// The transitions of the application with its inbox, to create the state machine with: those of the application,
-  /// and of `RequestRouting`, routing to the inbox requests, of the inbox requests, of `MessageIds` and of `Index`.
+  /// The inbox of the requests, for an application with the entity models given, e.g. those of the processes the
+  /// requests trigger events on.
   ///
   /// Every inbox request is checked to take the responses its own processes may give. From the event of each process,
   /// the transitions taken on it in any state, with all the transitions they may choose, and the transitions of the
@@ -217,26 +216,24 @@ public interface HttpInbox {
   /// has a `response` for. Delayed and conditional triggers and actions, e.g. outbox requests, are not followed, as
   /// what they lead to is calculated later, so a response given that way is checked only when it is given.
   ///
-  /// @param application the transitions of the entity models of the application, e.g. those of the processes
+  /// @param application the entity models of the application, each with its transitions
   /// @throws IllegalArgumentException if an inbox request doesn't take a response its processes may give
-  static Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions(
-      List<HttpInboxRequest<?>> requests,
-      Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> application
-  ) {
-    var transitions = new HashMap<>(application);
-    transitions.put(RequestRouting, requestRoutingTransitions(requests));
-    for (HttpInboxRequest<?> request : requests)
-      transitions.put(request, request.transitions());
-    transitions.put(MessageIds, MessageIds.transitions());
-    transitions.put(Index, Index.transitions());
-    TransitionModels.checkResponses(requests, transitions);
-    return transitions;
+  static HttpInbox of(List<HttpInboxRequest<?>> requests, List<? extends EntityModel> application) {
+    return InboxModels.of(requests, application);
   }
 
-  /// The transitions of `RequestRouting`, routing a request to the first of the inbox requests matching it
-  static Map<State, List<TransitionModel<?, ?>>> requestRoutingTransitions(List<HttpInboxRequest<?>> requests) {
-    return TransitionModels.requestRoutingTransitions(requests);
-  }
+  /// The entity model routing every request received to the inbox request matching it, one of [#RequestRouting]
+  EntityModel requestRouting();
+
+  /// The requests the inbox receives
+  List<HttpInboxRequest<?>> requests();
+
+  /// The entity models to create the state machine with: those of the application, and the inbox's own, i.e.
+  /// [#requestRouting()], the inbox requests, [#MessageIds] and [#Index]
+  List<EntityModel> entityModels();
+
+  /// Triggers a received request on a new entity of [#requestRouting()]
+  EventTrigger<HttpRequestMessage, HttpRequestMessage, ?> trigger();
 
   static <T> Function<HttpRequestMessage, Validated<T>> jsonParser(Class<T> contentType) {
     return new JsonRequestValidator<>(contentType, true);

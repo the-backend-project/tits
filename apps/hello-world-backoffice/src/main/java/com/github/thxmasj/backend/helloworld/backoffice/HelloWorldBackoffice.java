@@ -17,7 +17,7 @@ public final class HelloWorldBackoffice {
   private HelloWorldBackoffice() {}
 
   public static void main(String[] args) {
-    BackofficeApp.run("Hello world", "hello_world", Greetings.transitions(), args, System.getenv());
+    BackofficeApp.run("Hello world", "hello_world", Greetings.Inbox.entityModels(), args, System.getenv());
   }
 
 }

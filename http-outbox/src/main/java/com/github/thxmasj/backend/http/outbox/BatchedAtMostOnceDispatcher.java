@@ -1,7 +1,7 @@
 package com.github.thxmasj.backend.http.outbox;
 
 import com.github.thxmasj.backend.http.outbox.HttpOutboxRequest.BatchedRequest;
-import java.util.Map;
+import java.util.List;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import reactor.core.publisher.Mono;
@@ -10,7 +10,7 @@ import reactor.core.publisher.Mono;
 public final class BatchedAtMostOnceDispatcher<X, RQ> extends BaseDispatcher<X, BatchedRequest<RQ>> implements Dispatcher<X, BatchedRequest<RQ>> {
 
   private BatchedAtMostOnceDispatcher(AtMostOnce<RQ, Void> outbox, BiFunction<DispatchContext, X, Mono<BatchedRequest<RQ>>> inputCreator) {
-    super(outbox, outbox.batchedRequestDispatched(), inputCreator, Map.of(outbox, outbox.transitions()));
+    super(outbox, outbox.batchedRequestDispatched(), inputCreator, List.of(outbox));
   }
 
   public static <X, RQ> BatchedAtMostOnceDispatcher<X, RQ> of(AtMostOnce<RQ, Void> outbox, Function<X, BatchedRequest<RQ>> inputCreator) {

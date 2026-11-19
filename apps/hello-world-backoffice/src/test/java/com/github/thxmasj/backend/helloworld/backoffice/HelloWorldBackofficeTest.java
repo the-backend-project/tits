@@ -60,8 +60,9 @@ public class HelloWorldBackofficeTest {
     BackofficeApp.migrate(BackofficeApp.Config.fromEnvironment(admin, "hello_world", false));
     var config = BackofficeApp.Config.fromEnvironment(env("testlogin", "Please_hide_me!", issuer), "hello_world", true);
     DataSource dataSource = new DataSourceBuilder(Database.named(config.database()), config.databaseConfig()).buildPooled();
-    stateMachine = BackofficeApp.stateMachine(config, dataSource, BackofficeApp.backoffice("Hello world", config, dataSource, Greetings.transitions()));
-    server = BackofficeApp.serve(config, stateMachine);
+    var backoffice = BackofficeApp.backoffice("Hello world", config, dataSource, Greetings.Inbox.entityModels());
+    stateMachine = BackofficeApp.stateMachine(config, dataSource, backoffice);
+    server = BackofficeApp.serve(config, stateMachine, backoffice);
   }
 
   @AfterAll

@@ -44,7 +44,7 @@ public interface Authorizations {
   /// The scopes of OpenID Connect a client may request. Other scopes are ignored, OpenID Connect Core section 3.1.2.1.
   List<String> SupportedScopes = List.of("openid", "email", "profile");
 
-  EntityModel Authorization = EntityModel.of("Authorization", UUID.fromString("7ff5bfea-81ed-4e10-aa73-e80e69884814"));
+  EntityModel Authorization = EntityModel.of("Authorization", UUID.fromString("7ff5bfea-81ed-4e10-aa73-e80e69884814"), Authorizations::authorizationTransitions);
 
   enum States implements State {
     Authenticating,
@@ -155,63 +155,65 @@ public interface Authorizations {
   );
   IdEntityModel Codes = IdEntityModel.of("Codes", UUID.fromString("a5b6d5e7-e5e9-4b16-9d7b-bd08c596bdd0"), CodeClaimed);
 
-  static Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions() {
+  /// The entity models, each with its transitions
+  static List<EntityModel> entityModels() {
+    return List.of(Authorization, Codes);
+  }
+
+  private static Map<State, List<TransitionModel<?, ?>>> authorizationTransitions() {
     return Map.of(
-        Authorization, Map.of(
-            Begin, List.of(
-                onEvent(AuthorizationRequested).to(States.Authenticating)
-                    .assemble(c -> tuple(c.input(), c.log().entityId()))
-                    .trigger(Clients.ClientLookedUp).on(Client).identifiedBy(d -> idEvent(ClientIdClaimed, d.t1().clientId()))
-                    // An invalid client or redirect URI is not redirected to, RFC 6749 section 4.1.2.1. isRejected()
-                    // marks a rejected read as handled.
-                    .when(d -> d.t2().isRejected() || !d.t2().isAccepted()).then(
-                        refuse(),
-                        d -> new Refusal(d.t1().t1().clientId(), "invalid_request", "The client is unknown", null, null)
-                    )
-                    .when(d -> !registration(d.t2()).redirectUris().contains(d.t1().t1().redirectUri())).then(
-                        refuse(),
-                        d -> new Refusal(d.t1().t1().clientId(), "invalid_request", "The redirect URI is not registered for the client", null, null)
-                    )
-                    .when(d -> d.t1().t1().error() != null).then(
-                        returnError(),
-                        d -> refusal(d.t1().t1(), d.t1().t1().error(), d.t1().t1().errorDescription())
-                    )
-                    .when(d -> !registration(d.t2()).grantTypes().contains(Clients.AuthorizationCode)).then(
-                        returnError(),
-                        d -> refusal(d.t1().t1(), "unauthorized_client", "The client may not use the authorization code grant")
-                    )
-                    .otherwise(
-                        onEvent(AuthorizationStarted).to(States.Authenticating)
-                            .assemble(c -> tuple(c.input(), c.log().entityId()))
-                            // The edge redirects the user to the upstream provider, with the authorization as state
-                            .trigger(Inbox.ReplyCreated).with(d -> Reply.json(200, Map.of("authorization", d.t2().toString()))).on(Request).identifiedBy(entityIdFromSession())
-                            .output(d -> d.t1().t1()),
-                        d -> started(d.t1().t1())
-                    )
-            ),
-            States.Authenticating, List.of(
-                onEvent(UserAuthenticated).to(States.CodeIssued)
-                    .assemble(c -> tuple(authenticated(c.input(), c.timestamp().toEpochSecond()), c.log().one(AuthorizationStarted), c.entityId()))
-                    .trigger(CodeClaimed).with(d -> d.t1().codeHash()).on(Codes).identifiedBy(d -> newEntityId(d.t3()))
-                    // The edge adds the code, which only it knows
-                    .trigger(Inbox.ReplyCreated).with(d -> Reply.json(302, redirect(d.t1().t2().redirectUri(), d.t1().t2().state(), Map.of()))).on(Request).identifiedBy(entityIdFromSession())
-                    .output(d -> d.t1().t1().t1()),
-                onEvent(UserAuthenticationFailed).to(States.Failed).severity(Severity.Warning)
-                    .assemble(c -> tuple(c.input(), c.log().one(AuthorizationStarted)))
-                    .trigger(Inbox.ReplyCreated).with(d -> Reply.json(302, error(d.t2().redirectUri(), d.t2().state(), d.t1().error(), d.t1().description()))).on(Request).identifiedBy(entityIdFromSession())
-                    .output(d -> d.t1().t1())
-            ),
-            // A code can be redeemed once, whether or not the token request redeeming it succeeds
-            States.CodeIssued, List.of(
-                onEvent(CodeRedeemed).to(States.Redeemed)
-                    .assemble((_, log) -> new Granted(log.one(AuthorizationStarted), log.one(UserAuthenticated)))
-                    .output(d -> d)
-            ),
-            States.Redeemed, List.of(),
-            States.Refused, List.of(),
-            States.Failed, List.of()
+        Begin, List.of(
+            onEvent(AuthorizationRequested).to(States.Authenticating)
+                .assemble(c -> tuple(c.input(), c.log().entityId()))
+                .trigger(Clients.ClientLookedUp).on(Client).identifiedBy(d -> idEvent(ClientIdClaimed, d.t1().clientId()))
+                // An invalid client or redirect URI is not redirected to, RFC 6749 section 4.1.2.1. isRejected()
+                // marks a rejected read as handled.
+                .when(d -> d.t2().isRejected() || !d.t2().isAccepted()).then(
+                    refuse(),
+                    d -> new Refusal(d.t1().t1().clientId(), "invalid_request", "The client is unknown", null, null)
+                )
+                .when(d -> !registration(d.t2()).redirectUris().contains(d.t1().t1().redirectUri())).then(
+                    refuse(),
+                    d -> new Refusal(d.t1().t1().clientId(), "invalid_request", "The redirect URI is not registered for the client", null, null)
+                )
+                .when(d -> d.t1().t1().error() != null).then(
+                    returnError(),
+                    d -> refusal(d.t1().t1(), d.t1().t1().error(), d.t1().t1().errorDescription())
+                )
+                .when(d -> !registration(d.t2()).grantTypes().contains(Clients.AuthorizationCode)).then(
+                    returnError(),
+                    d -> refusal(d.t1().t1(), "unauthorized_client", "The client may not use the authorization code grant")
+                )
+                .otherwise(
+                    onEvent(AuthorizationStarted).to(States.Authenticating)
+                        .assemble(c -> tuple(c.input(), c.log().entityId()))
+                        // The edge redirects the user to the upstream provider, with the authorization as state
+                        .trigger(Inbox.ReplyCreated).with(d -> Reply.json(200, Map.of("authorization", d.t2().toString()))).on(Request).identifiedBy(entityIdFromSession())
+                        .output(d -> d.t1().t1()),
+                    d -> started(d.t1().t1())
+                )
         ),
-        Codes, Codes.transitions()
+        States.Authenticating, List.of(
+            onEvent(UserAuthenticated).to(States.CodeIssued)
+                .assemble(c -> tuple(authenticated(c.input(), c.timestamp().toEpochSecond()), c.log().one(AuthorizationStarted), c.entityId()))
+                .trigger(CodeClaimed).with(d -> d.t1().codeHash()).on(Codes).identifiedBy(d -> newEntityId(d.t3()))
+                // The edge adds the code, which only it knows
+                .trigger(Inbox.ReplyCreated).with(d -> Reply.json(302, redirect(d.t1().t2().redirectUri(), d.t1().t2().state(), Map.of()))).on(Request).identifiedBy(entityIdFromSession())
+                .output(d -> d.t1().t1().t1()),
+            onEvent(UserAuthenticationFailed).to(States.Failed).severity(Severity.Warning)
+                .assemble(c -> tuple(c.input(), c.log().one(AuthorizationStarted)))
+                .trigger(Inbox.ReplyCreated).with(d -> Reply.json(302, error(d.t2().redirectUri(), d.t2().state(), d.t1().error(), d.t1().description()))).on(Request).identifiedBy(entityIdFromSession())
+                .output(d -> d.t1().t1())
+        ),
+        // A code can be redeemed once, whether or not the token request redeeming it succeeds
+        States.CodeIssued, List.of(
+            onEvent(CodeRedeemed).to(States.Redeemed)
+                .assemble((_, log) -> new Granted(log.one(AuthorizationStarted), log.one(UserAuthenticated)))
+                .output(d -> d)
+        ),
+        States.Redeemed, List.of(),
+        States.Refused, List.of(),
+        States.Failed, List.of()
     );
   }
 

@@ -2,9 +2,7 @@ package com.github.thxmasj.backend.backoffice;
 
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.JsonLinesListener;
-import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.StateMachine;
-import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.core.database.DataSourceBuilder;
 import com.github.thxmasj.backend.core.database.Database;
 import com.github.thxmasj.backend.core.database.DatabaseClient;
@@ -76,11 +74,11 @@ public final class BackofficeApp {
   ///
   /// @param service                  the name of the application, e.g. `Identity provider`
   /// @param defaultApplicationSchema the application's default schema, e.g. `identity_provider`
-  /// @param applicationTransitions   the transitions of the application's state machine
+  /// @param applicationModels        the entity models of the application's state machine
   public static void run(
       String service,
       String defaultApplicationSchema,
-      Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> applicationTransitions,
+      List<? extends EntityModel> applicationModels,
       String[] args,
       Map<String, String> env
   ) {
@@ -93,8 +91,9 @@ public final class BackofficeApp {
         try {
           Config config = Config.fromEnvironment(env, defaultApplicationSchema, true);
           DataSource dataSource = new DataSourceBuilder(Database.named(config.database()), config.databaseConfig()).buildPooled();
-          stateMachine = stateMachine(config, dataSource, backoffice(service, config, dataSource, applicationTransitions));
-          server = serve(config, stateMachine);
+          Backoffice backoffice = backoffice(service, config, dataSource, applicationModels);
+          stateMachine = stateMachine(config, dataSource, backoffice);
+          server = serve(config, stateMachine, backoffice);
         } catch (RuntimeException e) {
           // The workers of the state machine would keep the process running without serving
           e.printStackTrace();
@@ -145,16 +144,16 @@ public final class BackofficeApp {
       String service,
       Config config,
       DataSource dataSource,
-      Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> applicationTransitions
+      List<? extends EntityModel> applicationModels
   ) {
-    return new Backoffice(service, config.backoffice(), Database.of(dataSource).client(dataSource), config.applicationSchema(), applicationTransitions);
+    return new Backoffice(service, config.backoffice(), Database.of(dataSource).client(dataSource), config.applicationSchema(), applicationModels);
   }
 
   /// The backoffice's own state machine, of the model of the backoffice, in the backoffice's schema
   public static StateMachine stateMachine(Config config, DataSource dataSource, Backoffice backoffice) {
     return new StateMachine(
         null,
-        backoffice.transitions(),
+        backoffice.inbox().entityModels(),
         dataSource,
         null, // The schema is created by the migrate admin process
         config.schema(),
@@ -166,8 +165,8 @@ public final class BackofficeApp {
   }
 
   /// Serves the backoffice: every request goes to the inbox of its state machine
-  public static DisposableServer serve(Config config, StateMachine stateMachine) {
-    return new HttpInboxListener(stateMachine).listen(config.port());
+  public static DisposableServer serve(Config config, StateMachine stateMachine, Backoffice backoffice) {
+    return new HttpInboxListener(stateMachine, backoffice.inbox()).listen(config.port());
   }
 
 }

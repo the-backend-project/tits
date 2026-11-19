@@ -5,8 +5,6 @@ import static com.github.thxmasj.backend.core.EntityModel.Begin;
 import static com.github.thxmasj.backend.core.EntitySelector.entityId;
 import static com.github.thxmasj.backend.core.EntitySelector.newEntityId;
 import static com.github.thxmasj.backend.core.EventTrigger.trigger;
-import static com.github.thxmasj.backend.core.test.RollbackTest.Entities.Pacman;
-import static com.github.thxmasj.backend.core.test.RollbackTest.Entities.Speed;
 import static com.github.thxmasj.backend.core.test.RollbackTest.PacmanStates.Dead;
 import static com.github.thxmasj.backend.core.test.RollbackTest.PacmanStates.Moving;
 import static com.github.thxmasj.backend.core.test.RollbackTest.PacmanStates.Stopped;
@@ -27,6 +25,7 @@ import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.StateMachine.RejectedEvent;
 import com.github.thxmasj.backend.core.StateMachine;
+import com.github.thxmasj.backend.core.TransitionModel;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -40,14 +39,8 @@ public class RollbackTest {
   enum PacmanStates implements State {Stopped, Moving, Dead}
   enum SpeedStates implements State {Zero, Normal, Slow, Fast}
 
-  enum Entities implements EntityModel {
-    Pacman {
-      @Override public UUID id() {return UUID.fromString("15f23da6-19be-460d-8af4-ffdbd600fc51");}
-    },
-    Speed {
-      @Override public UUID id() {return UUID.fromString("6adad2d0-dd57-4d6b-932c-add277eb0cae");}
-    }
-  }
+  static final EntityModel Pacman = EntityModel.of("Pacman", UUID.fromString("15f23da6-19be-460d-8af4-ffdbd600fc51"), RollbackTest::pacmanTransitions);
+  static final EntityModel Speed = EntityModel.of("Speed", UUID.fromString("6adad2d0-dd57-4d6b-932c-add277eb0cae"), RollbackTest::speedTransitions);
 
   /// Starting to move records the id of the created speed entity
   static EventType<Void, UUID> PacmanMovedForward = BasicEventType.of("Pacman moved forward", UUID.fromString("0908e790-6955-4d89-b11b-c552ea8c54ac"), DataType.none(), DataType.uuid());
@@ -64,73 +57,78 @@ public class RollbackTest {
     return log.one(PacmanMovedForward);
   }
 
-  private final static StateMachine eventListener = Init.stateMachine(
-      Map.of(
-          Pacman, Map.of(
-              Begin, List.of(
-                  onEvent(PacmanMovedForward).to(Moving)
-                      .trigger(SpeedIncreased).on(Speed).identifiedBy(newEntityId())
-                      .reversible(
-                          assemble((log, _) -> speedId(log))
-                              .trigger(SpeedDecreased).on(Speed).identifiedBy(EntitySelector::entityId)
-                      )
-                      .output(d -> d.t2().accepted().event().entityId())
-              ),
-              Stopped, List.of(
-                  onEvent(PacmanMovedForward).to(Moving)
-                      .trigger(SpeedIncreased).on(Speed).identifiedBy(newEntityId())
-                      .reversible(
-                          assemble((log, _) -> speedId(log))
-                              .trigger(SpeedDecreased).on(Speed).identifiedBy(EntitySelector::entityId)
-                      )
-                      .output(d -> d.t2().accepted().event().entityId())
-              ),
-              Moving, List.of(
-                  onEvent(PacmanTurnedLeft).toSelf().output(),
-                  onEvent(PacmanTurnedRight).toSelf().output(),
-                  onEvent(PacmanMovedBackward).toSelf()
-                      .assemble(c -> speedId(c.log()))
-                      .trigger(SpeedDecreased).on(Speed).identifiedBy(EntitySelector::entityId)
-                      .reversible(
-                          assemble((log, _) -> speedId(log))
-                              .trigger(SpeedIncreased).on(Speed).identifiedBy(EntitySelector::entityId)
-                      )
-                      .output(),
-                  onEvent(PacmanMovedForward).toSelf()
-                      .assemble(c -> speedId(c.log()))
-                      .trigger(SpeedIncreased).on(Speed).identifiedBy(EntitySelector::entityId)
-                      .reversible(
-                          assemble((log, _) -> speedId(log))
-                              .trigger(SpeedDecreased).on(Speed).identifiedBy(EntitySelector::entityId)
-                      )
-                      .output(),
-                  onEvent(PacmanStopped).to(Stopped).output(),
-                  onEvent(PacmanCrashed).to(Dead).output()//,
-                  //onEvent(EventsRolledBack).toSelf().assembleInput().output(d -> d)
-              ),
-              Dead, List.of()
-          ),
-          Speed, Map.of(
-              Begin, List.of(
-                  onEvent(SpeedIncreased).to(Slow).output()
-              ),
-              Zero, List.of(
-                  onEvent(SpeedIncreased).to(Slow).output()
-              ),
-              Slow, List.of(
-                  onEvent(SpeedIncreased).to(Normal).output(),
-                  onEvent(SpeedDecreased).to(Zero).output()
-              ),
-              Normal, List.of(
-                  onEvent(SpeedIncreased).to(Fast).output(),
-                  onEvent(SpeedDecreased).to(Slow).output()
-              ),
-              Fast, List.of(
-                  onEvent(SpeedDecreased).to(Normal).output()
-              )
+  private static Map<State, List<TransitionModel<?, ?>>> pacmanTransitions() {
+    return Map.of(
+        Begin, List.of(
+            onEvent(PacmanMovedForward).to(Moving)
+                .trigger(SpeedIncreased).on(Speed).identifiedBy(newEntityId())
+                .reversible(
+                    assemble((log, _) -> speedId(log))
+                        .trigger(SpeedDecreased).on(Speed).identifiedBy(EntitySelector::entityId)
+                )
+                .output(d -> d.t2().accepted().event().entityId())
+        ),
+        Stopped, List.of(
+            onEvent(PacmanMovedForward).to(Moving)
+                .trigger(SpeedIncreased).on(Speed).identifiedBy(newEntityId())
+                .reversible(
+                    assemble((log, _) -> speedId(log))
+                        .trigger(SpeedDecreased).on(Speed).identifiedBy(EntitySelector::entityId)
+                )
+                .output(d -> d.t2().accepted().event().entityId())
+        ),
+        Moving, List.of(
+            onEvent(PacmanTurnedLeft).toSelf().output(),
+            onEvent(PacmanTurnedRight).toSelf().output(),
+            onEvent(PacmanMovedBackward).toSelf()
+                .assemble(c -> speedId(c.log()))
+                .trigger(SpeedDecreased).on(Speed).identifiedBy(EntitySelector::entityId)
+                .reversible(
+                    assemble((log, _) -> speedId(log))
+                        .trigger(SpeedIncreased).on(Speed).identifiedBy(EntitySelector::entityId)
+                )
+                .output(),
+            onEvent(PacmanMovedForward).toSelf()
+                .assemble(c -> speedId(c.log()))
+                .trigger(SpeedIncreased).on(Speed).identifiedBy(EntitySelector::entityId)
+                .reversible(
+                    assemble((log, _) -> speedId(log))
+                        .trigger(SpeedDecreased).on(Speed).identifiedBy(EntitySelector::entityId)
+                )
+                .output(),
+            onEvent(PacmanStopped).to(Stopped).output(),
+            onEvent(PacmanCrashed).to(Dead).output()//,
+            //onEvent(EventsRolledBack).toSelf().assembleInput().output(d -> d)
+        ),
+        Dead, List.of()
+    );
+  }
 
-          )
-      )
+  private static Map<State, List<TransitionModel<?, ?>>> speedTransitions() {
+    return Map.of(
+        Begin, List.of(
+            onEvent(SpeedIncreased).to(Slow).output()
+        ),
+        Zero, List.of(
+            onEvent(SpeedIncreased).to(Slow).output()
+        ),
+        Slow, List.of(
+            onEvent(SpeedIncreased).to(Normal).output(),
+            onEvent(SpeedDecreased).to(Zero).output()
+        ),
+        Normal, List.of(
+            onEvent(SpeedIncreased).to(Fast).output(),
+            onEvent(SpeedDecreased).to(Slow).output()
+        ),
+        Fast, List.of(
+            onEvent(SpeedDecreased).to(Normal).output()
+        )
+
+    );
+  }
+
+  private final static StateMachine eventListener = Init.stateMachine(
+      List.of(Pacman, Speed)
   );
 
   @Test

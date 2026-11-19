@@ -13,8 +13,6 @@ import java.util.UUID;
 /// already taken.
 public interface IdEntityModel extends EntityModel {
 
-  Map<State, List<TransitionModel<?, ?>>> transitions();
-
   static IdEntityModel of(String name, UUID id, EventType<?, ?>... eventTypes) {
     List<TransitionModel<?, ?>> transitions = Arrays.stream(eventTypes)
         .map(IdEntityModel::transition)
