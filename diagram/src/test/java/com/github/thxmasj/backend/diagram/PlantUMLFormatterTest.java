@@ -22,7 +22,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 class PlantUMLFormatterTest {
 
-  enum States implements State {Accepted, Refused}
+  enum States implements State {Accepted, Refused, Waiting, Retrying, Failed}
 
   static final EventType<Void, Void> Requested = BasicEventType.of("Requested", UUID.randomUUID());
   static final EventType<Void, Void> Accepted = BasicEventType.of("Accepted", UUID.randomUUID());
@@ -48,6 +48,61 @@ class PlantUMLFormatterTest {
     String diagram = new PlantUMLFormatter(Request, transitions).format();
     String refusedId = States.Refused.name() + States.Refused.hashCode();
     assertThat(diagram).contains("Choice1 --> " + refusedId + ": Refused\\nWithdrawn\n");
+  }
+
+  /// Like the retry of an outbox request after a timeout or a dropped connection, the choices of several transitions
+  /// with the same branches are one choice, with the transitions into it on one arrow and its branches drawn once
+  @Test
+  void choicesWithTheSameBranchesAreOneChoice() {
+    EventType<Void, Void> timedOut = BasicEventType.of("Timed out", UUID.randomUUID());
+    EventType<Void, Void> dropped = BasicEventType.of("Dropped", UUID.randomUUID());
+    EventType<Void, Void> retried = BasicEventType.of("Retried", UUID.randomUUID());
+    EventType<Void, Void> givenUp = BasicEventType.of("Given up", UUID.randomUUID());
+    Map<State, List<TransitionModel<?, ?>>> transitions = Map.of(
+        Begin, List.of(onEvent(Requested).to(States.Waiting).output()),
+        States.Waiting, List.of(
+            onEvent(timedOut).to(States.Waiting).assembleInput()
+                .when(_ -> true).then(onEvent(retried).to(States.Retrying).output())
+                .otherwise(onEvent(givenUp).to(States.Failed).output()),
+            onEvent(dropped).to(States.Waiting).assembleInput()
+                .when(_ -> true).then(onEvent(retried).to(States.Retrying).output())
+                .otherwise(onEvent(givenUp).to(States.Failed).output())
+        ),
+        States.Retrying, List.of(),
+        States.Failed, List.of()
+    );
+    String diagram = new PlantUMLFormatter(Request, transitions).format();
+    String waitingId = States.Waiting.name() + States.Waiting.hashCode();
+    String retryingId = States.Retrying.name() + States.Retrying.hashCode();
+    assertThat(diagram).containsOnlyOnce("<<choice>>");
+    assertThat(diagram).contains(waitingId + " --> Choice1: Timed out\\nDropped\n");
+    assertThat(diagram).containsOnlyOnce("Choice1 --> " + retryingId + ": Retried\n");
+  }
+
+  /// Choices whose branches differ, here in the state a branch leads to, are separate choices
+  @Test
+  void choicesWithOtherBranchesAreSeparateChoices() {
+    EventType<Void, Void> timedOut = BasicEventType.of("Timed out", UUID.randomUUID());
+    EventType<Void, Void> dropped = BasicEventType.of("Dropped", UUID.randomUUID());
+    EventType<Void, Void> retried = BasicEventType.of("Retried", UUID.randomUUID());
+    Map<State, List<TransitionModel<?, ?>>> transitions = Map.of(
+        Begin, List.of(onEvent(Requested).to(States.Waiting).output()),
+        States.Waiting, List.of(
+            onEvent(timedOut).to(States.Waiting).assembleInput()
+                .when(_ -> true).then(onEvent(retried).to(States.Retrying).output())
+                .otherwise(onEvent(Refused).to(States.Failed).output()),
+            onEvent(dropped).to(States.Waiting).assembleInput()
+                .when(_ -> true).then(onEvent(retried).to(States.Retrying).output())
+                .otherwise(onEvent(Refused).to(States.Refused).output())
+        ),
+        States.Retrying, List.of(),
+        States.Failed, List.of(),
+        States.Refused, List.of()
+    );
+    String diagram = new PlantUMLFormatter(Request, transitions).format();
+    String waitingId = States.Waiting.name() + States.Waiting.hashCode();
+    assertThat(diagram).contains("state Choice1 <<choice>>", "state Choice2 <<choice>>");
+    assertThat(diagram).contains(waitingId + " --> Choice1: Timed out\n", waitingId + " --> Choice2: Dropped\n");
   }
 
   @Test
