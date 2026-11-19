@@ -94,7 +94,7 @@ public sealed interface HttpOutboxRequest<RQ> extends com.github.thxmasj.backend
   );
 
   /// The request of the triggered outbox model that the process dispatched last, found by its [#ProcessReferenced]
-  /// index, e.g. to repeat it by [AtLeastOnce#requestRepeated()]
+  /// index, e.g. to send it again by [AtLeastOnce#requestRedispatched()]
   static EntitySelector dispatchedBy(EntityId processId) {
     return lastReferencing(ProcessReferenced, processId.value());
   }

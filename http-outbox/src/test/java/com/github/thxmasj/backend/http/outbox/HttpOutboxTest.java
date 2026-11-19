@@ -33,6 +33,7 @@ import com.github.thxmasj.backend.core.Severity;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.StateMachine;
 import com.github.thxmasj.backend.core.TransitionModel;
+import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionContext;
 import com.github.thxmasj.backend.core.Tuples.Tuple2;
 import com.github.thxmasj.backend.core.http.NettyHttpClient;
 import com.github.thxmasj.backend.core.http.NettyHttpClientBuilder;
@@ -61,6 +62,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiFunction;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeAll;
@@ -632,14 +635,161 @@ public class HttpOutboxTest {
     assertEquals(TimeoutExpired, timeoutTransition.triggers().getFirst().eventSpec().eventType());
   }
 
-  /// An accepted request is sent again exactly as it was dispatched, not as the repeat message creator would make it,
-  /// with the headers the forwarder adds, and stays accepted, so it can be repeated again
+  /// An accepted request is sent again on demand as a retry would send it, as the repeat message creator makes it of
+  /// the dispatched request, with the headers the forwarder adds, and is accepted again, so it can be sent again once
+  /// more. The process, which is done, isn't told by the success callback again.
   @Test
-  public void atLeastOnceAcceptedRequestRepeatedAsStored() {
+  public void atLeastOnceAcceptedRequestRedispatched() {
+    var redispatched = redispatchAcceptedRequest(
+        (_, r) -> TypedHttpRequest.create(r.method(), r.uri(), Map.of("Message-Id", r.headers().get("Message-Id") + "-again"), r.payload() + " again")
+    );
+    List<String> sent = List.of(redispatched.messageId(), "fixed", "payload");
+    List<String> again = List.of(redispatched.messageId() + "-again", "fixed", "payload again");
+    assertEquals(List.of(sent, again, again), redispatched.received());
+    assertEquals(
+        List.of("Request dispatched", "Request accepted", "Request redispatched", "Request accepted", "Request redispatched", "Request accepted"),
+        redispatched.log().events().stream().map(e -> e.type().name()).toList()
+    );
+  }
+
+  /// Without a repeat message creator, an accepted request is sent again as it was dispatched
+  @Test
+  public void atLeastOnceAcceptedRequestRedispatchedUnchangedWithoutRepeatMessageCreator() {
+    var redispatched = redispatchAcceptedRequest(null);
+    List<String> sent = List.of(redispatched.messageId(), "fixed", "payload");
+    assertEquals(List.of(sent, sent, sent), redispatched.received());
+  }
+
+  /// A request given up, here as the receiver rejected it permanently, is sent again on demand, e.g. by a backoffice
+  /// handling the requests given up, and when it is accepted, the process is told by the success callback
+  @Test
+  public void atLeastOnceDeadRequestRedispatched() {
+    assertEquals(
+        List.of("Request dispatched", "Request rejected permanently", "Request redispatched", "Request accepted"),
+        redispatchDeadRequest(false)
+    );
+  }
+
+  /// A request accepted, redispatched and given up, and then redispatched again and accepted, doesn't tell the process
+  /// by the success callback again, as the process was told when the request was first accepted
+  @Test
+  public void atLeastOnceDeadRequestAcceptedBeforeRedispatched() {
+    assertEquals(
+        List.of("Request dispatched", "Request accepted", "Request redispatched", "Request rejected permanently", "Request redispatched", "Request accepted"),
+        redispatchDeadRequest(true)
+    );
+  }
+
+  /// Dispatches a request, which ends dead, and redispatches it by a transition of the process, which is then accepted.
+  /// The process takes the success callback only when it waits for the response, so a second callback would fail.
+  ///
+  /// @param acceptedBefore whether the request is accepted, and then redispatched and rejected, before it is dead
+  /// @return the names of the events of the request
+  private List<String> redispatchDeadRequest(boolean acceptedBefore) {
     EntityModel process = EntityModel.of("Process", UUID.randomUUID());
     EventType<Void, Void> processStarted = BasicEventType.of("Process started", UUID.randomUUID());
     EventType<Void, Void> processSucceeded = BasicEventType.of("Process succeeded", UUID.randomUUID());
-    EventType<Void, Void> repeatRequested = BasicEventType.of("Repeat requested", UUID.randomUUID());
+    EventType<Void, Void> redispatchRequested = BasicEventType.of("Redispatch requested", UUID.randomUUID());
+    String path = "/" + UUID.randomUUID();
+    AtomicInteger status = new AtomicInteger(acceptedBefore ? 200 : 400);
+    server.createContext(path, exchange -> {
+      exchange.getRequestBody().readAllBytes();
+      exchange.sendResponseHeaders(status.get(), -1);
+      exchange.close();
+    });
+    AtLeastOnce<String> notification = HttpOutboxRequest.atLeastOnce()
+        .requestPayloadType(DataType.string())
+        .responsePayloadType(DataType.none())
+        .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
+        .inflightTimeout(Duration.ofSeconds(10))
+        .processModel(process)
+        .contentParser(_ -> valid(null))
+        .onSuccess(processSucceeded)
+        .isAccepted(r -> r.statusCode() == 200)
+        .isFailureTransient(_ -> false)
+        .isRejectedByInvalidResponse(_ -> false)
+        .isFailureByInvalidResponseTransient(_ -> false)
+        .isAttemptAvailable(_ -> true)
+        .backoffAlgorithm(_ -> Duration.ofSeconds(1))
+        .build("Notification", UUID.randomUUID());
+    var dispatcher = AtLeastOnceDispatcher.of(
+        notification,
+        (Void _) -> TypedHttpRequest.create(POST, URI.create("http://localhost:" + server.getAddress().getPort() + path), Map.of(), "payload")
+    );
+    Map<State, List<TransitionModel<?, ?>>> processTransitions = Map.of(
+        Begin, List.of(
+            onEvent(processStarted).to(States.WaitingForResponse)
+                .assemble(DispatchContext::of)
+                .trigger(dispatcher.requestDispatched()).withReactive(d -> dispatcher.input(d, null)).on(dispatcher.outbox()).identifiedBy(newEntityId())
+                .output()
+        ),
+        States.WaitingForResponse, List.of(
+            onEvent(processSucceeded).to(States.Done).output(),
+            redispatchTransition(redispatchRequested, States.WaitingForResponse, dispatcher)
+        ),
+        States.Done, List.of(
+            redispatchTransition(redispatchRequested, States.Done, dispatcher)
+        )
+    );
+    String schema = UUID.randomUUID().toString();
+    Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions = new HashMap<>(dispatcher.transitions());
+    transitions.put(process, processTransitions);
+    transitions.put(Index, Index.transitions());
+    var machine = Init.stateMachine(schema, transitions);
+    var storage = Init.storage(schema, transitions);
+
+    UUID processId = machine.onEvent(trigger(processStarted, process)).blockFirst(Duration.ofSeconds(10)).entityId();
+    if (acceptedBefore) {
+      awaitOutboxLog(storage, processId, l -> l.exists(HttpOutboxRequest.requestAccepted()));
+      assertEquals(States.Done, awaitProcessState(machine, process, processId, States.Done));
+      status.set(400);
+      machine.onEvent(trigger(redispatchRequested, process, processId)).blockFirst();
+    }
+    awaitOutboxLog(storage, processId, l -> l.events().stream().anyMatch(e -> e.type().name().equals("Request rejected permanently")));
+    status.set(200);
+    machine.onEvent(trigger(redispatchRequested, process, processId)).blockFirst();
+    long acceptances = acceptedBefore ? 2 : 1;
+    EventLog log = awaitOutboxLog(storage, processId, l -> l.events().stream().filter(e -> e.type().name().equals("Request accepted")).count() == acceptances);
+    assertEquals(States.Done, awaitProcessState(machine, process, processId, States.Done));
+    return log.events().stream().map(e -> e.type().name()).toList();
+  }
+
+  private static TransitionModel<?, ?> redispatchTransition(EventType<Void, Void> redispatchRequested, State state, AtLeastOnceDispatcher<?, ?> dispatcher) {
+    return onEvent(redispatchRequested).to(state)
+        .assemble(c -> c.entityId())
+        .trigger(dispatcher.requestRedispatched()).on(dispatcher.outbox()).identifiedBy(HttpOutboxRequest::dispatchedBy)
+        .output();
+  }
+
+  /// The state of the process, once it is the expected one, or after a while
+  private static State awaitProcessState(StateMachine machine, EntityModel process, UUID processId, State expected) {
+    long deadline = System.currentTimeMillis() + 10_000;
+    State state;
+    do {
+      state = machine.onStatus(entityId(processId), process).block();
+      if (expected.equals(state))
+        return state;
+      try {
+        Thread.sleep(50);
+      } catch (InterruptedException e) {
+        throw new RuntimeException(e);
+      }
+    } while (System.currentTimeMillis() < deadline);
+    return state;
+  }
+
+  private record Redispatched(String messageId, List<List<String>> received, EventLog log) {}
+
+  /// Dispatches a request, which is accepted, and then redispatches it twice by a transition of the process
+  ///
+  /// @param repeatMessageCreator the repeat message creator of the outbox, or null for none
+  private Redispatched redispatchAcceptedRequest(
+      BiFunction<TransitionContext<Void>, TypedHttpRequest<String>, TypedHttpRequest<String>> repeatMessageCreator
+  ) {
+    EntityModel process = EntityModel.of("Process", UUID.randomUUID());
+    EventType<Void, Void> processStarted = BasicEventType.of("Process started", UUID.randomUUID());
+    EventType<Void, Void> processSucceeded = BasicEventType.of("Process succeeded", UUID.randomUUID());
+    EventType<Void, Void> redispatchRequested = BasicEventType.of("Redispatch requested", UUID.randomUUID());
     String path = "/" + UUID.randomUUID();
     List<List<String>> received = new CopyOnWriteArrayList<>();
     server.createContext(path, exchange -> {
@@ -652,10 +802,10 @@ public class HttpOutboxTest {
       exchange.close();
     });
     var netty = new NettyHttpClient(new NettyHttpClientBuilder().build());
-    AtLeastOnce<String> notification = HttpOutboxRequest.atLeastOnce()
+    var payloadTypes = HttpOutboxRequest.atLeastOnce()
         .requestPayloadType(DataType.string())
-        .responsePayloadType(DataType.none())
-        .repeatMessageCreator((_, r) -> TypedHttpRequest.create(r.method(), r.uri(), Map.of("Message-Id", UUID.randomUUID().toString()), "changed"))
+        .responsePayloadType(DataType.none());
+    AtLeastOnce<String> notification = (repeatMessageCreator != null ? payloadTypes.repeatMessageCreator(repeatMessageCreator) : payloadTypes)
         .forwarder(r -> {
           var headers = new HashMap<>(r.headers());
           headers.put("Forwarder", "fixed");
@@ -687,10 +837,11 @@ public class HttpOutboxTest {
         States.WaitingForResponse, List.of(
             onEvent(processSucceeded).to(States.Done).output()
         ),
+        // Done doesn't take the success callback, so the request is accepted again without it
         States.Done, List.of(
-            onEvent(repeatRequested).to(States.Done)
+            onEvent(redispatchRequested).to(States.Done)
                 .assemble(c -> c.entityId())
-                .trigger(dispatcher.requestRepeated()).on(dispatcher.outbox()).identifiedBy(HttpOutboxRequest::dispatchedBy)
+                .trigger(dispatcher.requestRedispatched()).on(dispatcher.outbox()).identifiedBy(HttpOutboxRequest::dispatchedBy)
                 .output()
         )
     );
@@ -706,20 +857,12 @@ public class HttpOutboxTest {
         .blockLast(Duration.ofSeconds(10))
         .entityId();
     EventLog log = awaitOutboxLog(storage, processId, l -> l.exists(HttpOutboxRequest.requestAccepted()));
-    var accepted = notification.response(log);
-
-    for (int repeat = 1; repeat <= 2; repeat++) {
-      machine.onEvent(trigger(repeatRequested, process, processId)).blockFirst();
-      int repeats = repeat;
-      log = awaitOutboxLog(storage, processId, l -> l.events().stream().filter(e -> e.type().name().equals("Repeat response received")).count() == repeats);
+    for (int redispatch = 1; redispatch <= 2; redispatch++) {
+      machine.onEvent(trigger(redispatchRequested, process, processId)).blockFirst();
+      long accepted = redispatch + 1;
+      log = awaitOutboxLog(storage, processId, l -> l.events().stream().filter(e -> e.type().name().equals("Request accepted")).count() == accepted);
     }
-    List<String> sent = List.of(messageId, "fixed", "payload");
-    assertEquals(List.of(sent, sent, sent), received);
-    assertEquals(
-        List.of("Request dispatched", "Request accepted", "Request repeated", "Repeat response received", "Request repeated", "Repeat response received"),
-        log.events().stream().map(e -> e.type().name()).toList()
-    );
-    assertEquals(accepted, notification.response(log));
+    return new Redispatched(messageId, received, log);
   }
 
   /// The event log of the outbox request the process dispatched, once it satisfies the condition
