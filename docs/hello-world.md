@@ -33,7 +33,6 @@ The entity models, with those of the HTTP inbox, and how they relate through tri
 |---|---|
 | `GET /` | Creates a greeting and responds with a page saying hello. |
 | `GET /health` | Responds `200 OK` as long as the process is able to serve HTTP. It does not involve the database. |
-| `/backoffice/` | The [backoffice](backoffice.md), where the greetings and the requests creating them are looked up, if `BACKOFFICE_ISSUER` is set. |
 
 ## Running
 
@@ -50,6 +49,20 @@ The image can also be built alone, from the repository root:
 
 ```shell
 docker build -f apps/hello-world/Dockerfile -t tits-hello-world .
+```
+
+### Backoffice
+
+The [backoffice](backoffice.md) of the demo, `apps/hello-world-backoffice`, is an application of its own, in which the
+greetings and the requests creating them are looked up. It is the smallest example of the backoffice of an
+application: a main method of one line. Compose runs it with the profile `backoffice`, at
+http://localhost:8081/backoffice/, with a login and role of its own, signing users in with an OpenID Connect provider
+of your own, e.g. Microsoft Entra ID, with the redirect URI `http://localhost:8081/backoffice/callback`:
+
+```shell
+export BACKOFFICE_ISSUER=... BACKOFFICE_CLIENT_ID=... BACKOFFICE_CLIENT_SECRET=...
+export BACKOFFICE_CLAIM=roles BACKOFFICE_CLAIM_VALUES=backoffice
+docker compose --profile backoffice up --build
 ```
 
 Native compilation takes a few minutes. For a quicker build of a less optimized image, as in CI, pass options to
@@ -96,7 +109,6 @@ The demo is configured by environment variables:
 | `DATABASE_QUERY_TIMEOUT_SECONDS` | `10` | Query timeout |
 | `DATABASE_SCHEMA` | `hello_world` | Schema holding the state machine's tables |
 | `DATABASE_ROLE` | | Role to grant access to the schema. Required by `migrate` only. |
-| `BACKOFFICE_*` | | The [backoffice](backoffice.md#configuration). Without `BACKOFFICE_ISSUER` there is no backoffice. |
 
 `DATABASE_AUTHENTICATION` is one of:
 

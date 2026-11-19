@@ -4,6 +4,7 @@ import com.github.thxmasj.backend.core.database.Database;
 import com.github.thxmasj.backend.core.database.DatabaseClient;
 import com.github.thxmasj.backend.core.database.DatabaseClient.Config;
 import com.github.thxmasj.backend.database.pgsql.internal.CreateSchema;
+import com.github.thxmasj.backend.database.pgsql.internal.GrantRead;
 import javax.sql.DataSource;
 import org.postgresql.ds.PGSimpleDataSource;
 import org.postgresql.jdbc.SslMode;
@@ -46,6 +47,11 @@ public class PgsqlDatabase implements Database {
   @Override
   public Mono<Integer> createSchema(DataSource schemaDataSource, String schemaName, String role) {
     return new CreateSchema(schemaName, role).execute(schemaDataSource);
+  }
+
+  @Override
+  public Mono<Void> grantRead(DataSource schemaDataSource, String schemaName, String role) {
+    return new GrantRead(schemaName, role).execute(schemaDataSource);
   }
 
 }

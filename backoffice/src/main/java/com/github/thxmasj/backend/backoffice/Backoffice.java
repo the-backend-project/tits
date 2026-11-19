@@ -11,13 +11,12 @@ import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.TransitionModel;
-import com.github.thxmasj.backend.core.database.Database;
 import com.github.thxmasj.backend.core.database.DatabaseClient;
 import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
 import com.github.thxmasj.backend.core.message.http.HttpRequestMessage.Method;
 import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
 import com.github.thxmasj.backend.http.inbox.HttpInboxListener;
-import com.github.thxmasj.backend.http.inbox.HttpInboxRequest;
+import com.github.thxmasj.backend.http.inbox.HttpInbox;
 import com.nimbusds.jwt.JWTClaimsSet;
 import java.io.IOException;
 import java.io.InputStream;
@@ -29,30 +28,30 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-import javax.sql.DataSource;
 import reactor.core.publisher.Mono;
 import tools.jackson.databind.JsonNode;
 
 /// A backoffice for an application built with the HTTP inbox and the state machine: a web application where users,
 /// signed in with OpenID Connect, look up the entities of the application and follow the graph of an entity, with its
 /// event log, its ids, the events it waits for, and the entities it refers to and is referred to by, such as its inbox
-/// and outbox requests. It only reads.
+/// and outbox requests. It only reads the application.
 ///
-/// The backoffice is served under `/backoffice` by the application itself, so it reads the application's database
-/// with the application's entity models. It takes three steps to add it:
+/// The backoffice is an application of its own, deployed apart from the application it looks into. It has a state
+/// machine of its own, in a schema of its own, whose entities are the sessions of its users: every sign-in is a
+/// `BackofficeSession`, whose event log tells who signed in and which pages they viewed. It reads the schema of the
+/// application, with the application's entity models, with a role which may only read it. [BackofficeApp] runs it:
 ///
 /// ```java
-/// var transitions = HttpInbox.transitions(concat(requests, Backoffice.requests()), withAll(application, Backoffice.transitions()));
-/// var listener = new HttpInboxListener(stateMachine).filter(new Backoffice("Orders", config, dataSource, schema, transitions));
+/// BackofficeApp.run("Orders", "orders", Orders.transitions(), args, System.getenv());
 /// ```
 ///
-/// Every sign-in of a user is an entity of the state machine, a `BackofficeSession`, whose event log tells who signed
-/// in and which pages they viewed. The filter is the edge between the browser and the state machine: it signs the users
-/// in with the provider, keeps the cookies out of the event log and renders the pages of the users the state machine
-/// lets in.
+/// This class is the filter in front of the inbox of the backoffice's state machine. It is the edge between the
+/// browser and the state machine: it signs the users in with the provider, keeps the cookies out of the event log and
+/// renders the pages of the users the state machine lets in.
 public final class Backoffice implements HttpInboxListener.Filter {
 
   /// How long a user has to sign in with the provider
@@ -79,41 +78,29 @@ public final class Backoffice implements HttpInboxListener.Filter {
   private final Pages pages;
   private final Map<String, byte[]> files;
 
-  /// The backoffice as configured, or one which is not found, if `config` is null
-  ///
-  /// @param service     the name of the application, e.g. `Identity provider`, after which the backoffice is named in
-  ///                    the header and the title of its pages, e.g. "Identity provider backoffice"
-  /// @param config      how the users sign in, or null if the application has no backoffice
-  /// @param dataSource  the database of the application, which the backoffice reads with the role of the application
-  /// @param schema      the schema of the state machine
-  /// @param transitions the transitions given to the state machine, which give the entity models and event types
-  public Backoffice(String service, Config config, DataSource dataSource, String schema, Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions) {
-    this(service, config, config != null ? Database.of(dataSource).client(dataSource) : null, schema, transitions);
+  /// @param service                the name of the application, e.g. `Identity provider`, after which the backoffice is
+  ///                               named in the header and the title of its pages, e.g. "Identity provider backoffice"
+  /// @param config                 how the users sign in
+  /// @param client                 a client of the database, whose role may read the schema of the application
+  /// @param applicationSchema      the schema of the application's state machine
+  /// @param applicationTransitions the transitions of the application's state machine, which give the entity models and
+  ///                               event types of the entities read
+  public Backoffice(
+      String service,
+      Config config,
+      DatabaseClient client,
+      String applicationSchema,
+      Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> applicationTransitions
+  ) {
+    this.config = Objects.requireNonNull(config, "config");
+    this.provider = new OpenIdConnect(config);
+    this.pages = new Pages(new Graph(client, applicationSchema, applicationTransitions), service + " backoffice");
+    this.files = staticFiles.keySet().stream().collect(Collectors.toMap(name -> name, Backoffice::read));
   }
 
-  /// @param client a client of the database of the application
-  public Backoffice(String service, Config config, DatabaseClient client, String schema, Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions) {
-    this.config = config;
-    if (config != null && !transitions.containsKey(Sessions.Session))
-      throw new IllegalArgumentException("The transitions lack those of the backoffice, Backoffice.transitions()");
-    this.provider = config != null ? new OpenIdConnect(config) : null;
-    this.pages = config != null ? new Pages(new Graph(client, schema, transitions), service + " backoffice") : null;
-    this.files = config != null ? staticFiles.keySet().stream().collect(Collectors.toMap(name -> name, Backoffice::read)) : Map.of();
-  }
-
-  /// No backoffice: its pages are not found, and the other requests pass
-  public static Backoffice none() {
-    return new Backoffice(null, null, (DatabaseClient) null, null, Map.of());
-  }
-
-  /// The inbox requests of the backoffice, to add to those of the application's inbox
-  public static List<HttpInboxRequest<?>> requests() {
-    return Sessions.requests;
-  }
-
-  /// The transitions of the sessions of the backoffice, to add to those of the application
+  /// The transitions of the backoffice's own state machine: those of the sessions, with its inbox
   public static Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions() {
-    return Sessions.transitions();
+    return HttpInbox.transitions(Sessions.requests, Sessions.transitions());
   }
 
   /// The entity model of the sessions, e.g. to draw their state diagram
@@ -123,8 +110,9 @@ public final class Backoffice implements HttpInboxListener.Filter {
 
   /// How the users sign in to the backoffice, and who may
   ///
-  /// @param url             the URL of the application, under which the backoffice is at `/backoffice`, e.g.
-  ///                        `https://idp.example.com`. Its `/backoffice/callback` is the redirect URI at the provider.
+  /// @param url             the URL the backoffice is reached at, under which its pages are at `/backoffice`, e.g.
+  ///                        `https://idp-backoffice.example.com`. Its `/backoffice/callback` is the redirect URI at the
+  ///                        provider.
   /// @param issuer          the issuer of the OpenID Connect provider users sign in with, at which its discovery
   ///                        document is found
   /// @param clientId        the client id of the backoffice at the provider
@@ -153,12 +141,9 @@ public final class Backoffice implements HttpInboxListener.Filter {
         throw new IllegalArgumentException("A claim value is required, or no user could use the backoffice");
     }
 
-    /// The configuration of the environment variables `BACKOFFICE_*`, or null if `BACKOFFICE_ISSUER` is not set, as
-    /// the application then has no backoffice
+    /// The configuration of the environment variables `BACKOFFICE_*`
     public static Config fromEnvironment(Map<String, String> env) {
-      String issuer = optional(env, "BACKOFFICE_ISSUER");
-      if (issuer == null)
-        return null;
+      String issuer = required(env, "BACKOFFICE_ISSUER");
       return new Config(
           URI.create(required(env, "BACKOFFICE_URL")),
           URI.create(issuer),
@@ -179,7 +164,7 @@ public final class Backoffice implements HttpInboxListener.Filter {
     private static String required(Map<String, String> env, String name) {
       String value = optional(env, name);
       if (value == null)
-        throw new IllegalArgumentException("Environment variable " + name + " is required with BACKOFFICE_ISSUER");
+        throw new IllegalArgumentException("Environment variable " + name + " is required");
       return value;
     }
 
@@ -195,9 +180,10 @@ public final class Backoffice implements HttpInboxListener.Filter {
     // Only the backoffice tells the state machine who signed in
     request = withoutHeaders(request, Sessions.trustedHeaders);
     String path = request.uri().getRawPath();
+    // The backoffice is the whole application, whose only requests of the state machine are those it makes itself
+    if ("/".equals(path))
+      return Mono.just(redirect(Sessions.Path + "/", null));
     if (path == null || !(path.equals(Sessions.Path) || path.startsWith(Sessions.Path + "/")))
-      return next.apply(request);
-    if (config == null)
       return Mono.just(response(404, "Not Found", "text/plain;charset=UTF-8", "Not Found\n"));
     // The cookies hold the token of the session and the secrets of sign-ins, so they are kept out of the event log
     String cookies = request.headerValue("Cookie");

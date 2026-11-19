@@ -6,14 +6,19 @@ and the entities referring to it, such as its [inbox](http-inbox.md) and [outbox
 in with [OpenID Connect](https://openid.net/specs/openid-connect-core-1_0.html), and only those whose ID token has a
 permitted claim value get in. The backoffice only reads.
 
-It is served under `/backoffice` by the application itself, so it reads the application's database with the
-application's own entity models, which it needs to unmarshal the data of the events. The pages are HTML, made
-interactive with [htmx](https://htmx.org), which the backoffice serves itself. Like the rest of the application,
-the backoffice is built with the HTTP inbox and the state machine: every sign-in is an entity whose event log tells
-who signed in and which pages they viewed.
+The backoffice of an application is an application of its own, packaged and deployed apart from the application it
+looks into, with the application's entity models, which it needs to unmarshal the data of the events. It is built
+with the HTTP inbox and a state machine of its own, whose entities are the sessions of its users, in a schema of its
+own: every sign-in is an entity whose event log tells who signed in and which pages they viewed. It reads the
+application's schema with a role which may only read it. The pages are HTML, made interactive with
+[htmx](https://htmx.org), which the backoffice serves itself.
 
-Both [apps](apps.md) serve it, the [identity provider](identity-provider.md#backoffice) signing its users in with
-itself.
+Both [apps](apps.md) have one, `apps/identity-provider-backoffice` and `apps/hello-world-backoffice`. The backoffice of
+the [identity provider](identity-provider.md#backoffice) signs its users in with the identity provider.
+
+Kept apart, the backoffice doesn't add to the footprint or the attack surface of the application. It can be deployed
+where only its users reach it, e.g. on a private network, while the application is public, and a bug in it can't
+change the application's data. Its sessions and the load of its users stay out of the application's schema.
 
 ## Model
 
@@ -29,35 +34,43 @@ A refused or failed sign-in is an event of [severity](monitoring.md#severity) `W
 up in the monitoring. A session expires after its lifetime, or after 30,000 events, as the event numbers of an entity
 are `SMALLINT`.
 
-## Adding it to an application
+## The backoffice of an application
 
-The backoffice adds its inbox requests and the transitions of its sessions to those of the application, and a filter
-in front of the inbox:
+An application's backoffice is a module of its own, which depends on the application for its entity models and on
+`backoffice`, and whose main method runs `BackofficeApp` with the name of the application, its default schema and the
+transitions of its state machine:
 
 ```java
-var application = new HashMap<>(applicationTransitions);
-application.putAll(Backoffice.transitions());
-var requests = new ArrayList<>(applicationRequests);
-requests.addAll(Backoffice.requests());
-var transitions = HttpInbox.transitions(requests, application);
-
-var stateMachine = new StateMachine(..., transitions, dataSource, ...);
-var backoffice = new Backoffice("Orders", Backoffice.Config.fromEnvironment(System.getenv()), dataSource, schema, transitions);
-new HttpInboxListener(stateMachine).filter(backoffice).listen(port);
+public static void main(String[] args) {
+  BackofficeApp.run("Orders", "orders", Orders.transitions(), args, System.getenv());
+}
 ```
 
-The backoffice is named after the application, e.g. "Orders backoffice", in the header and the title of its pages. The
-apps are the "Identity provider backoffice" and the "Hello world backoffice".
+The application exports the package of its entity models to the module of its backoffice, e.g.
+`exports com.example.orders to com.example.orders.backoffice;`. The backoffice is built and deployed like the
+[apps](apps.md): a native executable in an image built from `scratch`, with a migrate admin process. It is named after
+the application, e.g. "Orders backoffice", in the header and the title of its pages.
 
-The filter takes the requests under `/backoffice` and passes the others on. Without a configuration, i.e. when
-`BACKOFFICE_ISSUER` is not set, or with `Backoffice.none()`, the backoffice is not found, but its entity models are
-still in the transitions, so the model of the application doesn't change with its configuration. The data source can
-be the one the state machine uses; the backoffice needs no more privileges than the role of the application.
+The `Backoffice` filter in front of the inbox of its state machine is the edge between the browser and the state
+machine, as the [edge](identity-provider.md) of the identity provider is: it signs the users in with the provider, and
+passes what it found to the state machine in headers which it removes from every request it receives. The cookies, the
+codes and ID tokens of the provider, and the token of the session never enter the event log, only the claims of the
+user and the hash of the token. It serves the pages under `/backoffice`, and nothing else but `/health`.
 
-The filter is the edge between the browser and the state machine, as the [edge](identity-provider.md) of the identity
-provider is: it signs the users in with the provider, and passes what it found to the state machine in headers which
-it removes from every request it receives. The cookies, the codes and ID tokens of the provider, and the token of the
-session never enter the event log, only the claims of the user and the hash of the token.
+## The database
+
+The backoffice uses the database of the application, with two schemas:
+
+| Schema | Default | The backoffice's role may |
+|---|---|---|
+| The backoffice's own, `DATABASE_SCHEMA` | The application's with `_backoffice` added, e.g. `orders_backoffice` | Read and write it, as a state machine its own schema |
+| The application's, `APPLICATION_SCHEMA` | The application's default, e.g. `orders` | Only read it |
+
+Its migrate admin process, run as an administrator after the application's, creates its schema for its role,
+`DATABASE_ROLE`, as the application's creates the application's, and grants the role read access to the application's
+schema with `Database.grantRead`: `SELECT` on the schema on SQL Server, and `USAGE` on the schema and `SELECT` on its
+tables on PostgreSQL. The backoffice logs in with a login of its own, a member of its role, so the application's login
+and role are not shared with it.
 
 ## Pages
 
@@ -98,17 +111,40 @@ with a client secret or public without one:
    first requested. Otherwise the sign-in is refused, with the claims of the user recorded.
 
 The provider is found by [OpenID Connect Discovery](https://openid.net/specs/openid-connect-discovery-1_0.html) at the
-first sign-in rather than at startup, so an application can be its own provider, as the identity provider is. Every
+first sign-in rather than at startup, so the backoffice starts also when its provider is not up yet, e.g. the identity
+provider it is the backoffice of. Every
 page viewed is an event of the session, which the state machine accepts only while the session is valid, so a session
 which has expired or been signed out of is refused, and the user signs in again. A request of htmx for a part of a
 page is answered with `HX-Refresh`, so the page is reloaded and the user signs in.
 
+## Running
+
+`<app>-backoffice` serves the backoffice on `$PORT` until terminated, and `<app>-backoffice migrate` creates its schema
+and grants its role read access to the application's, and exits. The Compose files of the apps run their backoffices
+next to them, on port 8081, see the [identity provider](identity-provider.md#backoffice) and the
+[hello world demo](hello-world.md#backoffice). Their images are built from the repository root, e.g.:
+
+```shell
+docker build -f apps/identity-provider-backoffice/Dockerfile -t tits-identity-provider-backoffice .
+```
+
+The [deploy](azure-functions.md) module doesn't yet deploy a backoffice to Azure Functions, as it creates a database
+for every application, while a backoffice uses the database of its application.
+
 ## Configuration
+
+The backoffice is configured by environment variables:
 
 | Variable | Default | Description |
 |---|---|---|
-| `BACKOFFICE_ISSUER` | | The issuer of the OpenID Connect provider. Without it, the application has no backoffice. |
-| `BACKOFFICE_URL` | | The URL of the application, e.g. `https://app.example.com`. Its `/backoffice/callback` is the redirect URI to register at the provider. Cookies are `Secure` with an `https` URL. |
+| `PORT` | `8080` | Port to serve HTTP on |
+| `DATABASE` | `mssql` | `mssql` or `pgsql`, as the application's |
+| `DATABASE_HOST`, `DATABASE_PORT`, `DATABASE_NAME`, `DATABASE_AUTHENTICATION`, `DATABASE_USER`, `DATABASE_PASSWORD`, `DATABASE_ACCESS_TOKEN`, `DATABASE_TRUST_SERVER_CERTIFICATE`, `DATABASE_POOL_SIZE`, `DATABASE_QUERY_TIMEOUT_SECONDS` | | The database of the application, and how the backoffice logs in to it, as for the [hello world demo](hello-world.md#configuration) |
+| `DATABASE_SCHEMA` | The application's schema with `_backoffice` | The backoffice's own schema, with its sessions |
+| `APPLICATION_SCHEMA` | The application's default | The application's schema, which the backoffice reads |
+| `DATABASE_ROLE` | | The backoffice's role, given access to its schema and read access to the application's. Required by `migrate` only. |
+| `BACKOFFICE_ISSUER` | | The issuer of the OpenID Connect provider. Required to serve. |
+| `BACKOFFICE_URL` | | The URL of the backoffice, e.g. `https://orders-backoffice.example.com`. Its `/backoffice/callback` is the redirect URI to register at the provider. Cookies are `Secure` with an `https` URL. |
 | `BACKOFFICE_CLIENT_ID` | | The client id of the backoffice at the provider |
 | `BACKOFFICE_CLIENT_SECRET` | | Its client secret, or none for a public client |
 | `BACKOFFICE_SCOPE` | `openid email profile` | The scope requested |
@@ -122,8 +158,10 @@ assign it to the users of the backoffice, and set `BACKOFFICE_CLAIM` to `roles` 
 
 ## Gaps
 
-- The backoffice only reads. Actions on entities, such as triggering the event an entity waits for now, are left out,
-  as they bypass the transitions of the application.
+- The backoffice only reads. Actions on entities, such as redispatching an outbox request, are left out
+  ([#281](https://github.com/the-backend-project/tits/issues/281)).
+- The backoffice shows the entities of the application, not its own sessions, which are in its own schema and in its
+  [monitoring](monitoring.md) events.
 - The current state of an entity is not shown, as it is computed by the transitions, not stored. Its last event tells
   it.
 - A `RequestRouting` entity has no reference to the inbox request it routed a request to, so the two aren't linked.

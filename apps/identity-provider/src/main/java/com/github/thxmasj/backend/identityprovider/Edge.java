@@ -37,8 +37,6 @@ import tools.jackson.databind.node.ObjectNode;
 /// The edge also serves what does not change with the requests: the health check, the public keys and the metadata.
 final class Edge implements HttpInboxListener.Filter {
 
-  /// The path of the backoffice, whose filter is in front of the edge
-  private static final String BackofficePath = "/backoffice/";
   /// The cookie holding the secret of a sign-in with the upstream provider, by the authorization it is for
   private static final String cookiePrefix = "idp_authorization_";
   /// How long a user has to sign in with the upstream provider
@@ -91,8 +89,7 @@ final class Edge implements HttpInboxListener.Filter {
       case "/.well-known/oauth-authorization-server" -> get(request, () -> response(200, "OK", "application/json", metadata));
       case "/token" -> post(request, next, this::token);
       case "/clients" -> post(request, next, this::register);
-      // The requests the backoffice makes of the state machine, which has signed in its users
-      default -> request.uri().getPath().startsWith(BackofficePath) ? next.apply(request) : Mono.just(response(404, "Not Found", null, null));
+      default -> Mono.just(response(404, "Not Found", null, null));
     };
   }
 

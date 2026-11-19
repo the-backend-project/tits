@@ -70,6 +70,11 @@
       <artifactId>hello-world</artifactId>
       <version>${project.version}</version>
     </dependency>
+    <dependency>
+      <groupId>com.github.thxmasj.backend</groupId>
+      <artifactId>backoffice</artifactId>
+      <version>${project.version}</version>
+    </dependency>
   </dependencies>
 
 </project>

@@ -63,15 +63,18 @@ public class BackofficeTest {
       .process(OrderPlaced, Order, r -> r.body(), newEntity())
       .build("PlaceOrder", UUID.fromString("9c4a7e2f-1d5b-4b08-8f63-3a6d0e9c2b74"));
 
+  /// The schema of the application, which the backoffice reads, and the backoffice's own, with its sessions
   private static final String schema = UUID.randomUUID().toString();
+  private static final String backofficeSchema = UUID.randomUUID().toString();
   private static final ProviderStub provider = provider();
   private static final ProviderStub.User ada = new ProviderStub.User("user-ada", "ada@example.com", "Ada Lovelace", List.of("backoffice"));
   private static final ProviderStub.User bob = new ProviderStub.User("user-bob", "bob@example.com", "Bob", List.of("sales"));
   private static Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions;
   private static StateMachine stateMachine;
+  private static StateMachine backofficeStateMachine;
+  private static DisposableServer application;
   private static DisposableServer server;
   private static DisposableServer shortLived;
-  private static DisposableServer disabled;
   private static final HttpClient http = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
   /// The tokens of the sessions, to check that they don't enter the event log
   private static final List<String> tokens = new ArrayList<>();
@@ -90,29 +93,28 @@ public class BackofficeTest {
         OrderStates.Placed, List.of()
     ));
     application.put(OrderNumbers, OrderNumbers.transitions());
-    application.putAll(Backoffice.transitions());
-    var requests = new ArrayList<HttpInboxRequest<?>>(List.of(PlaceOrder));
-    requests.addAll(Backoffice.requests());
-    transitions = HttpInbox.transitions(requests, application);
+    transitions = HttpInbox.transitions(List.of(PlaceOrder), application);
     stateMachine = Init.stateMachine(schema, transitions);
+    BackofficeTest.application = new HttpInboxListener(stateMachine).listen(0);
+    backofficeStateMachine = Init.stateMachine(backofficeSchema, Backoffice.transitions());
     server = listen(config(Duration.ofHours(1)));
     shortLived = listen(config(Duration.ofSeconds(1)));
-    disabled = new HttpInboxListener(stateMachine).filter(Backoffice.none()).listen(0);
   }
 
   @AfterAll
   static void tearDown() throws Exception {
     server.disposeNow();
     shortLived.disposeNow();
-    disabled.disposeNow();
+    application.disposeNow();
     provider.close();
+    backofficeStateMachine.close();
     stateMachine.close();
   }
 
   private static DisposableServer listen(Backoffice.Config config) {
     // The URL is known only once the server listens, so the backoffice is told it by a filter in front
     var backoffice = new Backoffice[1];
-    DisposableServer listening = new HttpInboxListener(stateMachine)
+    DisposableServer listening = new HttpInboxListener(backofficeStateMachine)
         .filter((request, next) -> backoffice[0].filter(request, next))
         .listen(0);
     backoffice[0] = new Backoffice("Orders", withUrl(config, "http://localhost:" + listening.port()), Init.client(), schema, transitions);
@@ -172,7 +174,7 @@ public class BackofficeTest {
     assertThat(refused.statusCode()).isEqualTo(403);
     assertThat(refused.body()).contains("Bob", "may not use the backoffice");
     assertThat(refused.headers().firstValue("Set-Cookie")).isEmpty();
-    assertThat(sessionEvents("Sign-in refused")).isTrue();
+    assertThat(eventData(backofficeSchema, Sessions.SignInRefused)).anySatisfy(data -> assertThat(data).contains("user-bob"));
   }
 
   @Test
@@ -196,7 +198,7 @@ public class BackofficeTest {
   @Test
   void entityIsFoundByIdAndShowsItsGraph() throws Exception {
     String orderNumber = "A-" + UUID.randomUUID();
-    var placed = http.send(HttpRequest.newBuilder(URI.create(url(server) + "/orders/" + orderNumber)).PUT(BodyPublishers.noBody()).build(), BodyHandlers.ofString());
+    var placed = http.send(HttpRequest.newBuilder(URI.create(url(application) + "/orders/" + orderNumber)).PUT(BodyPublishers.noBody()).build(), BodyHandlers.ofString());
     assertThat(placed.statusCode()).isEqualTo(201);
     provider.signInAs(ada);
     String cookie = sessionCookie(signIn(server, "/backoffice/"));
@@ -227,10 +229,13 @@ public class BackofficeTest {
     String cookie = sessionCookie(signIn(server, "/backoffice/"));
     String path = "/backoffice/search?q=" + UUID.randomUUID();
     assertThat(get(server, path, cookie).statusCode()).isEqualTo(200);
-    var sessions = get(server, "/backoffice/models/" + Backoffice.sessionModel().id(), cookie);
-    String sessionId = firstEntityId(sessions.body());
-    var session = get(server, "/backoffice/entities/" + sessionId, cookie);
-    assertThat(session.body()).contains("User signed in", "Ada Lovelace", "Page viewed", path, "Token claimed");
+    // The sessions are in the backoffice's own schema, not the application's
+    assertThat(eventData(backofficeSchema, Sessions.PageViewed)).anySatisfy(data -> assertThat(data).contains(path));
+    assertThat(eventData(backofficeSchema, Sessions.UserSignedIn)).anySatisfy(data -> assertThat(data).contains("Ada Lovelace"));
+    assertThat(eventData(schema, Sessions.PageViewed)).isEmpty();
+    // and the application's models are listed, not the backoffice's
+    var home = get(server, "/backoffice/", cookie).body();
+    assertThat(home).contains(">Order<").doesNotContain("BackofficeSession");
   }
 
   @Test
@@ -259,7 +264,7 @@ public class BackofficeTest {
     var fragment = get(shortLived, "/backoffice/search?q=x", cookie, Map.of("HX-Request", "true"));
     assertThat(fragment.statusCode()).isEqualTo(401);
     assertThat(fragment.headers().firstValue("HX-Refresh")).hasValue("true");
-    assertThat(sessionEvents("Session expired")).isTrue();
+    assertThat(eventData(backofficeSchema, Sessions.SessionExpired)).isNotEmpty();
   }
 
   @Test
@@ -273,11 +278,20 @@ public class BackofficeTest {
   }
 
   @Test
-  void backofficeWithoutConfigurationIsNotFound() throws Exception {
-    assertThat(get(disabled, "/backoffice/", null).statusCode()).isEqualTo(404);
-    // Other requests reach the application
-    var placed = http.send(HttpRequest.newBuilder(URI.create(url(disabled) + "/orders/B-" + UUID.randomUUID())).PUT(BodyPublishers.noBody()).build(), BodyHandlers.ofString());
-    assertThat(placed.statusCode()).isEqualTo(201);
+  void roleIsGrantedReadAccessToSchemaOfApplication() {
+    // As the migrate admin process of a backoffice does, on each database. Granting again changes nothing.
+    Init.database().grantRead(Init.migrationDataSource(), schema, "Test").block();
+    Init.database().grantRead(Init.migrationDataSource(), schema, "Test").block();
+  }
+
+  @Test
+  void otherPathsAreNotFound() throws Exception {
+    // The backoffice is an application of its own, which serves nothing else
+    assertThat(http.send(HttpRequest.newBuilder(URI.create(url(server) + "/orders/B-" + UUID.randomUUID())).PUT(BodyPublishers.noBody()).build(), BodyHandlers.ofString()).statusCode())
+        .isEqualTo(404);
+    var root = get(server, "/", null);
+    assertThat(root.statusCode()).isEqualTo(303);
+    assertThat(root.headers().firstValue("Location")).hasValue("/backoffice/");
   }
 
   @Test
@@ -292,18 +306,20 @@ public class BackofficeTest {
     provider.signInAs(ada);
     String cookie = sessionCookie(signIn(server, "/backoffice/"));
     assertThat(get(server, "/backoffice/", cookie).statusCode()).isEqualTo(200);
-    List<byte[]> data = Init.client().sql("SELECT Data FROM \"" + schema + "\".\"Event\" WHERE Data IS NOT NULL")
-        .name("Test.AllData")
-        .map(row -> row.get("Data", byte[].class))
-        .all()
-        .collectList()
-        .block();
     var secrets = new ArrayList<String>(provider.issued);
     secrets.addAll(tokens);
-    for (byte[] d : data) {
-      String text = new String(d, UTF_8);
-      for (String secret : secrets)
-        assertThat(text).doesNotContain(secret);
+    for (String s : List.of(schema, backofficeSchema)) {
+      List<byte[]> data = Init.client().sql("SELECT Data FROM \"" + s + "\".\"Event\" WHERE Data IS NOT NULL")
+          .name("Test.AllData")
+          .map(row -> row.get("Data", byte[].class))
+          .all()
+          .collectList()
+          .block();
+      for (byte[] d : data) {
+        String text = new String(d, UTF_8);
+        for (String secret : secrets)
+          assertThat(text).doesNotContain(secret);
+      }
     }
   }
 
@@ -327,17 +343,16 @@ public class BackofficeTest {
     return value;
   }
 
-  private static boolean sessionEvents(String eventName) throws Exception {
-    // Read with a session of a permitted user
-    provider.signInAs(ada);
-    String cookie = sessionCookie(signIn(server, "/backoffice/"));
-    var sessions = get(server, "/backoffice/models/" + Backoffice.sessionModel().id(), cookie).body();
-    Matcher matcher = Pattern.compile("/backoffice/entities/([0-9a-f-]{36})").matcher(sessions);
-    while (matcher.find()) {
-      if (get(server, "/backoffice/entities/" + matcher.group(1), cookie).body().contains(eventName))
-        return true;
-    }
-    return false;
+  /// The data of the events of a type in a schema, as text
+  private static List<String> eventData(String schemaName, EventType<?, ?> type) {
+    return Init.client().sql("SELECT Data FROM \"" + schemaName + "\".\"Event\" WHERE Type=:type")
+        .name("Test.EventData")
+        .bind("type", type.id())
+        .map(row -> row.get("Data", byte[].class))
+        .all()
+        .map(data -> data != null ? new String(data, UTF_8) : "")
+        .collectList()
+        .block();
   }
 
   private static String firstEntityId(String html) {

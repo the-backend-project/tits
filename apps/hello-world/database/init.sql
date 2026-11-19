@@ -12,3 +12,15 @@ IF DATABASE_PRINCIPAL_ID('HelloWorld') IS NULL
     CREATE ROLE [HelloWorld]
 ALTER ROLE [HelloWorld] ADD MEMBER [hello_world]
 GO
+-- The backoffice of the application, which has a schema of its own and may only read that of the application, as its
+-- migrate admin process grants its role
+IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = 'hello_world_backoffice')
+    CREATE LOGIN [hello_world_backoffice] WITH PASSWORD = '$(HELLO_WORLD_BACKOFFICE_PASSWORD)'
+GO
+USE [hello_world]
+IF DATABASE_PRINCIPAL_ID('hello_world_backoffice') IS NULL
+    CREATE USER [hello_world_backoffice] FOR LOGIN [hello_world_backoffice]
+IF DATABASE_PRINCIPAL_ID('HelloWorldBackoffice') IS NULL
+    CREATE ROLE [HelloWorldBackoffice]
+ALTER ROLE [HelloWorldBackoffice] ADD MEMBER [hello_world_backoffice]
+GO

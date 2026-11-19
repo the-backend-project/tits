@@ -72,7 +72,6 @@ The entity models, with those of the [HTTP inbox](http-inbox.md), and how they r
 | `GET /.well-known/oauth-authorization-server` | The [authorization server metadata](https://www.rfc-editor.org/rfc/rfc8414). |
 | `GET /.well-known/openid-configuration` | The [OpenID provider metadata](https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderMetadata), the same as the authorization server metadata. Only if an upstream provider is configured. |
 | `GET /health` | Responds 200 while the process is serving. |
-| `/backoffice/` | The [backoffice](#backoffice), if it is configured. |
 
 Clients authenticate to the token endpoint with HTTP Basic, which every OAuth client supports. A secret in the request
 body is refused (see [Credentials](#credentials)). Errors are the error responses of
@@ -188,15 +187,18 @@ which is sent to `/callback` only, for 10 minutes.
 
 ## Backoffice
 
-The identity provider serves the [backoffice](backoffice.md) at `/backoffice/`, where users look up the clients,
-authorizations and token requests, with the inbox requests which made them. The backoffice is a web app of the
-identity provider itself: it signs its users in with the identity provider, which signs them in with the upstream
-provider. Import a client for it with the grant type `authorization_code` and the redirect URI
-`<ISSUER>/backoffice/callback` (see [Imported clients](#imported-clients)), and set `BACKOFFICE_ISSUER` to the issuer,
+The [backoffice](backoffice.md) of the identity provider, `apps/identity-provider-backoffice`, is an application of
+its own, in which users look up the clients, authorizations and token requests, with the inbox requests which made
+them. It reads the schema of the identity provider, `identity_provider`, with a role which may only read it, and keeps
+its sessions in a schema of its own, `identity_provider_backoffice`. As the identity provider is public, its backoffice
+can be deployed where only its users reach it.
+
+It signs its users in with the identity provider, which signs them in with the upstream provider. Import a client for
+it with the grant type `authorization_code` and the redirect URI `<backoffice URL>/backoffice/callback` (see
+[Imported clients](#imported-clients)), and set `BACKOFFICE_ISSUER` of the backoffice to the issuer,
 `BACKOFFICE_CLIENT_ID` and `BACKOFFICE_CLIENT_SECRET` to the client, and `BACKOFFICE_CLAIM` to `email` and
 `BACKOFFICE_CLAIM_VALUES` to the email addresses of its users. The ID tokens of the identity provider have the email
-address of the user if the scope `email` is granted. The sessions of the backoffice are entities of the identity
-provider's model, `BackofficeSession`, so they are in the event log with everything else.
+address of the user if the scope `email` is granted.
 
 ## Credentials
 
@@ -256,10 +258,13 @@ migration as a one-off process, and then starts the identity provider on port 80
 curl -u admin:A_local_bootstrap_secret_of_32_characters -d grant_type=client_credentials localhost:8080/token
 ```
 
-Compose also configures the [backoffice](#backoffice), at http://localhost:8080/backoffice/, with an imported client
-of its own. Users sign in to it with an upstream provider, so add `UPSTREAM_ISSUER`, `UPSTREAM_CLIENT_ID` and
-`UPSTREAM_CLIENT_SECRET` to the environment of `app`, and set `BACKOFFICE_USERS` to the email addresses of the users,
-separated by commas. Without an upstream provider, the backoffice tells that the identity provider can't be reached.
+Compose also runs the [backoffice](#backoffice), at http://localhost:8081/backoffice/, with a login and role of its
+own and an imported client of its own. Build its image with `docker compose build migrate backoffice-migrate`. Users
+sign in to it with an upstream provider, so add `UPSTREAM_ISSUER`, `UPSTREAM_CLIENT_ID` and `UPSTREAM_CLIENT_SECRET`
+to the environment of `app`, and set `BACKOFFICE_USERS` to the email addresses of the users, separated by commas.
+Without an upstream provider, the backoffice tells that the identity provider can't be reached. The backoffice shares
+the network of the identity provider, so the identity provider is at `localhost:8080` for both the browser and the
+backoffice, which the issuer must be.
 
 Like the [demo](hello-world.md), the image holds a native executable built with GraalVM, in an image built from
 `scratch`. It can also be built alone, from the repository root:
@@ -289,7 +294,6 @@ The identity provider is configured by environment variables:
 | `CLIENTS` | The JSON of `CLIENTS_FILE` itself, for when that is easier to provide. At most one of the two may be set. |
 | `UPSTREAM_ISSUER`, `UPSTREAM_CLIENT_ID`, `UPSTREAM_CLIENT_SECRET` | The upstream OpenID Connect provider users sign in with, e.g. `https://login.microsoftonline.com/<tenant>/v2.0`, and the client id and secret of the identity provider there, with the redirect URI `<ISSUER>/callback`. All three or none. The endpoints are found by discovery at startup, which fails if the upstream provider can't be reached. Without them users can't sign in, and the endpoints of [Signing users in](#signing-users-in) are not served. |
 | `UPSTREAM_SCOPE` | The scope requested from the upstream provider, with `openid`. Default `openid email profile`. |
-| `BACKOFFICE_*` | The [backoffice](backoffice.md#configuration), see [Backoffice](#backoffice). `BACKOFFICE_URL` defaults to `ISSUER`. Without `BACKOFFICE_ISSUER` there is no backoffice. |
 | `PORT` | Default 8080. |
 | `DATABASE` | `mssql` or `pgsql`. Default `mssql`. |
 | `DATABASE_HOST`, `DATABASE_PORT`, `DATABASE_NAME` | The database. The port defaults to that of the database. |

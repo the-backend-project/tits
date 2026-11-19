@@ -6,7 +6,6 @@ import static com.github.thxmasj.backend.core.TransitionModelBuilder.WithEvent.o
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.Request;
 import static com.github.thxmasj.backend.http.inbox.HttpInboxRequest.newEntity;
 
-import com.github.thxmasj.backend.backoffice.Backoffice;
 import com.github.thxmasj.backend.core.BasicEventType;
 import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.EntityModel;
@@ -18,14 +17,11 @@ import com.github.thxmasj.backend.http.inbox.HttpInboxRequest;
 import com.github.thxmasj.backend.http.inbox.ResponseEventType;
 import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-/// A greeting is an entity which is created for every `GET /`. Its creation responds with a hello world page. The
-/// transitions include those of the sessions of the [Backoffice], which is served under `/backoffice`.
+/// A greeting is an entity which is created for every `GET /`. Its creation responds with a hello world page.
 public interface Greetings {
 
   EntityModel Greeting = EntityModel.of("Greeting", UUID.fromString("8a4c1d36-4f0e-4b8e-9a47-2f5f0c0b6d11"));
@@ -59,8 +55,7 @@ public interface Greetings {
       .build("GreetingRequest", UUID.fromString("5e3d4a8c-0f2b-4c6e-b1d7-9a8f7e6d5c4b"));
 
   static Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions() {
-    var application = new HashMap<EntityModel, Map<State, List<TransitionModel<?, ?>>>>(Backoffice.transitions());
-    application.put(
+    return HttpInbox.transitions(List.of(GreetingRequest), Map.of(
         Greeting, Map.of(
             Begin, List.of(
                 onEvent(GreetingRequested).to(States.Greeted)
@@ -70,10 +65,7 @@ public interface Greetings {
             ),
             States.Greeted, List.of()
         )
-    );
-    var requests = new ArrayList<HttpInboxRequest<?>>(List.of(GreetingRequest));
-    requests.addAll(Backoffice.requests());
-    return HttpInbox.transitions(requests, application);
+    ));
   }
 
   private static String page(String greetingId, String correlationId) {

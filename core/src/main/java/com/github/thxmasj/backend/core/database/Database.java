@@ -38,6 +38,10 @@ public interface Database {
   /// Creates the schema, or verifies the checksum of the existing one. Completes with 0 if the schema exists.
   Mono<Integer> createSchema(DataSource schemaDataSource, String schemaName, String role);
 
+  /// Grants the role read access to the tables of an existing schema, and nothing else. Run as an administrator, e.g.
+  /// by the migrate admin process of a backoffice, whose role reads the schema of an application.
+  Mono<Void> grantRead(DataSource schemaDataSource, String schemaName, String role);
+
   /// The databases found on the module path or class path
   static List<Database> all() {
     return ServiceLoader.load(Database.class).stream().map(Provider::get).toList();

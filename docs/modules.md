@@ -12,7 +12,8 @@
 | [templates](cardpayments.md)                                          | Ready-made entity models of a domain, such as card payments                                    |
 
 An application depends on core, the database module of its database, and http-inbox and http-outbox if it receives or
-sends HTTP requests, and backoffice if it serves a backoffice. See the [apps](apps.md) for complete applications.
+sends HTTP requests. The [backoffice](backoffice.md) of an application is an application of its own, which depends
+on the application and on backoffice. See the [apps](apps.md) for complete applications.
 
 Core exports only what applications use: the packages `com.github.thxmasj.backend.core` (the state machine and the
 building of entity models), `core.database` (the databases, their clients and `DataSourceBuilder`), `core.http` (HTTP

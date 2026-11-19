@@ -82,11 +82,6 @@
       <version>${project.version}</version>
     </dependency>
     <dependency>
-      <groupId>com.github.thxmasj.backend</groupId>
-      <artifactId>backoffice</artifactId>
-      <version>${project.version}</version>
-    </dependency>
-    <dependency>
       <groupId>com.nimbusds</groupId>
       <artifactId>nimbus-jose-jwt</artifactId>
     </dependency>
