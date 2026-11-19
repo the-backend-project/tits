@@ -157,7 +157,10 @@ public class BackofficeTest {
     var page = get(server, path, cookie);
     assertThat(page.statusCode()).isEqualTo(200);
     assertThat(page.body()).contains("<h1>Order</h1>", "Ada Lovelace", "htmx.min.js");
-    assertThat(page.headers().firstValue("Content-Security-Policy")).hasValueSatisfying(csp -> assertThat(csp).contains("default-src 'self'"));
+    // Nothing is loaded from other sites
+    assertThat(page.headers().firstValue("Content-Security-Policy")).hasValueSatisfying(csp -> assertThat(csp)
+        .contains("default-src 'self'")
+        .doesNotContain("img-src", "script-src", "style-src", "*", "http"));
   }
 
   @Test

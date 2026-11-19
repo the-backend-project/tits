@@ -74,7 +74,9 @@ entities having an index event with its entity id as key: its outbox requests by
 and its inbox requests by `Process referenced` of the inbox (see [HTTP inboxes](http-inbox.md#the-requests-of-an-entity)).
 A related entity is expanded in place, loaded by htmx, so a graph can be followed on a single page.
 
-The pages are sent with a Content-Security-Policy allowing scripts and styles of the backoffice only, and htmx is
+The pages are in the colours of this site, and in its dark scheme if the system is dark. They are sent with a
+Content-Security-Policy allowing scripts, styles and images of the backoffice only, so nothing is loaded from other
+sites, and htmx is
 configured not to evaluate scripts or add styles. The sign-out is a form posted to `/backoffice/signout`, which the
 `SameSite=Lax` session cookie protects from other sites.
 
