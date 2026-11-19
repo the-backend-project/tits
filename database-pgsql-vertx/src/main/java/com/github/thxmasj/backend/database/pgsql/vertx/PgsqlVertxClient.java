@@ -6,8 +6,8 @@ import com.github.thxmasj.backend.core.database.DatabaseClient;
 import com.github.thxmasj.backend.core.database.MappingFailure;
 import com.github.thxmasj.backend.core.database.Parameter;
 import com.github.thxmasj.backend.core.database.Row;
-import com.github.thxmasj.backend.database.pgsql.NumberedStatement;
-import com.github.thxmasj.backend.database.pgsql.PgsqlClient;
+import com.github.thxmasj.backend.database.pgsql.internal.ConstraintViolations;
+import com.github.thxmasj.backend.database.pgsql.internal.NumberedStatement;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
@@ -34,8 +34,8 @@ import reactor.core.publisher.Mono;
 /// SQL of several statements, separated by a semicolon at the end of a line, is run in a transaction on one connection.
 /// The statements are pipelined, i.e. sent without waiting for the results of the ones before them, so they take a
 /// single round trip, as with the JDBC driver. The rows of the last statement are given, as by
-/// [com.github.thxmasj.backend.core.database.jdbc.JDBCClient].
-public class PgsqlVertxClient implements DatabaseClient {
+/// the client of the JDBC driver.
+class PgsqlVertxClient implements DatabaseClient {
 
   private final Vertx vertx;
   private final Pool pool;
@@ -147,7 +147,7 @@ public class PgsqlVertxClient implements DatabaseClient {
           parameters.entrySet().stream().map(e -> e.getKey() + "\t" + e.getValue()).collect(joining("\n")) +
           "\nSQL:\n" + sql;
       Throwable violation = error instanceof PgException e ?
-          PgsqlClient.constraintViolation(e.getSqlState(), e.getDetail(), e.getTable(), e.getConstraint(), queryName, message, error) :
+          ConstraintViolations.constraintViolation(e.getSqlState(), e.getDetail(), e.getTable(), e.getConstraint(), queryName, message, error) :
           null;
       return violation != null ? violation : new RuntimeException(message, error);
     };

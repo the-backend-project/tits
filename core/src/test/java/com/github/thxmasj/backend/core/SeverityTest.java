@@ -5,7 +5,8 @@ import static com.github.thxmasj.backend.core.EntitySelector.entityIdFromSession
 import static com.github.thxmasj.backend.core.TransitionModelBuilder.WithEvent.onEvent;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import com.github.thxmasj.backend.core.TransitionStep.InputStep;
+import com.github.thxmasj.backend.core.internal.Calculation;
+import com.github.thxmasj.backend.core.internal.TransitionStep.InputStep;
 import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.UUID;

@@ -24,5 +24,11 @@ A state diagram shows the details of an event when the mouse hovers over its nam
 it triggers. An event whose transition has a [severity](monitoring.md#severity) above `Info` is named in bold, after a
 symbol and in a colour for its severity: ⚠ in amber for `Warning`, ✖ in orange for `Error` and ‼ in red for `Critical`.
 
+To keep a state diagram small, the transitions between the same two states are drawn as one arrow with their events
+stacked, and the self transitions of a state as one loop. Choices with the same branches, i.e. the same events to the
+same states, are drawn as one choice. Several transitions leading to the same choice from a state are thereby one
+arrow: in the diagram of an [outbox request](http-outbox.md#atleastonce), a failed or dropped connection and a timeout
+lead to one choice between retrying the request and giving it up.
+
 The diagrams follow the colour scheme of the page. In dark mode, their arrows and the text on them are drawn in light
 colours.

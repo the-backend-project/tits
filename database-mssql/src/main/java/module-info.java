@@ -6,4 +6,5 @@ module com.github.thxmasj.backend.database.mssql {
   exports com.github.thxmasj.backend.database.mssql;
 
   provides com.github.thxmasj.backend.core.database.Database with com.github.thxmasj.backend.database.mssql.MssqlDatabase;
+  provides com.github.thxmasj.backend.core.internal.database.StorageProvider with com.github.thxmasj.backend.database.mssql.internal.MssqlStorage;
 }

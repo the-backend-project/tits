@@ -2,16 +2,10 @@ package com.github.thxmasj.backend.core.database;
 
 import static java.util.stream.Collectors.joining;
 
-import com.github.thxmasj.backend.core.EntityModel;
-import com.github.thxmasj.backend.core.State;
-import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.core.database.DatabaseClient.Config;
-import com.github.thxmasj.backend.core.database.jdbc.DataSourceBuilder;
 import java.sql.Connection;
 import java.sql.SQLException;
-import java.time.Clock;
 import java.util.List;
-import java.util.Map;
 import java.util.ServiceLoader;
 import java.util.ServiceLoader.Provider;
 import javax.sql.DataSource;
@@ -40,17 +34,6 @@ public interface Database {
   default DatabaseClient client(Config config) {
     return client(new DataSourceBuilder(this, config).buildPooled());
   }
-
-  /// The queries and updates of the schema
-  ///
-  /// @param client a client of this database
-  /// @param transitions the transitions of the state machine, which give the entity models and event types
-  Storage storage(
-      DatabaseClient client,
-      Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions,
-      String schemaName,
-      Clock clock
-  );
 
   /// Creates the schema, or verifies the checksum of the existing one. Completes with 0 if the schema exists.
   Mono<Integer> createSchema(DataSource schemaDataSource, String schemaName, String role);
