@@ -9,6 +9,13 @@
 #
 #   curl -u admin:A_local_bootstrap_secret_of_32_characters -d grant_type=client_credentials localhost:8080/token
 #
+# Its backoffice is at http://localhost:8081/backoffice/, signing its users in with the identity provider. Users sign in
+# with an upstream provider, so add UPSTREAM_ISSUER, UPSTREAM_CLIENT_ID and UPSTREAM_CLIENT_SECRET to the environment
+# of app to sign in, and set BACKOFFICE_USERS to the email addresses of the users permitted, separated by commas. Build
+# its image too:
+#
+#   docker compose build migrate backoffice-migrate
+#
 # The passwords and the bootstrap secret are for local use only.
 
 x-database: &database
@@ -35,6 +42,7 @@ services:
     environment:
       SQLCMDPASSWORD: A_Str0ng_Required_Password
       IDP_PASSWORD: Idp_Passw0rd
+      IDP_BACKOFFICE_PASSWORD: Idp_Backoffice_Passw0rd
     entrypoint:
       - bash
       - -c
@@ -62,6 +70,8 @@ services:
         condition: service_completed_successfully
     ports:
       - "8080:8080"
+      # The backoffice, which shares the network of the identity provider
+      - "8081:8081"
     environment:
       <<: *database
       DATABASE_USER: idp
@@ -71,3 +81,43 @@ services:
       SIGNING_KEYS: ${SIGNING_KEYS}
       BOOTSTRAP_CLIENT_ID: admin
       BOOTSTRAP_CLIENT_SECRET: A_local_bootstrap_secret_of_32_characters
+      # The client of the backoffice, with the BCrypt hash of its secret, for local use only
+      CLIENTS: >-
+        [{"client_id": "backoffice", "secret_hash": "$$2a$$10$$Uekj8xXissq6Wy3fUSUOW.epdfkVAf3.uY6/DkL8L43gfnvmTrB82",
+        "grant_types": ["authorization_code"], "redirect_uris": ["http://localhost:8081/backoffice/callback"]}]
+
+  backoffice-migrate:
+    build:
+      context: ../..
+      dockerfile: apps/identity-provider-backoffice/Dockerfile
+    image: tits-identity-provider-backoffice
+    command: migrate
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      <<: *database
+      DATABASE_USER: sa
+      DATABASE_PASSWORD: A_Str0ng_Required_Password
+      DATABASE_ROLE: IdentityProviderBackoffice
+
+  backoffice:
+    image: tits-identity-provider-backoffice
+    depends_on:
+      backoffice-migrate:
+        condition: service_completed_successfully
+      app:
+        condition: service_started
+    # The identity provider is at localhost:8080 for the backoffice as for the browser, which its issuer must be
+    network_mode: service:app
+    environment:
+      <<: *database
+      DATABASE_USER: idp_backoffice
+      DATABASE_PASSWORD: Idp_Backoffice_Passw0rd
+      PORT: 8081
+      BACKOFFICE_URL: http://localhost:8081
+      BACKOFFICE_ISSUER: http://localhost:8080
+      BACKOFFICE_CLIENT_ID: backoffice
+      BACKOFFICE_CLIENT_SECRET: A_fixed_secret_of_an_imported_client
+      BACKOFFICE_CLAIM: email
+      BACKOFFICE_CLAIM_VALUES: ${BACKOFFICE_USERS:-admin@example.com}

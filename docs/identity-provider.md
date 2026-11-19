@@ -185,6 +185,24 @@ registered there (see `UPSTREAM_ISSUER` below). The upstream provider must suppo
 to the browser it was started in by a cookie, which holds the secret its PKCE verifier and nonce are derived from, and
 which is sent to `/callback` only, for 10 minutes.
 
+## Backoffice
+
+The [backoffice](backoffice.md) of the identity provider, `apps/identity-provider-backoffice`, is an application of
+its own, in which users look up the clients, authorizations and token requests, with the inbox requests which made
+them. It reads the schema of the identity provider, `identity_provider`, with a role which may only read it, and keeps
+its sessions in a schema of its own, `identity_provider_backoffice`. As the identity provider is public, its backoffice
+can be deployed where only its users reach it.
+
+It signs its users in with the identity provider, which signs them in with the upstream provider. Import a client for
+it with the grant type `authorization_code` and the redirect URI `<backoffice URL>/backoffice/callback` (see
+[Imported clients](#imported-clients)), and set `BACKOFFICE_ISSUER` of the backoffice to the issuer,
+`BACKOFFICE_CLIENT_ID` and `BACKOFFICE_CLIENT_SECRET` to the client, and `BACKOFFICE_CLAIM` to `email` and
+`BACKOFFICE_CLAIM_VALUES` to the email addresses of its users. The ID tokens of the identity provider have the email
+address of the user if the scope `email` is granted. The identity provider passes on the address the upstream provider
+gives, so permitting users by it relies on the upstream provider verifying the addresses and not letting users choose
+them, as with the work accounts of an organisation in Microsoft Entra ID. The identity provider passes on no roles or
+groups to permit users by instead (see [Which claim to permit users by](backoffice.md#which-claim-to-permit-users-by)).
+
 ## Credentials
 
 The HTTP inbox stores the requests and responses in the event log. Credentials are kept out of it by a filter of the
@@ -242,6 +260,14 @@ migration as a one-off process, and then starts the identity provider on port 80
 ```shell
 curl -u admin:A_local_bootstrap_secret_of_32_characters -d grant_type=client_credentials localhost:8080/token
 ```
+
+Compose also runs the [backoffice](#backoffice), at http://localhost:8081/backoffice/, with a login and role of its
+own and an imported client of its own. Build its image with `docker compose build migrate backoffice-migrate`. Users
+sign in to it with an upstream provider, so add `UPSTREAM_ISSUER`, `UPSTREAM_CLIENT_ID` and `UPSTREAM_CLIENT_SECRET`
+to the environment of `app`, and set `BACKOFFICE_USERS` to the email addresses of the users, separated by commas.
+Without an upstream provider, the backoffice tells that the identity provider can't be reached. The backoffice shares
+the network of the identity provider, so the identity provider is at `localhost:8080` for both the browser and the
+backoffice, which the issuer must be.
 
 Like the [demo](hello-world.md), the image holds a native executable built with GraalVM, in an image built from
 `scratch`. It can also be built alone, from the repository root:

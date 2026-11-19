@@ -26,11 +26,12 @@ The project aims for stable, robust and long-lived systems, and it judges change
 | [core](core)                                        | The state machine, `TransitionModelBuilder` and the interface of the databases   |
 | [database-mssql](database-mssql), `database-pgsql-*` | The SQL and driver of each database, and the tests of core that need a database  |
 | [http-inbox](http-inbox), [http-outbox](http-outbox) | Receiving and sending HTTP requests as entities                                  |
+| [backoffice](backoffice)                            | The web application for looking into the entities of an application              |
 | [test-api](test-api)                                | The API for tests to look into and manipulate the database of a state machine    |
 | [diagram](diagram)                                  | State diagrams and ER diagrams generated from a model                            |
 | [doc-diagrams](doc-diagrams)                        | Generates the diagrams of the documentation, from the templates and the apps     |
 | [templates](templates)                              | Ready-made models of a domain, such as card payments                             |
-| [apps](apps)                                        | The identity provider and the hello world demo, compiled to native executables   |
+| [apps](apps)                                        | The identity provider, the hello world demo and their backoffices, compiled to native executables |
 | [deploy](deploy)                                    | Deployment of the apps to Azure Functions with Pulumi                            |
 | [docs](docs)                                        | The documentation site, see [Documentation](#documentation)                      |
 | [bin](bin), [test](test)                            | Scripts to start the test databases and serve the docs, and the databases' setup |
@@ -52,9 +53,9 @@ Requires Java 25 and Maven 3.9 or later. The libraries target the latest LTS rel
 
 The tests need a database. They run on SQL Server by default, which can be started with `bin/start-mssql.sh`. To run
 them on PostgreSQL, start it with `bin/start-postgres.sh` and run the build with
-`-Ddatabase=pgsql-jdbc -pl '!apps/hello-world,!doc-diagrams'`, or with `-Ddatabase=pgsql-r2dbc` or
-`-Ddatabase=pgsql-vertx` for its reactive drivers. The hello world demo runs on SQL Server only, and the doc-diagrams
-module depends on it, so both are left out. The tests of the core module that
+`-Ddatabase=pgsql-jdbc -pl '!apps/hello-world,!apps/hello-world-backoffice,!doc-diagrams'`, or with
+`-Ddatabase=pgsql-r2dbc` or `-Ddatabase=pgsql-vertx` for its reactive drivers. The hello world demo runs on SQL Server
+only, and its backoffice and the doc-diagrams module depend on it, so all three are left out. The tests of the core module that
 need a database are run by the database modules, each on its own database.
 
 ### Dependency checksums

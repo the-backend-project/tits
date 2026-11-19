@@ -39,8 +39,9 @@ jobs:
         run: mvn -B verify --file pom.xml -Daether.artifactResolver.postProcessor.trustedChecksums.failIfMissing=true
 
   # Finds out which jobs the pull request affects. Changes to documentation only (docs/, Markdown files, the Zensical
-  # configuration) skip the Maven builds. Both apps are built from the same modules, so only changes to modules they do
-  # not depend on (documentation, templates, doc-diagrams, test-api, deploy) or to the other app skip a native image build.
+  # configuration) skip the Maven builds. Both apps and their backoffices are built from the same modules, so only changes
+  # to modules they do not depend on (documentation, templates, doc-diagrams, test-api, deploy) or to the other app and
+  # its backoffice skip a native image build.
   changes:
     runs-on: ubuntu-latest
     outputs:
@@ -60,8 +61,8 @@ jobs:
           echo "$files"
           if grep -qvE '^(docs/|zensical\.toml$)|\.md$' <<< "$files"; then code=true; else code=false; fi
           echo "code=$code" | tee -a "$GITHUB_OUTPUT"
-          shared='^(pom\.xml|\.mvn/|\.dockerignore|\.github/workflows/build-verify\.yml|core/|database-[^/]+/|http-inbox/|http-outbox/|diagram/)'
-          for app in hello-world:apps/hello-world/ identity-provider:apps/identity-provider/; do
+          shared='^(pom\.xml|\.mvn/|\.dockerignore|\.github/workflows/build-verify\.yml|core/|database-[^/]+/|http-inbox/|http-outbox/|backoffice/|diagram/)'
+          for app in 'hello-world:apps/hello-world(-backoffice)?/' 'identity-provider:apps/identity-provider(-backoffice)?/'; do
             if grep -qE "$shared|^${app#*:}" <<< "$files"; then affected=true; else affected=false; fi
             echo "${app%%:*}=$affected" | tee -a "$GITHUB_OUTPUT"
           done
@@ -74,12 +75,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-      - name: Build the hello world native image
+      - name: Build the native images of hello world and its backoffice
         working-directory: apps/hello-world
-        run: docker compose build --build-arg NATIVE_IMAGE_OPTS=-Ob migrate
-      - name: Run it with its database
+        run: docker compose --profile backoffice build --build-arg NATIVE_IMAGE_OPTS=-Ob migrate backoffice-migrate
+      # The backoffice has no provider to sign in with here, which it discovers only when a user signs in
+      - name: Run them with their database
         working-directory: apps/hello-world
-        run: docker compose up --detach --no-build
+        run: |
+          export BACKOFFICE_ISSUER=http://localhost:9 BACKOFFICE_CLIENT_ID=backoffice BACKOFFICE_CLAIM=roles BACKOFFICE_CLAIM_VALUES=backoffice
+          docker compose --profile backoffice up --detach --no-build
       - name: Check that it says hello
         run: |
           for i in $(seq 1 120); do curl -sf localhost:8080/health && break; sleep 1; done
@@ -90,10 +94,23 @@ jobs:
         run: |
           docker compose logs --no-log-prefix app \
             | jq -Rce 'fromjson? | objects | select(.eventType == "Greeting requested" and .severity == "INFO")'
+      # The provider can't be reached, which the session tells the user, and the files are served, which checks the
+      # reachability metadata of the backoffice
+      - name: Check that the backoffice starts signing in
+        working-directory: apps/hello-world
+        run: |
+          for i in $(seq 1 120); do curl -sf localhost:8081/health && break; sleep 1; done
+          curl -sf localhost:8081/backoffice/static/htmx.min.js | grep -q htmx
+          test "$(curl -s -o /dev/null -w '%{http_code}' localhost:8081/backoffice/)" = 502
+          # A cookie of no session starts a sign-in in a new session, as no cookie does
+          test "$(curl -s -o /dev/null -w '%{http_code}' -b backoffice_session=none localhost:8081/backoffice/)" = 502
+          docker compose --profile backoffice logs --no-log-prefix backoffice > backoffice.log
+          grep -q 'Listening on port' backoffice.log
+          ! jq -Rce 'fromjson? | objects | select(.severity == "ERROR")' backoffice.log
       - name: Show the logs
         if: always()
         working-directory: apps/hello-world
-        run: docker compose logs
+        run: docker compose --profile backoffice logs
 
   identity-provider:
     needs: changes
@@ -102,9 +119,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-      - name: Build the identity provider native image
+      - name: Build the native images of the identity provider and its backoffice
         working-directory: apps/identity-provider
-        run: docker compose build --build-arg NATIVE_IMAGE_OPTS=-Ob migrate
+        run: docker compose build --build-arg NATIVE_IMAGE_OPTS=-Ob migrate backoffice-migrate
       - name: Run it with its database
         working-directory: apps/identity-provider
         run: |
@@ -119,6 +136,20 @@ jobs:
             -d '{"client_id": "ci", "scope": "a b"}' localhost:8080/clients | jq -er .client_secret)
           curl -sf -u "ci:$secret" -d grant_type=client_credentials -d scope=a localhost:8080/token | jq -e '.scope == "a"'
           curl -sf localhost:8080/.well-known/jwks.json | jq -e '.keys | length == 1'
+      # Without an upstream provider no user can sign in, and the identity provider publishes no OpenID Connect metadata
+      # for the backoffice to discover, which the session tells the user, and the files of the backoffice are served,
+      # which checks the reachability metadata of the backoffice
+      - name: Check that the backoffice starts signing in
+        working-directory: apps/identity-provider
+        run: |
+          for i in $(seq 1 120); do curl -sf localhost:8081/health && break; sleep 1; done
+          curl -sf localhost:8081/backoffice/static/htmx.min.js | grep -q htmx
+          test "$(curl -s -o /dev/null -w '%{http_code}' localhost:8081/backoffice/)" = 502
+          # A cookie of no session starts a sign-in in a new session, as no cookie does
+          test "$(curl -s -o /dev/null -w '%{http_code}' -b backoffice_session=none localhost:8081/backoffice/)" = 502
+          docker compose logs --no-log-prefix backoffice > backoffice.log
+          grep -q 'Listening on port' backoffice.log
+          ! jq -Rce 'fromjson? | objects | select(.severity == "ERROR")' backoffice.log
       # jq fails if no line is the event
       - name: Check that it warns of a refused token request
         working-directory: apps/identity-provider
@@ -162,7 +193,7 @@ jobs:
           cache: maven
       # The hello world demo runs on SQL Server only, and the generator of the diagrams of the documentation depends on it
       - name: Build Java artifacts and run any verifications on PostgreSQL
-        run: mvn -B verify --file pom.xml -pl '!apps/hello-world,!doc-diagrams' -Ddatabase=pgsql-jdbc -Daether.artifactResolver.postProcessor.trustedChecksums.failIfMissing=true
+        run: mvn -B verify --file pom.xml -pl '!apps/hello-world,!apps/hello-world-backoffice,!doc-diagrams' -Ddatabase=pgsql-jdbc -Daether.artifactResolver.postProcessor.trustedChecksums.failIfMissing=true
 
   build-postgres-r2dbc:
     needs: changes
@@ -195,7 +226,7 @@ jobs:
           cache: maven
       # The hello world demo runs on SQL Server only, and the generator of the diagrams of the documentation depends on it
       - name: Build Java artifacts and run any verifications on PostgreSQL through R2DBC
-        run: mvn -B verify --file pom.xml -pl '!apps/hello-world,!doc-diagrams' -Ddatabase=pgsql-r2dbc -Daether.artifactResolver.postProcessor.trustedChecksums.failIfMissing=true
+        run: mvn -B verify --file pom.xml -pl '!apps/hello-world,!apps/hello-world-backoffice,!doc-diagrams' -Ddatabase=pgsql-r2dbc -Daether.artifactResolver.postProcessor.trustedChecksums.failIfMissing=true
 
   build-postgres-vertx:
     needs: changes
@@ -228,4 +259,4 @@ jobs:
           cache: maven
       # The hello world demo runs on SQL Server only, and the generator of the diagrams of the documentation depends on it
       - name: Build Java artifacts and run any verifications on PostgreSQL through the Vert.x client
-        run: mvn -B verify --file pom.xml -pl '!apps/hello-world,!doc-diagrams' -Ddatabase=pgsql-vertx -Daether.artifactResolver.postProcessor.trustedChecksums.failIfMissing=true
+        run: mvn -B verify --file pom.xml -pl '!apps/hello-world,!apps/hello-world-backoffice,!doc-diagrams' -Ddatabase=pgsql-vertx -Daether.artifactResolver.postProcessor.trustedChecksums.failIfMissing=true

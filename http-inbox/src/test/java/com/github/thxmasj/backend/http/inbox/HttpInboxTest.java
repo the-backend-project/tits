@@ -34,6 +34,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -386,7 +387,7 @@ public class HttpInboxTest {
       }
     }
     transitions.put(Index, Index.transitions());
-    return Init.stateMachine(HttpInbox.transitions(requests, transitions));
+    return Init.stateMachine(schema, HttpInbox.transitions(requests, transitions));
   }
 
   private static TypedHttpRequest<Void> requestMessage(String path) {
@@ -397,6 +398,7 @@ public class HttpInboxTest {
   }
 
 
+  private static final String schema = UUID.randomUUID().toString();
   private static StateMachine stateMachine;
   private static HttpServer server;
 
@@ -472,6 +474,41 @@ public class HttpInboxTest {
     HttpResponseMessage response = HttpMessageParser.parseResponse(responseEvent.data());
     assertEquals(201, response.statusCode());
     assertTrue(ProblemDetail.parse(response.body()).detail().startsWith("Light is on!"));
+  }
+
+  @Test
+  public void whenRequestAcceptedThenRequestIsIndexedByEntityOfProcess() throws IOException {
+    onRequest(
+        PUT,
+        URI.create("/internal/" + UUID.randomUUID()),
+        new ObjectMapper().writeValueAsBytes(new InternalProcess("Hello", 1))
+    );
+    // The index events of the requests accepted in this test class, by the entity id of the request
+    Map<UUID, UUID> processIds = Init.client().sql(
+            "SELECT EntityId, Data FROM \"" + schema + "\".\"IndexEvent\" WHERE Type=:type"
+        )
+        .name("Test.ProcessReferenced")
+        .bind("type", HttpInbox.ProcessReferenced.id())
+        .map(row -> Map.entry(row.get("EntityId", UUID.class), DataType.uuid().unmarshal(row.get("Data", byte[].class))))
+        .all()
+        .collectMap(Map.Entry::getKey, Map.Entry::getValue)
+        .block();
+    assertNotNull(processIds);
+    assertFalse(processIds.isEmpty());
+    var requestModelIds = requests.stream().map(EntityModel::id).toList();
+    processIds.forEach((requestId, processId) -> {
+      assertTrue(requestModelIds.contains(entityModelId(requestId)), "The index entity is that of an inbox request");
+      assertEquals(Lamp.id(), entityModelId(processId), "The index key is the entity the request was processed on");
+    });
+  }
+
+  private static UUID entityModelId(UUID entityId) {
+    return Init.client().sql("SELECT EntityModelId FROM \"" + schema + "\".\"Entity\" WHERE EntityId=:entityId")
+        .name("Test.EntityModel")
+        .bind("entityId", entityId)
+        .map(row -> row.get("EntityModelId", UUID.class))
+        .one()
+        .block();
   }
 
   @Test

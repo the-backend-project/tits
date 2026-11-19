@@ -52,6 +52,11 @@ public class Init {
     return client;
   }
 
+  /// A client of its own, e.g. for a second state machine of a test, as closing a state machine closes its client
+  public static DatabaseClient newClient() {
+    return database.client(databaseConfig("testlogin", "Please_hide_me!"));
+  }
+
   public static DataSource migrationDataSource() {
     return migrationDataSource;
   }

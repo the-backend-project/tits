@@ -18,11 +18,14 @@
         <module>database-pgsql-vertx</module>
         <module>http-inbox</module>
         <module>http-outbox</module>
+        <module>backoffice</module>
         <module>test-api</module>
         <module>diagram</module>
         <module>templates</module>
         <module>apps/identity-provider</module>
         <module>apps/hello-world</module>
+        <module>apps/identity-provider-backoffice</module>
+        <module>apps/hello-world-backoffice</module>
         <module>doc-diagrams</module>
         <module>deploy</module>
     </modules>

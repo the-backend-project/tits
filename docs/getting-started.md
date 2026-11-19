@@ -126,9 +126,9 @@ The diagram of `Greeting`, drawn from these transitions:
 [Open the Greeting diagram in full size](images/com.github.thxmasj.backend.helloworld.Greeting.svg)
 
 `HttpInbox.transitions` adds the entity models of the inbox to those of the application: the inbox requests,
-`RequestRouting`, which routes a request to the inbox request matching it, and `MessageIds`. It also checks that the
-inbox request takes the response the greeting gives, `GreetingResponseCreated`. Both are in `Greetings.java` in the
-demo.
+`RequestRouting`, which routes a request to the inbox request matching it, `MessageIds` and `RequestIndex`, which
+indexes the requests by the entities they were processed on. It also checks that the inbox request takes the response
+the greeting gives, `GreetingResponseCreated`. Both are in `Greetings.java` in the demo.
 
 ## Running it
 

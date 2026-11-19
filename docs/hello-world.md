@@ -51,6 +51,20 @@ The image can also be built alone, from the repository root:
 docker build -f apps/hello-world/Dockerfile -t tits-hello-world .
 ```
 
+### Backoffice
+
+The [backoffice](backoffice.md) of the demo, `apps/hello-world-backoffice`, is an application of its own, in which the
+greetings and the requests creating them are looked up. It is the smallest example of the backoffice of an
+application: a main method of one line. Compose runs it with the profile `backoffice`, at
+http://localhost:8081/backoffice/, with a login and role of its own, signing users in with an OpenID Connect provider
+of your own, e.g. Microsoft Entra ID, with the redirect URI `http://localhost:8081/backoffice/callback`:
+
+```shell
+export BACKOFFICE_ISSUER=... BACKOFFICE_CLIENT_ID=... BACKOFFICE_CLIENT_SECRET=...
+export BACKOFFICE_CLAIM=roles BACKOFFICE_CLAIM_VALUES=backoffice
+docker compose --profile backoffice up --build
+```
+
 Native compilation takes a few minutes. For a quicker build of a less optimized image, as in CI, pass options to
 `native-image` through a build argument:
 

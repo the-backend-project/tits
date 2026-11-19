@@ -4,6 +4,7 @@ import com.github.thxmasj.backend.core.database.Database;
 import com.github.thxmasj.backend.core.database.DatabaseClient;
 import com.github.thxmasj.backend.core.database.DatabaseClient.Config;
 import com.github.thxmasj.backend.database.mssql.internal.CreateSchema;
+import com.github.thxmasj.backend.database.mssql.internal.GrantRead;
 import com.microsoft.sqlserver.jdbc.SQLServerDataSource;
 import javax.sql.DataSource;
 import reactor.core.publisher.Mono;
@@ -69,6 +70,11 @@ public class MssqlDatabase implements Database {
   @Override
   public Mono<Integer> createSchema(DataSource schemaDataSource, String schemaName, String role) {
     return new CreateSchema(schemaName, role).execute(schemaDataSource);
+  }
+
+  @Override
+  public Mono<Void> grantRead(DataSource schemaDataSource, String schemaName, String role) {
+    return new GrantRead(schemaName, role).execute(schemaDataSource);
   }
 
 }

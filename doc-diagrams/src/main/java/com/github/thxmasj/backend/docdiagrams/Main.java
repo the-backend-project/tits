@@ -6,6 +6,7 @@ import static com.github.thxmasj.backend.templates.cardpayment.Aggregate.Payment
 import static com.github.thxmasj.backend.templates.cardpayment.Aggregate.Settlement;
 import static com.github.thxmasj.backend.templates.cardpayment.Identifiers.Ids;
 
+import com.github.thxmasj.backend.backoffice.Backoffice;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.TransitionModel;
@@ -25,11 +26,13 @@ import com.github.thxmasj.backend.templates.cardpayment.Identifiers;
 import com.github.thxmasj.backend.templates.cardpayment.MerchantTransitions;
 import java.io.File;
 import java.io.IOException;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /// Generates the diagrams of the documentation site into `docs/images`. Run from the repository root.
 public class Main {
@@ -42,6 +45,7 @@ public class Main {
     cardPayments();
     identityProvider();
     helloWorld();
+    backoffice();
   }
 
   /// The examples of the HTTP outbox page, each drawn under its code
@@ -105,6 +109,13 @@ public class Main {
     stateDiagram(name + ".Greeting", Greetings.Greeting, transitions);
     stateDiagram(name + ".GreetingRequest", Greetings.GreetingRequest, transitions);
     erDiagram(name, transitions);
+  }
+
+  private static void backoffice() throws IOException {
+    // The model doesn't depend on the configuration, which is only used when a request is handled
+    var config = new Backoffice.Config(URI.create("https://backoffice.example.com"), URI.create("https://login.example.com"), "backoffice", null, "openid", "roles", Set.of("backoffice"), Duration.ofHours(8));
+    var transitions = new Backoffice("Example", config, null, "example", Map.of()).transitions();
+    stateDiagram("com.github.thxmasj.backend.backoffice.BackofficeSession", Backoffice.sessionModel(), transitions);
   }
 
   private static void stateDiagram(EntityModel model, Map<State, List<TransitionModel<?, ?>>> transitions) throws IOException {

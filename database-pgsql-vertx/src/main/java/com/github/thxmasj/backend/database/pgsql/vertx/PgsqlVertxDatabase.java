@@ -45,4 +45,9 @@ public class PgsqlVertxDatabase implements Database {
     return pgsql.createSchema(schemaDataSource, schemaName, role);
   }
 
+  @Override
+  public Mono<Void> grantRead(DataSource schemaDataSource, String schemaName, String role) {
+    return pgsql.grantRead(schemaDataSource, schemaName, role);
+  }
+
 }

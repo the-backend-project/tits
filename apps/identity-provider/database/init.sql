@@ -12,3 +12,15 @@ IF DATABASE_PRINCIPAL_ID('IdentityProvider') IS NULL
     CREATE ROLE [IdentityProvider]
 ALTER ROLE [IdentityProvider] ADD MEMBER [idp]
 GO
+-- The backoffice of the identity provider, which has a schema of its own and may only read that of the identity
+-- provider, as its migrate admin process grants its role
+IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = 'idp_backoffice')
+    CREATE LOGIN [idp_backoffice] WITH PASSWORD = '$(IDP_BACKOFFICE_PASSWORD)'
+GO
+USE [identity_provider]
+IF DATABASE_PRINCIPAL_ID('idp_backoffice') IS NULL
+    CREATE USER [idp_backoffice] FOR LOGIN [idp_backoffice]
+IF DATABASE_PRINCIPAL_ID('IdentityProviderBackoffice') IS NULL
+    CREATE ROLE [IdentityProviderBackoffice]
+ALTER ROLE [IdentityProviderBackoffice] ADD MEMBER [idp_backoffice]
+GO
