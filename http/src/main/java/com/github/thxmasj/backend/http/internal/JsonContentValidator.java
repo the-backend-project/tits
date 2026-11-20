@@ -1,4 +1,4 @@
-package com.github.thxmasj.backend.core.internal.http;
+package com.github.thxmasj.backend.http.internal;
 
 import static java.util.stream.Collectors.joining;
 

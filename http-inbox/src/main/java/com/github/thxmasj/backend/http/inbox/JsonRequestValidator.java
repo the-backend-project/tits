@@ -1,8 +1,8 @@
 package com.github.thxmasj.backend.http.inbox;
 
 import com.github.thxmasj.backend.core.Validated;
-import com.github.thxmasj.backend.core.internal.http.JsonContentValidator;
-import com.github.thxmasj.backend.core.message.http.HttpRequest;
+import com.github.thxmasj.backend.http.internal.JsonContentValidator;
+import com.github.thxmasj.backend.http.HttpRequest;
 import java.util.function.Function;
 
 public class JsonRequestValidator<T> implements Function<HttpRequest<byte[]>, Validated<T>> {

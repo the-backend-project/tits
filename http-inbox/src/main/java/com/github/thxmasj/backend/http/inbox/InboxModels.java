@@ -3,7 +3,7 @@ package com.github.thxmasj.backend.http.inbox;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.EventTrigger;
 import com.github.thxmasj.backend.core.internal.Memoized;
-import com.github.thxmasj.backend.core.message.http.HttpRequest;
+import com.github.thxmasj.backend.http.HttpRequest;
 import java.util.ArrayList;
 import java.util.List;
 

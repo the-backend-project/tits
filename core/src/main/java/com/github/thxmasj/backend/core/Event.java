@@ -130,8 +130,6 @@ public final class Event<T> {
 //    return switch (data) {
 //      case String s -> s;
 //      case Number n -> n.toString();
-//      case HttpRequest<byte[]> m -> m.message();
-//      case HttpResponse<byte[]> m -> m.message();
 //      case null -> null;
 //      default -> {
 //        try {
@@ -149,10 +147,6 @@ public final class Event<T> {
 //      return (T) data;
 //    if (eventType.outputDataType().value() == Integer.class)
 //      return (T) Integer.valueOf(data);
-//    if (eventType.outputDataType().value() == HttpRequest.class)
-//      return (T) HttpMessageParser.parseRequest(data);
-//    if (eventType.outputDataType().value() == HttpResponse.class)
-//      return (T) HttpMessageParser.parseResponse(data);
 //    try {
 //      return objectMapper.readerFor(eventType.outputDataType().value()).readValue(data);
 //      var dataType = eventType.outputDataType();

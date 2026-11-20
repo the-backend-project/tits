@@ -61,7 +61,7 @@ jobs:
           echo "$files"
           if grep -qvE '^(docs/|zensical\.toml$)|\.md$' <<< "$files"; then code=true; else code=false; fi
           echo "code=$code" | tee -a "$GITHUB_OUTPUT"
-          shared='^(pom\.xml|\.mvn/|\.dockerignore|\.github/workflows/build-verify\.yml|core/|database-[^/]+/|http-inbox/|http-outbox/|backoffice/|diagram/)'
+          shared='^(pom\.xml|\.mvn/|\.dockerignore|\.github/workflows/build-verify\.yml|core/|database-[^/]+/|http/|http-inbox/|http-outbox/|backoffice/|diagram/)'
           for app in 'hello-world:apps/hello-world(-backoffice)?/' 'identity-provider:apps/identity-provider(-backoffice)?/'; do
             if grep -qE "$shared|^${app#*:}" <<< "$files"; then affected=true; else affected=false; fi
             echo "${app%%:*}=$affected" | tee -a "$GITHUB_OUTPUT"

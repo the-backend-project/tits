@@ -5,8 +5,8 @@ import static com.github.thxmasj.backend.core.BasicEventType.of;
 import com.github.thxmasj.backend.core.BasicEventType;
 import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.EventType;
-import com.github.thxmasj.backend.core.http.HttpDataType;
-import com.github.thxmasj.backend.core.message.http.HttpResponse;
+import com.github.thxmasj.backend.http.HttpDataType;
+import com.github.thxmasj.backend.http.HttpResponse;
 import java.util.UUID;
 
 public interface EventTypes {

@@ -19,7 +19,7 @@
   <dependencies>
     <dependency>
       <groupId>com.github.thxmasj.backend</groupId>
-      <artifactId>core</artifactId>
+      <artifactId>http</artifactId>
       <version>${project.version}</version>
     </dependency>
     <dependency>
