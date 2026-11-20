@@ -3,8 +3,8 @@ package com.github.thxmasj.backend.http.inbox;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 import com.github.thxmasj.backend.core.DataType;
-import com.github.thxmasj.backend.core.message.http.HttpRequestMessage.Method;
-import com.github.thxmasj.backend.core.message.http.TypedHttpRequest;
+import com.github.thxmasj.backend.core.message.http.HttpRequest;
+import com.github.thxmasj.backend.core.message.http.HttpRequest.Method;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.proc.JWSVerificationKeySelector;
@@ -16,7 +16,6 @@ import java.io.IOException;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
 import java.net.http.HttpRequest.BodyPublishers;
 import java.net.http.HttpResponse.BodyHandlers;
 import java.text.ParseException;
@@ -96,7 +95,7 @@ public final class OpenIdConnectClient {
 
   /// The request redeeming the code the user returned with at the token endpoint, e.g. for an at-most-once outbox to
   /// send, as a code can be redeemed only once. The response is verified with [#verify(String, String)].
-  public Mono<TypedHttpRequest<String>> tokenRequest(String code, String secret) {
+  public Mono<HttpRequest<String>> tokenRequest(String code, String secret) {
     return checked(secret).then(provider).map(provider -> {
       var parameters = new LinkedHashMap<String, String>();
       parameters.put("grant_type", "authorization_code");
@@ -114,7 +113,7 @@ public final class OpenIdConnectClient {
         // A public client, RFC 6749 section 4.1.3
         parameters.put("client_id", config.clientId());
       }
-      return TypedHttpRequest.create(Method.POST, provider.tokenEndpoint(), headers, Form.encode(parameters));
+      return HttpRequest.create(Method.POST, provider.tokenEndpoint(), headers, Form.encode(parameters));
     });
   }
 
@@ -142,7 +141,7 @@ public final class OpenIdConnectClient {
   public Mono<JWTClaimsSet> redeem(String code, String secret) {
     return tokenRequest(code, secret)
         .flatMap(request -> {
-          var builder = HttpRequest.newBuilder(request.uri()).timeout(RemoteKeys.timeout).POST(BodyPublishers.ofString(request.payload()));
+          var builder = java.net.http.HttpRequest.newBuilder(request.uri()).timeout(RemoteKeys.timeout).POST(BodyPublishers.ofString(request.body()));
           request.headers().forEach(builder::header);
           return Mono.fromFuture(() -> httpClient.sendAsync(builder.build(), BodyHandlers.ofString()));
         })
@@ -182,7 +181,7 @@ public final class OpenIdConnectClient {
     JsonNode metadata;
     try {
       var response = httpClient.send(
-          HttpRequest.newBuilder(uri).timeout(RemoteKeys.timeout).header("Accept", "application/json").GET().build(),
+          java.net.http.HttpRequest.newBuilder(uri).timeout(RemoteKeys.timeout).header("Accept", "application/json").GET().build(),
           BodyHandlers.ofString()
       );
       if (response.statusCode() != 200)

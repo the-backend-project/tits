@@ -30,9 +30,8 @@ import com.github.thxmasj.backend.core.Validated;
 import com.github.thxmasj.backend.core.http.HttpClient;
 import com.github.thxmasj.backend.core.http.HttpDataType;
 import com.github.thxmasj.backend.core.internal.Memoized;
-import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
-import com.github.thxmasj.backend.core.message.http.TypedHttpRequest;
-import com.github.thxmasj.backend.core.message.http.TypedHttpResponse;
+import com.github.thxmasj.backend.core.message.http.HttpRequest;
+import com.github.thxmasj.backend.core.message.http.HttpResponse;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -74,18 +73,18 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
       com.github.thxmasj.backend.core.EntityModel processModel,
       Callback<EntityModel, T1> onPeerUnavailable,
       Callback<EntityModel, T2> onMissingResponse,
-      Callback<TypedHttpResponse<RS>, T3> onSuccess,
-      Callback<TypedHttpResponse<RS>, T4> onFailure,
-      Callback<TypedHttpResponse<RS>, T7> onValidResponseUnknown, // Rollback
-      Callback<Tuple2<HttpResponseMessage, String>, T5> onInvalidResponseRejection,
-      Callback<Tuple2<HttpResponseMessage, String>, T6> onInvalidResponseUnknown, // Rollback
-      Function<HttpResponseMessage, Validated<RS>> contentParser,
-      BiFunction<TypedHttpRequest<RQ>, HttpResponseMessage, Validated<RS>> requestAwareContentParser,
-      Predicate<TypedHttpResponse<RS>> isAccepted,
-      Predicate<TypedHttpResponse<RS>> isRejected,
-      Predicate<Tuple2<HttpResponseMessage, String>> isRejectedByInvalidResponse
+      Callback<HttpResponse<RS>, T3> onSuccess,
+      Callback<HttpResponse<RS>, T4> onFailure,
+      Callback<HttpResponse<RS>, T7> onValidResponseUnknown, // Rollback
+      Callback<Tuple2<HttpResponse<byte[]>, String>, T5> onInvalidResponseRejection,
+      Callback<Tuple2<HttpResponse<byte[]>, String>, T6> onInvalidResponseUnknown, // Rollback
+      Function<HttpResponse<byte[]>, Validated<RS>> contentParser,
+      BiFunction<HttpRequest<RQ>, HttpResponse<byte[]>, Validated<RS>> requestAwareContentParser,
+      Predicate<HttpResponse<RS>> isAccepted,
+      Predicate<HttpResponse<RS>> isRejected,
+      Predicate<Tuple2<HttpResponse<byte[]>, String>> isRejectedByInvalidResponse
   ) {
-    EventType<TypedHttpRequest<RQ>, Tuple2<TypedHttpRequest<RQ>, UUID>> requestDispatched() {
+    EventType<HttpRequest<RQ>, Tuple2<HttpRequest<RQ>, UUID>> requestDispatched() {
       return BasicEventType.of(
           "Request dispatched",
           UUID.fromString("3f22bfef-dcb4-4560-8b88-6b5040433319"),
@@ -94,7 +93,7 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
       );
     }
 
-    EventType<BatchedRequest<RQ>, Tuple2<TypedHttpRequest<RQ>, UUID>> batchedRequestDispatched() {
+    EventType<BatchedRequest<RQ>, Tuple2<HttpRequest<RQ>, UUID>> batchedRequestDispatched() {
       return BasicEventType.of(
           "Batched request dispatched",
           UUID.fromString("6c2e8f4b-1a7d-4f3e-b5c9-8e0d2a4f6b13"),
@@ -104,11 +103,11 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
     }
 
     /// The request message and the process id of the dispatched request, whether batched or not.
-    Tuple2<TypedHttpRequest<RQ>, UUID> dispatched(EventLog log) {
+    Tuple2<HttpRequest<RQ>, UUID> dispatched(EventLog log) {
       return log.one(requestDispatched(), batchedRequestDispatched());
     }
     // Intermediate
-    EventType<TypedHttpResponse<RS>, TypedHttpResponse<RS>> validResponse() {
+    EventType<HttpResponse<RS>, HttpResponse<RS>> validResponse() {
       return BasicEventType.of(
           "Valid response received",
           UUID.fromString("c9fcf4d6-95f8-418f-aa6b-c3d987d3a3c3"),
@@ -117,7 +116,7 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
       );
     }
     // Intermediate
-    EventType<Tuple2<HttpResponseMessage, String>, Tuple2<HttpResponseMessage, String>> invalidResponse() {
+    EventType<Tuple2<HttpResponse<byte[]>, String>, Tuple2<HttpResponse<byte[]>, String>> invalidResponse() {
       return BasicEventType.of(
           "Invalid response received",
           UUID.fromString("3bd020c3-caf8-4a9b-a10c-d818f98a6de7"),
@@ -126,7 +125,7 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
       );
     }
     // Leaf
-    EventType<TypedHttpResponse<RS>, TypedHttpResponse<RS>> requestAccepted() {
+    EventType<HttpResponse<RS>, HttpResponse<RS>> requestAccepted() {
       return BasicEventType.of(
           "Request accepted",
           RequestAcceptedId,
@@ -135,7 +134,7 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
       );
     }
     // Leaf
-    EventType<TypedHttpResponse<RS>, TypedHttpResponse<RS>> validResponseAndRejected() {
+    EventType<HttpResponse<RS>, HttpResponse<RS>> validResponseAndRejected() {
       return BasicEventType.of(
           "Request rejected",
           UUID.fromString("5362567f-792e-4f8a-81d6-3b201d44d3f0"),
@@ -144,7 +143,7 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
       );
     }
     // Leaf
-    EventType<TypedHttpResponse<RS>, TypedHttpResponse<RS>> validResponseAndUnknown() {
+    EventType<HttpResponse<RS>, HttpResponse<RS>> validResponseAndUnknown() {
       return BasicEventType.of(
           "Valid response received with unknown status",
           UUID.fromString("0059d0cc-e7ec-4f84-beb0-1870d00937d2"),
@@ -153,7 +152,7 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
       );
     }
     // Leaf
-    EventType<Tuple2<HttpResponseMessage, String>, HttpResponseMessage> invalidResponseAndRejected() {
+    EventType<Tuple2<HttpResponse<byte[]>, String>, HttpResponse<byte[]>> invalidResponseAndRejected() {
       return BasicEventType.of(
           "Request rejected",
           UUID.fromString("402f9bf4-855c-4383-ac54-3375f9d156d1"),
@@ -162,7 +161,7 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
       );
     }
     // Leaf
-    EventType<Tuple2<HttpResponseMessage, String>, HttpResponseMessage> invalidResponseAndUnknown() {
+    EventType<Tuple2<HttpResponse<byte[]>, String>, HttpResponse<byte[]>> invalidResponseAndUnknown() {
       return BasicEventType.of(
           "Invalid response received with unknown status",
           UUID.fromString("ecfb2c9d-178b-4c3e-b09e-c580e09b01b4"),
@@ -174,7 +173,7 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
   }
 
   @Override
-  public EventType<TypedHttpRequest<RQ>, ?> requestDispatched() {
+  public EventType<HttpRequest<RQ>, ?> requestDispatched() {
     return shape.requestDispatched();
   }
 
@@ -205,16 +204,16 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
   }
 
   @Override
-  public TypedHttpRequest<RQ> request(EventLog log) {
+  public HttpRequest<RQ> request(EventLog log) {
     return shape.dispatched(log).t1();
   }
 
   @Override
-  public TypedHttpResponse<?> response(EventLog log) {
+  public HttpResponse<?> response(EventLog log) {
     return response(shape, log);
   }
 
-  private <RS> TypedHttpResponse<RS> response(Shape<?, ?, ?, ?, ?, ?, ?, ?, RS> shape, EventLog log) {
+  private <RS> HttpResponse<RS> response(Shape<?, ?, ?, ?, ?, ?, ?, ?, RS> shape, EventLog log) {
     return log.oneIfExists(shape.requestAccepted())
         .orElse(log.oneIfExists(shape.validResponseAndRejected())
             .orElse(log.oneIfExists(shape.validResponseAndUnknown()).orElse(null)));
@@ -238,16 +237,16 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
       com.github.thxmasj.backend.core.EntityModel processModel,
       Callback<EntityModel, T1> onPeerUnavailable,
       Callback<EntityModel, T2> onMissingResponse,
-      Callback<TypedHttpResponse<RS>, T3> onSuccess,
-      Callback<TypedHttpResponse<RS>, T4> onFailure,
-      Callback<TypedHttpResponse<RS>, T7> onValidResponseUnknown, // Rollback
-      Callback<Tuple2<HttpResponseMessage, String>, T5> onInvalidResponseRejection,
-      Callback<Tuple2<HttpResponseMessage, String>, T6> onInvalidResponseUnknown, // Rollback
-      Function<HttpResponseMessage, Validated<RS>> contentParser,
-      BiFunction<TypedHttpRequest<RQ>, HttpResponseMessage, Validated<RS>> requestAwareContentParser,
-      Predicate<TypedHttpResponse<RS>> isAccepted,
-      Predicate<TypedHttpResponse<RS>> isRejected,
-      Predicate<Tuple2<HttpResponseMessage, String>> isRejectedByInvalidResponse,
+      Callback<HttpResponse<RS>, T3> onSuccess,
+      Callback<HttpResponse<RS>, T4> onFailure,
+      Callback<HttpResponse<RS>, T7> onValidResponseUnknown, // Rollback
+      Callback<Tuple2<HttpResponse<byte[]>, String>, T5> onInvalidResponseRejection,
+      Callback<Tuple2<HttpResponse<byte[]>, String>, T6> onInvalidResponseUnknown, // Rollback
+      Function<HttpResponse<byte[]>, Validated<RS>> contentParser,
+      BiFunction<HttpRequest<RQ>, HttpResponse<byte[]>, Validated<RS>> requestAwareContentParser,
+      Predicate<HttpResponse<RS>> isAccepted,
+      Predicate<HttpResponse<RS>> isRejected,
+      Predicate<Tuple2<HttpResponse<byte[]>, String>> isRejectedByInvalidResponse,
       AtLeastOnce<RRQ> rollbackOnAcceptedModel,
       AtLeastOnce<RRQ> rollbackOnUnknownModel
   ) {
@@ -286,16 +285,16 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
       com.github.thxmasj.backend.core.EntityModel processModel,
       Callback<EntityModel, T1> onPeerUnavailable,
       Callback<EntityModel, T2> onMissingResponse,
-      Callback<TypedHttpResponse<RS>, T3> onSuccess,
-      Callback<TypedHttpResponse<RS>, T4> onFailure,
-      Callback<TypedHttpResponse<RS>, T7> onValidResponseUnknown, // Rollback
-      Callback<Tuple2<HttpResponseMessage, String>, T5> onInvalidResponseRejection,
-      Callback<Tuple2<HttpResponseMessage, String>, T6> onInvalidResponseUnknown, // Rollback
-      Function<HttpResponseMessage, Validated<RS>> contentParser,
-      BiFunction<TypedHttpRequest<RQ>, HttpResponseMessage, Validated<RS>> requestAwareContentParser,
-      Predicate<TypedHttpResponse<RS>> isAccepted,
-      Predicate<TypedHttpResponse<RS>> isRejected,
-      Predicate<Tuple2<HttpResponseMessage, String>> isRejectedByInvalidResponse,
+      Callback<HttpResponse<RS>, T3> onSuccess,
+      Callback<HttpResponse<RS>, T4> onFailure,
+      Callback<HttpResponse<RS>, T7> onValidResponseUnknown, // Rollback
+      Callback<Tuple2<HttpResponse<byte[]>, String>, T5> onInvalidResponseRejection,
+      Callback<Tuple2<HttpResponse<byte[]>, String>, T6> onInvalidResponseUnknown, // Rollback
+      Function<HttpResponse<byte[]>, Validated<RS>> contentParser,
+      BiFunction<HttpRequest<RQ>, HttpResponse<byte[]>, Validated<RS>> requestAwareContentParser,
+      Predicate<HttpResponse<RS>> isAccepted,
+      Predicate<HttpResponse<RS>> isRejected,
+      Predicate<Tuple2<HttpResponse<byte[]>, String>> isRejectedByInvalidResponse,
       Function<AtMostOnce<RQ, RRQ>, AtLeastOnce<RRQ>> rollbackOnAcceptedModelSupplier,
       Function<AtMostOnce<RQ, RRQ>, AtLeastOnce<RRQ>> rollbackOnUnknownModelSupplier
   ) {
@@ -354,7 +353,7 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
   private <RI, RRI, T1, T2, T3, T4, T5, T6, T7, RS> Map<State, List<TransitionModel<?, ?>>> transitions(
       Shape<T1, T2, T3, T4, T5, T6, T7, RQ, RS> shape,
       Function<AtLeastOnce<RRQ>, EventType<RRI, ?>> rollbackRequestDispatched,
-      BiFunction<DispatchContext, Tuple2<RI, TypedHttpRequest<RQ>>, Mono<RRI>> rollbackMessageCreator
+      BiFunction<DispatchContext, Tuple2<RI, HttpRequest<RQ>>, Mono<RRI>> rollbackMessageCreator
   ) {
     return Map.of(
         Begin, List.of(
@@ -486,7 +485,7 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
                                     .assembleInput()
                                     .output(d -> d)
                         ),
-                    d -> TypedHttpResponse.create(
+                    d -> HttpResponse.create(
                         d.t1().statusCode(),
                         d.t1().reasonPhrase(),
                         d.t1().headers(),
@@ -584,14 +583,14 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
   /// for each rollback message creator, so dispatchers with the same creator share it, while copies with different
   /// creators are different entity models with the same id, of which a state machine runs one.
   public <RI> AtMostOnce<RQ, RRQ> withRollback(
-      BiFunction<DispatchContext, Tuple2<RI, TypedHttpRequest<RQ>>, Mono<TypedHttpRequest<RRQ>>> rollbackMessageCreator
+      BiFunction<DispatchContext, Tuple2<RI, HttpRequest<RQ>>, Mono<HttpRequest<RRQ>>> rollbackMessageCreator
   ) {
     return copy(false, rollbackMessageCreator, outbox -> outbox.transitions(outbox.shape, AtLeastOnce::requestDispatched, rollbackMessageCreator));
   }
 
   /// As [#withRollback(BiFunction)], with the rollback requests dispatched as part of a batch.
   public <RI> AtMostOnce<RQ, RRQ> withBatchedRollback(
-      BiFunction<DispatchContext, Tuple2<RI, TypedHttpRequest<RQ>>, Mono<BatchedRequest<RRQ>>> rollbackMessageCreator
+      BiFunction<DispatchContext, Tuple2<RI, HttpRequest<RQ>>, Mono<BatchedRequest<RRQ>>> rollbackMessageCreator
   ) {
     return copy(true, rollbackMessageCreator, outbox -> outbox.transitions(outbox.shape, AtLeastOnce::batchedRequestDispatched, rollbackMessageCreator));
   }

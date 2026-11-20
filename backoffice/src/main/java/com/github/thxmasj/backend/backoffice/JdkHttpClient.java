@@ -1,11 +1,10 @@
 package com.github.thxmasj.backend.backoffice;
 
 import com.github.thxmasj.backend.core.http.HttpClient;
-import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
-import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
+import com.github.thxmasj.backend.core.message.http.HttpRequest;
+import com.github.thxmasj.backend.core.message.http.HttpResponse;
 import java.net.ConnectException;
 import java.net.http.HttpConnectTimeoutException;
-import java.net.http.HttpRequest;
 import java.net.http.HttpRequest.BodyPublishers;
 import java.net.http.HttpResponse.BodyHandlers;
 import java.time.Duration;
@@ -29,8 +28,8 @@ final class JdkHttpClient implements HttpClient {
   private final java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder().connectTimeout(timeout).build();
 
   @Override
-  public Mono<HttpResponseMessage> exchange(HttpRequestMessage message) {
-    var request = HttpRequest.newBuilder(message.uri()).timeout(timeout);
+  public Mono<HttpResponse<byte[]>> exchange(HttpRequest<byte[]> message) {
+    var request = java.net.http.HttpRequest.newBuilder(message.uri()).timeout(timeout);
     message.headers().forEach((name, value) -> {
       if (!restrictedHeaders.contains(name.toLowerCase()))
         request.header(name, value);
@@ -42,7 +41,7 @@ final class JdkHttpClient implements HttpClient {
           var headers = new LinkedHashMap<String, String>();
           response.headers().map().forEach((name, values) -> headers.put(name, String.join(", ", values)));
           byte[] responseBody = response.body();
-          return new HttpResponseMessage(response.statusCode(), "", headers, responseBody != null && responseBody.length > 0 ? responseBody : null);
+          return new HttpResponse<>(response.statusCode(), "", headers, responseBody != null && responseBody.length > 0 ? responseBody : null);
         })
         .onErrorMap(CompletionException.class, e -> e.getCause() != null ? e.getCause() : e)
         .onErrorMap(HttpConnectTimeoutException.class, e -> (ConnectException) new ConnectException(e.getMessage()).initCause(e));

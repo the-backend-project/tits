@@ -298,6 +298,12 @@ final class Pages {
     return "<pre>" + escape(text) + "</pre>";
   }
 
+  /// The bytes of a message whose body is bytes, or which has none
+  @SuppressWarnings("unchecked")
+  private static byte[] sent(HttpMessage<?> message) {
+    return HttpMessage.toBytes((HttpMessage<byte[]>) message);
+  }
+
   /// A value unmarshalled by a data type other than JSON, as text
   private static String value(Object value) {
     return switch (value) {
@@ -308,7 +314,8 @@ final class Pages {
       case Tuple2<?, ?> t -> String.join("\n", value(t.t1()), value(t.t2()));
       case Tuple3<?, ?, ?> t -> String.join("\n", value(t.t1()), value(t.t2()), value(t.t3()));
       case Tuple4<?, ?, ?, ?> t -> String.join("\n", value(t.t1()), value(t.t2()), value(t.t3()), value(t.t4()));
-      case HttpMessage m -> bytes(m.toBytes());
+      // A message as sent or received, while one with a payload, e.g. an outbox request, is shown as JSON below
+      case HttpMessage<?> m when m.body() == null || m.body() instanceof byte[] -> bytes(sent(m));
       case byte[] b -> bytes(b);
       case Number n -> n.toString();
       case Boolean b -> b.toString();

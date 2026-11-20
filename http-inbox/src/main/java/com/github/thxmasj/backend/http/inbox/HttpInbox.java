@@ -15,8 +15,8 @@ import com.github.thxmasj.backend.core.Tuples.Tuple2;
 import com.github.thxmasj.backend.core.Tuples.Tuple3;
 import com.github.thxmasj.backend.core.Validated;
 import com.github.thxmasj.backend.core.http.HttpDataType;
-import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
-import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
+import com.github.thxmasj.backend.core.message.http.HttpRequest;
+import com.github.thxmasj.backend.core.message.http.HttpResponse;
 import com.github.thxmasj.backend.http.inbox.Authorization.Refused;
 import java.util.List;
 import java.util.UUID;
@@ -47,7 +47,7 @@ public interface HttpInbox {
       model -> model instanceof HttpInboxRequest<?>
   );
 
-  EventType<HttpRequestMessage, Void> RequestReceived = BasicEventType.of(
+  EventType<HttpRequest<byte[]>, Void> RequestReceived = BasicEventType.of(
       "Request received",
       UUID.fromString("e55c0077-eddd-4840-b880-2bf0ace4468a"),
       HttpDataType.forRequest(),
@@ -55,12 +55,12 @@ public interface HttpInbox {
   );
 
   /// The request is routed to the inbox request matching it
-  EventType<HttpRequestMessage, HttpRequestMessage> RequestRouted = BasicEventType.of(
+  EventType<HttpRequest<byte[]>, HttpRequest<byte[]>> RequestRouted = BasicEventType.of(
       "Request routed",
       UUID.fromString("5b0d7e3c-2a6f-4f81-9c4e-7d1a8b2e6f39"),
       HttpDataType.forRequest()
   );
-  EventType<HttpRequestMessage, Void> RollbackRequestReceived = BasicEventType.of(
+  EventType<HttpRequest<byte[]>, Void> RollbackRequestReceived = BasicEventType.of(
       "Rollback request received",
       UUID.fromString("c2e94f17-6b3a-4d58-a0e1-3f7c5b9d2a84"),
       HttpDataType.forRequest(),
@@ -80,25 +80,25 @@ public interface HttpInbox {
       DataType.unknown(),
       DataType.none()
   );
-  EventType<Tuple3<String, UUID, HttpRequestMessage>, HttpRequestMessage> RequestRejected = BasicEventType.of(
+  EventType<Tuple3<String, UUID, HttpRequest<byte[]>>, HttpRequest<byte[]>> RequestRejected = BasicEventType.of(
       "Request rejected",
       UUID.fromString("46106429-3c44-45cd-be04-5eb341c8f381"),
       DataType.tuple(DataType.string(), DataType.json(UUID.class), HttpDataType.forRequest()),
       HttpDataType.forRequest()
   );
-  EventType<Tuple2<HttpRequestMessage, HttpResponseMessage>, HttpRequestMessage> DuplicateRequestRejected = BasicEventType.of(
+  EventType<Tuple2<HttpRequest<byte[]>, HttpResponse<byte[]>>, HttpRequest<byte[]>> DuplicateRequestRejected = BasicEventType.of(
       "Duplicate request rejected",
       UUID.fromString("304f5036-4ae6-406a-9512-f217e34e542b"),
       DataType.tuple(HttpDataType.forRequest(), HttpDataType.forResponse()),
       HttpDataType.forRequest()
   );
-  EventType<Tuple2<RoutedRequest<?>, EventReference>, Tuple2<HttpRequestMessage, EventReference>> RequestAccepted = BasicEventType.of(
+  EventType<Tuple2<RoutedRequest<?>, EventReference>, Tuple2<HttpRequest<byte[]>, EventReference>> RequestAccepted = BasicEventType.of(
       "Request accepted",
       UUID.fromString("9615c3fb-4f15-47f5-b5d3-6149a6164d70"),
       DataType.unknown(),
       DataType.tuple(HttpDataType.forRequest(), DataType.eventReference())
   );
-  EventType<Tuple3<String, RoutedRequest<?>, EventReference>, HttpRequestMessage> RollbackRequestAccepted = BasicEventType.of(
+  EventType<Tuple3<String, RoutedRequest<?>, EventReference>, HttpRequest<byte[]>> RollbackRequestAccepted = BasicEventType.of(
       "Rollback request accepted",
       UUID.fromString("abd02d03-8bdc-4bea-9135-214f31489965"),
       DataType.unknown(),
@@ -114,7 +114,7 @@ public interface HttpInbox {
       UUID.fromString("57fd7951-b922-42ff-99ed-6752f1d23024"),
       DataType.tuple(DataType.string(), DataType.eventReference())
   );
-  EventType<HttpResponseMessage, HttpResponseMessage> DuplicatedRequestCompleted = BasicEventType.of(
+  EventType<HttpResponse<byte[]>, HttpResponse<byte[]>> DuplicatedRequestCompleted = BasicEventType.of(
       "Duplicated request completed",
       UUID.fromString("c448eb33-b5de-4201-9d58-55b9767727b6"),
       HttpDataType.forResponse()
@@ -129,7 +129,7 @@ public interface HttpInbox {
       UUID.fromString("4ea0817f-c153-4fbb-a09a-ffcd5e8d6960"),
       DataType.tuple(DataType.string(), DataType.eventReference())
   );
-  EventType<HttpResponseMessage, HttpResponseMessage> RejectedRequestCompleted = BasicEventType.of(
+  EventType<HttpResponse<byte[]>, HttpResponse<byte[]>> RejectedRequestCompleted = BasicEventType.of(
       "Rejected request completed",
       UUID.fromString("887a0173-1847-4e5d-b529-3c25e1f8a5d1"),
       HttpDataType.forResponse(),
@@ -142,25 +142,25 @@ public interface HttpInbox {
       DataType.none()
   );
   /// The request's body, message id or entity id is invalid
-  EventType<String, HttpResponseMessage> RequestRejectedAsInvalid = BasicEventType.of(
+  EventType<String, HttpResponse<byte[]>> RequestRejectedAsInvalid = BasicEventType.of(
       "Request rejected as invalid",
       UUID.fromString("e7a1c94b-3d2f-4b86-9f05-2a8d6c1e7b40"),
       DataType.string(),
       HttpDataType.forResponse()
   );
-  EventType<Refused, HttpResponseMessage> RequestRejectedAsUnauthorized = BasicEventType.of(
+  EventType<Refused, HttpResponse<byte[]>> RequestRejectedAsUnauthorized = BasicEventType.of(
       "Request rejected as unauthorized",
       UUID.fromString("3a204b0b-2740-4b61-bdfa-4149c819be04"),
       DataType.json(Refused.class),
       HttpDataType.forResponse()
   );
-  EventType<HttpResponseMessage, HttpResponseMessage> ResponseCreated = BasicEventType.of(
+  EventType<HttpResponse<byte[]>, HttpResponse<byte[]>> ResponseCreated = BasicEventType.of(
       "Response created",
       UUID.fromString("2387a6a5-a483-428d-839f-26b5fe485247"),
       HttpDataType.forResponse(),
       HttpDataType.forResponse()
   );
-  EventType<String, HttpResponseMessage> BadRequestResponseCreated = BasicEventType.of(
+  EventType<String, HttpResponse<byte[]>> BadRequestResponseCreated = BasicEventType.of(
       "Bad request response created",
       UUID.fromString("a8225270-6a22-4f1f-ae17-5b5519d46df1"),
       DataType.string(),
@@ -227,13 +227,13 @@ public interface HttpInbox {
   List<EntityModel> entityModels();
 
   /// Triggers a received request on a new entity of [#requestRouting()]
-  EventTrigger<HttpRequestMessage, HttpRequestMessage, ?> trigger();
+  EventTrigger<HttpRequest<byte[]>, HttpRequest<byte[]>, ?> trigger();
 
-  static <T> Function<HttpRequestMessage, Validated<T>> jsonParser(Class<T> contentType) {
+  static <T> Function<HttpRequest<byte[]>, Validated<T>> jsonParser(Class<T> contentType) {
     return new JsonRequestValidator<>(contentType, true);
   }
 
-  static <T> Function<HttpRequestMessage, Validated<T>> jsonParser(Class<T> contentType, boolean validate) {
+  static <T> Function<HttpRequest<byte[]>, Validated<T>> jsonParser(Class<T> contentType, boolean validate) {
     return new JsonRequestValidator<>(contentType, validate);
   }
 
@@ -241,7 +241,7 @@ public interface HttpInbox {
   /// The authorized subject is the `sub` of the token. A request is refused as section 3 of RFC 6750 says: with 401
   /// and the challenge `Bearer` if it has no bearer token, with 401 and the error `invalid_token` if the token is
   /// invalid or expired, and with 403 and the error `insufficient_scope` if the token lacks one of the scopes.
-  static <T> BiFunction<HttpRequestMessage, T, Authorization> bearerToken(AccessTokenVerifier verifier, String... requiredScopes) {
+  static <T> BiFunction<HttpRequest<byte[]>, T, Authorization> bearerToken(AccessTokenVerifier verifier, String... requiredScopes) {
     return (request, _) -> {
       String authorization = request.headerValue("Authorization");
       if (authorization == null)
@@ -292,7 +292,7 @@ public interface HttpInbox {
   /// @param authorizedSubject the subject the request is authorized for, if the inbox request has an authorizer
   /// @param processSelector the entity of the application the request triggers an event on
   record RoutedRequest<T>(
-      HttpRequestMessage request,
+      HttpRequest<byte[]> request,
       T body,
       MessageId messageId,
       String authorizedSubject,

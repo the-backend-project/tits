@@ -85,7 +85,7 @@ HttpInboxRequest<Void> GreetingRequest = HttpInboxRequest
     .process(GreetingRequested, Greeting, newEntity())
     .response(
         GreetingResponseCreated,
-        c -> new HttpResponseMessage(
+        c -> new HttpResponse<>(
             200,
             "OK",
             Map.of("Content-Type", "text/html;charset=UTF-8", "X-Correlation-Id", c.correlationId()),

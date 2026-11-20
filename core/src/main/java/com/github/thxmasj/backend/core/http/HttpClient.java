@@ -1,13 +1,13 @@
 package com.github.thxmasj.backend.core.http;
 
-import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
-import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
+import com.github.thxmasj.backend.core.message.http.HttpRequest;
+import com.github.thxmasj.backend.core.message.http.HttpResponse;
 import reactor.core.publisher.Mono;
 import java.time.Duration;
 
 public interface HttpClient {
 
-  Mono<HttpResponseMessage> exchange(HttpRequestMessage message);
+  Mono<HttpResponse<byte[]>> exchange(HttpRequest<byte[]> message);
 
   class TimeoutException extends RuntimeException {
 

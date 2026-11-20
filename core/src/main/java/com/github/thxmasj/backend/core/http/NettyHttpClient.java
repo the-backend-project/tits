@@ -2,8 +2,8 @@ package com.github.thxmasj.backend.core.http;
 
 import static java.util.stream.Collectors.toMap;
 
-import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
-import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
+import com.github.thxmasj.backend.core.message.http.HttpRequest;
+import com.github.thxmasj.backend.core.message.http.HttpResponse;
 import io.netty.buffer.Unpooled;
 import io.netty.handler.codec.http.HttpMethod;
 import java.time.Duration;
@@ -34,7 +34,7 @@ public class NettyHttpClient implements HttpClient {
   }
 
   @Override
-  public Mono<HttpResponseMessage> exchange(HttpRequestMessage message) {
+  public Mono<HttpResponse<byte[]>> exchange(HttpRequest<byte[]> message) {
     long t0 = System.nanoTime();
     return nettyHttpClient
         .headers(h -> message.headers().forEach(h::add))
@@ -48,14 +48,14 @@ public class NettyHttpClient implements HttpClient {
         .uri(message.uri())
         .send(message.body() == null ? Mono.empty() : Mono.just(Unpooled.wrappedBuffer((message.body()))))
         .response((httpClientResponse, buf) -> buf.aggregate().asByteArray()
-            .map(body -> new HttpResponseMessage(
+            .map(body -> new HttpResponse<>(
                     httpClientResponse.status().code(),
                     httpClientResponse.status().reasonPhrase(),
                     httpClientResponse.responseHeaders().entries().stream().collect(toMap(Entry::getKey, Entry::getValue)),
                     body
                 )
             )
-          .defaultIfEmpty(new HttpResponseMessage(
+          .defaultIfEmpty(new HttpResponse<>(
               httpClientResponse.status().code(),
               httpClientResponse.status().reasonPhrase(),
               httpClientResponse.responseHeaders().entries().stream().collect(toMap(Entry::getKey, Entry::getValue))

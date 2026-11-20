@@ -9,9 +9,9 @@ import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionContext;
 import com.github.thxmasj.backend.core.Validated;
-import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
-import com.github.thxmasj.backend.core.message.http.HttpRequestMessage.Method;
-import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
+import com.github.thxmasj.backend.core.message.http.HttpRequest;
+import com.github.thxmasj.backend.core.message.http.HttpRequest.Method;
+import com.github.thxmasj.backend.core.message.http.HttpResponse;
 import com.github.thxmasj.backend.http.inbox.Authorization;
 import com.github.thxmasj.backend.http.inbox.Form;
 import com.github.thxmasj.backend.http.inbox.HttpInbox;
@@ -151,8 +151,8 @@ public interface Inbox {
         .build("UserInfoHttpRequest", UUID.fromString("1d6e8f3a-9b2c-4c7d-a5e0-3f8b6d1c9e24"));
   }
 
-  private static HttpResponseMessage reply(TransitionContext<Reply> c) {
-    return new HttpResponseMessage(
+  private static HttpResponse<byte[]> reply(TransitionContext<Reply> c) {
+    return new HttpResponse<>(
         c.input().status(),
         reasonPhrase(c.input().status()),
         Map.of(
@@ -182,7 +182,7 @@ public interface Inbox {
   }
 
   /// The form is validated by the edge, which also authenticates the client
-  private static Validated<Tokens.Request> tokenRequest(HttpRequestMessage request) {
+  private static Validated<Tokens.Request> tokenRequest(HttpRequest<byte[]> request) {
     String clientId = request.headerValue(ClientIdHeader);
     String secretHash = request.headerValue(SecretHashHeader);
     if (clientId == null || secretHash == null)
@@ -196,7 +196,7 @@ public interface Inbox {
 
   /// The form is validated by the edge, which also authenticates the client and replaces the code and the code
   /// verifier by their hashes
-  private static Validated<Tokens.CodeRequest> codeRequest(HttpRequestMessage request) {
+  private static Validated<Tokens.CodeRequest> codeRequest(HttpRequest<byte[]> request) {
     String clientId = request.headerValue(ClientIdHeader);
     String secretHash = request.headerValue(SecretHashHeader);
     String codeHash = request.headerValue(CodeHashHeader);
@@ -215,7 +215,7 @@ public interface Inbox {
   /// An authorization request of RFC 6749 section 4.1.1 and OpenID Connect Core section 3.1.2.1. A request without a
   /// valid client id and redirect URI is invalid, as the client can't be told by a redirect. Other problems are
   /// told the client by a redirect with the error, once the client and the redirect URI are found valid.
-  private static Validated<Authorizations.Request> authorizationRequest(HttpRequestMessage request) {
+  private static Validated<Authorizations.Request> authorizationRequest(HttpRequest<byte[]> request) {
     Map<String, String> query;
     try {
       String raw = request.uri().getRawQuery();
@@ -277,7 +277,7 @@ public interface Inbox {
   }
 
   /// The user signed in, as told by the edge
-  private static Validated<Authorizations.SignIn> signIn(HttpRequestMessage request) {
+  private static Validated<Authorizations.SignIn> signIn(HttpRequest<byte[]> request) {
     Validated<Authorizations.User> user = json(request, Authorizations.User.class);
     if (user.isInvalid())
       return invalid(user.invalidReason());
@@ -286,7 +286,7 @@ public interface Inbox {
     return valid(new Authorizations.SignIn(user.validValue(), request.headerValue(CodeHashHeader)));
   }
 
-  private static <T> Validated<T> json(HttpRequestMessage request, Class<T> type) {
+  private static <T> Validated<T> json(HttpRequest<byte[]> request, Class<T> type) {
     try {
       return valid(DataType.objectMapper.readValue(request.body(), type));
     } catch (JacksonException | IllegalArgumentException e) {
@@ -296,7 +296,7 @@ public interface Inbox {
 
   /// A registration request, e.g. `{"client_id": "orders", "scope": "orders:read orders:write"}`, with an optional
   /// `subject` for the `sub` of the client's tokens. A client without `scope` has no scopes.
-  private static Validated<Registration> registration(HttpRequestMessage request) {
+  private static Validated<Registration> registration(HttpRequest<byte[]> request) {
     String registeredBy = request.headerValue(RegisteredByHeader);
     String secretHash = request.headerValue(SecretHashHeader);
     if (registeredBy == null || secretHash == null)

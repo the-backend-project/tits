@@ -10,7 +10,7 @@ import java.net.*;
 import java.time.ZonedDateTime;
 import reactor.core.publisher.*;
 
-class ForwardAction implements Action<HttpRequestMessage> {
+class ForwardAction implements Action<HttpRequest<byte[]>> {
 
   private final HttpClient forwarder;
 
@@ -22,7 +22,7 @@ class ForwardAction implements Action<HttpRequestMessage> {
   public String name() {return "Forward";}
 
   @Override
-  public Mono<InputEvent<?>> execute(HttpRequestMessage request) {
+  public Mono<InputEvent<?>> execute(HttpRequest<byte[]> request) {
     Debug.log(ZonedDateTime.now() + ": Forwarding " + request.requestLine());
     return forwarder.exchange(request)
         .<InputEvent<?>>map(response -> new InputEvent<>(ResponseReceived, response))

@@ -11,9 +11,9 @@ import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.http.HttpClient;
-import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
-import com.github.thxmasj.backend.core.message.http.HttpRequestMessage.Method;
-import com.github.thxmasj.backend.core.message.http.TypedHttpResponse;
+import com.github.thxmasj.backend.core.message.http.HttpRequest;
+import com.github.thxmasj.backend.core.message.http.HttpRequest.Method;
+import com.github.thxmasj.backend.core.message.http.HttpResponse;
 import com.github.thxmasj.backend.http.inbox.Authorization;
 import com.github.thxmasj.backend.http.inbox.HttpInbox;
 import com.github.thxmasj.backend.http.inbox.HttpInbox.RoutedRequest;
@@ -37,7 +37,7 @@ final class DocExamples {
 
   // Stands in for HttpInbox.bearerToken(verifier, "orders"), as a verifier needs the keys of an issuer. The diagram is
   // the same for any authorizer.
-  private static <T> BiFunction<HttpRequestMessage, T, Authorization> bearerToken() {
+  private static <T> BiFunction<HttpRequest<byte[]>, T, Authorization> bearerToken() {
     return (_, _) -> Authorization.authorized("client");
   }
 
@@ -174,10 +174,10 @@ final class DocExamples {
       .processModel(Payment)
       .onMissingResponse(AuthorisationUnknown)
       .contentParser(JsonResponseValidator.json(AcquirerResponse.class))
-      .onSuccess(AcquirerResponded, TypedHttpResponse::payload)
-      .onFailure(AcquirerDeclined, TypedHttpResponse::payload)
-      .isAccepted(response -> response.payload().approved())
-      .isRejected(response -> !response.payload().approved())
+      .onSuccess(AcquirerResponded, HttpResponse::body)
+      .onFailure(AcquirerDeclined, HttpResponse::body)
+      .isAccepted(response -> response.body().approved())
+      .isRejected(response -> !response.body().approved())
       .isRejectedByInvalidResponse(_ -> false)
       .rollbackOnAcceptedModel(Reversal)
       .rollbackOnUnknownModel(Reversal)

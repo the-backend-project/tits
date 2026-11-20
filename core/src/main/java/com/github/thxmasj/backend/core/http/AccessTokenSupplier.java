@@ -5,9 +5,9 @@ import static java.util.Objects.requireNonNull;
 import static java.util.stream.Collectors.joining;
 
 import com.github.thxmasj.backend.core.internal.Debug;
-import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
-import com.github.thxmasj.backend.core.message.http.HttpRequestMessage.Method;
-import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
+import com.github.thxmasj.backend.core.message.http.HttpRequest;
+import com.github.thxmasj.backend.core.message.http.HttpRequest.Method;
+import com.github.thxmasj.backend.core.message.http.HttpResponse;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.time.Clock;
@@ -67,13 +67,13 @@ public class AccessTokenSupplier implements Supplier<String>, AutoCloseable {
   }
 
   private void fetch() {
-    httpClient.exchange(new HttpRequestMessage(Method.POST, url, headers, body))
+    httpClient.exchange(new HttpRequest<>(Method.POST, url, headers, body))
         .doOnNext(this::onNext)
         .doOnError(this::onError)
         .block();
   }
 
-  private void onNext(HttpResponseMessage item) {
+  private void onNext(HttpResponse<byte[]> item) {
     if (item.statusCode() < 200 || item.statusCode() > 299) {
       onError(new AccessFailed(String.format(
               "Could not get access token from %s. HTTP status: %s. HTTP payload: %s",

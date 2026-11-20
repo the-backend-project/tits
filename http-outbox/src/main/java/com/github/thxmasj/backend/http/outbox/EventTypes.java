@@ -6,7 +6,7 @@ import com.github.thxmasj.backend.core.BasicEventType;
 import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.http.HttpDataType;
-import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
+import com.github.thxmasj.backend.core.message.http.HttpResponse;
 import java.util.UUID;
 
 public interface EventTypes {
@@ -15,7 +15,7 @@ public interface EventTypes {
   EventType<String, String>
       InvalidResponseReceived = of("Invalid response received", UUID.fromString("450679ab-bc60-46cb-bb97-d171c34c2750"), DataType.string());
 
-  EventType<HttpResponseMessage, Void> ResponseReceived = BasicEventType.of(
+  EventType<HttpResponse<byte[]>, Void> ResponseReceived = BasicEventType.of(
       "Response received",
       UUID.fromString("cd730efa-286d-4e29-b8bf-55df708fe889"),
       HttpDataType.forResponse(),

@@ -42,7 +42,7 @@ public class MerchantTest {
 //        UUID.randomUUID().toString(),
 //        false
 //    ));
-//    HttpRequestMessage request = new HttpRequestMessage(Method.POST, URI.create("/merchants"), Map.of(), body);
+//    HttpRequest<byte[]> request = new HttpRequest<>(Method.POST, URI.create("/merchants"), Map.of(), body);
 //    Event<?> result = stateMachine.onEvent(
 //        Optional.ofNullable(request.headerValue("x-correlation-id")).orElse(request.headerValue("tid")),
 //        new EventTrigger<>(
@@ -96,7 +96,7 @@ public class MerchantTest {
 //    );
 //
 //    @Override
-//    protected Map<Predicate<HttpRequestMessage>, Alternative<HttpRequestMessage, ?, ?>> routes() {
+//    protected Map<Predicate<HttpRequest<byte[]>>, Alternative<HttpRequest<byte[]>, ?, ?>> routes() {
 //      return Map.of(
 //          d -> RequestLines.POST_merchant.matches(d.requestLine()),
 //          then(

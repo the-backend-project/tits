@@ -1,87 +1,96 @@
 package com.github.thxmasj.backend.core.message.http;
 
+import static java.util.stream.Collectors.joining;
+
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
+import java.util.TreeMap;
 
-import static java.util.stream.Collectors.joining;
+/// An HTTP request or response, with a body of type `T`: the bytes of the body as sent, `byte[]`, or the payload they
+/// are parsed into, or marshalled from. A message without a body has a null body.
+public sealed interface HttpMessage<T> permits HttpRequest, HttpResponse {
 
-public sealed abstract class HttpMessage permits HttpRequestMessage, HttpResponseMessage {
+  Map<String, String> headers();
 
-  private final Map<String, String> headers;
-  private final byte[] body;
+  T body();
 
-  protected HttpMessage(Map<String, String> headers, byte[] body) {
-    this.headers = headers;
-    this.body = body;
-  }
+  /// The start line, i.e. the request line of a request and the status line of a response
+  String startLine();
 
-  public Map<String, String> headers() {
-    return headers;
-  }
-
-  public byte[] body() {
-    return body;
-  }
-
-  public String headerValue(String header) {
-    return headers.entrySet().stream()
+  /// The value of the header, whose name is compared without case, or null if the message has none
+  default String headerValue(String header) {
+    return headers().entrySet().stream()
         .filter(kv -> kv.getKey().equalsIgnoreCase(header))
         .map(Entry::getValue)
         .findFirst()
         .orElse(null);
   }
 
-  @Override
-  public String toString() {
-    return toString(startLine());
+  /// The message as sent: its start line, headers and body, which [HttpMessageParser] parses. Only a message whose body
+  /// is bytes, or which has none, is sent, so a payload is marshalled into bytes first, e.g. with
+  /// [HttpRequest#map(java.util.function.Function)].
+  static byte[] toBytes(HttpMessage<byte[]> message) {
+    byte[] head = head(message).getBytes(StandardCharsets.UTF_8);
+    byte[] body = message.body();
+    if (body == null)
+      return head;
+    return ByteBuffer.allocate(head.length + 2 + body.length)
+        .put(head)
+        .put("\n\n".getBytes(StandardCharsets.UTF_8))
+        .put(body)
+        .array();
   }
 
-  public byte[] toBytes() {
-    return toBytes(startLine());
+  /// The message as text: as sent, if the body is bytes or absent, and otherwise with the payload as its string
+  static String toString(HttpMessage<?> message) {
+    Object body = message.body();
+    if (body == null)
+      return head(message);
+    return head(message) + "\n\n" + (body instanceof byte[] bytes ? new String(bytes, StandardCharsets.UTF_8) : body);
   }
 
-  public abstract String startLine();
-
-  protected String toString(String head) {
-    return new String(toBytes(head));
+  /// Whether the headers are equal, with their names compared without case, as they are in HTTP
+  static boolean headersEqual(Map<String, String> headers, Map<String, String> other) {
+    return caseInsensitive(headers).equals(caseInsensitive(other));
   }
 
-  protected byte[] toBytes(String head) {
-    String m = head;
-    if (!headers.isEmpty()) {
-      m = m + "\n" + headers.entrySet().stream()
-          .map(entry -> entry.getKey() + ":" + entry.getValue())
-          .collect(joining("\n"));
-    }
-    if (body != null) {
-      return concat(m.getBytes(), "\n\n".getBytes(), body);
-    } else {
-      return m.getBytes();
-    }
+  /// The hash code of the headers, consistent with [#headersEqual(Map, Map)]
+  static int headersHashCode(Map<String, String> headers) {
+    int hash = 0;
+    for (var header : headers.entrySet())
+      hash += header.getKey().toLowerCase(Locale.ROOT).hashCode() ^ Objects.hashCode(header.getValue());
+    return hash;
   }
 
-  protected boolean equals(HttpMessage other) {
-    return Arrays.equals(toBytes(), other.toBytes());
+  /// Whether the bodies are equal, by content if they are bytes
+  static boolean bodiesEqual(Object body, Object other) {
+    return body instanceof byte[] bytes && other instanceof byte[] otherBytes
+        ? Arrays.equals(bytes, otherBytes)
+        : Objects.equals(body, other);
   }
 
-  private static byte[] concat(byte[]... arrays) {
-    int totalLength = 0;
-    for (byte[] array : arrays) {
-      totalLength += array.length;
-    }
-    ByteBuffer buffer = ByteBuffer.allocate(totalLength);
-    for (byte[] array : arrays) {
-      buffer.put(array);
-    }
-    return buffer.array();
+  /// The hash code of the body, consistent with [#bodiesEqual(Object, Object)]
+  static int bodyHashCode(Object body) {
+    return body instanceof byte[] bytes ? Arrays.hashCode(bytes) : Objects.hashCode(body);
   }
 
-  @Override
-  public int hashCode() {
-    return Objects.hash(startLine(), Arrays.hashCode(body()));
+  /// The start line and the headers
+  private static String head(HttpMessage<?> message) {
+    if (message.headers().isEmpty())
+      return message.startLine();
+    return message.startLine() + "\n" + message.headers().entrySet().stream()
+        .map(entry -> entry.getKey() + ":" + entry.getValue())
+        .collect(joining("\n"));
   }
 
+  private static Map<String, String> caseInsensitive(Map<String, String> headers) {
+    var map = new TreeMap<String, String>(String.CASE_INSENSITIVE_ORDER);
+    map.putAll(headers);
+    return map;
+  }
 }

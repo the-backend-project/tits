@@ -4,8 +4,8 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
-import com.github.thxmasj.backend.core.message.http.HttpRequestMessage.Method;
+import com.github.thxmasj.backend.core.message.http.HttpRequest;
+import com.github.thxmasj.backend.core.message.http.HttpRequest.Method;
 import com.github.thxmasj.backend.http.inbox.AccessTokenVerifier.AccessToken;
 import com.github.thxmasj.backend.http.inbox.Authorization.Authorized;
 import com.github.thxmasj.backend.http.inbox.Authorization.Refused;
@@ -213,7 +213,7 @@ public class AccessTokenVerifierTest {
 
   private Authorization authorize(Map<String, String> headers, String... requiredScopes) {
     return HttpInbox.<Void>bearerToken(verifier, requiredScopes)
-        .apply(new HttpRequestMessage(Method.POST, URI.create("/payments"), headers, null), null);
+        .apply(new HttpRequest<>(Method.POST, URI.create("/payments"), headers, null), null);
   }
 
   private static AccessTokenVerifier verifier(String audience) {

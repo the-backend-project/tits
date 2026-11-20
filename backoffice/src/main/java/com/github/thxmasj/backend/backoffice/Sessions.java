@@ -23,10 +23,9 @@ import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.core.Tuples.Tuple2;
 import com.github.thxmasj.backend.core.Validated;
 import com.github.thxmasj.backend.core.http.HttpClient;
-import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
-import com.github.thxmasj.backend.core.message.http.HttpRequestMessage.Method;
-import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
-import com.github.thxmasj.backend.core.message.http.TypedHttpResponse;
+import com.github.thxmasj.backend.core.message.http.HttpRequest;
+import com.github.thxmasj.backend.core.message.http.HttpRequest.Method;
+import com.github.thxmasj.backend.core.message.http.HttpResponse;
 import com.github.thxmasj.backend.http.inbox.Form;
 import com.github.thxmasj.backend.http.inbox.HttpInbox;
 import com.github.thxmasj.backend.http.inbox.HttpInboxRequest;
@@ -305,7 +304,7 @@ final class Sessions {
         .onInvalidResponseRejection(TokenRequestFailed)
         .onInvalidResponseUnknown(TokenRequestFailed)
         .contentParser(m -> valid(m.body() != null ? new String(m.body(), UTF_8) : ""))
-        .onSuccess(TokenReceived, TypedHttpResponse::payload)
+        .onSuccess(TokenReceived, HttpResponse::body)
         .onFailure(TokenRequestFailed)
         .isAccepted(r -> r.statusCode() == 200)
         .isRejected(r -> r.statusCode() >= 400)
@@ -556,18 +555,18 @@ final class Sessions {
 
   /// The session of the cookie of a request, by the hash of its token, or a new one if it has no cookie or the cookie
   /// is of no session
-  private static EntitySelector session(HttpRequestMessage request) {
+  private static EntitySelector session(HttpRequest<byte[]> request) {
     String token = cookie(request.headerValue("Cookie"), sessionCookie);
     return token != null ? idEvent(TokenClaimed, Secrets.hash(token), EntitySelector.newEntity()) : EntitySelector.newEntity();
   }
 
-  private static Validated<View> view(HttpRequestMessage request) {
+  private static Validated<View> view(HttpRequest<byte[]> request) {
     boolean htmx = request.headerValue("HX-Request") != null;
     boolean fragment = htmx && request.headerValue("HX-Boosted") == null && request.headerValue("HX-History-Restore-Request") == null;
     return valid(new View(request.uri().getRawPath(), request.uri().getRawQuery(), htmx, fragment));
   }
 
-  private static Validated<Callback> callback(HttpRequestMessage request) {
+  private static Validated<Callback> callback(HttpRequest<byte[]> request) {
     Map<String, String> query;
     try {
       query = Form.parse(request.uri().getRawQuery());
@@ -718,10 +717,10 @@ final class Sessions {
     return headers;
   }
 
-  private static HttpResponseMessage response(Reply reply, String correlationId) {
+  private static HttpResponse<byte[]> response(Reply reply, String correlationId) {
     var headers = new LinkedHashMap<>(reply.headers());
     headers.put("X-Correlation-Id", correlationId);
-    return new HttpResponseMessage(
+    return new HttpResponse<>(
         reply.status(),
         reasonPhrase(reply.status()),
         headers,

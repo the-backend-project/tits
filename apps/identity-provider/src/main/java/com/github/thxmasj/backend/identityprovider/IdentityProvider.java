@@ -9,9 +9,9 @@ import com.github.thxmasj.backend.core.StateMachine;
 import com.github.thxmasj.backend.core.database.DataSourceBuilder;
 import com.github.thxmasj.backend.core.database.Database;
 import com.github.thxmasj.backend.core.message.http.HttpMessageParser;
-import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
-import com.github.thxmasj.backend.core.message.http.HttpRequestMessage.Method;
-import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
+import com.github.thxmasj.backend.core.message.http.HttpRequest;
+import com.github.thxmasj.backend.core.message.http.HttpRequest.Method;
+import com.github.thxmasj.backend.core.message.http.HttpResponse;
 import com.github.thxmasj.backend.http.inbox.HttpInbox;
 import com.github.thxmasj.backend.http.inbox.HttpInboxListener;
 import com.github.thxmasj.backend.http.inbox.OpenIdConnectClient;
@@ -150,7 +150,7 @@ public final class IdentityProvider {
   /// most likely the bootstrap client registered by an earlier start, whose secret is kept.
   public static void bootstrap(StateMachine stateMachine, HttpInbox inbox, BootstrapClient client) {
     var body = Map.of("client_id", client.id(), "scope", Clients.RegistrationScope);
-    HttpResponseMessage response = register(stateMachine, inbox, "bootstrap", body, client.id(), Secrets.hash(client.secret()));
+    HttpResponse<byte[]> response = register(stateMachine, inbox, "bootstrap", body, client.id(), Secrets.hash(client.secret()));
     switch (response.statusCode()) {
       case 201 -> System.out.println("Registered bootstrap client " + client.id());
       case 409 -> System.out.println("Bootstrap client " + client.id() + " is already registered. Its secret is not changed.");
@@ -174,7 +174,7 @@ public final class IdentityProvider {
       body.put("grant_types", client.grantTypes());
       if (!client.redirectUris().isEmpty())
         body.put("redirect_uris", client.redirectUris());
-      HttpResponseMessage response = register(stateMachine, inbox, "import", body, ImportedClients.Registrar, ImportedClients.secretHash(client));
+      HttpResponse<byte[]> response = register(stateMachine, inbox, "import", body, ImportedClients.Registrar, ImportedClients.secretHash(client));
       String name = client.clientId() + (client.name() != null ? " (" + client.name() + ")" : "");
       switch (response.statusCode()) {
         case 201 -> registered++;
@@ -189,12 +189,12 @@ public final class IdentityProvider {
   }
 
   /// Registers a client as the registrar, outside the edge
-  private static HttpResponseMessage register(StateMachine stateMachine, HttpInbox inbox, String correlationId, Map<String, ?> body, String registrar, String secretHash) {
+  private static HttpResponse<byte[]> register(StateMachine stateMachine, HttpInbox inbox, String correlationId, Map<String, ?> body, String registrar, String secretHash) {
     var request = Edge.registration(
         Map.of("Content-Type", "application/json"),
         registrar,
         secretHash,
-        new HttpRequestMessage(Method.POST, URI.create("/clients"), Map.of(), DataType.objectMapper.writeValueAsBytes(body))
+        new HttpRequest<>(Method.POST, URI.create("/clients"), Map.of(), DataType.objectMapper.writeValueAsBytes(body))
     );
     return stateMachine.onEvent(correlationId, inbox.trigger(), request)
         // First event is the triggered event, second is the response event
