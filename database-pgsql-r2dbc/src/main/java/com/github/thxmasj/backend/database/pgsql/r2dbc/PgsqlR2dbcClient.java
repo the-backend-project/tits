@@ -34,14 +34,16 @@ import reactor.core.publisher.Mono;
 /// the client of the JDBC driver.
 class PgsqlR2dbcClient implements DatabaseClient {
 
+  private final PgsqlR2dbcDatabase database;
   private final ConnectionPool pool;
 
-  public PgsqlR2dbcClient(ConnectionPool pool) {
+  PgsqlR2dbcClient(PgsqlR2dbcDatabase database, ConnectionPool pool) {
+    this.database = database;
     this.pool = pool;
   }
 
   /// The pool keeps as many connections as it may have, as the pool of the JDBC driver does
-  public static PgsqlR2dbcClient of(Config config) {
+  static PgsqlR2dbcClient of(PgsqlR2dbcDatabase database, Config config) {
     config.requireSqlPassword("pgsql-r2dbc");
     var connectionFactory = new PostgresqlConnectionFactory(PostgresqlConnectionConfiguration.builder()
         .host(config.host())
@@ -54,10 +56,15 @@ class PgsqlR2dbcClient implements DatabaseClient {
         .sslMode(config.trustServerCertificate() ? SSLMode.PREFER : SSLMode.VERIFY_FULL)
         .options(Map.of("statement_timeout", String.valueOf(config.queryTimeout().toMillis())))
         .build());
-    return new PgsqlR2dbcClient(new ConnectionPool(ConnectionPoolConfiguration.builder(connectionFactory)
+    return new PgsqlR2dbcClient(database, new ConnectionPool(ConnectionPoolConfiguration.builder(connectionFactory)
         .initialSize(config.maximumPoolSize())
         .maxSize(config.maximumPoolSize())
         .build()));
+  }
+
+  @Override
+  public PgsqlR2dbcDatabase database() {
+    return database;
   }
 
   @Override

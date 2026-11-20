@@ -1,15 +1,15 @@
 package com.github.thxmasj.backend.database.pgsql.vertx;
 
-import com.github.thxmasj.backend.core.database.Database;
 import com.github.thxmasj.backend.core.database.DatabaseClient;
 import com.github.thxmasj.backend.core.database.DatabaseClient.Config;
+import com.github.thxmasj.backend.core.database.SqlDatabase;
 import com.github.thxmasj.backend.database.pgsql.PgsqlDatabase;
 import javax.sql.DataSource;
 import reactor.core.publisher.Mono;
 
 /// PostgreSQL through the reactive Vert.x client, e.g. for comparing it with its JDBC driver. The queries are those of
 /// [PgsqlDatabase], and the schema is created by it through JDBC.
-public class PgsqlVertxDatabase implements Database {
+public class PgsqlVertxDatabase implements SqlDatabase {
 
   private final PgsqlDatabase pgsql = new PgsqlDatabase();
 
@@ -37,7 +37,7 @@ public class PgsqlVertxDatabase implements Database {
 
   @Override
   public DatabaseClient client(Config config) {
-    return PgsqlVertxClient.of(config);
+    return PgsqlVertxClient.of(this, config);
   }
 
   @Override

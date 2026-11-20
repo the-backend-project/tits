@@ -10,10 +10,10 @@ import javax.sql.DataSource;
 
 public class DataSourceBuilder {
 
-  private final Database database;
+  private final SqlDatabase database;
   private final Config config;
 
-  public DataSourceBuilder(Database database, Config config) {
+  public DataSourceBuilder(SqlDatabase database, Config config) {
     this.database = database;
     this.config = config;
   }

@@ -23,7 +23,7 @@ The project aims for stable, robust and long-lived systems, and it judges change
 
 | Path                                                | Contains                                                                         |
 |-----------------------------------------------------|----------------------------------------------------------------------------------|
-| [core](core)                                        | The state machine, `TransitionModelBuilder` and the interface of the databases   |
+| [core](core)                                        | The state machine, `TransitionModelBuilder` and the storage interface            |
 | [database-mssql](database-mssql), `database-pgsql-*` | The SQL and driver of each database, and the tests of core that need a database  |
 | [http](http)                                        | HTTP messages and clients, shared by the inbox and the outbox                    |
 | [http-inbox](http-inbox), [http-outbox](http-outbox) | Receiving and sending HTTP requests as entities                                  |

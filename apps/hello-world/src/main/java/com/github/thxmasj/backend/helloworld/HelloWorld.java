@@ -3,10 +3,10 @@ package com.github.thxmasj.backend.helloworld;
 import com.github.thxmasj.backend.core.JsonLinesListener;
 import com.github.thxmasj.backend.core.StateMachine;
 import com.github.thxmasj.backend.core.database.DataSourceBuilder;
-import com.github.thxmasj.backend.core.database.Database;
+import com.github.thxmasj.backend.core.database.SqlDatabase;
+import com.github.thxmasj.backend.database.mssql.MssqlDatabase;
 import com.github.thxmasj.backend.http.HttpRequest.Method;
 import com.github.thxmasj.backend.http.HttpResponse;
-import com.github.thxmasj.backend.database.mssql.MssqlDatabase;
 import com.github.thxmasj.backend.http.inbox.HttpInboxListener;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
@@ -25,7 +25,7 @@ import reactor.netty.DisposableServer;
 public final class HelloWorld {
 
   // The application is configured and deployed for SQL Server, including Azure SQL
-  private static final Database database = new MssqlDatabase();
+  private static final SqlDatabase database = new MssqlDatabase();
 
   private HelloWorld() {}
 

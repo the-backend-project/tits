@@ -1,4 +1,4 @@
-package com.github.thxmasj.backend.core.internal.database;
+package com.github.thxmasj.backend.core.internal.database.sql;
 
 import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;

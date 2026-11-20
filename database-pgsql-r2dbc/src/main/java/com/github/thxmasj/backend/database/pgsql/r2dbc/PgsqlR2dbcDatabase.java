@@ -1,15 +1,15 @@
 package com.github.thxmasj.backend.database.pgsql.r2dbc;
 
-import com.github.thxmasj.backend.core.database.Database;
 import com.github.thxmasj.backend.core.database.DatabaseClient;
 import com.github.thxmasj.backend.core.database.DatabaseClient.Config;
+import com.github.thxmasj.backend.core.database.SqlDatabase;
 import com.github.thxmasj.backend.database.pgsql.PgsqlDatabase;
 import javax.sql.DataSource;
 import reactor.core.publisher.Mono;
 
 /// PostgreSQL through its R2DBC driver, e.g. for comparing it with its JDBC driver. The queries are those of
 /// [PgsqlDatabase], and the schema is created by it through JDBC.
-public class PgsqlR2dbcDatabase implements Database {
+public class PgsqlR2dbcDatabase implements SqlDatabase {
 
   private final PgsqlDatabase pgsql = new PgsqlDatabase();
 
@@ -37,7 +37,7 @@ public class PgsqlR2dbcDatabase implements Database {
 
   @Override
   public DatabaseClient client(Config config) {
-    return PgsqlR2dbcClient.of(config);
+    return PgsqlR2dbcClient.of(this, config);
   }
 
   @Override

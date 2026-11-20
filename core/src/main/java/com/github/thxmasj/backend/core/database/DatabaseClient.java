@@ -11,8 +11,13 @@ import jakarta.validation.constraints.NotBlank;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-/// Runs the queries and updates of the state machine. A client with a connection pool closes it when it is closed.
-public interface DatabaseClient extends AutoCloseable {
+/// Runs SQL queries and updates on a [SqlDatabase], e.g. those of the state machine's storage. A client with a
+/// connection pool closes it when it is closed.
+public interface DatabaseClient extends Store {
+
+  /// The database this is a client of, whose dialect the SQL is in
+  @Override
+  SqlDatabase database();
 
   default Query.Builder sql(String sql) {
     return new Query.Builder(this).sql(sql);
@@ -23,9 +28,6 @@ public interface DatabaseClient extends AutoCloseable {
   <T> Flux<T> all(String name, String sql, Map<String, Parameter<?>> parameters, Function<Row, T> rowMapper);
 
   Mono<Integer> update(String name, String sql, Map<String, Parameter<?>> parameters);
-
-  @Override
-  default void close() throws Exception {}
 
   /// @param authentication how to authenticate, or null for [Authentication#SqlPassword]
   record Config(

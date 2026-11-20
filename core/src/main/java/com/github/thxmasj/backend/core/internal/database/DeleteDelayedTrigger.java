@@ -1,25 +1,13 @@
 package com.github.thxmasj.backend.core.internal.database;
 
-import com.github.thxmasj.backend.core.database.DatabaseClient;
 import java.util.UUID;
 import reactor.core.publisher.Mono;
 
-public class DeleteDelayedTrigger {
+/// Deletes a delayed trigger
+public interface DeleteDelayedTrigger {
 
-  private final DatabaseClient databaseClient;
-  private final String sql;
+  /// Deletes the delayed trigger of the entity with the event number, if any. Completes with the number of triggers
+  /// deleted.
+  Mono<Integer> execute(UUID entityId, int eventNumber);
 
-  /// @param sql the SQL deleting the delayed trigger of an entity with an event number
-  public DeleteDelayedTrigger(DatabaseClient databaseClient, String sql) {
-    this.databaseClient = databaseClient;
-    this.sql = sql;
-  }
-
-  public Mono<Integer> execute(UUID entityId, int eventNumber) {
-    return databaseClient.sql(sql)
-        .name("DeleteDelayedTrigger")
-        .bind("entityId", entityId)
-        .bind("eventNumber", eventNumber)
-        .update();
-  }
 }

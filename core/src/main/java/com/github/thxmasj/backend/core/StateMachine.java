@@ -21,10 +21,11 @@ import com.github.thxmasj.backend.core.StateMachine.ProcessResult.Pending;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.Rejected;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult.UnknownId;
 import com.github.thxmasj.backend.core.Tuples.Tuple3;
-import com.github.thxmasj.backend.core.database.Database;
 import com.github.thxmasj.backend.core.database.DatabaseClient;
 import com.github.thxmasj.backend.core.database.EntityGroupNotInitialised;
 import com.github.thxmasj.backend.core.database.MappingFailure;
+import com.github.thxmasj.backend.core.database.SqlDatabase;
+import com.github.thxmasj.backend.core.database.Store;
 import com.github.thxmasj.backend.core.database.UnknownEntity;
 import com.github.thxmasj.backend.core.internal.ActionTrigger;
 import com.github.thxmasj.backend.core.internal.Calculation;
@@ -83,7 +84,7 @@ public class StateMachine implements AutoCloseable {
   private final Clock clock;
   private final Listener listener;
   private final List<Looper<?>> workers = new ArrayList<>();
-  private final DatabaseClient client;
+  private final Store store;
   private final Storage storage;
   private final ResolvedModels models;
   private final Map<EntityModel, Traverser> traversers;
@@ -111,7 +112,7 @@ public class StateMachine implements AutoCloseable {
     this(delayer, entityModels, dataSource, schemaDataSource, schemaName, role, clock, listener, true);
   }
 
-  /// The database is the one behind the data source (see [Database#of(DataSource)])
+  /// The database is the one behind the data source (see [SqlDatabase#of(DataSource)])
   public StateMachine(
       Function<List<String>, Mono<Void>> delayer,
       List<? extends EntityModel> entityModels,
@@ -123,10 +124,42 @@ public class StateMachine implements AutoCloseable {
       Listener listener,
       boolean withResolving
   ) {
-    Database database = Database.of(dataSource);
-    this(delayer, entityModels, database, database.client(dataSource), schemaDataSource, schemaName, role, clock, listener, withResolving);
+    this(delayer, entityModels, SqlDatabase.of(dataSource).client(dataSource), schemaDataSource, schemaName, role, clock, listener, withResolving);
   }
 
+  /// A state machine on a database reached through SQL, which creates the schema first if given a data source to
+  /// create it with. See [#StateMachine(Function, List, Store, String, Clock, Listener, boolean)] for the other
+  /// parameters.
+  ///
+  /// @param client a client of the database, which is closed with the state machine
+  /// @param schemaDataSource a data source of the database to create the schema with, or null if it is created
+  ///                         elsewhere
+  /// @param role the role to grant access to the schema it creates
+  public StateMachine(
+      Function<List<String>, Mono<Void>> delayer,
+      List<? extends EntityModel> entityModels,
+      DatabaseClient client,
+      DataSource schemaDataSource,
+      String schemaName,
+      String role,
+      Clock clock,
+      Listener listener,
+      boolean withResolving
+  ) {
+    this(
+        delayer,
+        entityModels,
+        client,
+        schemaDataSource != null ? client.database().createSchema(schemaDataSource, schemaName, role) : null,
+        schemaName,
+        clock,
+        listener,
+        withResolving
+    );
+  }
+
+  /// A state machine on any database, whose schema is created elsewhere
+  ///
   /// @param delayer delays the storing of new events until the returned [Mono] completes, e.g. for tests to hold a
   ///                request at an event. It is given a key `<correlation id>-<event type id>` of each new event, so an
   ///                event is identified by its [EventType#id()], which stays the same when the event type is renamed.
@@ -136,20 +169,33 @@ public class StateMachine implements AutoCloseable {
   ///                     which nothing triggers events on, e.g. the entity models of an inbox (see
   ///                     `HttpInbox#entityModels()`). An [EntityModelGroup] is not one of them, since it has no entities
   ///                     of its own.
+  /// @param store the store of the database, whose storage is found by its [Store#database()]. It is closed with the
+  ///              state machine.
+  /// @param schemaName the name of the schema in the database
+  /// @param listener told of the changes stored, or null
+  /// @param withResolving whether to run the workers that fire delayed and conditional triggers
   /// @throws IllegalArgumentException if one of the entity models given is an [EntityModelGroup], or if two of the
   ///                                  models run have the same id
   /// @throws NullPointerException if one of the entity models given is null, e.g. a constant not created yet
-  /// @param client a client of the database, which is closed with the state machine
-  /// @param schemaDataSource a data source of the database to create the schema with, or null if it is created
-  ///                         elsewhere
   public StateMachine(
       Function<List<String>, Mono<Void>> delayer,
       List<? extends EntityModel> entityModels,
-      Database database,
-      DatabaseClient client,
-      DataSource schemaDataSource,
+      Store store,
       String schemaName,
-      String role,
+      Clock clock,
+      Listener listener,
+      boolean withResolving
+  ) {
+    this(delayer, entityModels, store, null, schemaName, clock, listener, withResolving);
+  }
+
+  /// @param createSchema creates the schema once the entity models are resolved, or null if it is created elsewhere
+  private StateMachine(
+      Function<List<String>, Mono<Void>> delayer,
+      List<? extends EntityModel> entityModels,
+      Store store,
+      Mono<Integer> createSchema,
+      String schemaName,
       Clock clock,
       Listener listener,
       boolean withResolving
@@ -161,14 +207,14 @@ public class StateMachine implements AutoCloseable {
     this.traversers = models.stream().collect(toMap(m -> m, m -> new Traverser(m.transitions())));
     this.eventTypesByEntityModel = resolved.eventTypesByEntityModel();
     this.delayer = delayer != null ? delayer : _ -> Mono.empty();
-    if (schemaDataSource != null) {
-      database.createSchema(schemaDataSource, schemaName, role)
+    if (createSchema != null) {
+      createSchema
           .timeout(Duration.ofSeconds(20), Mono.error(new RuntimeException("Schema creation timed out. Is the database running?")))
           .block();
     }
     this.clock = clock;
-    this.client = client;
-    this.storage = StorageProvider.storage(database, client, resolved, schemaName, clock);
+    this.store = store;
+    this.storage = StorageProvider.of(store).storage(store, resolved, schemaName, clock);
     this.listener = listener;
     if (withResolving) {
       Looper<ResolverStatus> resolverLooper = new Looper<>(
@@ -196,14 +242,14 @@ public class StateMachine implements AutoCloseable {
   }
 
   /// Stops the workers resolving delayed triggers and conditional triggers, waits for their ongoing work to complete, and closes
-  /// the client, and with it any connection pool. Requests should be stopped before this is called.
+  /// the store, and with it any connection pool. Requests should be stopped before this is called.
   @Override
   public void close() throws Exception {
     workers.forEach(Looper::stop);
     for (var worker : workers)
       if (!worker.awaitStopped(ofSeconds(30)))
         Debug.log("Gave up waiting for a worker to stop");
-    client.close();
+    store.close();
   }
 
   private EventLog emptyEventLog(EntityModel entityModel) {
@@ -1124,7 +1170,7 @@ public class StateMachine implements AutoCloseable {
                         .filter(c -> c.newEvent() == null || !(c.newEvent().type() instanceof BasicEventType.ReadOnly))
                         .toList()
                 )
-                .collectList()
+                .thenReturn(true)
                 // The listener is told before the events are emitted to the one who triggered them, which fails if
                 // that one has stopped listening, e.g. after the first event or a timeout
                 .doOnNext(_ -> {

@@ -4,21 +4,21 @@ import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.database.DatabaseClient;
 import com.github.thxmasj.backend.core.internal.ResolvedModels;
-import com.github.thxmasj.backend.core.internal.database.ConditionalTriggers;
-import com.github.thxmasj.backend.core.internal.database.DeleteDelayedTrigger;
-import com.github.thxmasj.backend.core.internal.database.EntitiesByIndex;
-import com.github.thxmasj.backend.core.internal.database.EventsByEntityId;
-import com.github.thxmasj.backend.core.internal.database.EventsByIdEvent;
-import com.github.thxmasj.backend.core.internal.database.EventsByLastIndexEvent;
-import com.github.thxmasj.backend.core.internal.database.NextDelayedTrigger;
 import com.github.thxmasj.backend.core.internal.database.Storage;
-import com.github.thxmasj.backend.core.internal.database.StorageProvider;
+import com.github.thxmasj.backend.core.internal.database.sql.SqlConditionalTriggers;
+import com.github.thxmasj.backend.core.internal.database.sql.SqlDeleteDelayedTrigger;
+import com.github.thxmasj.backend.core.internal.database.sql.SqlEntitiesByIndex;
+import com.github.thxmasj.backend.core.internal.database.sql.SqlEventsByEntityId;
+import com.github.thxmasj.backend.core.internal.database.sql.SqlEventsByIdEvent;
+import com.github.thxmasj.backend.core.internal.database.sql.SqlEventsByLastIndexEvent;
+import com.github.thxmasj.backend.core.internal.database.sql.SqlNextDelayedTrigger;
+import com.github.thxmasj.backend.core.internal.database.sql.SqlStorageProvider;
 import java.time.Clock;
 import java.util.List;
 import java.util.Map;
 
 /// The storage of PostgreSQL, also for the modules of its other drivers
-public class PgsqlStorage implements StorageProvider {
+public class PgsqlStorage extends SqlStorageProvider {
 
   @Override
   public String database() {
@@ -26,7 +26,7 @@ public class PgsqlStorage implements StorageProvider {
   }
 
   @Override
-  public Storage storage(
+  protected Storage storage(
       DatabaseClient client,
       ResolvedModels models,
       String schemaName,
@@ -36,13 +36,13 @@ public class PgsqlStorage implements StorageProvider {
     Map<EntityModel, List<EventType<?, ?>>> eventTypesByEntityModel = models.eventTypesByEntityModel();
     return new Storage(
         new ChangeState(client, schemaName, clock),
-        new EventsByEntityId(client, table -> Queries.eventsByEntityId(schemaName, table), entityModels, clock),
-        new EventsByIdEvent(client, Queries.eventsByIdEvent(schemaName), eventTypesByEntityModel, clock),
-        new EventsByLastIndexEvent(client, Queries.eventsByLastIndexEvent(schemaName), clock),
-        new EntitiesByIndex(client, Queries.entitiesByIndex(schemaName), eventTypesByEntityModel, clock),
-        new NextDelayedTrigger(client, Queries.nextDelayedTrigger(schemaName), models.eventTypes(), clock, entityModels),
-        new DeleteDelayedTrigger(client, Queries.deleteDelayedTrigger(schemaName)),
-        new ConditionalTriggers(client, Queries.conditionalTriggers(schemaName), eventTypesByEntityModel, clock)
+        new SqlEventsByEntityId(client, table -> Queries.eventsByEntityId(schemaName, table), entityModels, clock),
+        new SqlEventsByIdEvent(client, Queries.eventsByIdEvent(schemaName), eventTypesByEntityModel, clock),
+        new SqlEventsByLastIndexEvent(client, Queries.eventsByLastIndexEvent(schemaName), clock),
+        new SqlEntitiesByIndex(client, Queries.entitiesByIndex(schemaName), eventTypesByEntityModel, clock),
+        new SqlNextDelayedTrigger(client, Queries.nextDelayedTrigger(schemaName), models.eventTypes(), clock, entityModels),
+        new SqlDeleteDelayedTrigger(client, Queries.deleteDelayedTrigger(schemaName)),
+        new SqlConditionalTriggers(client, Queries.conditionalTriggers(schemaName), eventTypesByEntityModel, clock)
     );
   }
 }

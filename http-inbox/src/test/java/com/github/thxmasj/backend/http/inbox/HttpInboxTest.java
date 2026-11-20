@@ -889,7 +889,7 @@ public class HttpInboxTest {
   @Test
   public void listenerOfAStateMachineWithoutAnInboxIsRejected() throws Exception {
     // With a database client of its own, which closing it closes
-    try (var withoutInbox = new StateMachine(_ -> Mono.empty(), List.of(Chime), Init.database(), Init.newClient(),
+    try (var withoutInbox = new StateMachine(_ -> Mono.empty(), List.of(Chime), Init.newClient(),
         Init.migrationDataSource(), UUID.randomUUID().toString(), "Test", Clock.systemUTC(), null, false)) {
       assertThatThrownBy(() -> new HttpInboxListener(withoutInbox, inbox))
           .isInstanceOf(IllegalArgumentException.class)

@@ -37,15 +37,17 @@ import reactor.core.publisher.Mono;
 /// the client of the JDBC driver.
 class PgsqlVertxClient implements DatabaseClient {
 
+  private final PgsqlVertxDatabase database;
   private final Vertx vertx;
   private final Pool pool;
 
-  public PgsqlVertxClient(Vertx vertx, Pool pool) {
+  PgsqlVertxClient(PgsqlVertxDatabase database, Vertx vertx, Pool pool) {
+    this.database = database;
     this.vertx = vertx;
     this.pool = pool;
   }
 
-  public static PgsqlVertxClient of(Config config) {
+  static PgsqlVertxClient of(PgsqlVertxDatabase database, Config config) {
     config.requireSqlPassword("pgsql-vertx");
     Vertx vertx = Vertx.vertx();
     var options = new PgConnectOptions()
@@ -67,7 +69,12 @@ class PgsqlVertxClient implements DatabaseClient {
         .connectingTo(options)
         .using(vertx)
         .build();
-    return new PgsqlVertxClient(vertx, pool);
+    return new PgsqlVertxClient(database, vertx, pool);
+  }
+
+  @Override
+  public PgsqlVertxDatabase database() {
+    return database;
   }
 
   @Override

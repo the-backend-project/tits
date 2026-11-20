@@ -4,8 +4,8 @@ import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.JsonLinesListener;
 import com.github.thxmasj.backend.core.StateMachine;
 import com.github.thxmasj.backend.core.database.DataSourceBuilder;
-import com.github.thxmasj.backend.core.database.Database;
 import com.github.thxmasj.backend.core.database.DatabaseClient;
+import com.github.thxmasj.backend.core.database.SqlDatabase;
 import com.github.thxmasj.backend.http.inbox.HttpInboxListener;
 import java.time.Clock;
 import java.time.Duration;
@@ -90,7 +90,7 @@ public final class BackofficeApp {
         StateMachine stateMachine;
         try {
           Config config = Config.fromEnvironment(env, defaultApplicationSchema, true);
-          DataSource dataSource = new DataSourceBuilder(Database.named(config.database()), config.databaseConfig()).buildPooled();
+          DataSource dataSource = new DataSourceBuilder(SqlDatabase.named(config.database()), config.databaseConfig()).buildPooled();
           Backoffice backoffice = backoffice(service, config, dataSource, applicationModels);
           stateMachine = stateMachine(config, dataSource, backoffice);
           server = serve(config, stateMachine, backoffice);
@@ -131,7 +131,7 @@ public final class BackofficeApp {
   public static void migrate(Config config) {
     if (config.role() == null)
       throw new IllegalArgumentException("Environment variable DATABASE_ROLE is required for migration");
-    Database database = Database.named(config.database());
+    SqlDatabase database = SqlDatabase.named(config.database());
     DataSource dataSource = new DataSourceBuilder(database, config.databaseConfig()).build();
     database.createSchema(dataSource, config.schema(), config.role())
         .then(database.grantRead(dataSource, config.applicationSchema(), config.role()))
@@ -146,7 +146,7 @@ public final class BackofficeApp {
       DataSource dataSource,
       List<? extends EntityModel> applicationModels
   ) {
-    return new Backoffice(service, config.backoffice(), Database.of(dataSource).client(dataSource), config.applicationSchema(), applicationModels);
+    return new Backoffice(service, config.backoffice(), SqlDatabase.of(dataSource).client(dataSource), config.applicationSchema(), applicationModels);
   }
 
   /// The backoffice's own state machine, of the model of the backoffice, in the backoffice's schema

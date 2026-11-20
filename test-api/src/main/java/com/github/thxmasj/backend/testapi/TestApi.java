@@ -1,34 +1,30 @@
 package com.github.thxmasj.backend.testapi;
 
-
+import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.Event;
 import com.github.thxmasj.backend.core.EventLog;
 import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.GroupedDataType;
-import com.github.thxmasj.backend.core.IdEntityModel;
-import com.github.thxmasj.backend.core.IndexEntityModel;
-import com.github.thxmasj.backend.core.database.Database;
-import com.github.thxmasj.backend.core.database.DatabaseClient;
+import com.github.thxmasj.backend.core.database.SqlDatabase;
+import com.github.thxmasj.backend.core.database.Store;
 import com.github.thxmasj.backend.core.database.UnknownEntity;
 import com.github.thxmasj.backend.core.internal.DelayedEvent;
-import com.github.thxmasj.backend.core.internal.database.ChangeState;
 import com.github.thxmasj.backend.core.internal.ResolvedModels;
+import com.github.thxmasj.backend.core.internal.database.ChangeState;
 import com.github.thxmasj.backend.core.internal.database.ChangeState.Change;
 import com.github.thxmasj.backend.core.internal.database.EntitiesByIndex;
 import com.github.thxmasj.backend.core.internal.database.EventsByEntityId;
 import com.github.thxmasj.backend.core.internal.database.EventsByIdEvent;
 import com.github.thxmasj.backend.core.internal.database.EventsByLastIndexEvent;
-import com.github.thxmasj.backend.core.internal.database.Mappers;
 import com.github.thxmasj.backend.core.internal.database.Storage;
 import com.github.thxmasj.backend.core.internal.database.StorageProvider;
+import com.github.thxmasj.backend.core.internal.database.TestStorage;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZonedDateTime;
-import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
-import java.util.function.Function;
 import javax.sql.DataSource;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -41,20 +37,16 @@ import reactor.core.publisher.Mono;
 /// meant for putting entities in a specific state before a test. It is therefore not to be used in production code.
 public class TestApi {
 
-  private final DatabaseClient client;
-  private final String schema;
   private final Clock clock;
   private final ResolvedModels models;
-  private final Function<UUID, EventType<?, ?>> eventTypeMapper;
   private final EventsByEntityId eventsByEntityId;
   private final EventsByIdEvent eventsByIdEvent;
   private final EventsByLastIndexEvent eventsByLastIndexEvent;
   private final EntitiesByIndex entitiesByIndex;
   private final ChangeState changeState;
-  /// Whether a delayed trigger is still pending, i.e. its event number follows the entity's last event
-  private final String pending;
+  private final TestStorage testStorage;
 
-  /// The database is the one behind the data source (see [Database#of(DataSource)])
+  /// The database is the one behind the data source (see [SqlDatabase#of(DataSource)])
   ///
   /// @param entityModels the entity models given to the state machine, which with those their transitions trigger
   ///                     events on give the entity models and event types
@@ -64,47 +56,37 @@ public class TestApi {
       List<? extends EntityModel> entityModels,
       Clock clock
   ) {
-    Database database = Database.of(dataSource);
-    this(database, database.client(dataSource), schemaName, entityModels, clock);
+    this(SqlDatabase.of(dataSource).client(dataSource), schemaName, entityModels, clock);
   }
 
-  /// @param client a client of the database
+  /// @param store a store of the database, e.g. the one of the state machine, whose storage is found by its
+  ///              [Store#database()]
   /// @param entityModels the entity models given to the state machine, which with those their transitions trigger
   ///                     events on give the entity models and event types
   public TestApi(
-      Database database,
-      DatabaseClient client,
+      Store store,
       String schemaName,
       List<? extends EntityModel> entityModels,
       Clock clock
   ) {
-    this.client = client;
-    this.schema = schemaName;
     this.clock = clock;
     ResolvedModels models = ResolvedModels.of(entityModels);
     this.models = models;
-    this.eventTypeMapper = Mappers.eventTypeMapper(models.eventTypes());
-    Storage storage = StorageProvider.storage(database, client, models, schemaName, clock);
+    StorageProvider provider = StorageProvider.of(store);
+    Storage storage = provider.storage(store, models, schemaName, clock);
     this.eventsByEntityId = storage.eventsByEntityId();
     this.eventsByIdEvent = storage.eventsByIdEvent();
     this.eventsByLastIndexEvent = storage.eventsByLastIndexEvent();
     this.entitiesByIndex = storage.entitiesByIndex();
     this.changeState = storage.changeState();
-    // The queries of the test API quote identifiers and use OFFSET/FETCH, so that they work in both SQL Server and
-    // PostgreSQL
-    this.pending = "EventNumber=(SELECT COALESCE(MAX(EventNumber), 0) + 1 FROM \"{schema}\".\"Event\" WHERE EntityId=:entityId)";
+    this.testStorage = provider.testStorage(store, models, schemaName, clock);
   }
 
   /// The event log of an entity, whose entity model is the one it was created with. Completes empty if there is no such
   /// entity. Id and index entities are not found this way, as they have no entity model of their own stored; use
   /// [#eventLog(EntityModel, UUID)] for those.
   public Mono<EventLog> eventLog(UUID entityId) {
-    return client.sql("SELECT EntityModelId FROM \"{schema}\".\"Entity\" WHERE EntityId=:entityId".replace("{schema}", schema))
-        .name("TestApi.EntityModel")
-        .bind("entityId", entityId)
-        .map(row -> row.get("EntityModelId", UUID.class))
-        .one()
-        .flatMap(modelId -> eventLog(entityModel(modelId), entityId));
+    return testStorage.entityModel(entityId).flatMap(entityModel -> eventLog(entityModel, entityId));
   }
 
   /// The event log of an entity of an entity model, including id and index entities. Completes empty if the entity has
@@ -123,19 +105,7 @@ public class TestApi {
 
   /// The last id of a type of an entity. Completes empty if the entity has no such id.
   public <T> Mono<T> id(UUID entityId, EventType<?, T> idType) {
-    return client.sql(
-            """
-            SELECT Data FROM "{schema}"."IdEvent"
-            WHERE EntityId=:entityId AND Type=:type
-            ORDER BY EventNumber DESC
-            OFFSET 0 ROWS FETCH NEXT 1 ROWS ONLY
-            """.replace("{schema}", schema)
-        )
-        .name("TestApi.Id")
-        .bind("entityId", entityId)
-        .bind("type", idType.id())
-        .map(row -> idType.outputDataType().unmarshal(row.get("Data", byte[].class)))
-        .one();
+    return testStorage.lastId(entityId, idType).map(data -> idType.outputDataType().unmarshal(data));
   }
 
   /// The event logs of the entities indexed by a key, in the order of their entity ids
@@ -175,24 +145,15 @@ public class TestApi {
   /// The event the entity is waiting for. Completes empty if there is none, also if the entity has had another event
   /// since the event was scheduled, as it will then never be triggered.
   public Mono<ScheduledEvent> delayedTrigger(UUID entityId) {
-    return client.sql(
-            """
-            SELECT EntityModelId, EventNumber, Type, Deadline, Attempt
-            FROM "{schema}"."DelayedTrigger"
-            WHERE EntityId=:entityId AND {pending}
-            """.replace("{pending}", pending).replace("{schema}", schema)
-        )
-        .name("TestApi.DelayedTrigger")
-        .bind("entityId", entityId)
-        .map(row -> new ScheduledEvent(
+    return testStorage.delayedTrigger(entityId)
+        .map(trigger -> new ScheduledEvent(
             entityId,
-            entityModel(row.get("EntityModelId", UUID.class)),
-            row.get("EventNumber", Integer.class),
-            eventType(row.get("Type", UUID.class)),
-            row.get("Deadline", LocalDateTime.class),
-            row.get("Attempt", Integer.class)
-        ))
-        .one();
+            trigger.entityModel(),
+            trigger.eventNumber(),
+            trigger.type(),
+            trigger.deadline(),
+            trigger.attempt()
+        ));
   }
 
   /// An event an entity is waiting for, triggered when the entities indexed by the key with the reference type all have
@@ -214,31 +175,18 @@ public class TestApi {
 
   /// The events the entity is waiting for on conditions, in the order they were created
   public Flux<PendingConditionalTrigger> conditionalTriggers(UUID entityId) {
-    return client.sql(
-            """
-            SELECT Id, EntityModelId, Type, LastTypes, ReferenceType, IndexKey, TriggerEntityId, TriggerEventNumber
-            FROM "{schema}"."ConditionalTrigger"
-            WHERE EntityId=:entityId
-            ORDER BY Timestamp, Id
-            """.replace("{schema}", schema)
-        )
-        .name("TestApi.ConditionalTriggers")
-        .bind("entityId", entityId)
-        .map(row -> new PendingConditionalTrigger(
-            row.get("Id", UUID.class),
+    return testStorage.conditionalTriggers(entityId)
+        .map(trigger -> new PendingConditionalTrigger(
+            trigger.id(),
             entityId,
-            entityModel(row.get("EntityModelId", UUID.class)),
-            eventType(row.get("Type", UUID.class)),
-            Arrays.stream(row.get("LastTypes", String.class).split(","))
-                .map(UUID::fromString)
-                .<EventType<?, ?>>map(this::eventType)
-                .toList(),
-            eventType(row.get("ReferenceType", UUID.class)),
-            row.get("IndexKey", byte[].class),
-            row.get("TriggerEntityId", UUID.class),
-            row.get("TriggerEventNumber", Integer.class)
-        ))
-        .all();
+            trigger.entityModel(),
+            trigger.type(),
+            trigger.lastTypes(),
+            trigger.referenceType(),
+            DataType.uuid().marshal(trigger.indexKey()),
+            trigger.triggerEvent().entityId(),
+            trigger.triggerEvent().eventNumber()
+        ));
   }
 
   /// Appends an event to the event log of an entity without any transition, creating the entity if it has no events.
@@ -248,20 +196,7 @@ public class TestApi {
   public <T> Mono<Event<T>> append(EntityModel entityModel, UUID entityId, EventType<?, T> type, T data) {
     if (!models.runs(entityModel))
       return Mono.error(models.notRun(entityModel, "the test API"));
-    String table = switch (entityModel) {
-      case IdEntityModel _ -> "IdEvent";
-      case IndexEntityModel _ -> "IndexEvent";
-      default -> "Event";
-    };
-    return client.sql(
-            "SELECT COALESCE(MAX(EventNumber), 0) + 1 AS EventNumber FROM \"{schema}\".\"{table}\" WHERE EntityId=:entityId"
-                .replace("{schema}", schema)
-                .replace("{table}", table)
-        )
-        .name("TestApi.NextEventNumber")
-        .bind("entityId", entityId)
-        .map(row -> row.get("EventNumber", Integer.class))
-        .one()
+    return testStorage.nextEventNumber(entityModel, entityId)
         .map(eventNumber -> new Event<>(entityId, eventNumber, type, clock, data))
         .flatMap(event -> changeState.execute(ZonedDateTime.now(clock), UUID.randomUUID().toString(), List.of(change(entityModel, entityId, event)))
             .then(Mono.just(event)));
@@ -270,43 +205,17 @@ public class TestApi {
   /// Makes the event the entity is waiting for due now, so that it is triggered without waiting for its deadline.
   /// Completes with whether the entity was waiting for an event.
   public Mono<Boolean> expireDelayedTrigger(UUID entityId) {
-    return client.sql(
-            "UPDATE \"{schema}\".\"DelayedTrigger\" SET Deadline=:now WHERE EntityId=:entityId AND {pending}"
-                .replace("{pending}", pending)
-                .replace("{schema}", schema)
-        )
-        .name("TestApi.ExpireDelayedTrigger")
-        .bind("now", LocalDateTime.now(clock))
-        .bind("entityId", entityId)
-        .update()
-        .map(count -> count > 0);
+    return testStorage.expireDelayedTrigger(entityId);
   }
 
   /// Cancels the events all entities are waiting for, e.g. to start a test with no pending work from earlier tests.
   /// Completes with the number of events cancelled.
   public Mono<Integer> deleteDelayedTriggers() {
-    return client.sql("DELETE FROM \"{schema}\".\"DelayedTrigger\"".replace("{schema}", schema))
-        .name("TestApi.DeleteDelayedTriggers")
-        .update();
-  }
-
-  /// The entity model with the id, e.g. of an event log read
-  private EntityModel entityModel(UUID id) {
-    EntityModel entityModel = models.entityModelsById().get(id);
-    if (entityModel == null)
-      throw new IllegalStateException("Unknown entity model " + id + ". Is it in the entity models given to the test API?");
-    return entityModel;
+    return testStorage.deleteDelayedTriggers();
   }
 
   private List<EventType<?, ?>> eventTypes(EntityModel entityModel) {
     return models.eventTypesByEntityModel().get(entityModel);
-  }
-
-  private EventType<?, ?> eventType(UUID id) {
-    EventType<?, ?> eventType = eventTypeMapper.apply(id);
-    if (eventType == null)
-      throw new IllegalStateException("Unknown event type " + id + ". Is it in the entity models given to the test API?");
-    return eventType;
   }
 
   private static Change change(EntityModel entityModel, UUID entityId, Event<?> event) {

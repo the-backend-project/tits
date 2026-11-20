@@ -77,7 +77,7 @@ The backoffice uses the database of the application, with two schemas:
 
 Its migrate admin process, run as an administrator after the application's, creates its schema for its role,
 `DATABASE_ROLE`, as the application's creates the application's, and grants the role read access to the application's
-schema with `Database.grantRead`: `SELECT` on the schema on SQL Server, and `USAGE` on the schema and `SELECT` on its
+schema with `SqlDatabase.grantRead`: `SELECT` on the schema on SQL Server, and `USAGE` on the schema and `SELECT` on its
 tables on PostgreSQL. The backoffice logs in with a login of its own, a member of its role, so the application's login
 and role are not shared with it.
 
