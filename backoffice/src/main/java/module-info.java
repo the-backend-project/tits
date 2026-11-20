@@ -1,7 +1,5 @@
 module com.github.thxmasj.backend.backoffice {
   requires transitive com.github.thxmasj.backend.http.inbox;
-  // The code of a sign-in is redeemed by an outbox request
-  requires com.github.thxmasj.backend.http.outbox;
   requires com.nimbusds.jose.jwt;
   // The token requests are sent with the HTTP client of the JDK
   requires java.net.http;

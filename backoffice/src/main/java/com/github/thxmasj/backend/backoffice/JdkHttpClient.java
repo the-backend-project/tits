@@ -3,8 +3,6 @@ package com.github.thxmasj.backend.backoffice;
 import com.github.thxmasj.backend.http.HttpClient;
 import com.github.thxmasj.backend.http.HttpRequest;
 import com.github.thxmasj.backend.http.HttpResponse;
-import java.net.ConnectException;
-import java.net.http.HttpConnectTimeoutException;
 import java.net.http.HttpRequest.BodyPublishers;
 import java.net.http.HttpResponse.BodyHandlers;
 import java.time.Duration;
@@ -16,9 +14,6 @@ import reactor.core.publisher.Mono;
 /// The HTTP client the token requests of the sign-ins are sent with, by the HTTP client of the JDK, as the OpenID
 /// Connect provider is called otherwise. The client of reactor-netty can't be built into a native image with its TLS
 /// context, which holds a `SecureRandom` created when the image is built.
-///
-/// A connection which fails is told the outbox as a [ConnectException], as the outbox treats it as a request never
-/// sent.
 final class JdkHttpClient implements HttpClient {
 
   private static final Duration timeout = Duration.ofSeconds(10);
@@ -43,8 +38,7 @@ final class JdkHttpClient implements HttpClient {
           byte[] responseBody = response.body();
           return new HttpResponse<>(response.statusCode(), "", headers, responseBody != null && responseBody.length > 0 ? responseBody : null);
         })
-        .onErrorMap(CompletionException.class, e -> e.getCause() != null ? e.getCause() : e)
-        .onErrorMap(HttpConnectTimeoutException.class, e -> (ConnectException) new ConnectException(e.getMessage()).initCause(e));
+        .onErrorMap(CompletionException.class, e -> e.getCause() != null ? e.getCause() : e);
   }
 
 }
