@@ -112,7 +112,7 @@ public sealed interface HttpOutboxRequest<RQ> extends com.github.thxmasj.backend
   }
 
   static <T> HttpRequest<byte[]> toHttpRequest(HttpRequest<T> request, DataType<T> payloadType) {
-    return new HttpRequest<>(request.method(), request.uri(), request.headers(), payloadType.marshal(request.body()));
+    return request.map(payloadType::marshal);
   }
 
   /// The input of a batched request: the request message to dispatch, and the id of the batch which the request belongs

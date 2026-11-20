@@ -1,15 +1,19 @@
 package com.github.thxmasj.backend.core.message.http;
 
-import java.util.Arrays;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
 
 /// An HTTP response, with a body of type `T`: `byte[]` for the response as sent or received, or the payload it is
 /// parsed into or marshalled from, e.g. by [com.github.thxmasj.backend.core.http.HttpDataType]. A response without a
-/// body has a null body. Responses are equal if their status, headers and the content of their bodies are.
+/// body has a null body. Responses are equal if their status, their headers, with the names compared without case,
+/// and the content of their bodies are.
 public record HttpResponse<T>(int statusCode, String reasonPhrase, Map<String, String> headers, T body)
     implements HttpMessage<T> {
+
+  public HttpResponse {
+    Objects.requireNonNull(headers, "headers, which are Map.of() for none");
+  }
 
   public HttpResponse(int statusCode, String reasonPhrase) {
     this(statusCode, reasonPhrase, Map.of());
@@ -17,10 +21,6 @@ public record HttpResponse<T>(int statusCode, String reasonPhrase, Map<String, S
 
   public HttpResponse(int statusCode, String reasonPhrase, Map<String, String> headers) {
     this(statusCode, reasonPhrase, headers, null);
-  }
-
-  public HttpResponse(int statusCode, String reasonPhrase, T body) {
-    this(statusCode, reasonPhrase, Map.of(), body);
   }
 
   public static HttpResponse<Void> create(int statusCode, String reasonPhrase) {
@@ -58,13 +58,13 @@ public record HttpResponse<T>(int statusCode, String reasonPhrase, Map<String, S
     return o instanceof HttpResponse<?> that
         && statusCode == that.statusCode
         && Objects.equals(reasonPhrase, that.reasonPhrase)
-        && Objects.equals(headers, that.headers)
-        && Objects.deepEquals(body, that.body);
+        && HttpMessage.headersEqual(headers, that.headers)
+        && HttpMessage.bodiesEqual(body, that.body);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(statusCode, reasonPhrase, headers, Arrays.deepHashCode(new Object[] {body}));
+    return Objects.hash(statusCode, reasonPhrase, HttpMessage.headersHashCode(headers), HttpMessage.bodyHashCode(body));
   }
 
   @Override

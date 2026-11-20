@@ -1,6 +1,7 @@
 package com.github.thxmasj.backend.core.http;
 
 import com.github.thxmasj.backend.core.DataType;
+import com.github.thxmasj.backend.core.message.http.HttpMessage;
 import com.github.thxmasj.backend.core.message.http.HttpMessageParser;
 import com.github.thxmasj.backend.core.message.http.HttpRequest;
 import com.github.thxmasj.backend.core.message.http.HttpResponse;
@@ -22,7 +23,7 @@ public class HttpDataType {
 
       @Override
       public byte[] marshal(HttpRequest<byte[]> request) {
-        return request.toBytes();
+        return HttpMessage.toBytes(request);
       }
     };
   }
@@ -45,7 +46,7 @@ public class HttpDataType {
 
       @Override
       public byte[] marshal(HttpResponse<byte[]> response) {
-        return response.toBytes();
+        return HttpMessage.toBytes(response);
       }
     };
   }
@@ -69,14 +70,12 @@ public class HttpDataType {
 
     @Override
     public HttpRequest<T> unmarshal(byte[] value) {
-      HttpRequest<byte[]> request = HttpMessageParser.parseRequest(value);
-      return new HttpRequest<>(request.method(), request.uri(), request.headers(), payloadType.unmarshal(request.body()));
+      return HttpMessageParser.parseRequest(value).map(payloadType::unmarshal);
     }
 
     @Override
     public byte[] marshal(HttpRequest<T> request) {
-      HttpRequest<byte[]> r = new HttpRequest<>(request.method(), request.uri(), request.headers(), payloadType.marshal(request.body()));
-      return r.toBytes();
+      return HttpMessage.toBytes(request.map(payloadType::marshal));
     }
 
     @Override
@@ -107,14 +106,12 @@ public class HttpDataType {
 
     @Override
     public HttpResponse<T> unmarshal(byte[] value) {
-      HttpResponse<byte[]> response = HttpMessageParser.parseResponse(value);
-      return new HttpResponse<>(response.statusCode(), response.reasonPhrase(), response.headers(), payloadType.unmarshal(response.body()));
+      return HttpMessageParser.parseResponse(value).map(payloadType::unmarshal);
     }
 
     @Override
     public byte[] marshal(HttpResponse<T> response) {
-      HttpResponse<byte[]> r = new HttpResponse<>(response.statusCode(), response.reasonPhrase(), response.headers(), payloadType.marshal(response.body()));
-      return r.toBytes();
+      return HttpMessage.toBytes(response.map(payloadType::marshal));
     }
 
     @Override

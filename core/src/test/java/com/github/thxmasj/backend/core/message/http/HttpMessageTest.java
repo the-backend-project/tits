@@ -21,7 +21,7 @@ public class HttpMessageTest {
         Map.of("Header1", "value1", "Header2", "value2"),
         originalBody
     );
-    assertArrayEquals(originalBody, HttpMessageParser.parseRequest(original.toBytes()).body());
+    assertArrayEquals(originalBody, HttpMessageParser.parseRequest(HttpMessage.toBytes(original)).body());
   }
 
   /// Raw messages are equal by the content of their bodies, as the bytes of two messages read are different arrays
@@ -33,7 +33,7 @@ public class HttpMessageTest {
     assertEquals(request, same);
     assertEquals(request.hashCode(), same.hashCode());
     assertNotEquals(request, other);
-    assertEquals(new HttpResponse<>(200, "OK", "done".getBytes()), new HttpResponse<>(200, "OK", "done".getBytes()));
+    assertEquals(HttpResponse.create(200, "OK", "done".getBytes()), HttpResponse.create(200, "OK", "done".getBytes()));
   }
 
   @Test
@@ -44,11 +44,37 @@ public class HttpMessageTest {
     assertEquals("/orders/1", typed.headerValue("location"));
   }
 
-  /// A payload which isn't marshalled has no bytes to send
+  /// A message with a payload is shown with the payload as text, as it has no bytes to send until it is marshalled
   @Test
-  public void messageWithAPayloadHasNoBytes() {
+  public void messageWithAPayloadIsShownWithItsPayload() {
     var typed = HttpRequest.create(Method.POST, URI.create("/orders"), 42);
-    assertThrows(IllegalStateException.class, typed::toBytes);
     assertEquals("POST /orders\n\n42", typed.toString());
+    assertEquals("POST /orders\n\n42", new String(HttpMessage.toBytes(typed.map(n -> n.toString().getBytes()))));
+  }
+
+  /// Header names are compared without case, as in HTTP, e.g. a stored request, whose headers are parsed into a map
+  /// without case, with a retry of it as received
+  @Test
+  public void headerNamesAreComparedWithoutCase() {
+    var received = new HttpRequest<>(Method.PUT, URI.create("/orders/1"), Map.of("content-type", "text/plain"), "order".getBytes());
+    var stored = HttpMessageParser.parseRequest(HttpMessage.toBytes(
+        new HttpRequest<>(Method.PUT, URI.create("/orders/1"), Map.of("Content-Type", "text/plain"), "order".getBytes())
+    ));
+    assertEquals(received, stored);
+    assertEquals(stored, received);
+    assertEquals(received.hashCode(), stored.hashCode());
+    assertNotEquals(received, new HttpRequest<>(Method.PUT, URI.create("/orders/1"), Map.of("content-type", "text/html"), "order".getBytes()));
+  }
+
+  /// The URIs of requests are compared as written, as different escapes may be different requests to a server
+  @Test
+  public void urisAreComparedAsWritten() {
+    assertNotEquals(new HttpRequest<>(Method.GET, URI.create("/orders/a%2fb")), new HttpRequest<>(Method.GET, URI.create("/orders/a%2Fb")));
+  }
+
+  @Test
+  public void messageWithoutHeadersHasAnEmptyMap() {
+    assertThrows(NullPointerException.class, () -> HttpResponse.create(204, "No Content", null));
+    assertThrows(NullPointerException.class, () -> new HttpRequest<>(Method.GET, URI.create("/"), null));
   }
 }
