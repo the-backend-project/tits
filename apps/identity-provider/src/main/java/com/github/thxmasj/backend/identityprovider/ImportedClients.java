@@ -19,9 +19,9 @@ import tools.jackson.databind.JsonNode;
 /// Clients declared in the configuration with the BCrypt hashes of their secrets, e.g. those of Spring Security's
 /// BCryptPasswordEncoder, so the clients of another identity provider keep their secrets when moved here.
 ///
-/// The BCrypt hashes are kept by the [Edge] and never enter the event log. An imported client is registered with the
-/// SHA-256 hash of its BCrypt hash as its secret hash, which the edge passes on for a secret that matches the BCrypt
-/// hash. A secret which does not match gets a secret hash which can't match any, so presenting the BCrypt hash itself
+/// The BCrypt hashes are kept by the [Endpoints] and never enter the event log. An imported client is registered with
+/// the SHA-256 hash of its BCrypt hash as its secret hash, which the token endpoint passes on for a secret that matches
+/// the BCrypt hash. A secret which does not match gets a secret hash which can't match any, so presenting the BCrypt hash itself
 /// as the secret does not authenticate.
 final class ImportedClients {
 

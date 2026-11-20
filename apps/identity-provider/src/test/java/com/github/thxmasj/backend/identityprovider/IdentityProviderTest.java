@@ -106,13 +106,9 @@ public class IdentityProviderTest {
 
   @BeforeAll
   public static void setUp() throws Exception {
-    inbox = Inbox.inbox(tokenLifetime);
-    stateMachine = Init.stateMachine(schema, inbox.entityModels());
-    IdentityProvider.bootstrap(stateMachine, inbox, new BootstrapClient(adminId, adminSecret));
     partnerHash = new BCryptPasswordEncoder().encode(partnerSecret);
     assertThat(partnerHash).startsWith("$2a$10$");
     importedClients = importedClients(partnerHash);
-    IdentityProvider.importClients(stateMachine, inbox, importedClients);
     upstream = new UpstreamStub();
     int port;
     try (var socket = new ServerSocket(0)) {
@@ -120,7 +116,16 @@ public class IdentityProviderTest {
     }
     issuer = URI.create("http://localhost:" + port);
     var upstreamConfig = new Config.Upstream(URI.create(upstream.issuer()), UpstreamStub.clientId, UpstreamStub.clientSecret, "openid email profile");
-    server = IdentityProvider.serve(stateMachine, inbox, new Keys(Keys.generate(), issuer, null, Clock.systemUTC()), IdentityProvider.upstream(upstreamConfig, issuer), port, importedClients);
+    inbox = Inbox.inbox(
+        tokenLifetime,
+        new Keys(Keys.generate(), issuer, null, Clock.systemUTC()),
+        IdentityProvider.upstream(upstreamConfig, issuer),
+        importedClients.stream().collect(java.util.stream.Collectors.toMap(ImportedClient::clientId, ImportedClient::secretHash))
+    );
+    stateMachine = Init.stateMachine(schema, inbox.entityModels());
+    IdentityProvider.bootstrap(stateMachine, inbox, new BootstrapClient(adminId, adminSecret));
+    IdentityProvider.importClients(stateMachine, inbox, importedClients);
+    server = IdentityProvider.serve(stateMachine, inbox, port);
     adminToken = json(token(adminId, adminSecret, "grant_type=client_credentials")).get("access_token").asString();
   }
 
@@ -324,6 +329,26 @@ public class IdentityProviderTest {
   }
 
   @Test
+  public void requestsAnsweredAtOnceAreNotStored() throws Exception {
+    int events = eventLog().split("\n").length;
+
+    assertThat(get("/health").statusCode()).isEqualTo(200);
+    assertThat(get("/.well-known/jwks.json").statusCode()).isEqualTo(200);
+    assertThat(get("/unknown").statusCode()).isEqualTo(404);
+    assertThat(get("/token").statusCode()).isEqualTo(405);
+    assertThat(post("/token", Map.of("Content-Type", "application/x-www-form-urlencoded"), "grant_type=client_credentials").statusCode()).isEqualTo(401);
+    assertThat(post("/clients", Map.of("Content-Type", "application/json"), "{}").statusCode()).isEqualTo(401);
+
+    assertThat(eventLog().split("\n").length).isEqualTo(events);
+  }
+
+  @Test
+  public void theKeyOfTheRegistrationsOfTheIdentityProviderItselfIsMasked() throws Exception {
+    // The bootstrap client and the imported clients are registered with it
+    assertThat(eventLog()).contains("X-Idp-Internal:***");
+  }
+
+  @Test
   public void whenTokenRequestedByAccessTokenSupplierThenItGetsOne() throws Exception {
     String secret = register("supplied", "a b");
     var httpClient = new NettyHttpClient(new NettyHttpClientBuilder().responseTimeout(Duration.ofSeconds(10)).build());
@@ -406,7 +431,7 @@ public class IdentityProviderTest {
 
   @Test
   public void whenRegisteringWithoutTokenThenUnauthorized() throws Exception {
-    var response = post("/clients", Map.of("Content-Type", "application/json", Inbox.RegisteredByHeader, adminId), "{\"client_id\":\"x\",\"scope\":\"a\"}");
+    var response = post("/clients", Map.of("Content-Type", "application/json", Inbox.InternalHeader, "a-guess", Inbox.RegisteredByHeader, adminId, Inbox.SecretHashHeader, Secrets.hash("forged")), "{\"client_id\":\"x\",\"scope\":\"a\"}");
     assertThat(response.statusCode()).isEqualTo(401);
     assertThat(response.headers().firstValue("WWW-Authenticate")).hasValueSatisfying(v -> assertThat(v).startsWith("Bearer"));
   }
