@@ -7,7 +7,7 @@ import java.util.UUID;
 /// The ids are time-ordered UUIDs (version 7, RFC 9562): they start with the time they are created at, in
 /// milliseconds, followed by random bits. New rows are then inserted at the end of the B-tree indexes their ids lead,
 /// instead of at random places in them, which keeps the pages of the indexes full and the recently used ones in memory.
-/// See [identifiers](https://the-backend-project.github.io/tits/identifiers/).
+/// See [identifiers](https://the-backend-project.github.io/backend/identifiers/).
 final class Identifiers {
 
   private Identifiers() {}

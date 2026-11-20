@@ -172,4 +172,4 @@ The tests run on SQL Server by default. To run them on PostgreSQL, run the build
 `-pl '!apps/hello-world,!apps/hello-world-backoffice,!doc-diagrams'` and `-Ddatabase=pgsql-jdbc`,
 `-Ddatabase=pgsql-r2dbc` or `-Ddatabase=pgsql-vertx`. The tests of the core module that need a database are run by the
 module of the database, and the other modules' tests use it too. See the
-[contributing guide](https://github.com/the-backend-project/tits/blob/main/CONTRIBUTING.md#building).
+[contributing guide](https://github.com/the-backend-project/backend/blob/main/CONTRIBUTING.md#building).

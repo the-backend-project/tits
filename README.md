@@ -12,7 +12,7 @@ A transition says which event takes an entity from which state to which, and whi
 entities. Below on the left are the transitions of a client registration in the [identity provider](docs/identity-provider.md),
 abridged from [Clients.java](apps/identity-provider/src/main/java/com/github/thxmasj/backend/identityprovider/Clients.java).
 On the right is the state diagram the [diagram module](docs/diagrams.md) draws from the same transitions, with no
-separate description to keep in sync. Where it is [published](https://the-backend-project.github.io/tits/identity-provider/),
+separate description to keep in sync. Where it is [published](https://the-backend-project.github.io/backend/identity-provider/),
 it shows the data and triggers of an event when the mouse hovers over its name.
 
 <table>
@@ -51,7 +51,7 @@ var transitions = Map.of(
 </td>
 <td>
 
-<img width="444" alt="State diagram of a client registration: a registration request is accepted, or rejected if the client id is taken" src="https://the-backend-project.github.io/tits/images/com.github.thxmasj.backend.identityprovider.ClientRegistration.svg">
+<img width="444" alt="State diagram of a client registration: a registration request is accepted, or rejected if the client id is taken" src="https://the-backend-project.github.io/backend/images/com.github.thxmasj.backend.identityprovider.ClientRegistration.svg">
 
 </td>
 </tr>
@@ -59,7 +59,7 @@ var transitions = Map.of(
 
 ## Documentation and apps
 
-Documentation is available at https://the-backend-project.github.io/tits/:
+Documentation is available at https://the-backend-project.github.io/backend/:
 
 * [Getting started](docs/getting-started.md): add the libraries, declare a model, run it and test it.
 * [Design principles](docs/principles.md): what the project optimises for, and why.

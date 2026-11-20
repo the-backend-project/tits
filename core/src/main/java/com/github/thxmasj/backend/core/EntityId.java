@@ -8,7 +8,7 @@ import java.util.UUID;
 /// transition is on, from [TransitionModelBuilder.TransitionContext#entityId()]. An entity is therefore never created
 /// with an id from elsewhere, e.g. a random UUID or one taken from a request, which would be inserted at a random place
 /// in the indexes the entity ids lead. Elsewhere entity ids are plain UUIDs. See
-/// [identifiers](https://the-backend-project.github.io/tits/identifiers/).
+/// [identifiers](https://the-backend-project.github.io/backend/identifiers/).
 public final class EntityId {
 
   private final UUID value;

@@ -63,7 +63,7 @@ backoffice serves the pages under `/backoffice`, its static files and `/health`.
 As every request and response is stored, the event log of the backoffice holds the cookies, the secret of each sign-in,
 the codes and token responses of the provider and the pages, and every request creates entities, also requests of
 someone who hasn't signed in. Keeping such data out of the event log is
-[#285](https://github.com/the-backend-project/tits/issues/285). Until then, give the backoffice's schema the
+[#285](https://github.com/the-backend-project/backend/issues/285). Until then, give the backoffice's schema the
 protection of its credentials, and keep the backoffice where only its users reach it.
 
 ## The database
@@ -149,7 +149,7 @@ docker build -f apps/identity-provider-backoffice/Dockerfile -t tits-identity-pr
 
 The [deploy](azure-functions.md) module doesn't yet deploy a backoffice to Azure Functions, as it creates a database
 for every application, while a backoffice uses the database of its application
-([#282](https://github.com/the-backend-project/tits/issues/282)).
+([#282](https://github.com/the-backend-project/backend/issues/282)).
 
 ## Configuration
 
@@ -189,11 +189,11 @@ organisation's accounts.
 ## Gaps
 
 - The backoffice only reads. Actions on entities, such as redispatching an outbox request, are left out
-  ([#281](https://github.com/the-backend-project/tits/issues/281)).
+  ([#281](https://github.com/the-backend-project/backend/issues/281)).
 - The backoffice shows the entities of the application, not its own sessions, which are in its own schema and in its
   [monitoring](monitoring.md) events.
 - Every request and response is stored, credentials and pages included, and every request creates entities
-  ([#285](https://github.com/the-backend-project/tits/issues/285)).
+  ([#285](https://github.com/the-backend-project/backend/issues/285)).
 - The current state of an entity is not shown, as it is computed by the transitions, not stored. Its last event tells
   it.
 - A `RequestRouting` entity has no reference to the inbox request it routed a request to, so the two aren't linked.

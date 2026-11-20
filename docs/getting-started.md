@@ -16,8 +16,8 @@ No release has been published to a Maven repository yet, so install the librarie
 repository first:
 
 ```shell
-git clone https://github.com/the-backend-project/tits.git
-cd tits
+git clone https://github.com/the-backend-project/backend.git
+cd backend
 mvn install -DskipTests -pl database-mssql,http-inbox -am
 ```
 

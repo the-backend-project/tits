@@ -239,7 +239,7 @@ Managed identities are Azure's. AWS and GCP have identities of their own, and ma
 identities log in to: Amazon RDS and Aurora, and Google Cloud SQL. Their tokens, too, are short-lived and sent as the
 password, so they fit the same approach: a small token source for each cloud, fetching tokens from the cloud's own
 credentials endpoint without its SDK, supplying the password for each new connection. That is
-[#186](https://github.com/the-backend-project/tits/issues/186). Azure Database for PostgreSQL takes Entra tokens, and
+[#186](https://github.com/the-backend-project/backend/issues/186). Azure Database for PostgreSQL takes Entra tokens, and
 could use `ManagedIdentityTokens` for another resource. The `deploy` module only deploys to Azure Functions.
 
 ## Configuration

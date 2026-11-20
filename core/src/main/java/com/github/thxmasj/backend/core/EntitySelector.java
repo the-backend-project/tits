@@ -15,7 +15,7 @@ import java.util.function.Function;
 ///
 /// A selector that may create an entity is given its id as an [EntityId], which can't be made from a UUID: the id is
 /// new and time-ordered, or the id of the entity a transition is on. An existing entity can be selected by any id. See
-/// [identifiers](https://the-backend-project.github.io/tits/identifiers/).
+/// [identifiers](https://the-backend-project.github.io/backend/identifiers/).
 public sealed class EntitySelector permits ById, ByIdFromSession, ByIdEvent, ByLastIndexed, ByLastReferencing {
 
   /// The existing entity with the id
