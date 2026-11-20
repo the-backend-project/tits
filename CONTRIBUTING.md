@@ -11,7 +11,7 @@ The project aims for stable, robust and long-lived systems, and it judges change
 
 ### Where to start
 
-* Issues labelled [good first issue](https://github.com/the-backend-project/tits/labels/good%20first%20issue) are
+* Issues labelled [good first issue](https://github.com/the-backend-project/backend/labels/good%20first%20issue) are
   small and self-contained. The Todo column of the [project board](https://github.com/orgs/the-backend-project/projects/1)
   lists what is planned next.
 * To learn the code, read [Getting started](docs/getting-started.md) and the [architecture](docs/architecture.md), and

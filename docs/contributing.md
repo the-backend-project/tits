@@ -2,13 +2,13 @@
 
 Issues and pull requests are welcome, from bug reports and new templates to more ways to deploy: other cloud
 providers than Azure, and other databases than SQL Server and PostgreSQL. The project is
-developed in the open on [GitHub](https://github.com/the-backend-project/tits), and the work in progress is tracked on
+developed in the open on [GitHub](https://github.com/the-backend-project/backend), and the work in progress is tracked on
 the [project board](https://github.com/orgs/the-backend-project/projects/1).
 
 ## Where to start
 
 * Pick an issue labelled
-  [good first issue](https://github.com/the-backend-project/tits/labels/good%20first%20issue), or one from the Todo
+  [good first issue](https://github.com/the-backend-project/backend/labels/good%20first%20issue), or one from the Todo
   column of the board.
 * Read [Getting started](getting-started.md) and the [architecture](architecture.md), then follow the hello world demo
   from `HelloWorld.main` into the core module.
@@ -18,19 +18,19 @@ the [project board](https://github.com/orgs/the-backend-project/projects/1).
 
 ## The contributing guide
 
-The [contributing guide](https://github.com/the-backend-project/tits/blob/main/CONTRIBUTING.md) in the repository
+The [contributing guide](https://github.com/the-backend-project/backend/blob/main/CONTRIBUTING.md) in the repository
 covers the rest:
 
-* [finding your way](https://github.com/the-backend-project/tits/blob/main/CONTRIBUTING.md#finding-your-way) in the
+* [finding your way](https://github.com/the-backend-project/backend/blob/main/CONTRIBUTING.md#finding-your-way) in the
   repository, module by module, and what a pull request needs,
-* [building and running the tests](https://github.com/the-backend-project/tits/blob/main/CONTRIBUTING.md#building)
+* [building and running the tests](https://github.com/the-backend-project/backend/blob/main/CONTRIBUTING.md#building)
   on SQL Server or PostgreSQL,
-* [pinning the checksums](https://github.com/the-backend-project/tits/blob/main/CONTRIBUTING.md#dependency-checksums)
+* [pinning the checksums](https://github.com/the-backend-project/backend/blob/main/CONTRIBUTING.md#dependency-checksums)
   of new dependencies,
-* [previewing this documentation](https://github.com/the-backend-project/tits/blob/main/CONTRIBUTING.md#documentation)
+* [previewing this documentation](https://github.com/the-backend-project/backend/blob/main/CONTRIBUTING.md#documentation)
   locally, and
-* [working on issues with an agentic workflow](https://github.com/the-backend-project/tits/blob/main/CONTRIBUTING.md#working-on-issues-with-a-coding-agent).
+* [working on issues with an agentic workflow](https://github.com/the-backend-project/backend/blob/main/CONTRIBUTING.md#working-on-issues-with-a-coding-agent).
 
 The conventions for code, documentation and Git are in
-[AGENTS.md](https://github.com/the-backend-project/tits/blob/main/AGENTS.md). Coding agents follow them, and so do
+[AGENTS.md](https://github.com/the-backend-project/backend/blob/main/AGENTS.md). Coding agents follow them, and so do
 human contributors.

@@ -209,7 +209,7 @@ The prices are those of Sweden Central in November 2026, from the
 
 The rules cost the same whether the application runs or not. The lines are what grows with the traffic, and nine out
 of ten are debug output, which can't be turned off yet
-([#216](https://github.com/the-backend-project/tits/issues/216)). As the traces are not sampled, all of it is
+([#216](https://github.com/the-backend-project/backend/issues/216)). As the traces are not sampled, all of it is
 collected, so keep an eye on the size of the logs of an application with more than a little traffic.
 
 ### Limits
@@ -217,7 +217,7 @@ collected, so keep an eye on the size of the logs of an application with more th
 * **The alerts are only as good as the severities.** An event of a transition with no severity is `Info`, and raises
   nothing.
 * **Only events are monitored**, and failed transitions and failures to process a delayed trigger. Other failures
-  raise no alert ([#216](https://github.com/the-backend-project/tits/issues/216)). A request failing outside a
+  raise no alert ([#216](https://github.com/the-backend-project/backend/issues/216)). A request failing outside a
   transition, e.g. as the database is unavailable, is answered with 500 by the HTTP inbox listener and is among the
   `requests` of Application Insights. A failure of the work in the background, other than a failed transition, is in
   the debug output at best: a conditional trigger failing to fire, or an action failing. The same goes for a delayed trigger
