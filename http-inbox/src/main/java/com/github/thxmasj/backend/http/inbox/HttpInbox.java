@@ -197,16 +197,17 @@ public interface HttpInbox {
       ProcessReferenced
   );
 
-  /// The inbox of the requests.
+  /// The inbox of the requests. It asks for no transitions, so that it may be a constant declared before the models
+  /// the requests trigger events on and what their transitions refer to.
   ///
-  /// Every inbox request is checked to take the responses its own processes may give. From the event of each process,
+  /// Every inbox request is checked to take the responses its own processes may give, when the entity models of the
+  /// inbox are first asked for, e.g. by the state machine. From the event of each process,
   /// the transitions taken on it in any state, with all the transitions they may choose, and the transitions of the
   /// events they trigger at once on other entities, in the same session, are followed. The event types they trigger on
   /// [#Request] must be [#RequestCompleted], [#InvalidRequestCompleted], [#FailedRequestCompleted] or one the request
   /// has a `response` for. Delayed and conditional triggers and actions, e.g. outbox requests, are not followed, as
   /// what they lead to is calculated later, so a response given that way is checked only when it is given.
   ///
-  /// @throws IllegalArgumentException if an inbox request doesn't take a response its processes may give
   static HttpInbox of(List<HttpInboxRequest<?>> requests) {
     return InboxModels.of(requests);
   }
@@ -220,6 +221,9 @@ public interface HttpInbox {
 
   /// The entity models of the inbox, [#requestRouting()], the inbox requests, [#MessageIds] and [#Index], to create the
   /// state machine with. It also runs the entity models of the application the inbox requests trigger events on.
+  ///
+  /// @throws IllegalArgumentException if an inbox request doesn't take a response its processes may give, which is
+  ///                                  checked the first time they are asked for (see [#of(List)])
   List<EntityModel> entityModels();
 
   /// Triggers a received request on a new entity of [#requestRouting()]

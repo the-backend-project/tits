@@ -26,7 +26,6 @@ import static com.github.thxmasj.backend.http.inbox.HttpInboxTest.States.On;
 import static com.github.thxmasj.backend.http.inbox.HttpInboxTest.States.Processing;
 import static com.github.thxmasj.backend.http.inbox.HttpInboxTest.States.Unreachable;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -864,11 +863,28 @@ public class HttpInboxTest {
     assertTrue(ProblemDetail.parse(other.body()).detail().startsWith("Light is on!"));
   }
 
-  /// Another inbox has a routing model of its own, with the id of the one the state machine runs, which it takes for
-  /// its own
+  /// Another inbox has a routing model of its own, with the id of the one the state machine runs, which may route to
+  /// other requests
   @Test
-  public void listenerOfAnotherInboxOfTheStateMachineIsAccepted() {
-    assertThatNoException().isThrownBy(() -> new HttpInboxListener(stateMachine, HttpInbox.of(requests)));
+  public void listenerOfAnotherInboxIsRejected() {
+    assertThatThrownBy(() -> new HttpInboxListener(stateMachine, HttpInbox.of(requests)))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("doesn't run the request routing of the inbox");
+  }
+
+  /// The inbox asks for no transitions until its entity models are asked for, so it may be a constant declared before
+  /// what the transitions refer to
+  @Test
+  public void inboxAsksForNoTransitionsWhenCreated() {
+    var notYet = EntityModel.of("NotYet", UUID.randomUUID(), () -> {
+      throw new IllegalStateException("Transitions asked for");
+    });
+    var request = HttpInboxRequest.matching(m -> m.requestLine().matches("PUT /not-yet")).noContent()
+        .process(BellRung, notYet, newEntity())
+        .build("NotYetRequest", UUID.randomUUID());
+    var inbox = HttpInbox.of(List.of(request));
+    assertThat(inbox.requests()).containsExactly(request);
+    assertThatThrownBy(inbox::entityModels).hasMessage("Transitions asked for");
   }
 
   @Test
@@ -1151,7 +1167,7 @@ public class HttpInboxTest {
   public void responseGivenByProcessMustBeTakenByTheRequest() {
     var bell = bell(false);
     var request = bellRequest(bell).build("BellRequest", UUID.randomUUID());
-    assertThatThrownBy(() -> HttpInbox.of(List.of(request)))
+    assertThatThrownBy(() -> HttpInbox.of(List.of(request)).entityModels())
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("The inbox request BellRequest doesn't take the response Rang, which Bell rung on Bell triggers on Request");
   }
@@ -1160,7 +1176,7 @@ public class HttpInboxTest {
   public void responseGivenByEntityModelTheProcessTriggersMustBeTakenByTheRequest() {
     var bell = bell(true);
     var request = bellRequest(bell).build("BellRequest", UUID.randomUUID());
-    assertThatThrownBy(() -> HttpInbox.of(List.of(request)))
+    assertThatThrownBy(() -> HttpInbox.of(List.of(request)).entityModels())
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("The inbox request BellRequest doesn't take the response Rang, which Chime rung on Chime triggers on Request");
   }

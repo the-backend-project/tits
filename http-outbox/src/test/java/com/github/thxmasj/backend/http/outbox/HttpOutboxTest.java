@@ -17,6 +17,8 @@ import static com.github.thxmasj.backend.http.outbox.EventTypes.TimeoutExpired;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.github.thxmasj.backend.core.BasicEventType;
@@ -1190,6 +1192,44 @@ public class HttpOutboxTest {
       return new ProcessModelWithDefaultMissingResponse(process, exchange);
     }
 
+  }
+
+
+  /// Dispatchers of an outbox request with the same rollback message creator share the copy of it with the creator,
+  /// which the state machine runs, while another creator makes another copy, with the same id
+  @Test
+  public void copyWithRollbackMessageCreatorIsMadeOncePerCreator() {
+    AtLeastOnce<Void> rollback = HttpOutboxRequest.atLeastOnce()
+        .requestPayloadType(DataType.none())
+        .responsePayloadType(DataType.none())
+        .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
+        .contentParser(_ -> valid(null))
+        .isAccepted(_ -> true)
+        .isFailureTransient(_ -> false)
+        .isRejectedByInvalidResponse(_ -> false)
+        .isFailureByInvalidResponseTransient(_ -> false)
+        .isAttemptAvailable(_ -> true)
+        .backoffAlgorithm(_ -> Duration.ofSeconds(1))
+        .build("Rollback", UUID.randomUUID());
+    AtMostOnce<Void, Void> request = HttpOutboxRequest.atMostOnce()
+        .requestPayloadType(DataType.none())
+        .responsePayloadType(DataType.none())
+        .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
+        .processModel(EntityModel.of("Process", UUID.randomUUID(), Map::of))
+        .contentParser(_ -> valid(null))
+        .isAccepted(_ -> true)
+        .isRejected(_ -> false)
+        .isRejectedByInvalidResponse(_ -> false)
+        .rollbackOnAcceptedModel(rollback)
+        .build("Request", UUID.randomUUID());
+    BiFunction<DispatchContext, Tuple2<Void, TypedHttpRequest<Void>>, Mono<TypedHttpRequest<Void>>> creator = (_, _) -> Mono.empty();
+    var first = AtMostOnceWithRollbackDispatcher.<Void, Void, Void, Void>of(request, _ -> null, creator);
+    var second = AtMostOnceWithRollbackDispatcher.<Void, Void, Void, Void>of(request, _ -> null, creator);
+    var other = AtMostOnceWithRollbackDispatcher.<Void, Void, Void, Void>of(request, _ -> null, (_, _) -> Mono.empty());
+
+    assertSame(first.outbox(), second.outbox());
+    assertNotSame(first.outbox(), other.outbox());
+    assertEquals(request.id(), other.outbox().id());
   }
 
 }

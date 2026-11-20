@@ -52,7 +52,7 @@ final class Graph {
     ResolvedModels models = ResolvedModels.of(entityModels);
     this.client = client;
     this.schema = schema;
-    this.entityModels = models.entityModels().stream().collect(toMap(EntityModel::id, identity()));
+    this.entityModels = models.entityModelsById();
     Map<UUID, EventType<?, ?>> eventTypesById = models.eventTypes().stream().collect(toMap(EventType::id, identity()));
     this.eventTypeMapper = eventTypesById::get;
     var eventTypesByModel = models.eventTypesByEntityModel();

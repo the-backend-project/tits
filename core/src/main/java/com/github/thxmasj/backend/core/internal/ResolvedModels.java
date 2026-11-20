@@ -8,7 +8,6 @@ import com.github.thxmasj.backend.core.EntityModelGroup;
 import com.github.thxmasj.backend.core.EventType;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 
 /// The entity models a state machine runs, with their event types, worked out once from the entity models given, for
@@ -30,17 +29,27 @@ public record ResolvedModels(
     List<EntityModel> resolved = EntityModels.resolve(entityModels);
     return new ResolvedModels(
         resolved,
-        resolved.stream().collect(toMap(EntityModel::id, identity())),
+        Map.copyOf(resolved.stream().collect(toMap(EntityModel::id, identity()))),
         Map.copyOf(EventTypes.eventTypesByEntityModel(resolved)),
         EventTypes.eventTypes(resolved)
     );
   }
 
-  /// The model run with the id of the given one, which may be another instance of it, e.g. of a model created from
-  /// configuration again by a test. Empty if no model run has the id, or the given one is a group, which isn't run.
-  public Optional<EntityModel> run(EntityModel entityModel) {
-    if (entityModel instanceof EntityModelGroup)
-      return Optional.empty();
-    return Optional.ofNullable(entityModelsById.get(entityModel.id()));
+  /// Whether the entity model is one of those run, the same instance. Another instance with its id isn't, as it may
+  /// differ, e.g. be created from other configuration.
+  public boolean runs(EntityModel entityModel) {
+    return !(entityModel instanceof EntityModelGroup) && entityModelsById.get(entityModel.id()) == entityModel;
+  }
+
+  /// The failure of using an entity model which isn't run, see [#runs(EntityModel)]
+  ///
+  /// @param runner what runs the models, e.g. "the state machine", for the message
+  public IllegalArgumentException notRun(EntityModel entityModel, String runner) {
+    EntityModel sameId = entityModelsById.get(entityModel.id());
+    return new IllegalArgumentException(sameId == null
+        ? "Entity model " + entityModel.name() + " with id " + entityModel.id() + " is not run by " + runner
+        : "Entity model " + entityModel.name() + " is another instance than the one with its id run by " + runner +
+            ", e.g. as it is created again from configuration. Use the one run, e.g. from the entityModels() of the " +
+            "state machine");
   }
 }

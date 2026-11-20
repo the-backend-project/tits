@@ -109,8 +109,9 @@ public class TestApi {
 
   /// The event log of an entity of an entity model, including id and index entities. Completes empty if the entity has
   /// no events.
-  public Mono<EventLog> eventLog(EntityModel model, UUID entityId) {
-    EntityModel entityModel = run(model);
+  public Mono<EventLog> eventLog(EntityModel entityModel, UUID entityId) {
+    if (!models.runs(entityModel))
+      return Mono.error(models.notRun(entityModel, "the test API"));
     return eventsByEntityId.execute(entityModel, eventTypes(entityModel), entityId)
         .onErrorResume(UnknownEntity.class, _ -> Mono.empty());
   }
@@ -148,8 +149,9 @@ public class TestApi {
   /// @param entityModel the entity model of the indexed entities
   /// @param indexType an event type whose output data type is a [GroupedDataType] with groups of type `G`
   @SuppressWarnings("unchecked")
-  public <G> Mono<EventLog> lastIndexed(EntityModel model, EventType<?, ?> indexType, G group) {
-    EntityModel entityModel = run(model);
+  public <G> Mono<EventLog> lastIndexed(EntityModel entityModel, EventType<?, ?> indexType, G group) {
+    if (!models.runs(entityModel))
+      return Mono.error(models.notRun(entityModel, "the test API"));
     if (!(indexType.outputDataType() instanceof GroupedDataType<?, ?> dataType))
       return Mono.error(new IllegalArgumentException("Data type of index event type " + indexType.name() + " is not grouped"));
     byte[] marshalledGroup = ((GroupedDataType<?, G>) dataType).marshalGroup(group);
@@ -243,8 +245,9 @@ public class TestApi {
   /// The event is stored as if a transition had accepted it, so the event the entity was waiting for is no longer
   /// triggered, but it triggers no other events and is not validated against the entity's state. For id and index entities the event
   /// is an id or index event, so an id must not be taken by another entity.
-  public <T> Mono<Event<T>> append(EntityModel model, UUID entityId, EventType<?, T> type, T data) {
-    EntityModel entityModel = run(model);
+  public <T> Mono<Event<T>> append(EntityModel entityModel, UUID entityId, EventType<?, T> type, T data) {
+    if (!models.runs(entityModel))
+      return Mono.error(models.notRun(entityModel, "the test API"));
     String table = switch (entityModel) {
       case IdEntityModel _ -> "IdEvent";
       case IndexEntityModel _ -> "IndexEvent";
@@ -293,16 +296,6 @@ public class TestApi {
     if (entityModel == null)
       throw new IllegalStateException("Unknown entity model " + id + ". Is it in the entity models given to the test API?");
     return entityModel;
-  }
-
-  /// The entity model run with the id of the given one, which may be another instance of it, e.g. of a model created
-  /// from configuration again by a test
-  ///
-  /// @throws IllegalArgumentException if no entity model run has the id
-  private EntityModel run(EntityModel entityModel) {
-    return models.run(entityModel).orElseThrow(() -> new IllegalArgumentException(
-        "Unknown entity model " + entityModel.name() + ". Is it in the entity models given to the test API?"
-    ));
   }
 
   private List<EventType<?, ?>> eventTypes(EntityModel entityModel) {

@@ -55,8 +55,7 @@ public interface Greetings {
       .build("GreetingRequest", UUID.fromString("5e3d4a8c-0f2b-4c6e-b1d7-9a8f7e6d5c4b"));
 
   /// The inbox of the application, whose entity models are those to create the state machine with, which also runs the
-  /// greetings the requests trigger events on. It is declared after the constants the transitions of the greetings
-  /// refer to, as it asks for the transitions to check the responses.
+  /// greetings the requests trigger events on
   HttpInbox Inbox = HttpInbox.of(List.of(GreetingRequest));
 
   private static Map<State, List<TransitionModel<?, ?>>> transitions() {

@@ -25,10 +25,8 @@ itself and to other models declared the same way, e.g. constants which refer to 
 EntityModel Greeting = EntityModel.of("Greeting", UUID.fromString("..."), Greetings::transitions);
 ```
 
-They are first asked for by the state machine, or by `HttpInbox.of`, which checks the responses of the inbox requests
-(see [HTTP inboxes](http-inbox.md)). Whatever the transitions refer to must be created by then, e.g. declared before an
-inbox created as a constant. A trigger on a model which isn't created yet, and so is null, fails as the transitions are
-created.
+They are first asked for when the state machine is created, by which time the constants are all created. A trigger
+on a model which isn't created yet, and so is null, fails as the transitions are created.
 
 The state machine takes the transitions of each entity model from the model. It is given the entity models nothing
 triggers events on, e.g. those of an [inbox](http-inbox.md), and runs them with the models their transitions trigger
@@ -38,8 +36,9 @@ run. When the state machine is created, it checks that every model it runs has a
 A model whose transitions depend on configuration, e.g. a lifetime, or the [outbox requests](http-outbox.md) it sends,
 is created from the configuration rather than declared as a constant. That instance is the one triggered on, and
 thereby run, so it is passed to the code triggering events on it, e.g. the inbox requests processing on it. Created
-again from the same configuration, e.g. by a test asking for the state of an entity of it, it is another instance with
-the same id, which the state machine and the test API take for the one they run.
+again, it is another instance with the same id, which may differ, e.g. be created from other configuration. The state
+machine and the test API reject it, and only take the instance they run, which e.g. a test finds among the
+`entityModels()` of the state machine.
 
 The entity an event is triggered on is selected by an `EntitySelector`: by its entity id, as a new entity, by an id it
 has, as the last one of a group it is indexed in, or as the last one referencing an id by an index event. The ids and

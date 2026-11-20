@@ -74,11 +74,6 @@ public class EventTrigger<T, I, O> {
     this.triggerId = triggerId;
   }
 
-  /// This trigger on another entity model, e.g. the one of the same id which a state machine runs
-  EventTrigger<T, I, O> on(EntityModel entityModel) {
-    return new EventTrigger<>(eventSpec, entitySelectors, entityModel, createEntity, condition, triggerType, triggerId);
-  }
-
   public static <I, O> EventTrigger<I, I, O> trigger(EventType<I, O> eventType, EntityModel entityModel, UUID entityId, I data) {
     return new EventTrigger<>(new EventSpec<>(eventType, _ -> data), List.of(_ -> entityId(entityId)), entityModel, false);
   }

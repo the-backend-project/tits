@@ -4,6 +4,7 @@ import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.EntityModelGroup;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.TransitionModel;
+import com.github.thxmasj.backend.core.internal.Memoized;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -22,10 +23,10 @@ final class RequestRoutingModel implements EntityModel {
 
   private static final UUID ID = UUID.fromString("20755705-fc81-4228-a1a7-5e13d6e3c153");
 
-  private final Map<State, List<TransitionModel<?, ?>>> transitions;
+  private final Memoized<Map<State, List<TransitionModel<?, ?>>>> transitions;
 
   RequestRoutingModel(List<HttpInboxRequest<?>> requests) {
-    this.transitions = TransitionModels.requestRoutingTransitions(requests);
+    this.transitions = new Memoized<>(() -> TransitionModels.requestRoutingTransitions(requests), "transitions of RequestRouting");
   }
 
   @Override
@@ -40,7 +41,7 @@ final class RequestRoutingModel implements EntityModel {
 
   @Override
   public Map<State, List<TransitionModel<?, ?>>> transitions() {
-    return transitions;
+    return transitions.get();
   }
 
   @Override

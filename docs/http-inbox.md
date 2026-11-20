@@ -42,8 +42,9 @@ StateMachine stateMachine = new StateMachine(inbox.entityModels(), dataSource, s
 DisposableServer server = new HttpInboxListener(stateMachine, inbox).listen(port);
 ```
 
-An inbox request declares the custom responses its own processes give, and no others. `HttpInbox.of` checks this per
-request. It starts from the event of each process on its entity model, and follows, through the models triggered on:
+An inbox request declares the custom responses its own processes give, and no others. The inbox checks this per
+request, when its `entityModels()` are first asked for, e.g. by the state machine, rather than when it is created, so
+that the inbox may be a constant declared before the models of the application. It starts from the event of each process on its entity model, and follows, through the models triggered on:
 
 - the transitions taken on that event, in any state, with every transition they may choose, as which one is taken is
   decided at runtime;

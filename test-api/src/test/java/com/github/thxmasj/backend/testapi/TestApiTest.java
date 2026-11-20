@@ -204,14 +204,17 @@ public class TestApiTest {
     assertEquals("1001", log.one(AccountOpened));
   }
 
-  /// A model created from configuration may be created again, e.g. by a test, as another instance with the same id
+  /// A model created from configuration again is another instance, which may differ, e.g. be created from other
+  /// configuration, so it isn't taken for the one run
   @Test
-  public void anotherInstanceOfAModelRunIsTheModelRun() {
+  public void anotherInstanceOfAModelRunIsRejected() {
     UUID account = open("1009");
     var sameAccount = EntityModel.of("Account", Account.id(), Map::of);
 
-    assertEquals(Account, api.eventLog(sameAccount, account).block().entityModel());
-    assertEquals(AccountStates.Opened, machine.onStatus(entityId(account), sameAccount).block());
+    var fromMachine = assertThrows(IllegalArgumentException.class, () -> machine.onStatus(entityId(account), sameAccount).block());
+    assertTrue(fromMachine.getMessage().contains("is another instance than the one with its id run by the state machine"));
+    var fromApi = assertThrows(IllegalArgumentException.class, () -> api.eventLog(sameAccount, account).block());
+    assertTrue(fromApi.getMessage().contains("run by the test API"));
     assertEquals(AccountStates.Opened, machine.onStatus(entityId(account), Account).block());
   }
 
@@ -221,7 +224,7 @@ public class TestApiTest {
     var other = EntityModel.of("Other", UUID.randomUUID(), Map::of);
 
     assertThrows(IllegalArgumentException.class, () -> machine.onStatus(entityId(UUID.randomUUID()), other).block());
-    assertThrows(IllegalArgumentException.class, () -> api.eventLog(other, UUID.randomUUID()));
+    assertThrows(IllegalArgumentException.class, () -> api.eventLog(other, UUID.randomUUID()).block());
   }
 
   @Test
