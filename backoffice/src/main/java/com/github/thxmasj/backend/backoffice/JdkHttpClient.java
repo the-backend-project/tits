@@ -1,8 +1,8 @@
 package com.github.thxmasj.backend.backoffice;
 
-import com.github.thxmasj.backend.core.http.HttpClient;
-import com.github.thxmasj.backend.core.message.http.HttpRequest;
-import com.github.thxmasj.backend.core.message.http.HttpResponse;
+import com.github.thxmasj.backend.http.HttpClient;
+import com.github.thxmasj.backend.http.HttpRequest;
+import com.github.thxmasj.backend.http.HttpResponse;
 import java.net.ConnectException;
 import java.net.http.HttpConnectTimeoutException;
 import java.net.http.HttpRequest.BodyPublishers;

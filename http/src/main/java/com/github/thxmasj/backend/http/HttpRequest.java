@@ -1,4 +1,4 @@
-package com.github.thxmasj.backend.core.message.http;
+package com.github.thxmasj.backend.http;
 
 import java.net.URI;
 import java.util.ArrayList;
@@ -10,7 +10,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /// An HTTP request, with a body of type `T`: `byte[]` for the request as sent or received, or the payload it is
-/// parsed into or marshalled from, e.g. by [com.github.thxmasj.backend.core.http.HttpDataType]. A request without a
+/// parsed into or marshalled from, e.g. by [com.github.thxmasj.backend.http.HttpDataType]. A request without a
 /// body has a null body. Requests are equal if their method, their URI as written, their headers, with the names
 /// compared without case, and the content of their bodies are.
 public record HttpRequest<T>(Method method, URI uri, Map<String, String> headers, T body) implements HttpMessage<T> {
@@ -46,7 +46,7 @@ public record HttpRequest<T>(Method method, URI uri, Map<String, String> headers
   }
 
   /// The request as sent or received, i.e. with a body of bytes or none, e.g. the unmarshalled data of an event whose
-  /// data type is [com.github.thxmasj.backend.core.http.HttpDataType#forRequest()], which is typed as `Object` and so
+  /// data type is [com.github.thxmasj.backend.http.HttpDataType#forRequest()], which is typed as `Object` and so
   /// can't be matched against `HttpRequest<byte[]>`
   ///
   /// @throws IllegalArgumentException if the value is not a request, or its body is not bytes

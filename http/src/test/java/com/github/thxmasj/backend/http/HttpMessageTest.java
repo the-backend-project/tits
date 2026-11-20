@@ -1,11 +1,11 @@
-package com.github.thxmasj.backend.core.message.http;
+package com.github.thxmasj.backend.http;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import com.github.thxmasj.backend.core.message.http.HttpRequest.Method;
+import com.github.thxmasj.backend.http.HttpRequest.Method;
 import java.net.URI;
 import java.util.Map;
 import org.junit.jupiter.api.Test;

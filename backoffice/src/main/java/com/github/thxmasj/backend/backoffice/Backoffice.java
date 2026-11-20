@@ -2,7 +2,7 @@ package com.github.thxmasj.backend.backoffice;
 
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.database.DatabaseClient;
-import com.github.thxmasj.backend.core.http.HttpClient;
+import com.github.thxmasj.backend.http.HttpClient;
 import com.github.thxmasj.backend.http.inbox.HttpInbox;
 import com.github.thxmasj.backend.http.inbox.OpenIdConnectClient;
 import java.net.URI;

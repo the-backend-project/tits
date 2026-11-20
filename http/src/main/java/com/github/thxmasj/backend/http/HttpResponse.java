@@ -1,11 +1,11 @@
-package com.github.thxmasj.backend.core.message.http;
+package com.github.thxmasj.backend.http;
 
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
 
 /// An HTTP response, with a body of type `T`: `byte[]` for the response as sent or received, or the payload it is
-/// parsed into or marshalled from, e.g. by [com.github.thxmasj.backend.core.http.HttpDataType]. A response without a
+/// parsed into or marshalled from, e.g. by [com.github.thxmasj.backend.http.HttpDataType]. A response without a
 /// body has a null body. Responses are equal if their status, their headers, with the names compared without case,
 /// and the content of their bodies are.
 public record HttpResponse<T>(int statusCode, String reasonPhrase, Map<String, String> headers, T body)
@@ -40,7 +40,7 @@ public record HttpResponse<T>(int statusCode, String reasonPhrase, Map<String, S
   }
 
   /// The response as sent or received, i.e. with a body of bytes or none, e.g. the unmarshalled data of an event
-  /// whose data type is [com.github.thxmasj.backend.core.http.HttpDataType#forResponse()], which is typed as
+  /// whose data type is [com.github.thxmasj.backend.http.HttpDataType#forResponse()], which is typed as
   /// `Object` and so can't be matched against `HttpResponse<byte[]>`
   ///
   /// @throws IllegalArgumentException if the value is not a response, or its body is not bytes

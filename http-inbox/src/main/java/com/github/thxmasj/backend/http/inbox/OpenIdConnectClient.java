@@ -3,8 +3,8 @@ package com.github.thxmasj.backend.http.inbox;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 import com.github.thxmasj.backend.core.DataType;
-import com.github.thxmasj.backend.core.message.http.HttpRequest;
-import com.github.thxmasj.backend.core.message.http.HttpRequest.Method;
+import com.github.thxmasj.backend.http.HttpRequest;
+import com.github.thxmasj.backend.http.HttpRequest.Method;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.proc.JWSVerificationKeySelector;

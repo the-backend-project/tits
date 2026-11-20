@@ -4,7 +4,7 @@ import static com.github.thxmasj.backend.core.Validated.invalid;
 import static com.github.thxmasj.backend.core.Validated.valid;
 
 import com.github.thxmasj.backend.core.Validated;
-import com.github.thxmasj.backend.core.message.http.HttpResponse;
+import com.github.thxmasj.backend.http.HttpResponse;
 import java.util.function.Function;
 
 public class AnyResponseValidator implements Function<HttpResponse<byte[]>, Validated<byte[]>> {

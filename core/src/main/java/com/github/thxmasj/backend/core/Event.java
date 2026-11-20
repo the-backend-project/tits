@@ -47,8 +47,6 @@ public final class Event<T> {
 
   public Event(UUID entityId, Integer eventNumber, EventType<?, T> type, LocalDateTime timestamp, Clock clock, byte[] data) {
     this.entityId = entityId;
-//    if (type.outputDataType().value() != Void.class)
-//      requireNonNull(data, "Event type <" + type.name() + "> requires data of type <" + type.outputDataType().value().getName() + ">");
     requireNonNull(eventNumber, "eventNumber is null");
     requireNonNull(type, "type is null");
     this.eventNumber = eventNumber;
@@ -120,46 +118,12 @@ public final class Event<T> {
     return Stream.concat(list1.stream(), list2.stream()).toList();
   }
 
-//  private static final ObjectMapper objectMapper = new ObjectMapper()
-//      .registerModule(new JavaTimeModule())
-//      .configure(DeserializationFeature.ADJUST_DATES_TO_CONTEXT_TIME_ZONE, false)
-//      .setSerializationInclusion(Include.NON_NULL);
-
   public static <T> byte[] marshal(EventType<?, T> eventType, T data) {
     return eventType.outputDataType().marshal(data);
-//    return switch (data) {
-//      case String s -> s;
-//      case Number n -> n.toString();
-//      case HttpRequest<byte[]> m -> m.message();
-//      case HttpResponse<byte[]> m -> m.message();
-//      case null -> null;
-//      default -> {
-//        try {
-//          yield objectMapper.writeValueAsString(data);
-//        } catch (JsonProcessingException e) {
-//          throw new RuntimeException(e);
-//        }
-//      }
-//    };
   }
 
   public static <T> T unmarshal(EventType<?, T> eventType, byte[] data) {
     return eventType.outputDataType().unmarshal(data);
-//    if (eventType.outputDataType().value() == String.class)
-//      return (T) data;
-//    if (eventType.outputDataType().value() == Integer.class)
-//      return (T) Integer.valueOf(data);
-//    if (eventType.outputDataType().value() == HttpRequest.class)
-//      return (T) HttpMessageParser.parseRequest(data);
-//    if (eventType.outputDataType().value() == HttpResponse.class)
-//      return (T) HttpMessageParser.parseResponse(data);
-//    try {
-//      return objectMapper.readerFor(eventType.outputDataType().value()).readValue(data);
-//      var dataType = eventType.outputDataType();
-//      return (dataType.value() != null ? objectMapper.readerFor(dataType.value()) : objectMapper.readerFor(dataType.typeReference())).readValue(data);
-//    } catch (Exception e) {
-//      throw new RuntimeException("Failed to unmarshal JSON event data for " + eventType.name() + ": " + e.getMessage(), e);
-//    }
   }
 
 }

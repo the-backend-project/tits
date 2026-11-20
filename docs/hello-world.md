@@ -158,7 +158,7 @@ work around.
   `CleartextHttp2ServerUpgradeHandler`, used by the reactor-netty HTTP server, holds a direct buffer, which fails the
   build with GraalVM 25. The HTTP inbox therefore initializes that class at run time. The setting could go away with a
   later Netty version.
-- **Runtime dependencies the server does not use.** The state machine depends on Hibernate Validator, and reactor-netty
+- **Runtime dependencies the server does not use.** The HTTP modules depend on Hibernate Validator, and reactor-netty
   brings QUIC and macOS DNS support. They end up on the runtime classpath of every application, lengthening native
   compilation. They could be optional, the way diagram generation with PlantUML is kept in the separate `diagram`
   module.

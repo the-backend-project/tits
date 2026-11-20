@@ -15,7 +15,7 @@ import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.http.inbox.HttpInbox;
 import com.github.thxmasj.backend.http.inbox.HttpInboxRequest;
 import com.github.thxmasj.backend.http.inbox.ResponseEventType;
-import com.github.thxmasj.backend.core.message.http.HttpResponse;
+import com.github.thxmasj.backend.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;

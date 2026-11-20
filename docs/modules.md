@@ -3,6 +3,7 @@
 | Module                                                                | Contains                                                                                       |
 |-----------------------------------------------------------------------|------------------------------------------------------------------------------------------------|
 | core                                                                  | The state machine, the builder of transition models, and the interface of the databases        |
+| [http](http-outbox.md#dispatching-a-request)                          | HTTP messages, HTTP clients and their data types, shared by http-inbox and http-outbox         |
 | [database-mssql, database-pgsql-*](databases.md)                      | The SQL of a database and the driver it is reached through, one module per database and driver |
 | [http-inbox](http-inbox.md)                                           | Inboxes: entity models receiving HTTP requests and routing them to the entities of an application |
 | [http-outbox](http-outbox.md)                                         | Outboxes: entity models sending HTTP requests at least once or at most once                    |
@@ -12,17 +13,21 @@
 | [templates](cardpayments.md)                                          | Ready-made entity models of a domain, such as card payments                                    |
 
 An application depends on core, the database module of its database, and http-inbox and http-outbox if it receives or
-sends HTTP requests. The [backoffice](backoffice.md) of an application is an application of its own, which depends
-on the application and on backoffice. See the [apps](apps.md) for complete applications.
+sends HTTP requests. Core knows nothing of HTTP: the HTTP messages and clients are in http, which http-inbox and
+http-outbox depend on and pass on to the application. The [backoffice](backoffice.md) of an application is an
+application of its own, which depends on the application and on backoffice. See the [apps](apps.md) for complete
+applications.
 
 Core exports only what applications use: the packages `com.github.thxmasj.backend.core` (the state machine and the
-building of entity models), `core.database` (the databases, their clients and `DataSourceBuilder`), `core.http` (HTTP
-clients and the data types of HTTP messages) and `core.message.http` (HTTP messages). The packages under
-`core.internal`, such as the queries and updates of the databases and the steps of a transition, are exported only to
-the other modules of the library. A database module exports only its `Database`, and provides the queries and updates
-of its schema to the state machine as a service from an internal package. The internal package of database-pgsql-jdbc
-is exported to the other PostgreSQL modules, which share it. To create a schema or look into a database without a
-state machine, use `Database.createSchema` and the [test API](testing.md).
+building of entity models) and `core.database` (the databases, their clients and `DataSourceBuilder`). The http module
+exports `com.github.thxmasj.backend.http`: the HTTP messages (`HttpRequest`, `HttpResponse`), the HTTP clients
+(`HttpClient`, `NettyHttpClient`, `AccessTokenSupplier`) and the data types of HTTP messages (`HttpDataType`). The
+packages under `core.internal`, such as the queries and updates of the databases and the steps of a transition, are
+exported only to the other modules of the library, as is `http.internal` to http-inbox and http-outbox. A database
+module exports only its `Database`, and provides the queries and updates of its schema to the state machine as a service
+from an internal package. The internal package of database-pgsql-jdbc is exported to the other PostgreSQL modules, which
+share it. To create a schema or look into a database without a state machine, use `Database.createSchema` and the [test
+API](testing.md).
 
 ## Java version
 

@@ -1,7 +1,5 @@
-package com.github.thxmasj.backend.core.http;
+package com.github.thxmasj.backend.http;
 
-import com.github.thxmasj.backend.core.message.http.HttpRequest;
-import com.github.thxmasj.backend.core.message.http.HttpResponse;
 import reactor.core.publisher.Mono;
 import java.time.Duration;
 

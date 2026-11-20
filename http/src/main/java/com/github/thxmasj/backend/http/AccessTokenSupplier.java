@@ -1,13 +1,11 @@
-package com.github.thxmasj.backend.core.http;
+package com.github.thxmasj.backend.http;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Objects.requireNonNull;
 import static java.util.stream.Collectors.joining;
 
 import com.github.thxmasj.backend.core.internal.Debug;
-import com.github.thxmasj.backend.core.message.http.HttpRequest;
-import com.github.thxmasj.backend.core.message.http.HttpRequest.Method;
-import com.github.thxmasj.backend.core.message.http.HttpResponse;
+import com.github.thxmasj.backend.http.HttpRequest.Method;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.time.Clock;

@@ -3,8 +3,8 @@ package com.github.thxmasj.backend.http.outbox;
 import static com.github.thxmasj.backend.core.Validated.invalid;
 
 import com.github.thxmasj.backend.core.Validated;
-import com.github.thxmasj.backend.core.internal.http.JsonContentValidator;
-import com.github.thxmasj.backend.core.message.http.HttpResponse;
+import com.github.thxmasj.backend.http.internal.JsonContentValidator;
+import com.github.thxmasj.backend.http.HttpResponse;
 import java.util.function.Function;
 
 public class JsonResponseValidator<T> implements Function<HttpResponse<byte[]>, Validated<T>> {

@@ -1,7 +1,7 @@
 package com.github.thxmasj.backend.http.inbox;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.github.thxmasj.backend.core.message.http.HttpResponse;
+import com.github.thxmasj.backend.http.HttpResponse;
 import java.time.ZonedDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;

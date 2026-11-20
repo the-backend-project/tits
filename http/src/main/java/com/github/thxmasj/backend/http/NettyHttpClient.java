@@ -1,9 +1,7 @@
-package com.github.thxmasj.backend.core.http;
+package com.github.thxmasj.backend.http;
 
 import static java.util.stream.Collectors.toMap;
 
-import com.github.thxmasj.backend.core.message.http.HttpRequest;
-import com.github.thxmasj.backend.core.message.http.HttpResponse;
 import io.netty.buffer.Unpooled;
 import io.netty.handler.codec.http.HttpMethod;
 import java.time.Duration;

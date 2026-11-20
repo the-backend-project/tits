@@ -1,4 +1,4 @@
-package com.github.thxmasj.backend.core.http;
+package com.github.thxmasj.backend.http;
 
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import io.netty.resolver.DefaultAddressResolverGroup;

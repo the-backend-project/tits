@@ -1,10 +1,6 @@
-package com.github.thxmasj.backend.core.http;
+package com.github.thxmasj.backend.http;
 
 import com.github.thxmasj.backend.core.DataType;
-import com.github.thxmasj.backend.core.message.http.HttpMessage;
-import com.github.thxmasj.backend.core.message.http.HttpMessageParser;
-import com.github.thxmasj.backend.core.message.http.HttpRequest;
-import com.github.thxmasj.backend.core.message.http.HttpResponse;
 import java.util.Objects;
 
 public class HttpDataType {

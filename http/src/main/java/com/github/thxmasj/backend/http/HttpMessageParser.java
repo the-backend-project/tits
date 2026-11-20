@@ -1,6 +1,6 @@
-package com.github.thxmasj.backend.core.message.http;
+package com.github.thxmasj.backend.http;
 
-import com.github.thxmasj.backend.core.message.http.HttpRequest.Method;
+import com.github.thxmasj.backend.http.HttpRequest.Method;
 import java.net.URI;
 import java.util.Collections;
 import java.util.Map;

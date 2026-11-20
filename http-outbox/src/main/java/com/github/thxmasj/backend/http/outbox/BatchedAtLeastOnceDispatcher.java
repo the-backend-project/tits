@@ -1,7 +1,7 @@
 package com.github.thxmasj.backend.http.outbox;
 
 import com.github.thxmasj.backend.core.EventType;
-import com.github.thxmasj.backend.core.message.http.HttpRequest;
+import com.github.thxmasj.backend.http.HttpRequest;
 import com.github.thxmasj.backend.http.outbox.HttpOutboxRequest.BatchedRequest;
 import java.util.function.BiFunction;
 import java.util.function.Function;

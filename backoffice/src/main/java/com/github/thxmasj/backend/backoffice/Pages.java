@@ -15,7 +15,7 @@ import com.github.thxmasj.backend.core.EventReference;
 import com.github.thxmasj.backend.core.Tuples.Tuple2;
 import com.github.thxmasj.backend.core.Tuples.Tuple3;
 import com.github.thxmasj.backend.core.Tuples.Tuple4;
-import com.github.thxmasj.backend.core.message.http.HttpMessage;
+import com.github.thxmasj.backend.http.HttpMessage;
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;

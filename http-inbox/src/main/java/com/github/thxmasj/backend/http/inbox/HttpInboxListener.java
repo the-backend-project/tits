@@ -3,10 +3,10 @@ package com.github.thxmasj.backend.http.inbox;
 import static java.util.stream.Collectors.toMap;
 
 import com.github.thxmasj.backend.core.StateMachine;
-import com.github.thxmasj.backend.core.message.http.HttpMessageParser;
-import com.github.thxmasj.backend.core.message.http.HttpRequest;
-import com.github.thxmasj.backend.core.message.http.HttpRequest.Method;
-import com.github.thxmasj.backend.core.message.http.HttpResponse;
+import com.github.thxmasj.backend.http.HttpMessageParser;
+import com.github.thxmasj.backend.http.HttpRequest;
+import com.github.thxmasj.backend.http.HttpRequest.Method;
+import com.github.thxmasj.backend.http.HttpResponse;
 import io.netty.buffer.Unpooled;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import java.net.URI;

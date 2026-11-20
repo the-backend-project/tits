@@ -19,12 +19,8 @@
   <dependencies>
     <dependency>
       <groupId>com.github.thxmasj.backend</groupId>
-      <artifactId>core</artifactId>
+      <artifactId>http</artifactId>
       <version>${project.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>io.projectreactor.netty</groupId>
-      <artifactId>reactor-netty</artifactId>
     </dependency>
     <dependency>
       <groupId>com.nimbusds</groupId>
