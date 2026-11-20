@@ -11,6 +11,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.github.thxmasj.backend.core.BasicEventType;
@@ -73,8 +74,8 @@ public class TestApiTest {
   static EventType<StatementNumber, StatementNumber> NumberOfStatementIndexed = BasicEventType.of("Number of statement indexed", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b04"), new StatementNumberDataType());
   static IndexEntityModel Index = IndexEntityModel.of("Index", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b05"), StatementOfAccountReferenced, NumberOfStatementIndexed);
 
-  static EntityModel Account = EntityModel.of("Account", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b06"));
-  static EntityModel Statement = EntityModel.of("Statement", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b07"));
+  static EntityModel Account = EntityModel.of("Account", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b06"), TestApiTest::accountTransitions);
+  static EntityModel Statement = EntityModel.of("Statement", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b07"), TestApiTest::statementTransitions);
 
   static EventType<String, String> AccountOpened = BasicEventType.of("Account opened", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b08"), DataType.string());
   static EventType<Void, Void> AccountExpired = BasicEventType.of("Account expired", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b09"));
@@ -97,8 +98,8 @@ public class TestApiTest {
   static EventType<Parcel, Parcel> ParcelSent = BasicEventType.of("Shipment sent", SendId, DataType.json(Parcel.class));
   static EventType<UUID, UUID> ShipmentOfAccountReferenced = IndexEntityModel.referenceEventType("Shipment of account referenced", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b0f"));
   static IndexEntityModel ShipmentIndex = IndexEntityModel.of("ShipmentIndex", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b10"), ShipmentOfAccountReferenced);
-  static EntityModel LetterShipment = EntityModel.of("LetterShipment", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b11"));
-  static EntityModel ParcelShipment = EntityModel.of("ParcelShipment", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b12"));
+  static EntityModel LetterShipment = EntityModel.of("LetterShipment", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b11"), TestApiTest::letterShipmentTransitions);
+  static EntityModel ParcelShipment = EntityModel.of("ParcelShipment", UUID.fromString("5b0e8c3a-6f1d-4e2b-9a7c-1d3e5f7a9b12"), TestApiTest::parcelShipmentTransitions);
 
   static <T> Map<State, List<TransitionModel<?, ?>>> shipmentTransitions(EventType<T, T> send) {
     return Map.of(
@@ -114,52 +115,60 @@ public class TestApiTest {
 
   static final UUID shipmentAccount = UUID.randomUUID();
 
-  static Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions = Map.of(
-      Account, Map.<State, List<TransitionModel<?, ?>>>of(
-          Begin, List.of(
-              onEvent(AccountOpened).to(AccountStates.Opened)
-                  .assemble(c -> tuple(c.input(), c.entityId()))
-                  .trigger(AccountNumberClaimed).with(Tuple2::t1).on(Ids).identifiedBy(d -> entityId(d.t2(), CreateIfNotExists))
-                  .trigger(AccountExpired).after(_ -> Duration.ofHours(1))
-                  .output(d -> d.t1().t1())
-          ),
-          AccountStates.Opened, List.of(
-              onEvent(AccountExpired).to(AccountStates.Expired).output(),
-              onEvent(AccountCloseRequestedWhenSettled).to(AccountStates.Closing)
-                  .assemble(c -> c.log().entityId())
-                  .trigger(AccountClosed)
-                  .when(StatementOfAccountReferenced, id -> id)
-                  .is(StatementSettled)
-                  .with(_ -> null)
-                  .on(Account)
-                  .identifiedBy(EntitySelector::entityId)
-                  .output()
-          ),
-          AccountStates.Closing, List.of(onEvent(AccountClosed).to(AccountStates.Closed).output()),
-          AccountStates.Closed, List.of(),
-          AccountStates.Expired, List.of()
-      ),
-      Statement, Map.<State, List<TransitionModel<?, ?>>>of(
-          Begin, List.of(
-              onEvent(StatementIssued).to(StatementStates.Issued)
-                  .assemble(c -> tuple(c.input(), c.entityId()))
-                  .trigger(StatementOfAccountReferenced).with(d -> d.t1().account()).on(Index).identifiedBy(d -> newEntityId(d.t2()))
-                  .trigger(NumberOfStatementIndexed).with(d -> d.t1().t1().number()).on(Index).identifiedBy(d -> entityId(d.t1().t2()))
-                  .output(d -> d.t1().t1().t1())
-          ),
-          StatementStates.Issued, List.of(onEvent(StatementSettled).to(StatementStates.Settled).output()),
-          StatementStates.Settled, List.of()
-      ),
-      Ids, Ids.transitions(),
-      Index, Index.transitions(),
-      LetterShipment, shipmentTransitions(LetterSent),
-      ParcelShipment, shipmentTransitions(ParcelSent),
-      ShipmentIndex, ShipmentIndex.transitions()
-  );
+  private static Map<State, List<TransitionModel<?, ?>>> accountTransitions() {
+    return Map.<State, List<TransitionModel<?, ?>>>of(
+        Begin, List.of(
+            onEvent(AccountOpened).to(AccountStates.Opened)
+                .assemble(c -> tuple(c.input(), c.entityId()))
+                .trigger(AccountNumberClaimed).with(Tuple2::t1).on(Ids).identifiedBy(d -> entityId(d.t2(), CreateIfNotExists))
+                .trigger(AccountExpired).after(_ -> Duration.ofHours(1))
+                .output(d -> d.t1().t1())
+        ),
+        AccountStates.Opened, List.of(
+            onEvent(AccountExpired).to(AccountStates.Expired).output(),
+            onEvent(AccountCloseRequestedWhenSettled).to(AccountStates.Closing)
+                .assemble(c -> c.log().entityId())
+                .trigger(AccountClosed)
+                .when(StatementOfAccountReferenced, id -> id)
+                .is(StatementSettled)
+                .with(_ -> null)
+                .on(Account)
+                .identifiedBy(EntitySelector::entityId)
+                .output()
+        ),
+        AccountStates.Closing, List.of(onEvent(AccountClosed).to(AccountStates.Closed).output()),
+        AccountStates.Closed, List.of(),
+        AccountStates.Expired, List.of()
+    );
+  }
+
+  private static Map<State, List<TransitionModel<?, ?>>> statementTransitions() {
+    return Map.<State, List<TransitionModel<?, ?>>>of(
+        Begin, List.of(
+            onEvent(StatementIssued).to(StatementStates.Issued)
+                .assemble(c -> tuple(c.input(), c.entityId()))
+                .trigger(StatementOfAccountReferenced).with(d -> d.t1().account()).on(Index).identifiedBy(d -> newEntityId(d.t2()))
+                .trigger(NumberOfStatementIndexed).with(d -> d.t1().t1().number()).on(Index).identifiedBy(d -> entityId(d.t1().t2()))
+                .output(d -> d.t1().t1().t1())
+        ),
+        StatementStates.Issued, List.of(onEvent(StatementSettled).to(StatementStates.Settled).output()),
+        StatementStates.Settled, List.of()
+    );
+  }
+
+  private static Map<State, List<TransitionModel<?, ?>>> letterShipmentTransitions() {
+    return shipmentTransitions(LetterSent);
+  }
+
+  private static Map<State, List<TransitionModel<?, ?>>> parcelShipmentTransitions() {
+    return shipmentTransitions(ParcelSent);
+  }
+
+  static List<EntityModel> entityModels = List.of(Account, Statement, Ids, Index, LetterShipment, ParcelShipment, ShipmentIndex);
 
   private static final String schema = UUID.randomUUID().toString();
-  private static final StateMachine machine = Init.stateMachine(schema, transitions);
-  private static final TestApi api = new TestApi(Init.database(), Init.client(), schema, transitions, Clock.systemUTC());
+  private static final StateMachine machine = Init.stateMachine(schema, entityModels);
+  private static final TestApi api = new TestApi(Init.database(), Init.client(), schema, entityModels, Clock.systemUTC());
 
   private static UUID open(String accountNumber) {
     return machine.onEvent(trigger(AccountOpened, Account), accountNumber).blockFirst().entityId();
@@ -193,6 +202,29 @@ public class TestApiTest {
     assertEquals(Account, log.entityModel());
     assertEquals(List.of("1:Account opened"), eventNames(log));
     assertEquals("1001", log.one(AccountOpened));
+  }
+
+  /// A model created from configuration again is another instance, which may differ, e.g. be created from other
+  /// configuration, so it isn't taken for the one run
+  @Test
+  public void anotherInstanceOfAModelRunIsRejected() {
+    UUID account = open("1009");
+    var sameAccount = EntityModel.of("Account", Account.id(), Map::of);
+
+    var fromMachine = assertThrows(IllegalArgumentException.class, () -> machine.onStatus(entityId(account), sameAccount).block());
+    assertTrue(fromMachine.getMessage().contains("is another instance than the one with its id run by the state machine"));
+    var fromApi = assertThrows(IllegalArgumentException.class, () -> api.eventLog(sameAccount, account).block());
+    assertTrue(fromApi.getMessage().contains("run by the test API"));
+    assertEquals(AccountStates.Opened, machine.onStatus(entityId(account), Account).block());
+  }
+
+  /// A model with an id no model run has is told apart from an entity which doesn't exist
+  @Test
+  public void modelNotRunIsRejected() {
+    var other = EntityModel.of("Other", UUID.randomUUID(), Map::of);
+
+    assertThrows(IllegalArgumentException.class, () -> machine.onStatus(entityId(UUID.randomUUID()), other).block());
+    assertThrows(IllegalArgumentException.class, () -> api.eventLog(other, UUID.randomUUID()).block());
   }
 
   @Test

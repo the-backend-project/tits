@@ -24,6 +24,7 @@ import com.github.thxmasj.backend.http.outbox.AtMostOnce;
 import com.github.thxmasj.backend.http.outbox.HttpOutboxRequest;
 import com.github.thxmasj.backend.http.outbox.JsonResponseValidator;
 import java.time.Duration;
+import java.util.Map;
 import java.util.UUID;
 import java.util.function.BiFunction;
 
@@ -46,7 +47,7 @@ final class DocExamples {
 
   record Order(String item) {}
 
-  static final EntityModel Orders = EntityModel.of("Orders", UUID.fromString("6f0a6c55-2a3e-4a0b-9d3c-1c4f6d2b7e10"));
+  static final EntityModel Orders = EntityModel.of("Orders", UUID.fromString("6f0a6c55-2a3e-4a0b-9d3c-1c4f6d2b7e10"), Map::of);
 
   static final EventType<Order, Void> OrderPlaced = BasicEventType.of(
       "Order placed",
@@ -80,7 +81,7 @@ final class DocExamples {
 
   record EnrolmentResult(String messageId, EnrolmentStatus status, UUID tokenReference) {}
 
-  static final EntityModel PaymentToken = EntityModel.of("PaymentToken", UUID.fromString("9a2e5c71-3b8d-4f04-a6e9-2d7c1b5f8e33"));
+  static final EntityModel PaymentToken = EntityModel.of("PaymentToken", UUID.fromString("9a2e5c71-3b8d-4f04-a6e9-2d7c1b5f8e33"), Map::of);
 
   static final EventType<EnrolmentResult, Void> Activate = BasicEventType.of(
       "Activate",
@@ -131,7 +132,7 @@ final class DocExamples {
 
   record ReversalRequest(String authorisation) {}
 
-  static final EntityModel Payment = EntityModel.of("Payment", UUID.fromString("c3a7e1f9-4b2d-4d68-a0e5-9b1f7c3d6a28"));
+  static final EntityModel Payment = EntityModel.of("Payment", UUID.fromString("c3a7e1f9-4b2d-4d68-a0e5-9b1f7c3d6a28"), Map::of);
 
   static final EventType<Void, Void> AuthorisationUnknown = BasicEventType.of(
       "Authorisation unknown",

@@ -1,16 +1,15 @@
 package com.github.thxmasj.backend.http.outbox;
 
 import com.github.thxmasj.backend.core.message.http.TypedHttpRequest;
-import java.util.Map;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import reactor.core.publisher.Mono;
 
 /// A [Dispatcher] of requests to an [AtMostOnce] outbox request which can't be rolled back. See [AtMostOnceWithRollbackDispatcher] for one which can.
-public final class AtMostOnceDispatcher<X, RQ> extends BaseDispatcher<X, TypedHttpRequest<RQ>> implements Dispatcher<X, TypedHttpRequest<RQ>> {
+public final class AtMostOnceDispatcher<X, RQ> extends BaseDispatcher<X, TypedHttpRequest<RQ>, AtMostOnce<RQ, Void>> implements Dispatcher<X, TypedHttpRequest<RQ>> {
 
   private AtMostOnceDispatcher(AtMostOnce<RQ, Void> outbox, BiFunction<DispatchContext, X, Mono<TypedHttpRequest<RQ>>> inputCreator) {
-    super(outbox, outbox.requestDispatched(), inputCreator, Map.of(outbox, outbox.transitions()));
+    super(outbox, outbox.requestDispatched(), inputCreator);
   }
 
   public static <X, RQ> AtMostOnceDispatcher<X, RQ> of(AtMostOnce<RQ, Void> outbox, Function<X, TypedHttpRequest<RQ>> inputCreator) {

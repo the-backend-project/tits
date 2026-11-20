@@ -2,18 +2,17 @@ package com.github.thxmasj.backend.http.outbox;
 
 import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.message.http.TypedHttpRequest;
-import java.util.Map;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import reactor.core.publisher.Mono;
 
 /// A [Dispatcher] of requests to an [AtLeastOnce] outbox request.
-public final class AtLeastOnceDispatcher<X, RQ> extends BaseDispatcher<X, TypedHttpRequest<RQ>> implements Dispatcher<X, TypedHttpRequest<RQ>> {
+public final class AtLeastOnceDispatcher<X, RQ> extends BaseDispatcher<X, TypedHttpRequest<RQ>, AtLeastOnce<RQ>> implements Dispatcher<X, TypedHttpRequest<RQ>> {
 
   private final AtLeastOnce<RQ> atLeastOnce;
 
   private AtLeastOnceDispatcher(AtLeastOnce<RQ> outbox, BiFunction<DispatchContext, X, Mono<TypedHttpRequest<RQ>>> inputCreator) {
-    super(outbox, outbox.requestDispatched(), inputCreator, Map.of(outbox, outbox.transitions()));
+    super(outbox, outbox.requestDispatched(), inputCreator);
     this.atLeastOnce = outbox;
   }
 

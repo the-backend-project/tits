@@ -1,6 +1,5 @@
 package com.github.thxmasj.backend.http.inbox;
 
-import static com.github.thxmasj.backend.http.inbox.HttpInbox.TRIGGER;
 import static java.util.stream.Collectors.toMap;
 
 import com.github.thxmasj.backend.core.StateMachine;
@@ -41,25 +40,35 @@ public class HttpInboxListener {
   }
 
   private final StateMachine stateMachine;
+  private final HttpInbox inbox;
   private final Duration responseTimeout;
   private final String correlationIdHeader;
   private final List<Filter> filters;
 
-  public HttpInboxListener(StateMachine stateMachine) {
-    this(stateMachine, Duration.ofSeconds(30));
+  /// @param stateMachine the state machine created with the entity models of the inbox, see [HttpInbox#entityModels()]
+  /// @throws IllegalArgumentException if the state machine doesn't run the request routing of the inbox
+  public HttpInboxListener(StateMachine stateMachine, HttpInbox inbox) {
+    this(stateMachine, inbox, Duration.ofSeconds(30));
   }
 
-  public HttpInboxListener(StateMachine stateMachine, Duration responseTimeout) {
-    this(stateMachine, responseTimeout, "X-Correlation-Id", List.of());
+  public HttpInboxListener(StateMachine stateMachine, HttpInbox inbox, Duration responseTimeout) {
+    this(stateMachine, inbox, responseTimeout, "X-Correlation-Id", List.of());
   }
 
   private HttpInboxListener(
       StateMachine stateMachine,
+      HttpInbox inbox,
       Duration responseTimeout,
       String correlationIdHeader,
       List<Filter> filters
   ) {
+    if (!stateMachine.runs(inbox.requestRouting()))
+      throw new IllegalArgumentException(
+          "The state machine doesn't run the request routing of the inbox. Create it with the entity models of the same " +
+          "inbox the listener is given."
+      );
     this.stateMachine = stateMachine;
+    this.inbox = inbox;
     this.responseTimeout = responseTimeout;
     this.correlationIdHeader = correlationIdHeader;
     this.filters = List.copyOf(filters);
@@ -70,14 +79,14 @@ public class HttpInboxListener {
   public HttpInboxListener filter(Filter filter) {
     List<Filter> filters = new ArrayList<>(this.filters);
     filters.add(filter);
-    return new HttpInboxListener(stateMachine, responseTimeout, correlationIdHeader, filters);
+    return new HttpInboxListener(stateMachine, inbox, responseTimeout, correlationIdHeader, filters);
   }
 
   /// Returns a listener which takes the correlation id of the triggered events from the given request header, e.g.
   /// `TID`. The default header is `X-Correlation-Id`. Requests without the header get a generated correlation id
   /// prefixed with `SYS-`.
   public HttpInboxListener correlationIdHeader(String correlationIdHeader) {
-    return new HttpInboxListener(stateMachine, responseTimeout, correlationIdHeader, filters);
+    return new HttpInboxListener(stateMachine, inbox, responseTimeout, correlationIdHeader, filters);
   }
 
   /// Starts listening on the given port. Use port 0 to bind to an ephemeral port.
@@ -119,7 +128,7 @@ public class HttpInboxListener {
   }
 
   private Mono<HttpResponseMessage> exchange(HttpRequestMessage requestMessage) {
-    return stateMachine.onEvent(correlationId(requestMessage), TRIGGER, requestMessage)
+    return stateMachine.onEvent(correlationId(requestMessage), inbox.trigger(), requestMessage)
         // First event is the triggered event, second is the response event
         .skip(1)
         .next()

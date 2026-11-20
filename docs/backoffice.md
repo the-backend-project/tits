@@ -40,11 +40,11 @@ monitoring. A session expires after its lifetime, or after 30,000 events, as the
 
 An application's backoffice is a module of its own, which depends on the application for its entity models and on
 `backoffice`, and whose main method runs `BackofficeApp` with the name of the application, its default schema and the
-transitions of its state machine:
+entity models of its state machine:
 
 ```java
 public static void main(String[] args) {
-  BackofficeApp.run("Orders", "orders", Orders.transitions(), args, System.getenv());
+  BackofficeApp.run("Orders", "orders", Orders.Inbox.entityModels(), args, System.getenv());
 }
 ```
 

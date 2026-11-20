@@ -17,6 +17,29 @@ onEvent(GreetingRequested).to(States.Greeted)
     .output()
 ```
 
+An entity model carries its transitions, by the state they are taken from. `EntityModel.of(name, id, transitions)`
+takes a method creating them, which is called when they are first asked for, so the transitions can refer to the model
+itself and to other models declared the same way, e.g. constants which refer to each other:
+
+```java
+EntityModel Greeting = EntityModel.of("Greeting", UUID.fromString("..."), Greetings::transitions);
+```
+
+They are first asked for when the state machine is created, by which time the constants are all created. A trigger
+on a model which isn't created yet, and so is null, fails as the transitions are created.
+
+The state machine takes the transitions of each entity model from the model. It is given the entity models nothing
+triggers events on, e.g. those of an [inbox](http-inbox.md), and runs them with the models their transitions trigger
+events on, and so on, each once. A group triggered on adds no models, as its models are those of the group which are
+run. When the state machine is created, it checks that every model it runs has an id of its own.
+
+A model whose transitions depend on configuration, e.g. a lifetime, or the [outbox requests](http-outbox.md) it sends,
+is created from the configuration rather than declared as a constant. That instance is the one triggered on, and
+thereby run, so it is passed to the code triggering events on it, e.g. the inbox requests processing on it. Created
+again, it is another instance with the same id, which may differ, e.g. be created from other configuration. The state
+machine and the test API reject it, and only take the instance they run, which e.g. a test finds among the
+`entityModels()` of the state machine.
+
 The entity an event is triggered on is selected by an `EntitySelector`: by its entity id, as a new entity, by an id it
 has, as the last one of a group it is indexed in, or as the last one referencing an id by an index event. The ids and
 index keys of entities are events of their own, of id entity models (`IdEntityModel`) and index entity models

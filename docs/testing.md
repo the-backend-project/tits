@@ -35,12 +35,12 @@ Depend on the module in test scope only:
 </dependency>
 ```
 
-Create a `TestApi` with a data source for the application's database, the schema name, and the same transitions as
-the state machine is given. The transitions tell the test API the entity models and event types, so it can return the
-events with their data unmarshalled, for any entity model.
+Create a `TestApi` with a data source for the application's database, the schema name, and the same entity models as
+the state machine is given. They and the models their transitions trigger events on tell the test API the entity
+models and event types, so it can return the events with their data unmarshalled, for any entity model.
 
 ```java
-var api = new TestApi(dataSource, "Payments", transitions, Clock.systemUTC());
+var api = new TestApi(dataSource, "Payments", entityModels, Clock.systemUTC());
 
 EventLog payment = api.eventLogById(PaymentId, paymentId).block();
 assertEquals(Authorised, payment.events().getLast().type());

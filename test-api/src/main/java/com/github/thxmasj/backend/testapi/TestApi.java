@@ -1,7 +1,5 @@
 package com.github.thxmasj.backend.testapi;
 
-import static java.util.function.Function.identity;
-import static java.util.stream.Collectors.toMap;
 
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.Event;
@@ -10,14 +8,12 @@ import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.GroupedDataType;
 import com.github.thxmasj.backend.core.IdEntityModel;
 import com.github.thxmasj.backend.core.IndexEntityModel;
-import com.github.thxmasj.backend.core.State;
-import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.core.database.Database;
 import com.github.thxmasj.backend.core.database.DatabaseClient;
 import com.github.thxmasj.backend.core.database.UnknownEntity;
 import com.github.thxmasj.backend.core.internal.DelayedEvent;
-import com.github.thxmasj.backend.core.internal.EventTypes;
 import com.github.thxmasj.backend.core.internal.database.ChangeState;
+import com.github.thxmasj.backend.core.internal.ResolvedModels;
 import com.github.thxmasj.backend.core.internal.database.ChangeState.Change;
 import com.github.thxmasj.backend.core.internal.database.EntitiesByIndex;
 import com.github.thxmasj.backend.core.internal.database.EventsByEntityId;
@@ -31,7 +27,6 @@ import java.time.LocalDateTime;
 import java.time.ZonedDateTime;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
 import javax.sql.DataSource;
@@ -39,7 +34,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /// The API tests use to look into and manipulate the database of a state machine, instead of querying its tables
-/// directly. It knows the entity models only through the transitions given to the state machine, so it works with any
+/// directly. It knows the entity models only as given to the state machine, so it works with any
 /// of them, and the tests using it do not depend on how the data is stored.
 ///
 /// Some of its operations bypass the transitions, e.g. by appending events that no transition has accepted, and are
@@ -49,8 +44,7 @@ public class TestApi {
   private final DatabaseClient client;
   private final String schema;
   private final Clock clock;
-  private final Map<UUID, EntityModel> entityModels;
-  private final Map<EntityModel, List<EventType<?, ?>>> eventTypesByEntityModel;
+  private final ResolvedModels models;
   private final Function<UUID, EventType<?, ?>> eventTypeMapper;
   private final EventsByEntityId eventsByEntityId;
   private final EventsByIdEvent eventsByIdEvent;
@@ -62,34 +56,35 @@ public class TestApi {
 
   /// The database is the one behind the data source (see [Database#of(DataSource)])
   ///
-  /// @param transitions the transitions of the state machine, which give the entity models and event types
+  /// @param entityModels the entity models given to the state machine, which with those their transitions trigger
+  ///                     events on give the entity models and event types
   public TestApi(
       DataSource dataSource,
       String schemaName,
-      Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions,
+      List<? extends EntityModel> entityModels,
       Clock clock
   ) {
     Database database = Database.of(dataSource);
-    this(database, database.client(dataSource), schemaName, transitions, clock);
+    this(database, database.client(dataSource), schemaName, entityModels, clock);
   }
 
   /// @param client a client of the database
-  /// @param transitions the transitions of the state machine, which give the entity models and event types
+  /// @param entityModels the entity models given to the state machine, which with those their transitions trigger
+  ///                     events on give the entity models and event types
   public TestApi(
       Database database,
       DatabaseClient client,
       String schemaName,
-      Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions,
+      List<? extends EntityModel> entityModels,
       Clock clock
   ) {
     this.client = client;
     this.schema = schemaName;
     this.clock = clock;
-    this.entityModels = transitions.keySet().stream().collect(toMap(EntityModel::id, identity()));
-    this.eventTypesByEntityModel = EventTypes.eventTypesByEntityModel(transitions);
-    List<EventType<?, ?>> eventTypes = EventTypes.eventTypes(transitions);
-    this.eventTypeMapper = Mappers.eventTypeMapper(eventTypes);
-    Storage storage = StorageProvider.storage(database, client, transitions, schemaName, clock);
+    ResolvedModels models = ResolvedModels.of(entityModels);
+    this.models = models;
+    this.eventTypeMapper = Mappers.eventTypeMapper(models.eventTypes());
+    Storage storage = StorageProvider.storage(database, client, models, schemaName, clock);
     this.eventsByEntityId = storage.eventsByEntityId();
     this.eventsByIdEvent = storage.eventsByIdEvent();
     this.eventsByLastIndexEvent = storage.eventsByLastIndexEvent();
@@ -115,6 +110,8 @@ public class TestApi {
   /// The event log of an entity of an entity model, including id and index entities. Completes empty if the entity has
   /// no events.
   public Mono<EventLog> eventLog(EntityModel entityModel, UUID entityId) {
+    if (!models.runs(entityModel))
+      return Mono.error(models.notRun(entityModel, "the test API"));
     return eventsByEntityId.execute(entityModel, eventTypes(entityModel), entityId)
         .onErrorResume(UnknownEntity.class, _ -> Mono.empty());
   }
@@ -153,6 +150,8 @@ public class TestApi {
   /// @param indexType an event type whose output data type is a [GroupedDataType] with groups of type `G`
   @SuppressWarnings("unchecked")
   public <G> Mono<EventLog> lastIndexed(EntityModel entityModel, EventType<?, ?> indexType, G group) {
+    if (!models.runs(entityModel))
+      return Mono.error(models.notRun(entityModel, "the test API"));
     if (!(indexType.outputDataType() instanceof GroupedDataType<?, ?> dataType))
       return Mono.error(new IllegalArgumentException("Data type of index event type " + indexType.name() + " is not grouped"));
     byte[] marshalledGroup = ((GroupedDataType<?, G>) dataType).marshalGroup(group);
@@ -247,6 +246,8 @@ public class TestApi {
   /// triggered, but it triggers no other events and is not validated against the entity's state. For id and index entities the event
   /// is an id or index event, so an id must not be taken by another entity.
   public <T> Mono<Event<T>> append(EntityModel entityModel, UUID entityId, EventType<?, T> type, T data) {
+    if (!models.runs(entityModel))
+      return Mono.error(models.notRun(entityModel, "the test API"));
     String table = switch (entityModel) {
       case IdEntityModel _ -> "IdEvent";
       case IndexEntityModel _ -> "IndexEvent";
@@ -289,24 +290,22 @@ public class TestApi {
         .update();
   }
 
+  /// The entity model with the id, e.g. of an event log read
   private EntityModel entityModel(UUID id) {
-    EntityModel entityModel = entityModels.get(id);
+    EntityModel entityModel = models.entityModelsById().get(id);
     if (entityModel == null)
-      throw new IllegalStateException("Unknown entity model " + id + ". Is it in the transitions given to the test API?");
+      throw new IllegalStateException("Unknown entity model " + id + ". Is it in the entity models given to the test API?");
     return entityModel;
   }
 
   private List<EventType<?, ?>> eventTypes(EntityModel entityModel) {
-    List<EventType<?, ?>> eventTypes = eventTypesByEntityModel.get(entityModel);
-    if (eventTypes == null)
-      throw new IllegalArgumentException("Unknown entity model " + entityModel.name() + ". Is it in the transitions given to the test API?");
-    return eventTypes;
+    return models.eventTypesByEntityModel().get(entityModel);
   }
 
   private EventType<?, ?> eventType(UUID id) {
     EventType<?, ?> eventType = eventTypeMapper.apply(id);
     if (eventType == null)
-      throw new IllegalStateException("Unknown event type " + id + ". Is it in the transitions given to the test API?");
+      throw new IllegalStateException("Unknown event type " + id + ". Is it in the entity models given to the test API?");
     return eventType;
   }
 

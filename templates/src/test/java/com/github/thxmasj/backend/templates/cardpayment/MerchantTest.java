@@ -1,7 +1,5 @@
 package com.github.thxmasj.backend.templates.cardpayment;
 
-import static com.github.thxmasj.backend.templates.cardpayment.Aggregate.Merchant;
-
 import com.github.thxmasj.backend.core.StateMachine;
 import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.core.test.Init;
@@ -20,11 +18,7 @@ public class MerchantTest {
   public static void setup() {
     stateMachine = new StateMachine(
         _ -> Mono.empty(),
-        Map.of(
-            Merchant, new MerchantTransitions().transitions()
-//            ,
-//            inboxExchange, inboxExchange.transitions()
-        ),
+        DummyTransitions.cardPayments().entityModels(),
         Init.database(),
         Init.client(),
         migrationDataSource,

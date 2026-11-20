@@ -3,9 +3,7 @@ package com.github.thxmasj.backend.templates.cardpayment;
 import static com.github.thxmasj.backend.core.EntitySelector.idEvent;
 import static com.github.thxmasj.backend.core.Tuples.tuple;
 import static com.github.thxmasj.backend.core.Validated.valid;
-import static com.github.thxmasj.backend.http.inbox.HttpInbox.TRIGGER;
 import static com.github.thxmasj.backend.http.inbox.HttpInboxRequest.newEntity;
-import static com.github.thxmasj.backend.http.outbox.HttpOutboxRequest.Index;
 import static com.github.thxmasj.backend.core.message.http.HttpRequestMessage.Method.POST;
 import static com.github.thxmasj.backend.templates.cardpayment.Identifiers.BatchNumberClaimed;
 import static com.github.thxmasj.backend.templates.cardpayment.PaymentTransitions.OutboxRequestModelIds.ApprovedAuthorisation;
@@ -37,11 +35,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.Event;
-import com.github.thxmasj.backend.core.EventTrigger;
 import com.github.thxmasj.backend.core.Identifiable;
-import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.StateMachine;
-import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.core.Tuples.Tuple3;
 import com.github.thxmasj.backend.core.Tuples.Tuple4;
 import com.github.thxmasj.backend.core.Tuples.Tuple6;
@@ -83,7 +78,6 @@ import java.net.URI;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.ZonedDateTime;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -179,9 +173,9 @@ public class CutOffReconciliationTest {
     assertTrue(condition.getAsBoolean(), "Timed out waiting for " + description + ". Received: " + receivedPaths);
   }
 
-  private static Event<?> request(StateMachine machine, String path) {
+  private static Event<?> request(Application application, String path) {
     var message = new HttpRequestMessage(POST, URI.create(path), Map.of(), "{}".getBytes());
-    return machine.onEvent(UUID.randomUUID().toString(), (EventTrigger<HttpRequestMessage, ?, ?>) TRIGGER, message)
+    return application.machine().onEvent(UUID.randomUUID().toString(), application.inbox().trigger(), message)
         .switchIfEmpty(Mono.error(new RuntimeException("No response to " + path)))
         // First event is the triggered event, second is the response event
         .skip(1)
@@ -201,7 +195,10 @@ public class CutOffReconciliationTest {
     );
   }
 
-  private static StateMachine stateMachine(String merchantId) {
+  /// The state machine of an application with the card payment template, and its inbox
+  private record Application(StateMachine machine, HttpInbox inbox) {}
+
+  private static Application stateMachine(String merchantId) {
     var merchant = merchant(merchantId);
     var authorisation = new Authorisation(
         merchantId,
@@ -217,37 +214,85 @@ public class CutOffReconciliationTest {
     );
     var cutOff = new CutOff(merchantId, 1, AGGREGATOR_ID, "http://localhost");
 
-    List<HttpInboxRequest<?>> requests = List.of(
-        postRequest("/merchants")
-            .process(MerchantEvent.MerchantCreated, Aggregate.Merchant, _ -> merchant, newEntity())
-            .build("MerchantRequest", UUID.fromString("c3b0b8a0-6b0f-4a35-9d57-0a5f0f0e0001")),
-        postRequest("/payments")
-            .process(PaymentEvent.PaymentRequested, Aggregate.Payment, _ -> tuple(authorisation, new byte[0]), newEntity())
-            .build("PaymentRequest", UUID.fromString("c3b0b8a0-6b0f-4a35-9d57-0a5f0f0e0002")),
-        postRequest("/cutoffs")
-            .process(SettlementEvent.CutOffRequested, Aggregate.Settlement, _ -> cutOff, (_, _) -> new Valid<>(idEvent(BatchNumberClaimed, new BatchNumber(merchantId, 1))))
-            .build("CutOffRequest", UUID.fromString("c3b0b8a0-6b0f-4a35-9d57-0a5f0f0e0003"))
+    var cardPayments = new CardPayments(
+        _ -> new PaymentToken("4111111111111111", "00", "3012"),
+        CutOffReconciliationTest::authenticationDispatcher,
+        p -> DummyTransitions.reversibleDispatcher(Preauthorisation, PreauthorisationRollbackOnAccepted, PreauthorisationRollbackOnUnknown, p),
+        CutOffReconciliationTest::acquirerAuthorisationDispatcher,
+        p -> DummyTransitions.dispatcher(DummyTransitions.atLeastOnce(Capture, p)),
+        p -> DummyTransitions.reversibleDispatcher(Refund, RefundRollbackOnAccepted, RefundRollbackOnUnknown, p),
+        p -> DummyTransitions.dispatcher(DummyTransitions.atLeastOnce(CaptureRequestedTooLate, p)),
+        p -> DummyTransitions.dispatcher(DummyTransitions.atLeastOnce(FailedAuthentication, p)),
+        _ -> dispatcher(Reconciliation, reconciliationInput::set),
+        p -> DummyTransitions.dispatcher(DummyTransitions.atLeastOnce(RolledBackAuthorisation, p)),
+        p -> DummyTransitions.dispatcher(DummyTransitions.atLeastOnce(RolledBackPreauthorisation, p)),
+        p -> DummyTransitions.dispatcher(DummyTransitions.atLeastOnce(ApprovedPreauthorisation, p)),
+        p -> DummyTransitions.dispatcher(DummyTransitions.atLeastOnce(FailedAuthorisation, p)),
+        _ -> dispatcher(ApprovedAuthorisation),
+        p -> DummyTransitions.dispatcher(DummyTransitions.atLeastOnce(DeclinedAuthorisation, p)),
+        p -> DummyTransitions.dispatcher(DummyTransitions.atLeastOnce(ApprovedCapture, p)),
+        p -> DummyTransitions.dispatcher(DummyTransitions.atLeastOnce(FailedRefund, p)),
+        p -> DummyTransitions.dispatcher(DummyTransitions.atLeastOnce(ApprovedRefund, p)),
+        p -> DummyTransitions.dispatcher(DummyTransitions.atLeastOnce(DeclinedRefund, p)),
+        s -> DummyTransitions.dispatcher(DummyTransitions.atLeastOnce(ApprovedCutOff, s))
     );
 
+    List<HttpInboxRequest<?>> requests = List.of(
+        postRequest("/merchants")
+            .process(MerchantEvent.MerchantCreated, cardPayments.merchant(), _ -> merchant, newEntity())
+            .build("MerchantRequest", UUID.fromString("c3b0b8a0-6b0f-4a35-9d57-0a5f0f0e0001")),
+        postRequest("/payments")
+            .process(PaymentEvent.PaymentRequested, cardPayments.payment(), _ -> tuple(authorisation, new byte[0]), newEntity())
+            .build("PaymentRequest", UUID.fromString("c3b0b8a0-6b0f-4a35-9d57-0a5f0f0e0002")),
+        postRequest("/cutoffs")
+            .process(SettlementEvent.CutOffRequested, cardPayments.settlement(), _ -> cutOff, (_, _) -> new Valid<>(idEvent(BatchNumberClaimed, new BatchNumber(merchantId, 1))))
+            .build("CutOffRequest", UUID.fromString("c3b0b8a0-6b0f-4a35-9d57-0a5f0f0e0003"))
+    );
+    var inbox = HttpInbox.of(requests);
+
+    return new Application(
+        new StateMachine(
+            _ -> Mono.empty(),
+            inbox.entityModels(),
+            Init.database(),
+            Init.client(),
+            migrationDataSource,
+            UUID.randomUUID().toString(),
+            "Test",
+            Clock.systemUTC(),
+            new Logger("CutOffReconciliationTest"),
+            true
+        ),
+        inbox
+    );
+  }
+
+  /// The authentication of payments, made with the payment model
+  private static Dispatcher<AuthenticationData, TypedHttpRequest<Request>> authenticationDispatcher(EntityModel payment) {
     var authentication = HttpOutboxRequest.atMostOnce()
         .requestPayloadType(DataType.json(Request.class))
         .responsePayloadType(DataType.json(AuthenticationResult.class))
         .forwarder(forwarder())
-        .processModel(Aggregate.Payment)
+        .processModel(payment)
         .contentParser(_ -> valid(new AuthenticationResult("authentication-reference", "provider", "cryptogram")))
         .onSuccess(PaymentEvent.AuthorisationRequested, TypedHttpResponse::payload)
         .isAccepted(_ -> true)
         .isRejected(_ -> false)
         .isRejectedByInvalidResponse(_ -> false)
         .build(Authentication.name(), Authentication.id());
-    Dispatcher<AuthenticationData, TypedHttpRequest<Request>> authenticationDispatcher = AtMostOnceDispatcher.of(authentication, _ -> request(Authentication));
+    return AtMostOnceDispatcher.of(authentication, _ -> request(Authentication));
+  }
 
+  /// The authorisation of payments by the acquirer, made with the payment model
+  private static BatchedAtMostOnceWithRollbackDispatcher<Tuple6<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, UUID>, AcquirerAuthorisationRequest, Tuple4<ReversalData, Merchant, AcquirerBatchNumber, UUID>> acquirerAuthorisationDispatcher(
+      EntityModel payment
+  ) {
     AtMostOnce<AcquirerAuthorisationRequest, Request> acquirerAuthorisation =
         HttpOutboxRequest.atMostOnce()
             .requestPayloadType(DataType.json(AcquirerAuthorisationRequest.class))
             .responsePayloadType(DataType.json(AcquirerResponse.class))
             .forwarder(forwarder())
-            .processModel(Aggregate.Payment)
+            .processModel(payment)
             .contentParser(_ -> valid(AcquirerResponse.builder()
                 .amount(1000L)
                 .stan("1")
@@ -260,82 +305,29 @@ public class CutOffReconciliationTest {
             .isAccepted(_ -> true)
             .isRejected(_ -> false)
             .isRejectedByInvalidResponse(_ -> false)
-            .rollbackOnAcceptedModel(
-                DummyTransitions.atLeastOnce(AuthorisationRollbackOnAccepted)
-            )
-            .rollbackOnUnknownModel(DummyTransitions.atLeastOnce(AuthorisationRollbackOnUnknown))
+            .rollbackOnAcceptedModel(DummyTransitions.atLeastOnce(AuthorisationRollbackOnAccepted, payment))
+            .rollbackOnUnknownModel(DummyTransitions.atLeastOnce(AuthorisationRollbackOnUnknown, payment))
             .build(
                 PaymentTransitions.OutboxRequestModelIds.Authorisation.name(),
                 PaymentTransitions.OutboxRequestModelIds.Authorisation.id()
             );
-    BatchedAtMostOnceWithRollbackDispatcher<Tuple6<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, UUID>, AcquirerAuthorisationRequest, Tuple4<ReversalData, Merchant, AcquirerBatchNumber, UUID>> acquirerAuthorisationDispatcher =
-        BatchedAtMostOnceWithRollbackDispatcher.of(
-            acquirerAuthorisation,
-            (Tuple6<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, UUID> d) -> new BatchedRequest<>(TypedHttpRequest.create(
-                POST,
-                URI.create("http://localhost:" + acquirer.getAddress().getPort() + "/" + PaymentTransitions.OutboxRequestModelIds.Authorisation.name()),
-                new AcquirerAuthorisationRequest(
-                    d.t4().pan(),
-                    d.t4().psn(),
-                    d.t4().expiryDate(),
-                    d.t1().amount().currency(),
-                    d.t1().amount().requested(),
-                    d.t5().number(),
-                    d.t1().merchantReference(),
-                    d.t3().cryptogram()
-                )
-            ), d.t6()),
-            (_, _) -> Mono.empty()
-        );
-    Dispatcher<Tuple3<BatchNumber, AcquirerBatchNumber, Merchant>, TypedHttpRequest<Request>> reconciliation = dispatcher(
-        Reconciliation,
-        reconciliationInput::set
-    );
-
-    var payment = new PaymentTransitions(
-        _ -> new PaymentToken("4111111111111111", "00", "3012"),
-        authenticationDispatcher,
-        DummyTransitions.reversibleDispatcher(Preauthorisation, PreauthorisationRollbackOnAccepted, PreauthorisationRollbackOnUnknown),
-        acquirerAuthorisationDispatcher,
-        DummyTransitions.dispatcher(DummyTransitions.atLeastOnce(Capture)),
-        DummyTransitions.reversibleDispatcher(Refund, RefundRollbackOnAccepted, RefundRollbackOnUnknown),
-        DummyTransitions.dispatcher(DummyTransitions.atLeastOnce(CaptureRequestedTooLate)),
-        DummyTransitions.dispatcher(DummyTransitions.atLeastOnce(FailedAuthentication)),
-        DummyTransitions.dispatcher(DummyTransitions.atLeastOnce(RolledBackAuthorisation)),
-        DummyTransitions.dispatcher(DummyTransitions.atLeastOnce(RolledBackPreauthorisation)),
-        DummyTransitions.dispatcher(DummyTransitions.atLeastOnce(ApprovedPreauthorisation)),
-        DummyTransitions.dispatcher(DummyTransitions.atLeastOnce(FailedAuthorisation)),
-        dispatcher(ApprovedAuthorisation),
-        DummyTransitions.dispatcher(DummyTransitions.atLeastOnce(DeclinedAuthorisation)),
-        DummyTransitions.dispatcher(DummyTransitions.atLeastOnce(ApprovedCapture)),
-        DummyTransitions.dispatcher(DummyTransitions.atLeastOnce(FailedRefund)),
-        DummyTransitions.dispatcher(DummyTransitions.atLeastOnce(ApprovedRefund)),
-        DummyTransitions.dispatcher(DummyTransitions.atLeastOnce(DeclinedRefund))
-    );
-    var settlement = new SettlementTransitions(reconciliation, DummyTransitions.dispatcher(DummyTransitions.atLeastOnce(ApprovedCutOff)));
-
-    Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions = new HashMap<>();
-    transitions.put(Aggregate.Merchant, new MerchantTransitions().transitions());
-    transitions.put(Aggregate.Payment, payment.transitions());
-    transitions.put(Aggregate.Settlement, settlement.transitions());
-    transitions.put(Identifiers.Ids, Identifiers.Ids.transitions());
-    transitions.put(Identifiers.Index, Identifiers.Index.transitions());
-    transitions.put(Index, Index.transitions());
-    transitions.putAll(payment.outboxTransitions());
-    transitions.putAll(settlement.outboxTransitions());
-    transitions = HttpInbox.transitions(requests, transitions);
-
-    return new StateMachine(
-        _ -> Mono.empty(),
-        transitions,
-        Init.database(),
-        Init.client(),
-        migrationDataSource,
-        UUID.randomUUID().toString(),
-        "Test",
-        Clock.systemUTC(),
-        new Logger("CutOffReconciliationTest"),
-        true
+    return BatchedAtMostOnceWithRollbackDispatcher.of(
+        acquirerAuthorisation,
+        (Tuple6<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, UUID> d) -> new BatchedRequest<>(TypedHttpRequest.create(
+            POST,
+            URI.create("http://localhost:" + acquirer.getAddress().getPort() + "/" + PaymentTransitions.OutboxRequestModelIds.Authorisation.name()),
+            new AcquirerAuthorisationRequest(
+                d.t4().pan(),
+                d.t4().psn(),
+                d.t4().expiryDate(),
+                d.t1().amount().currency(),
+                d.t1().amount().requested(),
+                d.t5().number(),
+                d.t1().merchantReference(),
+                d.t3().cryptogram()
+            )
+        ), d.t6()),
+        (_, _) -> Mono.empty()
     );
   }
 

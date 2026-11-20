@@ -10,7 +10,6 @@ import static com.github.thxmasj.backend.core.EntitySelector.CreationMode.Create
 import static com.github.thxmasj.backend.core.EntitySelector.entityId;
 import static com.github.thxmasj.backend.core.TransitionModelBuilder.WithEvent.onEvent;
 import static com.github.thxmasj.backend.core.Tuples.tuple;
-import static com.github.thxmasj.backend.templates.cardpayment.Aggregate.Settlement;
 import static com.github.thxmasj.backend.templates.cardpayment.Identifiers.Ids;
 import static com.github.thxmasj.backend.templates.cardpayment.Identifiers.MerchantIdClaimed;
 import static com.github.thxmasj.backend.templates.cardpayment.MerchantEvent.DuplicateMerchantIdDetected;
@@ -29,6 +28,7 @@ import static com.github.thxmasj.backend.templates.cardpayment.SettlementEvent.I
 import static java.util.Optional.ofNullable;
 
 import com.github.thxmasj.backend.core.DataType;
+import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionContext;
 import com.github.thxmasj.backend.core.TransitionModel;
@@ -38,6 +38,13 @@ import java.util.List;
 import java.util.Map;
 
 public class MerchantTransitions {
+
+  private final EntityModel settlement;
+
+  /// @param settlement the model of the settlements of the merchants
+  MerchantTransitions(EntityModel settlement) {
+    this.settlement = settlement;
+  }
 
   public Map<State, List<TransitionModel<?, ?>>> transitions() {
     return Map.of(
@@ -59,7 +66,7 @@ public class MerchantTransitions {
                 .otherwise(
                     onEvent(MerchantActivated).to(Active)
                         .assemble(c -> tuple(c.input(), c.eventReference()))
-                        .trigger(InitialSettlementOpened).with(d -> new MerchantId(d.t1().id())).on(Settlement).identifiedBy(newEntityId())
+                        .trigger(InitialSettlementOpened).with(d -> new MerchantId(d.t1().id())).on(settlement).identifiedBy(newEntityId())
                         .trigger(RequestCompleted).with(d -> tuple("", d.t1().t2())).on(Request).identifiedBy(entityIdFromSession())
                         .output(d -> d.t1().t1().t1()),
                     d -> d.t1().t1()

@@ -83,7 +83,7 @@ The [state diagrams](diagrams.md) show the severity of a transition with a symbo
 The state machine reports to the `Listener` it is created with. `JsonLinesListener` writes the events to stdout:
 
 ```java
-new StateMachine(null, transitions, dataSource, null, schema, null, Clock.systemUTC(), new JsonLinesListener());
+new StateMachine(null, entityModels, dataSource, null, schema, null, Clock.systemUTC(), new JsonLinesListener());
 ```
 
 Every accepted event is a line of JSON, here an outbox request which is given up:

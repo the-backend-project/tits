@@ -1,37 +1,28 @@
 package com.github.thxmasj.backend.http.outbox;
 
-import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.EventType;
-import com.github.thxmasj.backend.core.State;
-import com.github.thxmasj.backend.core.TransitionModel;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import reactor.core.publisher.Mono;
 
-/// The state common to the [Dispatcher] implementations.
-abstract class BaseDispatcher<X, I> {
+/// The state common to the [Dispatcher] implementations, of an outbox request of type `R`.
+abstract class BaseDispatcher<X, I, R extends HttpOutboxRequest<?>> {
 
-  private final HttpOutboxRequest<?> outbox;
+  private final R outbox;
   private final EventType<I, ?> requestDispatched;
   private final BiFunction<DispatchContext, X, Mono<I>> inputCreator;
-  private final Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions;
 
   BaseDispatcher(
-      HttpOutboxRequest<?> outbox,
+      R outbox,
       EventType<I, ?> requestDispatched,
-      BiFunction<DispatchContext, X, Mono<I>> inputCreator,
-      Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions
+      BiFunction<DispatchContext, X, Mono<I>> inputCreator
   ) {
     this.outbox = outbox;
     this.requestDispatched = requestDispatched;
     this.inputCreator = inputCreator;
-    this.transitions = transitions;
   }
 
-  public HttpOutboxRequest<?> outbox() {
+  public R outbox() {
     return outbox;
   }
 
@@ -41,10 +32,6 @@ abstract class BaseDispatcher<X, I> {
 
   public Mono<I> input(DispatchContext context, X data) {
     return inputCreator.apply(context, data);
-  }
-
-  public Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions() {
-    return transitions;
   }
 
   static <X, I> BiFunction<DispatchContext, X, Mono<I>> reactive(Function<X, I> inputCreator) {
@@ -61,17 +48,5 @@ abstract class BaseDispatcher<X, I> {
       throw new IllegalArgumentException(outbox.name() + " has no rollback models, use a dispatcher without rollback");
   }
 
-  static <RRQ> Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> withRollbackModels(
-      AtMostOnce<?, RRQ> outbox,
-      Map<State, List<TransitionModel<?, ?>>> outboxTransitions
-  ) {
-    var transitions = new LinkedHashMap<EntityModel, Map<State, List<TransitionModel<?, ?>>>>();
-    transitions.put(outbox, outboxTransitions);
-    if (outbox.rollbackOnAcceptedModel() != null)
-      transitions.put(outbox.rollbackOnAcceptedModel(), outbox.rollbackOnAcceptedModel().transitions());
-    if (outbox.rollbackOnUnknownModel() != null)
-      transitions.put(outbox.rollbackOnUnknownModel(), outbox.rollbackOnUnknownModel().transitions());
-    return transitions;
-  }
 
 }

@@ -52,11 +52,11 @@ module com.example.helloworld {
 ## Declaring the model
 
 An [entity model](entities.md) has a name and a UUID, a set of states and the event types that move its entities
-between them. The UUIDs are what is stored in the database, so generate them once and never change them (see the
-[design principles](principles.md#safe-to-change)):
+between them, and its transitions. The UUIDs are what is stored in the database, so generate them once and never
+change them (see the [design principles](principles.md#safe-to-change)):
 
 ```java
-EntityModel Greeting = EntityModel.of("Greeting", UUID.fromString("8a4c1d36-4f0e-4b8e-9a47-2f5f0c0b6d11"));
+EntityModel Greeting = EntityModel.of("Greeting", UUID.fromString("8a4c1d36-4f0e-4b8e-9a47-2f5f0c0b6d11"), Greetings::transitions);
 
 enum States implements State {
   Greeted
@@ -101,21 +101,22 @@ HttpInboxRequest<Void> GreetingRequest = HttpInboxRequest
 
 The [transitions](transition-models.md) say what happens on each event type in each state. A greeting starts in
 `Begin`, and `GreetingRequested` takes it to `Greeted`. On the way, the transition triggers the response on the request
-that is waiting for it, `HttpInbox.Request`, which stands for whichever inbox request the greeting was requested by:
+that is waiting for it, `HttpInbox.Request`, which stands for whichever inbox request the greeting was requested by.
+The model is given the method creating its transitions, `Greetings::transitions`, which is called when they are first
+asked for. The transitions can thereby refer to the model itself and to other models declared the same way (see
+[Entities](entities.md)):
 
 ```java
-static Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions() {
-  return HttpInbox.transitions(List.of(GreetingRequest), Map.of(
-      Greeting, Map.of(
-          Begin, List.of(
-              onEvent(GreetingRequested).to(States.Greeted)
-                  .assemble(c -> c.log().entityId().toString())
-                  .trigger(GreetingResponseCreated).with(id -> id).on(Request).identifiedBy(entityIdFromSession())
-                  .output()
-          ),
-          States.Greeted, List.of()
-      )
-  ));
+private static Map<State, List<TransitionModel<?, ?>>> transitions() {
+  return Map.of(
+      Begin, List.of(
+          onEvent(GreetingRequested).to(States.Greeted)
+              .assemble(c -> c.log().entityId().toString())
+              .trigger(GreetingResponseCreated).with(id -> id).on(Request).identifiedBy(entityIdFromSession())
+              .output()
+      ),
+      States.Greeted, List.of()
+  );
 }
 ```
 
@@ -125,21 +126,29 @@ The diagram of `Greeting`, drawn from these transitions:
 
 [Open the Greeting diagram in full size](images/com.github.thxmasj.backend.helloworld.Greeting.svg)
 
-`HttpInbox.transitions` adds the entity models of the inbox to those of the application: the inbox requests,
-`RequestRouting`, which routes a request to the inbox request matching it, `MessageIds` and `RequestIndex`, which
-indexes the requests by the entities they were processed on. It also checks that the inbox request takes the response
-the greeting gives, `GreetingResponseCreated`. Both are in `Greetings.java` in the demo.
+The inbox of the application is created from its inbox requests:
+
+```java
+HttpInbox Inbox = HttpInbox.of(List.of(GreetingRequest));
+```
+
+Its `entityModels()` are the inbox's own: the inbox requests, `RequestRouting`, which routes a request to the inbox
+request matching it, `MessageIds` and `RequestIndex`, which indexes the requests by the entities they were processed
+on. The state machine is given them, and also runs the models their transitions trigger events on, here `Greeting`,
+and so on, so the models of the application are found from the inbox. The inbox also checks that the inbox
+request takes the response the greeting gives, `GreetingResponseCreated`, when the state machine asks for the entity
+models of the inbox. All of it is in `Greetings.java` in the demo.
 
 ## Running it
 
-Build a data source with the database module, give it to a `StateMachine` with your domain model, and serve HTTP with
-an `HttpInboxListener`:
+Build a data source with the database module, give it to a `StateMachine` with the entity models of the inbox, and serve
+HTTP with an `HttpInboxListener` of the inbox:
 
 ```java
 Database database = new MssqlDatabase();
 StateMachine stateMachine = new StateMachine(
     null,                         // no delayer
-    Greetings.transitions(),
+    Greetings.Inbox.entityModels(),
     new DataSourceBuilder(database, config.database()).buildPooled(),
     null,                         // the schema is created by a separate admin process
     config.schema(),
@@ -147,7 +156,7 @@ StateMachine stateMachine = new StateMachine(
     Clock.systemUTC(),
     new JsonLinesListener()       // writes the events to stdout, one line of JSON each
 );
-DisposableServer server = new HttpInboxListener(stateMachine).listen(config.port());
+DisposableServer server = new HttpInboxListener(stateMachine, Greetings.Inbox).listen(config.port());
 ```
 
 The schema is created before the application starts by `database.createSchema(...)`, run with credentials that are
@@ -166,7 +175,7 @@ To look into the entities, or to put them in a given state before a scenario, ad
 and use its `TestApi` instead of querying the tables (see [Testing](testing.md)):
 
 ```java
-var api = new TestApi(dataSource, schema, Greetings.transitions(), Clock.systemUTC());
+var api = new TestApi(dataSource, schema, Greetings.Inbox.entityModels(), Clock.systemUTC());
 ```
 
 ## Next steps

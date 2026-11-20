@@ -30,8 +30,8 @@ import com.github.thxmasj.backend.core.internal.ActionTrigger;
 import com.github.thxmasj.backend.core.internal.Calculation;
 import com.github.thxmasj.backend.core.internal.Debug;
 import com.github.thxmasj.backend.core.internal.DelayedEvent;
-import com.github.thxmasj.backend.core.internal.EventTypes;
 import com.github.thxmasj.backend.core.internal.TransitionStep;
+import com.github.thxmasj.backend.core.internal.ResolvedModels;
 import com.github.thxmasj.backend.core.internal.TransitionStep.ActionStep;
 import com.github.thxmasj.backend.core.internal.TransitionStep.AssembleStep;
 import com.github.thxmasj.backend.core.internal.TransitionStep.ChoiceStep;
@@ -62,7 +62,6 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.UUID;
@@ -86,21 +85,22 @@ public class StateMachine implements AutoCloseable {
   private final List<Looper<?>> workers = new ArrayList<>();
   private final DatabaseClient client;
   private final Storage storage;
+  private final ResolvedModels models;
   private final Map<EntityModel, Traverser> traversers;
   private final Map<EntityModel, List<EventType<?, ?>>> eventTypesByEntityModel;
 
   public StateMachine(
-      Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions,
+      List<? extends EntityModel> entityModels,
       DataSource dataSource,
       String schemaName,
       boolean withResolving
   ) {
-    this(null, transitions, dataSource, null, schemaName, null, Clock.systemUTC(), null, withResolving);
+    this(null, entityModels, dataSource, null, schemaName, null, Clock.systemUTC(), null, withResolving);
   }
 
   public StateMachine(
       Function<List<String>, Mono<Void>> delayer,
-      Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions,
+      List<? extends EntityModel> entityModels,
       DataSource dataSource,
       DataSource schemaDataSource,
       String schemaName,
@@ -108,13 +108,13 @@ public class StateMachine implements AutoCloseable {
       Clock clock,
       Listener listener
   ) {
-    this(delayer, transitions, dataSource, schemaDataSource, schemaName, role, clock, listener, true);
+    this(delayer, entityModels, dataSource, schemaDataSource, schemaName, role, clock, listener, true);
   }
 
   /// The database is the one behind the data source (see [Database#of(DataSource)])
   public StateMachine(
       Function<List<String>, Mono<Void>> delayer,
-      Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions,
+      List<? extends EntityModel> entityModels,
       DataSource dataSource,
       DataSource schemaDataSource,
       String schemaName,
@@ -124,19 +124,27 @@ public class StateMachine implements AutoCloseable {
       boolean withResolving
   ) {
     Database database = Database.of(dataSource);
-    this(delayer, transitions, database, database.client(dataSource), schemaDataSource, schemaName, role, clock, listener, withResolving);
+    this(delayer, entityModels, database, database.client(dataSource), schemaDataSource, schemaName, role, clock, listener, withResolving);
   }
 
   /// @param delayer delays the storing of new events until the returned [Mono] completes, e.g. for tests to hold a
   ///                request at an event. It is given a key `<correlation id>-<event type id>` of each new event, so an
   ///                event is identified by its [EventType#id()], which stays the same when the event type is renamed.
   ///                Null for no delay.
+  /// @param entityModels the entity models to run, each with its transitions, of which the state machine also runs
+  ///                     the models the transitions trigger events on, and so on. It is enough to give the models
+  ///                     which nothing triggers events on, e.g. the entity models of an inbox (see
+  ///                     `HttpInbox#entityModels()`). An [EntityModelGroup] is not one of them, since it has no entities
+  ///                     of its own.
+  /// @throws IllegalArgumentException if one of the entity models given is an [EntityModelGroup], or if two of the
+  ///                                  models run have the same id
+  /// @throws NullPointerException if one of the entity models given is null, e.g. a constant not created yet
   /// @param client a client of the database, which is closed with the state machine
   /// @param schemaDataSource a data source of the database to create the schema with, or null if it is created
   ///                         elsewhere
   public StateMachine(
       Function<List<String>, Mono<Void>> delayer,
-      Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions,
+      List<? extends EntityModel> entityModels,
       Database database,
       DatabaseClient client,
       DataSource schemaDataSource,
@@ -146,9 +154,12 @@ public class StateMachine implements AutoCloseable {
       Listener listener,
       boolean withResolving
   ) {
-    Debug.log("Supported entity models:\n" + transitions.keySet().stream().map(EntityModel::name).collect(joining("\n")));
-    this.traversers = transitions.entrySet().stream().collect(toMap(Entry::getKey, e -> new Traverser(e.getValue())));
-    this.eventTypesByEntityModel = EventTypes.eventTypesByEntityModel(transitions);
+    ResolvedModels resolved = ResolvedModels.of(entityModels);
+    List<EntityModel> models = resolved.entityModels();
+    this.models = resolved;
+    Debug.log("Supported entity models:\n" + models.stream().map(EntityModel::name).collect(joining("\n")));
+    this.traversers = models.stream().collect(toMap(m -> m, m -> new Traverser(m.transitions())));
+    this.eventTypesByEntityModel = resolved.eventTypesByEntityModel();
     this.delayer = delayer != null ? delayer : _ -> Mono.empty();
     if (schemaDataSource != null) {
       database.createSchema(schemaDataSource, schemaName, role)
@@ -157,7 +168,7 @@ public class StateMachine implements AutoCloseable {
     }
     this.clock = clock;
     this.client = client;
-    this.storage = StorageProvider.storage(database, client, transitions, schemaName, clock);
+    this.storage = StorageProvider.storage(database, client, resolved, schemaName, clock);
     this.listener = listener;
     if (withResolving) {
       Looper<ResolverStatus> resolverLooper = new Looper<>(
@@ -412,8 +423,20 @@ public class StateMachine implements AutoCloseable {
     return onEvent(UUID.randomUUID().toString(), eventTrigger, input);
   }
 
+  /// Fails with an [IllegalArgumentException] if the state machine doesn't run the entity model triggered on, the
+  /// same instance (see [#runs(EntityModel)]).
   public <T, I, O> Flux<Event<?>> onEvent(String correlationId, EventTrigger<T, I, O> eventTrigger, T input) {
+    EntityModel target = eventTrigger.entityModel();
+    if (target != null && !(target instanceof EntityModelGroup) && !runs(target))
+      return Flux.error(models.notRun(target, "the state machine"));
     return onEvent(correlationId, eventTrigger, input, null);
+  }
+
+  /// Whether the state machine runs the entity model, the same instance as it was given or found. Another instance
+  /// with its id isn't, as it may differ, e.g. be created from other configuration. The models run are given by
+  /// [#entityModels()].
+  public boolean runs(EntityModel entityModel) {
+    return models.runs(entityModel);
   }
 
   private <T, I, O> Flux<Event<?>> onEvent(
@@ -651,7 +674,11 @@ public class StateMachine implements AutoCloseable {
 
 
   /// The current state of the selected entity. Completes empty if the entity does not exist.
+  /// Fails with an [IllegalArgumentException] if the state machine doesn't run the entity model, the same instance
+  /// (see [#runs(EntityModel)]).
   public Mono<State> onStatus(EntitySelector entitySelector, EntityModel entityModel) {
+    if (!runs(entityModel))
+      return Mono.error(models.notRun(entityModel, "the state machine"));
     return eventLog(entitySelector, entityModel, null)
         .map(log -> traversers.get(entityModel).currentState(log))
         .onErrorResume(UnknownEntity.class, _ -> Mono.empty());
@@ -1156,6 +1183,11 @@ public class StateMachine implements AutoCloseable {
             )
 
         );
+  }
+
+  /// The entity models the state machine runs: those it was given, and those their transitions trigger events on
+  public List<EntityModel> entityModels() {
+    return models.entityModels();
   }
 
   Traverser traverser(EntityModel entityModel) {

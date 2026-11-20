@@ -35,8 +35,8 @@ public class ConditionalTriggerTest {
 
   enum BatchStates implements State {Open, Waiting, Closed}
 
-  static EntityModel Order = EntityModel.of("Order", UUID.fromString("c1a8a3e0-0f0b-4b0e-9b0e-2f6d1f1c2b01"));
-  static EntityModel Batch = EntityModel.of("Batch", UUID.fromString("c1a8a3e0-0f0b-4b0e-9b0e-2f6d1f1c2b02"));
+  static EntityModel Order = EntityModel.of("Order", UUID.fromString("c1a8a3e0-0f0b-4b0e-9b0e-2f6d1f1c2b01"), ConditionalTriggerTest::orderTransitions);
+  static EntityModel Batch = EntityModel.of("Batch", UUID.fromString("c1a8a3e0-0f0b-4b0e-9b0e-2f6d1f1c2b02"), ConditionalTriggerTest::batchTransitions);
   static EventType<UUID, UUID> orderReferenced = IndexEntityModel.referenceEventType(
       "Order referenced",
       UUID.fromString("c1a8a3e0-0f0b-4b0e-9b0e-2f6d1f1c2b03")
@@ -87,63 +87,68 @@ public class ConditionalTriggerTest {
   private EventsByEntityId eventsByEntityId;
 
   private StateMachine stateMachine(String schema) {
-    eventsByEntityId = Init.storage(schema, transitions()).eventsByEntityId();
-    return Init.stateMachine(schema, transitions());
+    eventsByEntityId = Init.storage(schema, entityModels()).eventsByEntityId();
+    return Init.stateMachine(schema, entityModels());
   }
 
-  private static Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions() {
-    return Map.of(
-        Order, Map.<State, List<TransitionModel<?, ?>>>of(
-            Begin, List.of(
-                onEvent(OrderCreated).to(OrderStates.Created)
-                    .assemble(c -> tuple(c.input(), c.entityId()))
-                    .trigger(orderReferenced).with(t -> t.t1()).on(Index).identifiedBy(t -> newEntityId(t.t2()))
-                    .output()
-            ),
-            OrderStates.Created, List.of(
-                onEvent(OrderShipped).to(OrderStates.Shipped).output(),
-                onEvent(OrderCancelled).to(OrderStates.Cancelled).output()
-            ),
-            OrderStates.Shipped, List.of(),
-            OrderStates.Cancelled, List.of()
+  private static List<EntityModel> entityModels() {
+    return List.of(Order, Batch, Index);
+  }
+
+  private static Map<State, List<TransitionModel<?, ?>>> orderTransitions() {
+    return Map.<State, List<TransitionModel<?, ?>>>of(
+        Begin, List.of(
+            onEvent(OrderCreated).to(OrderStates.Created)
+                .assemble(c -> tuple(c.input(), c.entityId()))
+                .trigger(orderReferenced).with(t -> t.t1()).on(Index).identifiedBy(t -> newEntityId(t.t2()))
+                .output()
         ),
-        Batch, Map.<State, List<TransitionModel<?, ?>>>of(
-            Begin, List.of(onEvent(BatchOpened).to(BatchStates.Open).output()),
-            BatchStates.Open, List.of(
-                onEvent(BatchCloseRequestedWhenShipped).to(BatchStates.Waiting)
-                    .assemble(c -> tuple(c.input(), c.log().entityId()))
-                    .trigger(BatchClosed)
-                    .when(orderReferenced, t -> t.t1())
-                    .is(OrderShipped)
-                    .with(_ -> null)
-                    .on(Batch)
-                    .identifiedBy(t -> entityId((UUID) t.t2()))
-                    .output(),
-                onEvent(SessionBatchCloseRequestedWhenShipped).to(BatchStates.Waiting)
-                    .assemble(c -> c.input())
-                    .trigger(BatchClosed)
-                    .when(orderReferenced, t -> t)
-                    .is(OrderShipped)
-                    .with(_ -> null)
-                    .on(Batch)
-                    .identifiedBy(entityIdFromSession())
-                    .output(),
-                onEvent(BatchCloseRequestedWhenShippedOrCancelled).to(BatchStates.Waiting)
-                    .assemble(c -> c.input())
-                    .trigger(BatchClosed)
-                    .when(orderReferenced, t -> t)
-                    .is(OrderShipped, OrderCancelled)
-                    .with(_ -> null)
-                    .on(Batch)
-                    .identifiedBy(entityIdFromSession())
-                    .output()
-            ),
-            BatchStates.Waiting, List.of(onEvent(BatchClosed).to(BatchStates.Closed).output()),
-            BatchStates.Closed, List.of()
+        OrderStates.Created, List.of(
+            onEvent(OrderShipped).to(OrderStates.Shipped).output(),
+            onEvent(OrderCancelled).to(OrderStates.Cancelled).output()
         ),
-        Index, Index.transitions()
+        OrderStates.Shipped, List.of(),
+        OrderStates.Cancelled, List.of()
     );
   }
+
+  private static Map<State, List<TransitionModel<?, ?>>> batchTransitions() {
+    return Map.<State, List<TransitionModel<?, ?>>>of(
+        Begin, List.of(onEvent(BatchOpened).to(BatchStates.Open).output()),
+        BatchStates.Open, List.of(
+            onEvent(BatchCloseRequestedWhenShipped).to(BatchStates.Waiting)
+                .assemble(c -> tuple(c.input(), c.log().entityId()))
+                .trigger(BatchClosed)
+                .when(orderReferenced, t -> t.t1())
+                .is(OrderShipped)
+                .with(_ -> null)
+                .on(Batch)
+                .identifiedBy(t -> entityId((UUID) t.t2()))
+                .output(),
+            onEvent(SessionBatchCloseRequestedWhenShipped).to(BatchStates.Waiting)
+                .assemble(c -> c.input())
+                .trigger(BatchClosed)
+                .when(orderReferenced, t -> t)
+                .is(OrderShipped)
+                .with(_ -> null)
+                .on(Batch)
+                .identifiedBy(entityIdFromSession())
+                .output(),
+            onEvent(BatchCloseRequestedWhenShippedOrCancelled).to(BatchStates.Waiting)
+                .assemble(c -> c.input())
+                .trigger(BatchClosed)
+                .when(orderReferenced, t -> t)
+                .is(OrderShipped, OrderCancelled)
+                .with(_ -> null)
+                .on(Batch)
+                .identifiedBy(entityIdFromSession())
+                .output()
+        ),
+        BatchStates.Waiting, List.of(onEvent(BatchClosed).to(BatchStates.Closed).output()),
+        BatchStates.Closed, List.of()
+    );
+  }
+
 
   private EventLog batchLog(UUID batchId) {
     return eventsByEntityId.execute(

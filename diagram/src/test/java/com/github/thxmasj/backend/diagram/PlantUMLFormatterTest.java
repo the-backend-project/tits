@@ -29,7 +29,10 @@ class PlantUMLFormatterTest {
   static final EventType<Void, Void> Refused = BasicEventType.of("Refused", UUID.randomUUID());
   static final EventType<Void, Void> Withdrawn = BasicEventType.of("Withdrawn", UUID.randomUUID());
 
-  static final EntityModel Request = EntityModel.of("Request", UUID.randomUUID());
+  /// A formatter of a request model with the transitions
+  private static PlantUMLFormatter formatter(Map<State, List<TransitionModel<?, ?>>> transitions) {
+    return new PlantUMLFormatter(EntityModel.of("Request", UUID.randomUUID(), () -> transitions));
+  }
 
   @Test
   void transitionInSeveralBranchesOfAChoiceIsShownOnce() {
@@ -45,7 +48,7 @@ class PlantUMLFormatterTest {
         States.Accepted, List.of(),
         States.Refused, List.of()
     );
-    String diagram = new PlantUMLFormatter(Request, transitions).format();
+    String diagram = formatter(transitions).format();
     String refusedId = States.Refused.name() + States.Refused.hashCode();
     assertThat(diagram).contains("Choice1 --> " + refusedId + ": Refused\\nWithdrawn\n");
   }
@@ -71,7 +74,7 @@ class PlantUMLFormatterTest {
         States.Retrying, List.of(),
         States.Failed, List.of()
     );
-    String diagram = new PlantUMLFormatter(Request, transitions).format();
+    String diagram = formatter(transitions).format();
     String waitingId = States.Waiting.name() + States.Waiting.hashCode();
     String retryingId = States.Retrying.name() + States.Retrying.hashCode();
     assertThat(diagram).containsOnlyOnce("<<choice>>");
@@ -99,7 +102,7 @@ class PlantUMLFormatterTest {
         States.Failed, List.of(),
         States.Refused, List.of()
     );
-    String diagram = new PlantUMLFormatter(Request, transitions).format();
+    String diagram = formatter(transitions).format();
     String waitingId = States.Waiting.name() + States.Waiting.hashCode();
     assertThat(diagram).contains("state Choice1 <<choice>>", "state Choice2 <<choice>>");
     assertThat(diagram).contains(waitingId + " --> Choice1: Timed out\n", waitingId + " --> Choice2: Dropped\n");
@@ -114,7 +117,7 @@ class PlantUMLFormatterTest {
             onEvent(Withdrawn).toSelf().output()
         )
     );
-    String diagram = new PlantUMLFormatter(Request, transitions).format();
+    String diagram = formatter(transitions).format();
     String acceptedId = States.Accepted.name() + States.Accepted.hashCode();
     assertThat(diagram).contains(acceptedId + " --> " + acceptedId + ": Refused\\nWithdrawn\n");
   }
@@ -129,7 +132,7 @@ class PlantUMLFormatterTest {
         States.Accepted, List.of(onEvent(Withdrawn).to(States.Refused).severity(Severity.Critical).output()),
         States.Refused, List.of()
     );
-    var formatter = new PlantUMLFormatter(Request, transitions);
+    var formatter = formatter(transitions);
     assertThat(formatter.format())
         .contains(": Requested\n")
         .contains(": <color:#7A5200><b>\u26a0 Refused</b></color>\n")

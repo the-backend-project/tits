@@ -1,5 +1,7 @@
 package com.github.thxmasj.backend.core;
 
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.function.Predicate;
 
@@ -9,6 +11,12 @@ import java.util.function.Predicate;
 /// responds to, without the triggering transition knowing which model that is. A group has no entities or transitions
 /// of its own, so it is not given to the state machine, and its entities can't be identified in any other way.
 public interface EntityModelGroup extends EntityModel {
+
+  /// None, as the transitions are those of the entity models in the group
+  @Override
+  default Map<State, List<TransitionModel<?, ?>>> transitions() {
+    return Map.of();
+  }
 
   /// Whether the entity model is in the group
   boolean includes(EntityModel entityModel);

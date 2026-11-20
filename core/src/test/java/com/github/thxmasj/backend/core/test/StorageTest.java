@@ -15,7 +15,6 @@ import com.github.thxmasj.backend.core.EventLog;
 import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.IdEntityModel;
 import com.github.thxmasj.backend.core.State;
-import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.core.database.UnknownEntity;
 import com.github.thxmasj.backend.core.internal.DelayedEvent;
 import com.github.thxmasj.backend.core.internal.database.ChangeState.Change;
@@ -49,20 +48,21 @@ public class StorageTest {
   static EventType<Void, Void> PersonCreated = BasicEventType.of("Person created", UUID.fromString("5a4bd3b2-5d0e-4a8e-9a61-2f3b1d6e0c01"));
   static EventType<String, String> NameClaimed = BasicEventType.of("Name claimed", UUID.fromString("5a4bd3b2-5d0e-4a8e-9a61-2f3b1d6e0c02"), DataType.string());
 
-  static EntityModel Person = EntityModel.of("Person", UUID.fromString("5a4bd3b2-5d0e-4a8e-9a61-2f3b1d6e0c03"));
+  static EntityModel Person = EntityModel.of(
+      "Person",
+      UUID.fromString("5a4bd3b2-5d0e-4a8e-9a61-2f3b1d6e0c03"),
+      () -> Map.of(Begin, List.of(onEvent(PersonCreated).to(States.Created).output()))
+  );
   static IdEntityModel Names = IdEntityModel.of("Names", UUID.fromString("5a4bd3b2-5d0e-4a8e-9a61-2f3b1d6e0c04"), NameClaimed);
 
-  private static final Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions = Map.of(
-      Person, Map.of(Begin, List.of(onEvent(PersonCreated).to(States.Created).output())),
-      Names, Names.transitions()
-  );
+  private static final List<EntityModel> entityModels = List.of(Person, Names);
 
   private static final Clock clock = Clock.systemUTC();
 
   private static Storage storage() {
     String schema = UUID.randomUUID().toString();
     Storage.createSchema(Init.migrationDataSource(), schema, "Test").block();
-    return Init.storage(schema, transitions);
+    return Init.storage(schema, entityModels);
   }
 
   private static void store(Storage storage, Change... changes) {

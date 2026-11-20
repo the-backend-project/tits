@@ -9,6 +9,7 @@ import com.github.thxmasj.backend.core.internal.Calculation;
 import com.github.thxmasj.backend.core.internal.TransitionStep.InputStep;
 import java.time.Duration;
 import java.time.ZonedDateTime;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
@@ -18,7 +19,7 @@ public class SeverityTest {
 
   enum States implements State { Delivered, Returned }
 
-  static EntityModel Parcel = EntityModel.of("Parcel", UUID.fromString("2b6d0c4e-7a1f-4e39-9c58-d3f1a5b7c9e0"));
+  static EntityModel Parcel = EntityModel.of("Parcel", UUID.fromString("2b6d0c4e-7a1f-4e39-9c58-d3f1a5b7c9e0"), Map::of);
 
   static EventType<String, String> ParcelReceived = BasicEventType.of("Parcel received", UUID.fromString("8c1e3a5d-2f4b-4d6a-b8c0-e2f4a6c8d0b1"), DataType.string());
   static EventType<String, String> ParcelDelivered = BasicEventType.of("Parcel delivered", UUID.fromString("4e6a8c0f-1b3d-4f5b-a7c9-d1e3f5a7b9c2"), DataType.string());

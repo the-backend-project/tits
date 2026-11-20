@@ -29,11 +29,13 @@ import com.github.thxmasj.backend.core.Tuples.Tuple2;
 import com.github.thxmasj.backend.core.Validated;
 import com.github.thxmasj.backend.core.http.HttpClient;
 import com.github.thxmasj.backend.core.http.HttpDataType;
+import com.github.thxmasj.backend.core.internal.Memoized;
 import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
 import com.github.thxmasj.backend.core.message.http.TypedHttpRequest;
 import com.github.thxmasj.backend.core.message.http.TypedHttpResponse;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -45,8 +47,9 @@ import reactor.core.publisher.Mono;
 /// An outbox request which is dispatched at most once, with request payloads of type `RQ`. It can be rolled back by
 /// rollback models with request payloads of type `RRQ`. The rollback request message is created by a rollback message
 /// creator, from the data the rollback is dispatched with and the request being rolled back. Like the creator of the
-/// request message, it is kept outside the outbox request; it is given to [#transitions(BiFunction)] or
-/// [#batchedRollbackTransitions(BiFunction)], e.g. by a [Dispatcher].
+/// request message, it is kept outside the outbox request; it is given to [#withRollback(BiFunction)] or
+/// [#withBatchedRollback(BiFunction)], e.g. by a [Dispatcher], which give a copy of the outbox request with the
+/// transitions rolling back with it.
 public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
 
   private final String name;
@@ -54,6 +57,14 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
   private final AtLeastOnce<RRQ> rollbackOnAcceptedModel;
   private final AtLeastOnce<RRQ> rollbackOnUnknownModel;
   private final Shape<?, ?, ?, ?, ?, ?, ?, RQ, ?> shape;
+  /// The creators of the rollback models, given this, which a copy creates its own rollback models with
+  private final Function<AtMostOnce<RQ, RRQ>, AtLeastOnce<RRQ>> rollbackOnAcceptedModelSupplier;
+  private final Function<AtMostOnce<RQ, RRQ>, AtLeastOnce<RRQ>> rollbackOnUnknownModelSupplier;
+  private final Function<AtMostOnce<RQ, RRQ>, Map<State, List<TransitionModel<?, ?>>>> transitionsCreator;
+  /// The transitions, which are kept once the rollback models they trigger on are created, and so null until then
+  private final Memoized<Map<State, List<TransitionModel<?, ?>>>> transitions;
+  /// The copies with rollback message creators, see [#withRollback(BiFunction)]
+  private final Map<CopyKey, AtMostOnce<RQ, RRQ>> copies = new HashMap<>();
 
   private record Shape<T1, T2, T3, T4, T5, T6, T7, RQ, RS>(
       DataType<RQ> requestPayloadType,
@@ -290,6 +301,13 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
   ) {
     this.name = name;
     this.id = id;
+    this.transitionsCreator = outbox -> outbox.transitions(
+        outbox.shape,
+        AtLeastOnce::requestDispatched,
+        (_, _) -> Mono.error(new IllegalStateException(
+            name + " has no rollback message creator. Use the outbox request of its Dispatcher."
+        ))
+    );
     this.shape = new Shape<>(
         requestPayloadType,
         responsePayloadType,
@@ -309,8 +327,28 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
         isRejected,
         isRejectedByInvalidResponse
     );
+    this.rollbackOnAcceptedModelSupplier = rollbackOnAcceptedModelSupplier;
+    this.rollbackOnUnknownModelSupplier = rollbackOnUnknownModelSupplier;
     this.rollbackOnAcceptedModel = rollbackOnAcceptedModelSupplier != null ? rollbackOnAcceptedModelSupplier.apply(this) : null;
     this.rollbackOnUnknownModel = rollbackOnUnknownModelSupplier != null ? rollbackOnUnknownModelSupplier.apply(this) : null;
+    this.transitions = new Memoized<>(this::createTransitions, "transitions of " + name);
+  }
+
+  /// A copy of the outbox request, with the same name and id, whose transitions are created by the given creator. Its
+  /// rollback models are created by the creators of the outbox request, given the copy, so that they are of the copy.
+  private AtMostOnce(
+      AtMostOnce<RQ, RRQ> outbox,
+      Function<AtMostOnce<RQ, RRQ>, Map<State, List<TransitionModel<?, ?>>>> transitionsCreator
+  ) {
+    this.name = outbox.name;
+    this.id = outbox.id;
+    this.transitionsCreator = transitionsCreator;
+    this.shape = outbox.shape;
+    this.rollbackOnAcceptedModelSupplier = outbox.rollbackOnAcceptedModelSupplier;
+    this.rollbackOnUnknownModelSupplier = outbox.rollbackOnUnknownModelSupplier;
+    this.rollbackOnAcceptedModel = rollbackOnAcceptedModelSupplier != null ? rollbackOnAcceptedModelSupplier.apply(this) : null;
+    this.rollbackOnUnknownModel = rollbackOnUnknownModelSupplier != null ? rollbackOnUnknownModelSupplier.apply(this) : null;
+    this.transitions = new Memoized<>(this::createTransitions, "transitions of " + name);
   }
 
   private <RI, RRI, T1, T2, T3, T4, T5, T6, T7, RS> Map<State, List<TransitionModel<?, ?>>> transitions(
@@ -526,30 +564,57 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
     return new DispatchContext(c.triggerEvent().entityId(), c.correlationId(), c.timestamp());
   }
 
-  /// The transitions of this outbox request, without a rollback message creator. Use [#transitions(BiFunction)] or
-  /// [#batchedRollbackTransitions(BiFunction)] for an outbox request which can be rolled back, as its rollback fails
-  /// otherwise.
+  /// The transitions of this outbox request. Unless it is the copy of [#withRollback(BiFunction)] or
+  /// [#withBatchedRollback(BiFunction)], they have no rollback message creator, so a rollback of the request fails.
   @Override
   public Map<State, List<TransitionModel<?, ?>>> transitions() {
-    return transitions((_, _) -> Mono.error(new IllegalStateException(
-        name + " has no rollback message creator. Use the transitions of its Dispatcher."
-    )));
+    var kept = transitions;
+    // Asked for by a creator of a rollback model, before the rollback models are there to trigger on
+    return kept != null ? kept.get() : createTransitions();
   }
 
-  /// The transitions of this outbox request, with the rollback request message created by the given rollback message
-  /// creator from the data the rollback is dispatched with (of type `RI`) and the request being rolled back, and the
-  /// context of the process rolling the request back.
-  public <RI> Map<State, List<TransitionModel<?, ?>>> transitions(
+  private Map<State, List<TransitionModel<?, ?>>> createTransitions() {
+    return transitionsCreator.apply(this);
+  }
+
+  /// A copy of this outbox request, with the same name and id, whose transitions roll the request back with the
+  /// rollback request message created by the given rollback message creator, from the data the rollback is dispatched
+  /// with (of type `RI`) and the request being rolled back, and the context of the process rolling the request back.
+  /// Requests are triggered on the copy instead of this, so it is the one the state machine runs. The copy is made once
+  /// for each rollback message creator, so dispatchers with the same creator share it, while copies with different
+  /// creators are different entity models with the same id, of which a state machine runs one.
+  public <RI> AtMostOnce<RQ, RRQ> withRollback(
       BiFunction<DispatchContext, Tuple2<RI, TypedHttpRequest<RQ>>, Mono<TypedHttpRequest<RRQ>>> rollbackMessageCreator
   ) {
-    return transitions(shape, AtLeastOnce::requestDispatched, rollbackMessageCreator);
+    return copy(false, rollbackMessageCreator, outbox -> outbox.transitions(outbox.shape, AtLeastOnce::requestDispatched, rollbackMessageCreator));
   }
 
-  /// As [#transitions(BiFunction)], with the rollback requests dispatched as part of a batch.
-  public <RI> Map<State, List<TransitionModel<?, ?>>> batchedRollbackTransitions(
+  /// As [#withRollback(BiFunction)], with the rollback requests dispatched as part of a batch.
+  public <RI> AtMostOnce<RQ, RRQ> withBatchedRollback(
       BiFunction<DispatchContext, Tuple2<RI, TypedHttpRequest<RQ>>, Mono<BatchedRequest<RRQ>>> rollbackMessageCreator
   ) {
-    return transitions(shape, AtLeastOnce::batchedRequestDispatched, rollbackMessageCreator);
+    return copy(true, rollbackMessageCreator, outbox -> outbox.transitions(outbox.shape, AtLeastOnce::batchedRequestDispatched, rollbackMessageCreator));
+  }
+
+  /// The copy with the rollback message creator, made the first time it is asked for
+  private AtMostOnce<RQ, RRQ> copy(
+      boolean batched,
+      Object rollbackMessageCreator,
+      Function<AtMostOnce<RQ, RRQ>, Map<State, List<TransitionModel<?, ?>>>> transitionsCreator
+  ) {
+    synchronized (copies) {
+      return copies.computeIfAbsent(new CopyKey(batched, rollbackMessageCreator), _ -> new AtMostOnce<>(this, transitionsCreator));
+    }
+  }
+
+  /// A rollback message creator, compared by identity, and whether the rollback requests are batched
+  private record CopyKey(boolean batched, Object rollbackMessageCreator) {
+    @Override public boolean equals(Object o) {
+      return o instanceof CopyKey(boolean b, Object c) && b == batched && c == rollbackMessageCreator;
+    }
+    @Override public int hashCode() {
+      return System.identityHashCode(rollbackMessageCreator) * 31 + Boolean.hashCode(batched);
+    }
   }
 
   @Override

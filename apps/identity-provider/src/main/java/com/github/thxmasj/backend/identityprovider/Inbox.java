@@ -7,8 +7,6 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 
 import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.EntityModel;
-import com.github.thxmasj.backend.core.State;
-import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionContext;
 import com.github.thxmasj.backend.core.Validated;
 import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
@@ -22,7 +20,6 @@ import com.github.thxmasj.backend.http.inbox.ResponseEventType;
 import com.github.thxmasj.backend.identityprovider.Clients.Registration;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -89,22 +86,26 @@ public interface Inbox {
       DataType.json(Reply.class)
   );
 
-  /// A request redeeming an authorization code, `POST /token` with a code. The edge tells the grants apart by the
-  /// code, which it replaces by its hash.
-  HttpInboxRequest<Tokens.CodeRequest> CodeHttpRequest = HttpInboxRequest
-      .matching(m -> m.method() == Method.POST && m.uri().getPath().equals("/token") && m.headerValue(CodeHashHeader) != null)
-      .contentParser(Inbox::codeRequest)
-      .process(Tokens.CodeRedemptionRequested, Tokens.TokenRequest, r -> r.body(), newEntity())
-      .response(ReplyCreated, Inbox::reply)
-      .build("CodeHttpRequest", UUID.fromString("53b447da-38bc-43d6-a9f2-ea3ed7e1b3fa"));
+  /// A request redeeming an authorization code, `POST /token` with a code, processed on the token requests. The edge
+  /// tells the grants apart by the code, which it replaces by its hash.
+  static HttpInboxRequest<Tokens.CodeRequest> codeHttpRequest(EntityModel tokenRequest) {
+    return HttpInboxRequest
+        .matching(m -> m.method() == Method.POST && m.uri().getPath().equals("/token") && m.headerValue(CodeHashHeader) != null)
+        .contentParser(Inbox::codeRequest)
+        .process(Tokens.CodeRedemptionRequested, tokenRequest, r -> r.body(), newEntity())
+        .response(ReplyCreated, Inbox::reply)
+        .build("CodeHttpRequest", UUID.fromString("53b447da-38bc-43d6-a9f2-ea3ed7e1b3fa"));
+  }
 
-  /// A token request, `POST /token`
-  HttpInboxRequest<Tokens.Request> TokenHttpRequest = HttpInboxRequest
-      .matching(m -> m.method() == Method.POST && m.uri().getPath().equals("/token"))
-      .contentParser(Inbox::tokenRequest)
-      .process(Tokens.TokenRequested, Tokens.TokenRequest, r -> r.body(), newEntity())
-      .response(ReplyCreated, Inbox::reply)
-      .build("TokenHttpRequest", UUID.fromString("d1c8f5a2-3e97-4b06-a4d1-5f2b8e7c9a63"));
+  /// A token request, `POST /token`, processed on the token requests
+  static HttpInboxRequest<Tokens.Request> tokenHttpRequest(EntityModel tokenRequest) {
+    return HttpInboxRequest
+        .matching(m -> m.method() == Method.POST && m.uri().getPath().equals("/token"))
+        .contentParser(Inbox::tokenRequest)
+        .process(Tokens.TokenRequested, tokenRequest, r -> r.body(), newEntity())
+        .response(ReplyCreated, Inbox::reply)
+        .build("TokenHttpRequest", UUID.fromString("d1c8f5a2-3e97-4b06-a4d1-5f2b8e7c9a63"));
+  }
 
   /// A client registration request, `POST /clients`
   HttpInboxRequest<Registration> RegistrationHttpRequest = HttpInboxRequest
@@ -139,24 +140,16 @@ public interface Inbox {
       .response(ReplyCreated, Inbox::reply)
       .build("SignInFailureHttpRequest", UUID.fromString("e4a7b2c9-6d1f-4e3a-8b5c-9f0d2e6a1b73"));
 
-  /// A UserInfo request, `GET /userinfo`, whose access token the edge has verified
-  HttpInboxRequest<String> UserInfoHttpRequest = HttpInboxRequest
-      .matching(m -> m.method() == Method.GET && m.uri().getPath().equals("/userinfo"))
-      .contentParser(r -> r.headerValue(TokenIdHeader) != null ? valid(r.headerValue(TokenIdHeader)) : invalid("Unauthenticated"))
-      .process(Tokens.UserInfoRequested, Tokens.TokenRequest, (m, _) -> HttpInboxRequest.entityId(m.headerValue(TokenIdHeader)))
-      .response(ReplyCreated, Inbox::reply)
-      .build("UserInfoHttpRequest", UUID.fromString("1d6e8f3a-9b2c-4c7d-a5e0-3f8b6d1c9e24"));
-
-  /// In the order they are matched in, as the first matching one takes a request
-  List<HttpInboxRequest<?>> requests = List.of(
-      CodeHttpRequest,
-      TokenHttpRequest,
-      RegistrationHttpRequest,
-      AuthorizationHttpRequest,
-      SignInHttpRequest,
-      SignInFailureHttpRequest,
-      UserInfoHttpRequest
-  );
+  /// A UserInfo request, `GET /userinfo`, whose access token the edge has verified, processed on the token request
+  /// which issued the token
+  static HttpInboxRequest<String> userInfoHttpRequest(EntityModel tokenRequest) {
+    return HttpInboxRequest
+        .matching(m -> m.method() == Method.GET && m.uri().getPath().equals("/userinfo"))
+        .contentParser(r -> r.headerValue(TokenIdHeader) != null ? valid(r.headerValue(TokenIdHeader)) : invalid("Unauthenticated"))
+        .process(Tokens.UserInfoRequested, tokenRequest, (m, _) -> HttpInboxRequest.entityId(m.headerValue(TokenIdHeader)))
+        .response(ReplyCreated, Inbox::reply)
+        .build("UserInfoHttpRequest", UUID.fromString("1d6e8f3a-9b2c-4c7d-a5e0-3f8b6d1c9e24"));
+  }
 
   private static HttpResponseMessage reply(TransitionContext<Reply> c) {
     return new HttpResponseMessage(
@@ -172,12 +165,20 @@ public interface Inbox {
     );
   }
 
-  static Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions(Duration tokenLifetime) {
-    var application = new HashMap<EntityModel, Map<State, List<TransitionModel<?, ?>>>>();
-    application.putAll(Clients.transitions());
-    application.putAll(Tokens.transitions(tokenLifetime));
-    application.putAll(Authorizations.transitions());
-    return HttpInbox.transitions(requests, application);
+  /// The inbox of the identity provider, whose requests trigger events on the clients, the token requests, whose tokens
+  /// live as long as the token lifetime, and the authorizations
+  static HttpInbox inbox(Duration tokenLifetime) {
+    EntityModel tokenRequest = Tokens.tokenRequest(tokenLifetime);
+    // In the order they are matched in, as the first matching one takes a request
+    return HttpInbox.of(List.of(
+        codeHttpRequest(tokenRequest),
+        tokenHttpRequest(tokenRequest),
+        RegistrationHttpRequest,
+        AuthorizationHttpRequest,
+        SignInHttpRequest,
+        SignInFailureHttpRequest,
+        userInfoHttpRequest(tokenRequest)
+    ));
   }
 
   /// The form is validated by the edge, which also authenticates the client

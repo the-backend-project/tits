@@ -78,8 +78,8 @@ and, to meet "without undue delay", add a timeout on `Preauthorised` and a relea
 To let payers recognise transactions on their statements, the payee has to be clearly identified in the payment
 data. The PSR puts more emphasis on this than PSD2 did.
 
-* Every payment is tied to a registered merchant (`Aggregate.Merchant`) that has a display name, location and
-  merchant category code. Payments for unknown merchants are rejected (`UnknownMerchantDetected`).
+* Every payment is tied to a registered merchant (the `merchant()` of `CardPayments`) that has a display name,
+  location and merchant category code. Payments for unknown merchants are rejected (`UnknownMerchantDetected`).
 * A merchant id identifies one merchant. A request to create a merchant with a merchant id another merchant has is
   answered with 400 Bad Request, and the new merchant is rejected without a settlement (`DuplicateMerchantIdDetected`).
 * Payments for suspended or deleted merchants are rejected (`InactiveMerchantDetected`).

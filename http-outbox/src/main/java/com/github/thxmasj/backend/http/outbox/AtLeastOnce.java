@@ -27,6 +27,7 @@ import com.github.thxmasj.backend.core.Tuples.Tuple2;
 import com.github.thxmasj.backend.core.Validated;
 import com.github.thxmasj.backend.core.http.HttpClient;
 import com.github.thxmasj.backend.core.http.HttpDataType;
+import com.github.thxmasj.backend.core.internal.Memoized;
 import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
 import com.github.thxmasj.backend.core.message.http.TypedHttpRequest;
 import com.github.thxmasj.backend.core.message.http.TypedHttpResponse;
@@ -46,6 +47,7 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
   private final String name;
   private final UUID id;
   private final Shape<RQ, ?, ?> shape;
+  private final Memoized<Map<State, List<TransitionModel<?, ?>>>> transitions;
 
   private record Shape<RQ, RS, S>(
       DataType<RQ> requestPayloadType,
@@ -280,6 +282,7 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
   ) {
     this.name = name;
     this.id = id;
+    this.transitions = new Memoized<>(this::createTransitions, "transitions of " + name);
     this.shape = new Shape<>(
         requestPayloadType,
         responsePayloadType,
@@ -533,8 +536,13 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
     return id;
   }
 
+  /// The transitions, created when they are first asked for
   @Override
   public Map<State, List<TransitionModel<?, ?>>> transitions() {
+    return transitions.get();
+  }
+
+  private Map<State, List<TransitionModel<?, ?>>> createTransitions() {
     return transitions(shape);
   }
 

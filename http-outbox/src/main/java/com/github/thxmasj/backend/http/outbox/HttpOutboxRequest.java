@@ -31,8 +31,6 @@ import java.util.stream.Stream;
 /// the creator of its request messages.
 public sealed interface HttpOutboxRequest<RQ> extends com.github.thxmasj.backend.core.EntityModel permits AtLeastOnce, AtMostOnce {
 
-  Map<State, List<TransitionModel<?, ?>>> transitions();
-
   default List<EventType<?, ?>> eventTypes() {
     return transitions().values()
         .stream()

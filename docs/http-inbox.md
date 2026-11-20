@@ -31,11 +31,20 @@ HttpInboxRequest<Order> PlaceOrder = HttpInboxRequest
 | `normalizer`      | No       | Normalizes a request before it is compared with an earlier request with the same message id       |
 | `rollback`        | No       | Requests rolling back a request by its message id, with an authorizer of their own if the request has one. Needs `deduplicateOn`, see [rollback](#rollback) |
 
-`HttpInbox.transitions(requests, application)` gives the transitions to create the state machine with: those of the
-application, and of the inbox requests, `RequestRouting` and `MessageIds`.
+`HttpInbox.of(requests)` creates the inbox of the requests. Its `entityModels()` are the inbox's own, the inbox
+requests, `RequestRouting`, `MessageIds` and `Index`, to create the state machine with. The state machine also runs the
+entity models their transitions trigger events on, i.e. the models of the application the requests are processed on,
+and in turn the models those trigger events on, e.g. outbox requests. The listener is given the inbox too:
 
-An inbox request declares the custom responses its own processes give, and no others. `HttpInbox.transitions` checks
-this per request. It starts from the event of each process on its entity model, and follows:
+```java
+HttpInbox inbox = HttpInbox.of(List.of(PlaceOrder));
+StateMachine stateMachine = new StateMachine(inbox.entityModels(), dataSource, schemaName, true);
+DisposableServer server = new HttpInboxListener(stateMachine, inbox).listen(port);
+```
+
+An inbox request declares the custom responses its own processes give, and no others. The inbox checks this per
+request, when its `entityModels()` are first asked for, e.g. by the state machine, rather than when it is created, so
+that the inbox may be a constant declared before the models of the application. It starts from the event of each process on its entity model, and follows, through the models triggered on:
 
 - the transitions taken on that event, in any state, with every transition they may choose, as which one is taken is
   decided at runtime;
@@ -53,8 +62,11 @@ followed, as what they lead to is calculated later. A response given that way, e
 request, is not checked in advance. It is rejected when it is given, if the request doesn't take it.
 
 The `HttpInboxListener` receives HTTP requests with reactor-netty and passes them to the inbox. A `RequestRouting` entity
-is created for every request, and routes it to a new entity of the first inbox request matching it. A request no inbox
-request matches is answered with 400 Bad Request. The inbox request validates the request: its body, message id,
+is created for every request, of the inbox's `requestRouting()`, and routes it to a new entity of the first inbox
+request matching it. Its transitions depend on the inbox requests, so each inbox has a routing model of its own, and
+starting a request on it takes the inbox's `trigger()`. The inbox requests give their responses to the routing model of
+the session, whichever inbox it is of. The routing models of all inboxes have the same id, by which their entities are
+stored. A request no inbox request matches is answered with 400 Bad Request. The inbox request validates the request: its body, message id,
 authorization and the entity it selects. If it is valid, the inbox request triggers the event on the application's
 entity and waits for the application to respond.
 
@@ -224,7 +236,7 @@ An accepted request is indexed by the entity of the application its event was tr
 index event `Process referenced` of the index entity model `RequestIndex`, `HttpInbox.Index`, with the entity id of the
 application's entity as key. The inbox requests of an entity are thereby found by its entity id, as its
 [outbox requests](http-outbox.md) are by the `Process referenced` of the outbox, e.g. by the
-[backoffice](backoffice.md). `HttpInbox.transitions` adds the transitions of `Index` along with those of `MessageIds`.
+[backoffice](backoffice.md). `Index` is one of the entity models of the inbox, along with `MessageIds`.
 
 ## Access tokens
 

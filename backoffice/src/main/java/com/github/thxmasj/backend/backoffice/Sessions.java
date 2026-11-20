@@ -78,10 +78,6 @@ final class Sessions {
   /// The path of the backoffice, under which its pages are served
   static final String Path = "/backoffice";
 
-  static final EntityModel Session = EntityModel.of("BackofficeSession", UUID.fromString("4b6f2c8e-1d3a-4f57-9e0b-7a2c5d8f3e61"));
-  /// A request not of a session, e.g. for a static file or the health check
-  static final EntityModel Resource = EntityModel.of("BackofficeResource", UUID.fromString("8e3c1a6f-4b2d-4d97-a5e0-2f7b9c4d1e83"));
-
   enum States implements State {
     SigningIn,
     Redeeming,
@@ -269,41 +265,6 @@ final class Sessions {
       DataType.json(Reply.class)
   );
 
-  /// The user returning from the provider, with the session as state
-  static final HttpInboxRequest<Callback> CallbackRequest = HttpInboxRequest
-      .matching(m -> m.method() == Method.GET && m.uri().getPath().equals(Path + "/callback"))
-      .contentParser(Sessions::callback)
-      .process(CallbackReceived, Session, r -> r.body(), (_, callback) -> HttpInboxRequest.entityId(callback.state()))
-      .response(ReplyCreated, c -> response(c.input(), c.correlationId()))
-      .build("BackofficeCallbackRequest", UUID.fromString("6b2e9c4f-3a7d-4f15-9e80-1c5d8a3f7b62"));
-
-  /// A user signing out
-  static final HttpInboxRequest<Void> SignOutRequest = HttpInboxRequest
-      .matching(m -> m.method() == Method.POST && m.uri().getPath().equals(Path + "/signout"))
-      .noContent()
-      .process(UserSignedOut, Session, (m, _) -> valid(session(m)))
-      .response(ReplyCreated, c -> response(c.input(), c.correlationId()))
-      .build("BackofficeSignOutRequest", UUID.fromString("e6b9d2f4-8c1a-4a53-9f70-1d4e8b3c5a27"));
-
-  /// A page requested, by the session of its cookie, or a new one if it has none
-  static final HttpInboxRequest<View> ViewRequest = HttpInboxRequest
-      .matching(m -> m.method() == Method.GET && m.uri().getPath().startsWith(Path + "/") && !m.uri().getPath().startsWith(Path + "/static/"))
-      .contentParser(Sessions::view)
-      .process(ViewRequested, Session, r -> r.body(), (m, _) -> valid(session(m)))
-      .response(ReplyCreated, c -> response(c.input(), c.correlationId()))
-      .build("BackofficeViewRequest", UUID.fromString("7f2d5a8e-3b6c-4e19-b4a7-0c8e1f5d9b62"));
-
-  /// Any other request, e.g. for a static file or the health check
-  static final HttpInboxRequest<ResourceRequest> ResourceHttpRequest = HttpInboxRequest
-      .matching(_ -> true)
-      .contentParser(m -> valid(new ResourceRequest(m.method().name(), m.uri().getPath())))
-      .process(ResourceRequested, Resource, r -> r.body(), HttpInboxRequest.newEntity())
-      .response(ReplyCreated, c -> response(c.input(), c.correlationId()))
-      .build("BackofficeResourceRequest", UUID.fromString("9d4f1b7e-2c6a-4e83-a5b9-0e7c3f8d1a26"));
-
-  /// In the order they are matched in, as the first matching one takes a request
-  static final List<HttpInboxRequest<?>> requests = List.of(CallbackRequest, SignOutRequest, ViewRequest, ResourceHttpRequest);
-
   private static final Map<String, String> securityHeaders = Map.of(
       "Content-Security-Policy", "default-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
       "X-Content-Type-Options", "nosniff",
@@ -319,6 +280,11 @@ final class Sessions {
   private final Pages pages;
   private final Map<String, String> files;
   private final AtMostOnceDispatcher<Redemption, String> tokenRequests;
+  /// The sessions of the users
+  private final EntityModel session;
+  /// A request not of a session, e.g. for a static file or the health check
+  private final EntityModel resource;
+  private final HttpInbox inbox;
 
   /// @param forwarder the HTTP client the token requests are sent with
   Sessions(Backoffice.Config config, OpenIdConnectClient provider, Pages pages, Map<String, String> files, HttpClient forwarder) {
@@ -326,12 +292,14 @@ final class Sessions {
     this.provider = provider;
     this.pages = pages;
     this.files = Map.copyOf(files);
+    this.session = EntityModel.of("BackofficeSession", UUID.fromString("4b6f2c8e-1d3a-4f57-9e0b-7a2c5d8f3e61"), this::sessionTransitions);
+    this.resource = EntityModel.of("BackofficeResource", UUID.fromString("8e3c1a6f-4b2d-4d97-a5e0-2f7b9c4d1e83"), this::resourceTransitions);
     AtMostOnce<String, Void> tokenRequest = HttpOutboxRequest.atMostOnce()
         .requestPayloadType(DataType.string())
         .responsePayloadType(DataType.string())
         .forwarder(forwarder)
         .inflightTimeout(Duration.ofSeconds(10))
-        .processModel(Session)
+        .processModel(session)
         .onPeerUnavailable(TokenRequestFailed)
         .onMissingResponse(TokenRequestFailed)
         .onInvalidResponseRejection(TokenRequestFailed)
@@ -344,15 +312,52 @@ final class Sessions {
         .isRejectedByInvalidResponse(d -> d.t1().statusCode() >= 400)
         .build("BackofficeTokenRequest", UUID.fromString("1e5a8c3f-9b2d-4f60-a7e4-5c9b2d6f8a13"));
     this.tokenRequests = AtMostOnceDispatcher.reactive(tokenRequest, (_, r) -> provider.tokenRequest(r.code(), r.secret()));
+
+    // The user returning from the provider, with the session as state
+    HttpInboxRequest<Callback> callbackRequest = HttpInboxRequest
+        .matching(m -> m.method() == Method.GET && m.uri().getPath().equals(Path + "/callback"))
+        .contentParser(Sessions::callback)
+        .process(CallbackReceived, session, r -> r.body(), (_, callback) -> HttpInboxRequest.entityId(callback.state()))
+        .response(ReplyCreated, c -> response(c.input(), c.correlationId()))
+        .build("BackofficeCallbackRequest", UUID.fromString("6b2e9c4f-3a7d-4f15-9e80-1c5d8a3f7b62"));
+    // A user signing out
+    HttpInboxRequest<Void> signOutRequest = HttpInboxRequest
+        .matching(m -> m.method() == Method.POST && m.uri().getPath().equals(Path + "/signout"))
+        .noContent()
+        .process(UserSignedOut, session, (m, _) -> valid(session(m)))
+        .response(ReplyCreated, c -> response(c.input(), c.correlationId()))
+        .build("BackofficeSignOutRequest", UUID.fromString("e6b9d2f4-8c1a-4a53-9f70-1d4e8b3c5a27"));
+    // A page requested, by the session of its cookie, or a new one if it has none
+    HttpInboxRequest<View> viewRequest = HttpInboxRequest
+        .matching(m -> m.method() == Method.GET && m.uri().getPath().startsWith(Path + "/") && !m.uri().getPath().startsWith(Path + "/static/"))
+        .contentParser(Sessions::view)
+        .process(ViewRequested, session, r -> r.body(), (m, _) -> valid(session(m)))
+        .response(ReplyCreated, c -> response(c.input(), c.correlationId()))
+        .build("BackofficeViewRequest", UUID.fromString("7f2d5a8e-3b6c-4e19-b4a7-0c8e1f5d9b62"));
+    // Any other request, e.g. for a static file or the health check
+    HttpInboxRequest<ResourceRequest> resourceRequest = HttpInboxRequest
+        .matching(_ -> true)
+        .contentParser(m -> valid(new ResourceRequest(m.method().name(), m.uri().getPath())))
+        .process(ResourceRequested, resource, r -> r.body(), HttpInboxRequest.newEntity())
+        .response(ReplyCreated, c -> response(c.input(), c.correlationId()))
+        .build("BackofficeResourceRequest", UUID.fromString("9d4f1b7e-2c6a-4e83-a5b9-0e7c3f8d1a26"));
+    // In the order they are matched in, as the first matching one takes a request
+    this.inbox = HttpInbox.of(List.of(callbackRequest, signOutRequest, viewRequest, resourceRequest));
   }
 
-  /// The transitions of the backoffice's state machine: of the sessions, their tokens and token requests, the other
-  /// requests, and the inbox
-  Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions() {
-    var transitions = new HashMap<EntityModel, Map<State, List<TransitionModel<?, ?>>>>();
-    transitions.put(Session, sessionTransitions());
-    transitions.put(Tokens, Tokens.transitions());
-    transitions.put(Resource, Map.of(
+  /// The model of the sessions
+  EntityModel session() {
+    return session;
+  }
+
+  /// The inbox of the backoffice's state machine, whose requests trigger events on the sessions and the other requests,
+  /// which in turn trigger events on the tokens and the token requests
+  HttpInbox inbox() {
+    return inbox;
+  }
+
+  private Map<State, List<TransitionModel<?, ?>>> resourceTransitions() {
+    return Map.of(
         Begin, List.of(
             onEvent(ResourceRequested).to(ResourceStates.Served)
                 .assembleInput()
@@ -360,10 +365,7 @@ final class Sessions {
                 .output(Tuple2::t1)
         ),
         ResourceStates.Served, List.of()
-    ));
-    transitions.putAll(tokenRequests.transitions());
-    transitions.put(HttpOutboxRequest.Index, HttpOutboxRequest.Index.transitions());
-    return HttpInbox.transitions(requests, transitions);
+    );
   }
 
   private Map<State, List<TransitionModel<?, ?>>> sessionTransitions() {

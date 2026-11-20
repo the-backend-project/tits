@@ -13,6 +13,7 @@ import com.github.thxmasj.backend.core.http.NettyHttpClient;
 import com.github.thxmasj.backend.core.http.NettyHttpClientBuilder;
 import com.github.thxmasj.backend.core.test.Init;
 import com.github.thxmasj.backend.http.inbox.Form;
+import com.github.thxmasj.backend.http.inbox.HttpInbox;
 import com.github.thxmasj.backend.http.inbox.Secrets;
 import com.github.thxmasj.backend.identityprovider.Config.BootstrapClient;
 import com.github.thxmasj.backend.identityprovider.ImportedClients.ImportedClient;
@@ -96,6 +97,7 @@ public class IdentityProviderTest {
   private static final String legacySubject = "https://wallet.example.com/provider/example";
 
   private static final String schema = UUID.randomUUID().toString();
+  private static HttpInbox inbox;
   private static StateMachine stateMachine;
   private static DisposableServer server;
   private static String adminToken;
@@ -104,12 +106,13 @@ public class IdentityProviderTest {
 
   @BeforeAll
   public static void setUp() throws Exception {
-    stateMachine = Init.stateMachine(schema, Inbox.transitions(tokenLifetime));
-    IdentityProvider.bootstrap(stateMachine, new BootstrapClient(adminId, adminSecret));
+    inbox = Inbox.inbox(tokenLifetime);
+    stateMachine = Init.stateMachine(schema, inbox.entityModels());
+    IdentityProvider.bootstrap(stateMachine, inbox, new BootstrapClient(adminId, adminSecret));
     partnerHash = new BCryptPasswordEncoder().encode(partnerSecret);
     assertThat(partnerHash).startsWith("$2a$10$");
     importedClients = importedClients(partnerHash);
-    IdentityProvider.importClients(stateMachine, importedClients);
+    IdentityProvider.importClients(stateMachine, inbox, importedClients);
     upstream = new UpstreamStub();
     int port;
     try (var socket = new ServerSocket(0)) {
@@ -117,7 +120,7 @@ public class IdentityProviderTest {
     }
     issuer = URI.create("http://localhost:" + port);
     var upstreamConfig = new Config.Upstream(URI.create(upstream.issuer()), UpstreamStub.clientId, UpstreamStub.clientSecret, "openid email profile");
-    server = IdentityProvider.serve(stateMachine, new Keys(Keys.generate(), issuer, null, Clock.systemUTC()), IdentityProvider.upstream(upstreamConfig, issuer), port, importedClients);
+    server = IdentityProvider.serve(stateMachine, inbox, new Keys(Keys.generate(), issuer, null, Clock.systemUTC()), IdentityProvider.upstream(upstreamConfig, issuer), port, importedClients);
     adminToken = json(token(adminId, adminSecret, "grant_type=client_credentials")).get("access_token").asString();
   }
 
@@ -130,7 +133,7 @@ public class IdentityProviderTest {
 
   @Test
   public void whenBootstrappedAgainThenExistingClientIsKept() throws Exception {
-    assertThatNoException().isThrownBy(() -> IdentityProvider.bootstrap(stateMachine, new BootstrapClient(adminId, "another-secret-of-the-bootstrap-client")));
+    assertThatNoException().isThrownBy(() -> IdentityProvider.bootstrap(stateMachine, inbox, new BootstrapClient(adminId, "another-secret-of-the-bootstrap-client")));
     assertThat(token(adminId, adminSecret, "grant_type=client_credentials").statusCode()).isEqualTo(200);
   }
 
@@ -258,8 +261,8 @@ public class IdentityProviderTest {
   public void whenImportedAgainThenRegisteredClientsAreKept() throws Exception {
     String otherHash = new BCryptPasswordEncoder().encode("another-secret");
 
-    assertThatNoException().isThrownBy(() -> IdentityProvider.importClients(stateMachine, importedClients(otherHash)));
-    assertThatNoException().isThrownBy(() -> IdentityProvider.importClients(stateMachine, importedClients));
+    assertThatNoException().isThrownBy(() -> IdentityProvider.importClients(stateMachine, inbox, importedClients(otherHash)));
+    assertThatNoException().isThrownBy(() -> IdentityProvider.importClients(stateMachine, inbox, importedClients));
 
     assertThat(token("partner", partnerSecret, "grant_type=client_credentials").statusCode()).isEqualTo(200);
     assertThat(token("legacy", legacySecret, "grant_type=client_credentials").statusCode()).isEqualTo(200);
@@ -273,7 +276,7 @@ public class IdentityProviderTest {
     ), "test");
     try (var executor = java.util.concurrent.Executors.newFixedThreadPool(4)) {
       var imports = java.util.stream.IntStream.range(0, 4)
-          .mapToObj(_ -> executor.submit(() -> IdentityProvider.importClients(stateMachine, clients)))
+          .mapToObj(_ -> executor.submit(() -> IdentityProvider.importClients(stateMachine, inbox, clients)))
           .toList();
       for (var i : imports)
         i.get();
@@ -352,7 +355,7 @@ public class IdentityProviderTest {
   /// Many refused token requests may be an attempt to guess a secret, so each one is a warning for monitoring
   @Test
   public void whenTokenIsRefusedThenItsEventIsAWarning() {
-    var refusals = Tokens.transitions(tokenLifetime).get(Tokens.TokenRequest).get(EntityModel.Begin).stream()
+    var refusals = Tokens.tokenRequest(tokenLifetime).transitions().get(EntityModel.Begin).stream()
         .flatMap(transition -> transition.filters().stream())
         .map(filter -> filter.alternative().model())
         .filter(chosen -> chosen.eventType().equals(Tokens.TokenRefused))

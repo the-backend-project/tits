@@ -15,7 +15,7 @@ public class SettlementTransitionsTest {
   public void eventsLeavingASettlementInErrorAreErrors() {
     assertEquals(
         List.of("Imbalance detected: Error", "Settlement timed out: Error"),
-        DummyTransitions.settlement().transitions().values().stream()
+        DummyTransitions.cardPayments().settlement().transitions().values().stream()
             .flatMap(List::stream)
             .flatMap(SettlementTransitionsTest::accepting)
             .filter(transition -> transition.severity() != Severity.Info)

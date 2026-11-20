@@ -22,6 +22,7 @@ import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
@@ -31,7 +32,7 @@ public class CalculationTest {
 
   static EventType<String, String> NumberClaimed = BasicEventType.of("Number claimed", UUID.fromString("0d2f4a6c-8e9b-4b1d-a3f5-7c9e1b3d5f17"), DataType.string());
   static IdEntityModel Ids = IdEntityModel.of("Ids", UUID.fromString("f5a7c9e1-3b4d-4d6f-8a0c-2e4f6a8c0e29"), NumberClaimed);
-  static EntityModel Order = EntityModel.of("Order", UUID.fromString("a1c3e5f7-9b0d-4f2a-8c4e-6a8c0e2b4d3b"));
+  static EntityModel Order = EntityModel.of("Order", UUID.fromString("a1c3e5f7-9b0d-4f2a-8c4e-6a8c0e2b4d3b"), Map::of);
 
   enum States implements State { Placed, Rejected }
 

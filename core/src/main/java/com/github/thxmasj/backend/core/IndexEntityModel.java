@@ -10,8 +10,6 @@ import java.util.UUID;
 
 public interface IndexEntityModel extends EntityModel {
 
-  Map<State, List<TransitionModel<?, ?>>> transitions();
-
   static IndexEntityModel of(String name, UUID id, EventType<?, ?>... eventTypes) {
     List<TransitionModel<?, ?>> transitions = Arrays.stream(eventTypes)
         .map(IndexEntityModel::transition)

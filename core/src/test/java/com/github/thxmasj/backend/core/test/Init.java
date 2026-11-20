@@ -2,13 +2,12 @@ package com.github.thxmasj.backend.core.test;
 
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.Listener;
-import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.StateMachine;
-import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.core.database.DataSourceBuilder;
 import com.github.thxmasj.backend.core.database.Database;
 import com.github.thxmasj.backend.core.database.DatabaseClient;
 import com.github.thxmasj.backend.core.database.DatabaseClient.Config;
+import com.github.thxmasj.backend.core.internal.ResolvedModels;
 import com.github.thxmasj.backend.core.internal.database.Storage;
 import com.github.thxmasj.backend.core.internal.database.StorageProvider;
 import com.sun.net.httpserver.HttpContext;
@@ -19,7 +18,6 @@ import java.net.URI;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
 import javax.sql.DataSource;
@@ -66,34 +64,34 @@ public class Init {
   }
 
   /// The storage of a schema in the test database
-  public static Storage storage(String schemaName, Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions) {
-    return StorageProvider.storage(database, client, transitions, schemaName, Clock.systemUTC());
+  public static Storage storage(String schemaName, List<? extends EntityModel> entityModels) {
+    return StorageProvider.storage(database, client, ResolvedModels.of(entityModels), schemaName, Clock.systemUTC());
   }
 
   public static StateMachine stateMachine(
       String schemaName,
-      Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions
+      List<? extends EntityModel> entityModels
   ) {
-    return stateMachine(schemaName, transitions, Clock.systemUTC());
+    return stateMachine(schemaName, entityModels, Clock.systemUTC());
   }
 
   public static StateMachine stateMachine(
       String schemaName,
-      Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions,
+      List<? extends EntityModel> entityModels,
       Clock clock
   ) {
-    return stateMachine(schemaName, transitions, clock, new Logger("Test"));
+    return stateMachine(schemaName, entityModels, clock, new Logger("Test"));
   }
 
   public static StateMachine stateMachine(
       String schemaName,
-      Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions,
+      List<? extends EntityModel> entityModels,
       Clock clock,
       Listener listener
   ) {
     return new StateMachine(
         _ -> Mono.empty(),
-        transitions,
+        entityModels,
         database,
         client,
         migrationDataSource,
@@ -106,9 +104,9 @@ public class Init {
   }
 
   public static StateMachine stateMachine(
-      Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions
+      List<? extends EntityModel> entityModels
   ) {
-    return stateMachine(UUID.randomUUID().toString(), transitions);
+    return stateMachine(UUID.randomUUID().toString(), entityModels);
   }
 
   public static HttpServer httpServer() throws IOException {

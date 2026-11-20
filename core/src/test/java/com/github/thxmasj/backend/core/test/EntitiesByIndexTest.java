@@ -32,16 +32,15 @@ public class EntitiesByIndexTest {
 
   enum OrderStates implements State { Created, Shipped }
 
-  static EntityModel Order = EntityModel.of("Order", UUID.fromString("b837db51-40e1-456a-aee1-b0dbb958c281"));
+  static EntityModel Order = EntityModel.of("Order", UUID.fromString("b837db51-40e1-456a-aee1-b0dbb958c281"), EntitiesByIndexTest::orderTransitions);
   static EventType<UUID, UUID> customerReferenced = IndexEntityModel.referenceEventType("Customer referenced", UUID.fromString("56e950a0-369a-4bf9-b126-e5c762fdb6bc"));
   static IndexEntityModel Index = IndexEntityModel.of("Index", UUID.fromString("6a0eb254-8e11-4f96-b4fe-c93d8b4e7232"), customerReferenced);
 
   static EventType<UUID, UUID> OrderCreated = BasicEventType.of("Order created", UUID.fromString("38d58c97-6a1e-450f-a399-52e185859dc1"), DataType.uuid());
   static EventType<Void, Void> OrderShipped = BasicEventType.of("Order shipped", UUID.fromString("617fb006-eb86-455b-bf98-0c6efea8cba3"));
 
-  @Test
-  public void testEntitiesByIndexResolvesCorrectEntityModelAndHandlesMultipleEvents() {
-    Map<State, List<TransitionModel<?, ?>>> orderTransitions = Map.of(
+  private static Map<State, List<TransitionModel<?, ?>>> orderTransitions() {
+    return Map.of(
         Begin, List.of(
             onEvent(OrderCreated).to(OrderStates.Created)
                 .assemble(c -> tuple(c.input(), c.entityId()))
@@ -53,14 +52,39 @@ public class EntitiesByIndexTest {
         ),
         OrderStates.Shipped, List.of()
     );
+  }
+
+  private static Map<State, List<TransitionModel<?, ?>>> invoiceTransitions() {
+    return Map.of(
+        Begin, List.of(
+            onEvent(InvoiceCreated).to(OrderStates.Created)
+                .assemble(c -> tuple(c.input(), c.entityId()))
+                .trigger(customerReferenced).with(t -> t.t1()).on(Index).identifiedBy(t -> newEntityId(t.t2()))
+                .output()
+        ),
+        OrderStates.Created, List.of()
+    );
+  }
+
+  private static Map<State, List<TransitionModel<?, ?>>> shipperTransitions() {
+    return Map.of(
+        Begin, List.of(
+            onEvent(ShippingRequested).to(ShipperStates.Requested)
+                .assembleInput()
+                .trigger(OrderShipped).on(Order).identifiedBy(customerId -> lastReferencing(customerReferenced, customerId))
+                .output(d -> d.t1())
+        ),
+        ShipperStates.Requested, List.of()
+    );
+  }
+
+  @Test
+  public void testEntitiesByIndexResolvesCorrectEntityModelAndHandlesMultipleEvents() {
 
     String schema = UUID.randomUUID().toString();
-    var transitions = Map.of(
-        Order, orderTransitions,
-        Index, Index.transitions()
-    );
-    StateMachine machine = Init.stateMachine(schema, transitions);
-    EntitiesByIndex entitiesByIndex = Init.storage(schema, transitions).entitiesByIndex();
+    var entityModels = List.of(Order, Index);
+    StateMachine machine = Init.stateMachine(schema, entityModels);
+    EntitiesByIndex entitiesByIndex = Init.storage(schema, entityModels).entitiesByIndex();
 
     UUID customerId = UUID.randomUUID();
 
@@ -109,8 +133,8 @@ public class EntitiesByIndexTest {
 
   enum ShipperStates implements State { Requested }
 
-  static EntityModel Invoice = EntityModel.of("Invoice", UUID.fromString("0c0f4d0e-2a7b-4f53-9a43-b8f1e0b8d3a5"));
-  static EntityModel Shipper = EntityModel.of("Shipper", UUID.fromString("8a0d6c5e-5a8f-4d1f-8f25-0a7d1d0c6f4b"));
+  static EntityModel Invoice = EntityModel.of("Invoice", UUID.fromString("0c0f4d0e-2a7b-4f53-9a43-b8f1e0b8d3a5"), EntitiesByIndexTest::invoiceTransitions);
+  static EntityModel Shipper = EntityModel.of("Shipper", UUID.fromString("8a0d6c5e-5a8f-4d1f-8f25-0a7d1d0c6f4b"), EntitiesByIndexTest::shipperTransitions);
   static EventType<UUID, UUID> InvoiceCreated = BasicEventType.of("Invoice created", UUID.fromString("4b8e2f0a-6c1d-4e7b-9a3f-2d5c8b1e7f60"), DataType.uuid());
   static EventType<UUID, UUID> ShippingRequested = BasicEventType.of("Shipping requested", UUID.fromString("c3a9e1d7-0f4b-4c8e-b2d6-7e1f5a9c3b80"), DataType.uuid());
 
@@ -118,45 +142,10 @@ public class EntitiesByIndexTest {
   /// another model referencing the same id
   @Test
   public void lastReferencingSelectsLastEntityOfModel() {
-    Map<State, List<TransitionModel<?, ?>>> orderTransitions = Map.of(
-        Begin, List.of(
-            onEvent(OrderCreated).to(OrderStates.Created)
-                .assemble(c -> tuple(c.input(), c.entityId()))
-                .trigger(customerReferenced).with(t -> t.t1()).on(Index).identifiedBy(t -> newEntityId(t.t2()))
-                .output()
-        ),
-        OrderStates.Created, List.of(
-            onEvent(OrderShipped).to(OrderStates.Shipped).output()
-        ),
-        OrderStates.Shipped, List.of()
-    );
-    Map<State, List<TransitionModel<?, ?>>> invoiceTransitions = Map.of(
-        Begin, List.of(
-            onEvent(InvoiceCreated).to(OrderStates.Created)
-                .assemble(c -> tuple(c.input(), c.entityId()))
-                .trigger(customerReferenced).with(t -> t.t1()).on(Index).identifiedBy(t -> newEntityId(t.t2()))
-                .output()
-        ),
-        OrderStates.Created, List.of()
-    );
-    Map<State, List<TransitionModel<?, ?>>> shipperTransitions = Map.of(
-        Begin, List.of(
-            onEvent(ShippingRequested).to(ShipperStates.Requested)
-                .assembleInput()
-                .trigger(OrderShipped).on(Order).identifiedBy(customerId -> lastReferencing(customerReferenced, customerId))
-                .output(d -> d.t1())
-        ),
-        ShipperStates.Requested, List.of()
-    );
-    var transitions = Map.of(
-        Order, orderTransitions,
-        Invoice, invoiceTransitions,
-        Shipper, shipperTransitions,
-        Index, Index.transitions()
-    );
+    var entityModels = List.of(Order, Invoice, Shipper, Index);
     String schema = UUID.randomUUID().toString();
-    StateMachine machine = Init.stateMachine(schema, transitions);
-    EntitiesByIndex entitiesByIndex = Init.storage(schema, transitions).entitiesByIndex();
+    StateMachine machine = Init.stateMachine(schema, entityModels);
+    EntitiesByIndex entitiesByIndex = Init.storage(schema, entityModels).entitiesByIndex();
 
     UUID customerId = UUID.randomUUID();
     machine.onEvent(trigger(OrderCreated, Order), customerId).blockFirst(Duration.ofSeconds(10));

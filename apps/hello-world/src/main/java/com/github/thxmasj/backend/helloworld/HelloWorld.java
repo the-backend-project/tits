@@ -73,7 +73,7 @@ public final class HelloWorld {
   public static StateMachine stateMachine(Config config) {
     return new StateMachine(
         null,
-        Greetings.transitions(),
+        Greetings.Inbox.entityModels(),
         new DataSourceBuilder(database, config.database()).buildPooled(),
         null, // The schema is created by the migrate admin process
         config.schema(),
@@ -86,7 +86,7 @@ public final class HelloWorld {
   }
 
   public static DisposableServer serve(StateMachine stateMachine, int port) {
-    return new HttpInboxListener(stateMachine)
+    return new HttpInboxListener(stateMachine, Greetings.Inbox)
         .filter((request, next) -> isHealthCheck(request.method(), request.uri().getPath())
             ? Mono.just(new HttpResponseMessage(200, "OK", Map.of("Content-Type", "text/plain"), "OK".getBytes(StandardCharsets.UTF_8)))
             : next.apply(request))
