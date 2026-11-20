@@ -1,8 +1,8 @@
 package com.github.thxmasj.backend.database.mssql;
 
-import com.github.thxmasj.backend.core.database.Database;
 import com.github.thxmasj.backend.core.database.DatabaseClient;
 import com.github.thxmasj.backend.core.database.DatabaseClient.Config;
+import com.github.thxmasj.backend.core.database.SqlDatabase;
 import com.github.thxmasj.backend.database.mssql.internal.CreateSchema;
 import com.github.thxmasj.backend.database.mssql.internal.GrantRead;
 import com.microsoft.sqlserver.jdbc.SQLServerDataSource;
@@ -10,7 +10,7 @@ import javax.sql.DataSource;
 import reactor.core.publisher.Mono;
 
 /// SQL Server, including Azure SQL
-public class MssqlDatabase implements Database {
+public class MssqlDatabase implements SqlDatabase {
 
   @Override
   public String name() {
@@ -64,7 +64,7 @@ public class MssqlDatabase implements Database {
 
   @Override
   public DatabaseClient client(DataSource dataSource) {
-    return new MssqlClient(dataSource);
+    return new MssqlClient(this, dataSource);
   }
 
   @Override

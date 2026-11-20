@@ -10,13 +10,14 @@ import com.github.thxmasj.backend.core.TriggerType;
 import com.github.thxmasj.backend.core.database.DatabaseClient;
 import com.github.thxmasj.backend.core.internal.DelayedEvent;
 import com.github.thxmasj.backend.core.internal.database.ConditionalTrigger;
+import com.github.thxmasj.backend.core.internal.database.sql.SqlChangeState;
 import java.time.Clock;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.stream.IntStream;
 
 /// Stores the changes in a single batch with an explicit transaction
-class ChangeState extends com.github.thxmasj.backend.core.internal.database.ChangeState {
+class ChangeState extends SqlChangeState {
 
   private final String schema;
 

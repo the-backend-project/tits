@@ -252,7 +252,6 @@ public class CutOffReconciliationTest {
         new StateMachine(
             _ -> Mono.empty(),
             inbox.entityModels(),
-            Init.database(),
             Init.client(),
             migrationDataSource,
             UUID.randomUUID().toString(),

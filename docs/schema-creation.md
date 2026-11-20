@@ -1,7 +1,7 @@
 # Schema creation
 
 The state machine creates its [schema](data-model.md) if it does not exist, and verifies it if it does. This is done by
-`Database.createSchema`, implemented by `CreateSchema` in [database-mssql](../database-mssql) and
+`SqlDatabase.createSchema`, implemented by `CreateSchema` in [database-mssql](../database-mssql) and
 [database-pgsql-jdbc](../database-pgsql-jdbc), whose `CreateSchema` the reactive PostgreSQL [modules](databases.md)
 use too, and called either:
 

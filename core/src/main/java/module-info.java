@@ -28,6 +28,11 @@ module com.github.thxmasj.backend.core {
       com.github.thxmasj.backend.database.pgsql.r2dbc,
       com.github.thxmasj.backend.database.pgsql.vertx,
       com.github.thxmasj.backend.testapi;
+  exports com.github.thxmasj.backend.core.internal.database.sql to
+      com.github.thxmasj.backend.database.mssql,
+      com.github.thxmasj.backend.database.pgsql.jdbc,
+      com.github.thxmasj.backend.database.pgsql.r2dbc,
+      com.github.thxmasj.backend.database.pgsql.vertx;
   exports com.github.thxmasj.backend.core.internal.database.jdbc to
       com.github.thxmasj.backend.database.mssql,
       com.github.thxmasj.backend.database.pgsql.jdbc;

@@ -11,17 +11,18 @@ import com.github.thxmasj.backend.core.TriggerType;
 import com.github.thxmasj.backend.core.database.DatabaseClient;
 import com.github.thxmasj.backend.core.internal.DelayedEvent;
 import com.github.thxmasj.backend.core.internal.database.ConditionalTrigger;
+import com.github.thxmasj.backend.core.internal.database.sql.SqlChangeState;
 import java.time.Clock;
 import java.time.ZonedDateTime;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.stream.IntStream;
-import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 /// Stores the changes in a single round trip without an explicit transaction. PostgreSQL then executes them in a
 /// single implicit transaction, which is rolled back if any of them fails.
 @SuppressWarnings("StringConcatenationInLoop")
-class ChangeState extends com.github.thxmasj.backend.core.internal.database.ChangeState {
+class ChangeState extends SqlChangeState {
 
   private final String schema;
 
@@ -32,8 +33,8 @@ class ChangeState extends com.github.thxmasj.backend.core.internal.database.Chan
 
   /// Stores nothing if there are no changes, as PostgreSQL would get no statements
   @Override
-  public Flux<OutboxElement> execute(ZonedDateTime timestamp, String correlationId, List<Change> changes) {
-    return changes.isEmpty() ? Flux.empty() : super.execute(timestamp, correlationId, changes);
+  public Mono<Void> execute(ZonedDateTime timestamp, String correlationId, List<Change> changes) {
+    return changes.isEmpty() ? Mono.empty() : super.execute(timestamp, correlationId, changes);
   }
 
   @Override

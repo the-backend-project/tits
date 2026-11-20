@@ -122,7 +122,6 @@ public class BackofficeTest {
     return new StateMachine(
         _ -> Mono.empty(),
         backoffice.inbox().entityModels(),
-        Init.database(),
         Init.newClient(),
         Init.migrationDataSource(),
         backofficeSchema,

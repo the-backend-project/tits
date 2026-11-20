@@ -4,9 +4,9 @@ import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.Listener;
 import com.github.thxmasj.backend.core.StateMachine;
 import com.github.thxmasj.backend.core.database.DataSourceBuilder;
-import com.github.thxmasj.backend.core.database.Database;
 import com.github.thxmasj.backend.core.database.DatabaseClient;
 import com.github.thxmasj.backend.core.database.DatabaseClient.Config;
+import com.github.thxmasj.backend.core.database.SqlDatabase;
 import com.github.thxmasj.backend.core.internal.ResolvedModels;
 import com.github.thxmasj.backend.core.internal.database.Storage;
 import com.github.thxmasj.backend.core.internal.database.StorageProvider;
@@ -25,8 +25,8 @@ import reactor.core.publisher.Mono;
 
 public class Init {
 
-  // The tests run on SQL Server by default, and on PostgreSQL with -Ddatabase=pgsql-jdbc or -Ddatabase=pgsql-r2dbc
-  private static final Database database = Database.named(System.getProperty("database", "mssql"));
+  // The tests run on SQL Server by default, and on PostgreSQL with -Ddatabase=pgsql-jdbc, -Ddatabase=pgsql-r2dbc or -Ddatabase=pgsql-vertx
+  private static final SqlDatabase database = SqlDatabase.named(System.getProperty("database", "mssql"));
   private static final boolean pgsql = database.name().startsWith("pgsql");
   private static final DataSource dataSource = new DataSourceBuilder(database, databaseConfig("testlogin", "Please_hide_me!")).build();
   // Shared by the state machines of the tests, which do not close them
@@ -36,7 +36,7 @@ public class Init {
       "A_Str0ng_Required_Password"
   )).build();
 
-  public static Database database() {
+  public static SqlDatabase database() {
     return database;
   }
 
@@ -65,7 +65,7 @@ public class Init {
 
   /// The storage of a schema in the test database
   public static Storage storage(String schemaName, List<? extends EntityModel> entityModels) {
-    return StorageProvider.storage(database, client, ResolvedModels.of(entityModels), schemaName, Clock.systemUTC());
+    return StorageProvider.of(client).storage(client, ResolvedModels.of(entityModels), schemaName, Clock.systemUTC());
   }
 
   public static StateMachine stateMachine(
@@ -92,7 +92,6 @@ public class Init {
     return new StateMachine(
         _ -> Mono.empty(),
         entityModels,
-        database,
         client,
         migrationDataSource,
         schemaName,

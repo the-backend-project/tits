@@ -2,7 +2,7 @@
 
 | Module                                                                | Contains                                                                                       |
 |-----------------------------------------------------------------------|------------------------------------------------------------------------------------------------|
-| core                                                                  | The state machine, the builder of transition models, and the interface of the databases        |
+| core                                                                  | The state machine, the builder of transition models, and the storage interface of databases    |
 | [http](http-outbox.md#dispatching-a-request)                          | HTTP messages, HTTP clients and their data types, shared by http-inbox and http-outbox         |
 | [database-mssql, database-pgsql-*](databases.md)                      | The SQL of a database and the driver it is reached through, one module per database and driver |
 | [http-inbox](http-inbox.md)                                           | Inboxes: entity models receiving HTTP requests and routing them to the entities of an application |
@@ -19,14 +19,15 @@ application of its own, which depends on the application and on backoffice. See 
 applications.
 
 Core exports only what applications use: the packages `com.github.thxmasj.backend.core` (the state machine and the
-building of entity models) and `core.database` (the databases, their clients and `DataSourceBuilder`). The http module
+building of entity models) and `core.database` (the databases and their stores, and of those reached through SQL their
+clients and `DataSourceBuilder`). The http module
 exports `com.github.thxmasj.backend.http`: the HTTP messages (`HttpRequest`, `HttpResponse`), the HTTP clients
 (`HttpClient`, `NettyHttpClient`, `AccessTokenSupplier`) and the data types of HTTP messages (`HttpDataType`). The
-packages under `core.internal`, such as the queries and updates of the databases and the steps of a transition, are
+packages under `core.internal`, such as the storage of the state machine with its SQL and the steps of a transition, are
 exported only to the other modules of the library, as is `http.internal` to http-inbox and http-outbox. A database
-module exports only its `Database`, and provides the queries and updates of its schema to the state machine as a service
-from an internal package. The internal package of database-pgsql-jdbc is exported to the other PostgreSQL modules, which
-share it. To create a schema or look into a database without a state machine, use `Database.createSchema` and the [test
+module exports only its `SqlDatabase`, and provides the storage of the state machine, with the SQL of its dialect, as a
+service from an internal package (see [what a database module provides](databases.md#what-a-database-module-provides)). The internal package of database-pgsql-jdbc is exported to the other PostgreSQL modules, which
+share it. To create a schema or look into a database without a state machine, use `SqlDatabase.createSchema` and the [test
 API](testing.md).
 
 ## Java version

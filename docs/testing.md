@@ -49,6 +49,10 @@ assertEquals(Authorised, payment.events().getLast().type());
 The data source needs no more privileges than the role the state machine runs with. If the clock of the state machine
 is a mock clock, give the test API the same one.
 
+Instead of a data source, the test API can be given a `Store` of the database, such as the `DatabaseClient` the state
+machine is given. It then runs its operations on the storage of that store's database, so it also works with a reactive
+driver or a [database](databases.md#what-a-database-module-provides) that is not reached through SQL.
+
 ## Operations
 
 All operations are reactive, like the rest of the state machine, and complete empty when there is nothing to return.

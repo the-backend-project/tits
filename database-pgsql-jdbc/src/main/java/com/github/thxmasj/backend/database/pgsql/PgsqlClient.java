@@ -10,8 +10,8 @@ import org.postgresql.util.ServerErrorMessage;
 /// Maps PostgreSQL's unique violations to primary key and unique index violations by the name of the constraint
 class PgsqlClient extends JDBCClient {
 
-  PgsqlClient(DataSource dataSource) {
-    super(dataSource);
+  PgsqlClient(PgsqlDatabase database, DataSource dataSource) {
+    super(database, dataSource);
   }
 
   @Override

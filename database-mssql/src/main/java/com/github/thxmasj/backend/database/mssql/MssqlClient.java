@@ -32,8 +32,8 @@ class MssqlClient extends JDBCClient {
   private static final Pattern primaryKeyViolationPattern = Pattern.compile(
       "Violation of PRIMARY KEY constraint '(.*)'. Cannot insert duplicate key in object '(.*)\\.(.*)'. The duplicate key value is \\((.*)\\).");
 
-  public MssqlClient(DataSource dataSource) {
-    super(dataSource);
+  MssqlClient(MssqlDatabase database, DataSource dataSource) {
+    super(database, dataSource);
   }
 
   @Override

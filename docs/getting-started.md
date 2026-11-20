@@ -145,7 +145,7 @@ Build a data source with the database module, give it to a `StateMachine` with t
 HTTP with an `HttpInboxListener` of the inbox:
 
 ```java
-Database database = new MssqlDatabase();
+SqlDatabase database = new MssqlDatabase();
 StateMachine stateMachine = new StateMachine(
     null,                         // no delayer
     Greetings.Inbox.entityModels(),

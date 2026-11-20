@@ -61,12 +61,12 @@ public class StorageTest {
 
   private static Storage storage() {
     String schema = UUID.randomUUID().toString();
-    Storage.createSchema(Init.migrationDataSource(), schema, "Test").block();
+    Init.database().createSchema(Init.migrationDataSource(), schema, "Test").block();
     return Init.storage(schema, entityModels);
   }
 
   private static void store(Storage storage, Change... changes) {
-    storage.changeState().execute(ZonedDateTime.now(clock), UUID.randomUUID().toString(), List.of(changes)).blockLast();
+    storage.changeState().execute(ZonedDateTime.now(clock), UUID.randomUUID().toString(), List.of(changes)).block();
   }
 
   /// A person with a name, i.e. its first event and its name's id event
@@ -126,7 +126,7 @@ public class StorageTest {
     String schema = UUID.randomUUID().toString();
 
     List<Integer> results = Flux.fromStream(IntStream.range(0, 5).boxed())
-        .flatMap(_ -> Storage.createSchema(Init.migrationDataSource(), schema, "Test").subscribeOn(Schedulers.boundedElastic()))
+        .flatMap(_ -> Init.database().createSchema(Init.migrationDataSource(), schema, "Test").subscribeOn(Schedulers.boundedElastic()))
         .collectList()
         .block();
 
@@ -137,13 +137,13 @@ public class StorageTest {
   @Test
   public void existingSchemaIsVerifiedWhileItsCreationIsLocked() throws SQLException {
     String schema = UUID.randomUUID().toString();
-    Storage.createSchema(Init.migrationDataSource(), schema, "Test").block();
+    Init.database().createSchema(Init.migrationDataSource(), schema, "Test").block();
 
     try (Connection connection = Init.migrationDataSource().getConnection()) {
       lockCreation(connection, schema);
 
       // Waiting for the lock would take until the query timeout of 10 seconds
-      assertEquals(0, Storage.createSchema(Init.migrationDataSource(), schema, "Test").block(Duration.ofSeconds(5)));
+      assertEquals(0, Init.database().createSchema(Init.migrationDataSource(), schema, "Test").block(Duration.ofSeconds(5)));
     }
   }
 
@@ -167,11 +167,11 @@ public class StorageTest {
       connection.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
       DataSource pool = unresettingPool(connection);
 
-      assertEquals(1, Storage.createSchema(pool, schema, "Test").block());
+      assertEquals(1, Init.database().createSchema(pool, schema, "Test").block());
       assertFalse(connection.getAutoCommit());
       assertEquals(Connection.TRANSACTION_REPEATABLE_READ, connection.getTransactionIsolation());
 
-      assertEquals(0, Storage.createSchema(pool, schema, "Test").block());
+      assertEquals(0, Init.database().createSchema(pool, schema, "Test").block());
       assertFalse(connection.getAutoCommit());
       assertEquals(Connection.TRANSACTION_REPEATABLE_READ, connection.getTransactionIsolation());
     }

@@ -1,8 +1,8 @@
 package com.github.thxmasj.backend.database.pgsql;
 
-import com.github.thxmasj.backend.core.database.Database;
 import com.github.thxmasj.backend.core.database.DatabaseClient;
 import com.github.thxmasj.backend.core.database.DatabaseClient.Config;
+import com.github.thxmasj.backend.core.database.SqlDatabase;
 import com.github.thxmasj.backend.database.pgsql.internal.CreateSchema;
 import com.github.thxmasj.backend.database.pgsql.internal.GrantRead;
 import javax.sql.DataSource;
@@ -11,7 +11,7 @@ import org.postgresql.jdbc.SslMode;
 import reactor.core.publisher.Mono;
 
 /// PostgreSQL
-public class PgsqlDatabase implements Database {
+public class PgsqlDatabase implements SqlDatabase {
 
   @Override
   public String name() {
@@ -41,7 +41,7 @@ public class PgsqlDatabase implements Database {
 
   @Override
   public DatabaseClient client(DataSource dataSource) {
-    return new PgsqlClient(dataSource);
+    return new PgsqlClient(this, dataSource);
   }
 
   @Override

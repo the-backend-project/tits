@@ -7,7 +7,7 @@ import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.JsonLinesListener;
 import com.github.thxmasj.backend.core.StateMachine;
 import com.github.thxmasj.backend.core.database.DataSourceBuilder;
-import com.github.thxmasj.backend.core.database.Database;
+import com.github.thxmasj.backend.core.database.SqlDatabase;
 import com.github.thxmasj.backend.http.HttpMessageParser;
 import com.github.thxmasj.backend.http.HttpRequest;
 import com.github.thxmasj.backend.http.HttpRequest.Method;
@@ -104,7 +104,7 @@ public final class IdentityProvider {
   public static void migrate(Config config) {
     if (config.role() == null)
       throw new IllegalArgumentException("Environment variable DATABASE_ROLE is required for migration");
-    Database database = Database.named(config.database());
+    SqlDatabase database = SqlDatabase.named(config.database());
     database.createSchema(new DataSourceBuilder(database, config.databaseConfig()).build(), config.schema(), config.role())
         .timeout(Duration.ofSeconds(30))
         .block();
@@ -112,7 +112,7 @@ public final class IdentityProvider {
 
   /// @param inbox the inbox of the identity provider, see [Inbox#inbox(Duration)]
   public static StateMachine stateMachine(Config config, HttpInbox inbox) {
-    Database database = Database.named(config.database());
+    SqlDatabase database = SqlDatabase.named(config.database());
     return new StateMachine(
         null,
         inbox.entityModels(),

@@ -136,7 +136,7 @@ Cons:
 
 ## Using a module
 
-With a JDBC module, the state machine is given a data source, built from the module's `Database`. The state machine
+With a JDBC module, the state machine is given a data source, built from the module's `SqlDatabase`. The state machine
 finds the database behind it among the modules on the module path or class path:
 
 ```java
@@ -145,15 +145,14 @@ DataSource schemaDataSource = new DataSourceBuilder(new PgsqlDatabase(), adminCo
 new StateMachine(delayer, entityModels, dataSource, schemaDataSource, schemaName, role, clock, listener);
 ```
 
-With a reactive module, the state machine is given the module's `Database` and a client of it, which has a connection
-pool of its own. The schema data source is a JDBC one, from the same `Database`:
+With a reactive module, the state machine is given a client of the module's `SqlDatabase`, which has a connection pool
+of its own. The schema data source is a JDBC one, from the same `SqlDatabase`:
 
 ```java
-Database database = new PgsqlVertxDatabase();
+SqlDatabase database = new PgsqlVertxDatabase();
 new StateMachine(
     delayer,
     entityModels,
-    database,
     database.client(config),
     database.dataSource(adminConfig),
     schemaName,
@@ -165,6 +164,28 @@ new StateMachine(
 ```
 
 The state machine closes the data source or client, and with it the connection pool, when it is closed.
+
+## What a database module provides
+
+The state machine itself makes no assumption of SQL. A database module provides two services, which are found on the
+module path or class path:
+
+* Its `Database`, with the name it is selected by. A database reached through SQL is a `SqlDatabase`, which also builds
+  JDBC data sources and clients of them, and creates and verifies the [schema](schema-creation.md) through JDBC.
+* The storage of the state machine: the operations it stores and reads event logs and triggers with, and those of the
+  [test API](testing.md). Their interfaces state what they do in terms of the state machine rather than of tables, e.g.
+  that the changes of a transition are stored all or none, and that storing an event whose number an entity already
+  has, or an id that another entity has, fails. The storage is internal to the library, so the module of a database is
+  one of its modules.
+
+The state machine runs the storage on a `Store`, an open connection to the database, which it closes when it is closed.
+For a database reached through SQL the store is a `DatabaseClient`, and the storage is the same for all of them but for
+the SQL of each dialect. A database that is not reached through SQL, e.g. one on git, has a store of its own and creates
+its schema itself, and the state machine is given the store:
+
+```java
+new StateMachine(delayer, entityModels, store, schemaName, clock, listener, true);
+```
 
 ## Testing
 

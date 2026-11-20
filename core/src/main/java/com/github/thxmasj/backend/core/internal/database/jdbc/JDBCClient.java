@@ -7,6 +7,7 @@ import com.github.thxmasj.backend.core.database.DatabaseClient;
 import com.github.thxmasj.backend.core.database.MappingFailure;
 import com.github.thxmasj.backend.core.database.Parameter;
 import com.github.thxmasj.backend.core.database.Row;
+import com.github.thxmasj.backend.core.database.SqlDatabase;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -25,11 +26,19 @@ import reactor.core.scheduler.Schedulers;
 /// A client of a JDBC data source, which is closed with the client if it is closeable, e.g. a connection pool
 public class JDBCClient implements DatabaseClient {
 
+  private final SqlDatabase database;
   private final DataSource dataSource;
   private final Scheduler scheduler = Schedulers.fromExecutorService(Executors.newVirtualThreadPerTaskExecutor());
 
-  public JDBCClient(DataSource dataSource) {
+  /// @param database the database behind the data source, whose dialect the SQL is in
+  public JDBCClient(SqlDatabase database, DataSource dataSource) {
+    this.database = database;
     this.dataSource = dataSource;
+  }
+
+  @Override
+  public SqlDatabase database() {
+    return database;
   }
 
   @Override
