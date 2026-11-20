@@ -85,8 +85,7 @@ public class StateMachine implements AutoCloseable {
   private final List<Looper<?>> workers = new ArrayList<>();
   private final DatabaseClient client;
   private final Storage storage;
-  private final List<EntityModel> entityModels;
-  private final Map<UUID, EntityModel> entityModelsById;
+  private final ResolvedModels models;
   private final Map<EntityModel, Traverser> traversers;
   private final Map<EntityModel, List<EventType<?, ?>>> eventTypesByEntityModel;
 
@@ -157,8 +156,7 @@ public class StateMachine implements AutoCloseable {
   ) {
     ResolvedModels resolved = ResolvedModels.of(entityModels);
     List<EntityModel> models = resolved.entityModels();
-    this.entityModels = models;
-    this.entityModelsById = models.stream().collect(toMap(EntityModel::id, m -> m));
+    this.models = resolved;
     Debug.log("Supported entity models:\n" + models.stream().map(EntityModel::name).collect(joining("\n")));
     this.traversers = models.stream().collect(toMap(m -> m, m -> new Traverser(m.transitions())));
     this.eventTypesByEntityModel = resolved.eventTypesByEntityModel();
@@ -425,23 +423,30 @@ public class StateMachine implements AutoCloseable {
     return onEvent(UUID.randomUUID().toString(), eventTrigger, input);
   }
 
-  /// @throws IllegalArgumentException if the state machine runs no entity model with the id of the one triggered on
+  /// Fails with an [IllegalArgumentException] if the state machine runs no entity model with the id of the one
+  /// triggered on. Another instance with the id is taken for the model run, e.g. of a model created from configuration.
   public <T, I, O> Flux<Event<?>> onEvent(String correlationId, EventTrigger<T, I, O> eventTrigger, T input) {
-    EntityModel run = run(eventTrigger.entityModel());
-    return onEvent(correlationId, run == eventTrigger.entityModel() ? eventTrigger : eventTrigger.on(run), input, null);
+    EntityModel target = eventTrigger.entityModel();
+    if (target == null || target instanceof EntityModelGroup)
+      return onEvent(correlationId, eventTrigger, input, null);
+    return run(target).flatMapMany(run ->
+        onEvent(correlationId, run == target ? eventTrigger : eventTrigger.on(run), input, null)
+    );
   }
 
-  /// The entity model the state machine runs with the id of the given one, which may be another instance, e.g. of a
-  /// model created from configuration. A group, or no model, is left as it is.
-  ///
-  /// @throws IllegalArgumentException if the state machine runs no entity model with the id
-  private EntityModel run(EntityModel entityModel) {
-    if (entityModel == null || entityModel instanceof EntityModelGroup)
-      return entityModel;
-    EntityModel run = entityModelsById.get(entityModel.id());
-    if (run == null)
-      throw new IllegalArgumentException("The state machine runs no entity model " + entityModel.name() + " with id " + entityModel.id());
-    return run;
+  /// Whether the state machine runs the entity model, or another instance with its id
+  public boolean runs(EntityModel entityModel) {
+    return models.run(entityModel).isPresent();
+  }
+
+  /// The entity model the state machine runs with the id of the given one, which may be another instance of it, or
+  /// an [IllegalArgumentException] if it runs none
+  private Mono<EntityModel> run(EntityModel entityModel) {
+    return models.run(entityModel)
+        .map(Mono::just)
+        .orElseGet(() -> Mono.error(new IllegalArgumentException(
+            "The state machine runs no entity model " + entityModel.name() + " with id " + entityModel.id()
+        )));
   }
 
   private <T, I, O> Flux<Event<?>> onEvent(
@@ -679,13 +684,11 @@ public class StateMachine implements AutoCloseable {
 
 
   /// The current state of the selected entity. Completes empty if the entity does not exist.
-  ///
-  /// @throws IllegalArgumentException if the state machine runs no entity model with the id of the given one
+  /// Fails with an [IllegalArgumentException] if the state machine runs no entity model with the id of the given one.
   public Mono<State> onStatus(EntitySelector entitySelector, EntityModel entityModel) {
-    EntityModel run = run(entityModel);
-    return eventLog(entitySelector, run, null)
+    return run(entityModel).flatMap(run -> eventLog(entitySelector, run, null)
         .map(log -> traversers.get(run).currentState(log))
-        .onErrorResume(UnknownEntity.class, _ -> Mono.empty());
+        .onErrorResume(UnknownEntity.class, _ -> Mono.empty()));
   }
 
   private <T> Flux<Event<?>> fireConditionalTrigger(ConditionalTrigger<T> conditionalTrigger) {
@@ -1191,7 +1194,7 @@ public class StateMachine implements AutoCloseable {
 
   /// The entity models the state machine runs: those it was given, and those their transitions trigger events on
   public List<EntityModel> entityModels() {
-    return entityModels;
+    return models.entityModels();
   }
 
   Traverser traverser(EntityModel entityModel) {

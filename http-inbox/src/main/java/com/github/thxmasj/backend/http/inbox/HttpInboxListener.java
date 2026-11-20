@@ -62,7 +62,7 @@ public class HttpInboxListener {
       String correlationIdHeader,
       List<Filter> filters
   ) {
-    if (!stateMachine.entityModels().contains(inbox.requestRouting()))
+    if (!stateMachine.runs(inbox.requestRouting()))
       throw new IllegalArgumentException(
           "The state machine doesn't run the request routing of the inbox. Create it with the entity models of the same " +
           "inbox the listener is given."

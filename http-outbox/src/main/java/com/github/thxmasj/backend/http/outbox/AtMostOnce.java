@@ -60,9 +60,8 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
   private final Function<AtMostOnce<RQ, RRQ>, AtLeastOnce<RRQ>> rollbackOnAcceptedModelSupplier;
   private final Function<AtMostOnce<RQ, RRQ>, AtLeastOnce<RRQ>> rollbackOnUnknownModelSupplier;
   private final Function<AtMostOnce<RQ, RRQ>, Map<State, List<TransitionModel<?, ?>>>> transitionsCreator;
-  private final Memoized<Map<State, List<TransitionModel<?, ?>>>> transitions;
-  /// Whether the rollback models are created, before which the transitions are not kept, as they trigger on them
-  private volatile boolean constructed;
+  /// The transitions, which are kept once the rollback models they trigger on are created, and so null until then
+  private volatile Memoized<Map<State, List<TransitionModel<?, ?>>>> transitions;
 
   private record Shape<T1, T2, T3, T4, T5, T6, T7, RQ, RS>(
       DataType<RQ> requestPayloadType,
@@ -299,7 +298,6 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
   ) {
     this.name = name;
     this.id = id;
-    this.transitions = new Memoized<>(this::createTransitions, "transitions of " + name);
     this.transitionsCreator = outbox -> outbox.transitions(
         outbox.shape,
         AtLeastOnce::requestDispatched,
@@ -330,7 +328,7 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
     this.rollbackOnUnknownModelSupplier = rollbackOnUnknownModelSupplier;
     this.rollbackOnAcceptedModel = rollbackOnAcceptedModelSupplier != null ? rollbackOnAcceptedModelSupplier.apply(this) : null;
     this.rollbackOnUnknownModel = rollbackOnUnknownModelSupplier != null ? rollbackOnUnknownModelSupplier.apply(this) : null;
-    this.constructed = true;
+    this.transitions = new Memoized<>(this::createTransitions, "transitions of " + name);
   }
 
   /// A copy of the outbox request, with the same name and id, whose transitions are created by the given creator. Its
@@ -341,14 +339,13 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
   ) {
     this.name = outbox.name;
     this.id = outbox.id;
-    this.transitions = new Memoized<>(this::createTransitions, "transitions of " + name);
     this.transitionsCreator = transitionsCreator;
     this.shape = outbox.shape;
     this.rollbackOnAcceptedModelSupplier = outbox.rollbackOnAcceptedModelSupplier;
     this.rollbackOnUnknownModelSupplier = outbox.rollbackOnUnknownModelSupplier;
     this.rollbackOnAcceptedModel = rollbackOnAcceptedModelSupplier != null ? rollbackOnAcceptedModelSupplier.apply(this) : null;
     this.rollbackOnUnknownModel = rollbackOnUnknownModelSupplier != null ? rollbackOnUnknownModelSupplier.apply(this) : null;
-    this.constructed = true;
+    this.transitions = new Memoized<>(this::createTransitions, "transitions of " + name);
   }
 
   private <RI, RRI, T1, T2, T3, T4, T5, T6, T7, RS> Map<State, List<TransitionModel<?, ?>>> transitions(
@@ -568,10 +565,9 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
   /// [#withBatchedRollback(BiFunction)], they have no rollback message creator, so a rollback of the request fails.
   @Override
   public Map<State, List<TransitionModel<?, ?>>> transitions() {
+    var kept = transitions;
     // Asked for by a creator of a rollback model, before the rollback models are there to trigger on
-    if (!constructed)
-      return createTransitions();
-    return transitions.get();
+    return kept != null ? kept.get() : createTransitions();
   }
 
   private Map<State, List<TransitionModel<?, ?>>> createTransitions() {

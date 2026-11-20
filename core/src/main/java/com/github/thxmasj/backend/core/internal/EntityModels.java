@@ -51,7 +51,10 @@ public final class EntityModels {
             "Entity models " + other.name() + " and " + model.name() + " have the same id " + model.id()
         );
       resolved.add(model);
-      for (List<TransitionModel<?, ?>> transitions : model.transitions().values())
+      var byState = model.transitions();
+      if (byState == null)
+        throw new NullPointerException("Entity model " + model.name() + " has no transitions");
+      for (List<TransitionModel<?, ?>> transitions : byState.values())
         for (TransitionModel<?, ?> transition : transitions)
           addTargets(transition, toVisit);
     }

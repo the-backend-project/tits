@@ -1,7 +1,5 @@
 package com.github.thxmasj.backend.testapi;
 
-import static java.util.function.Function.identity;
-import static java.util.stream.Collectors.toMap;
 
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.Event;
@@ -29,7 +27,6 @@ import java.time.LocalDateTime;
 import java.time.ZonedDateTime;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
 import javax.sql.DataSource;
@@ -47,8 +44,7 @@ public class TestApi {
   private final DatabaseClient client;
   private final String schema;
   private final Clock clock;
-  private final Map<UUID, EntityModel> entityModels;
-  private final Map<EntityModel, List<EventType<?, ?>>> eventTypesByEntityModel;
+  private final ResolvedModels models;
   private final Function<UUID, EventType<?, ?>> eventTypeMapper;
   private final EventsByEntityId eventsByEntityId;
   private final EventsByIdEvent eventsByIdEvent;
@@ -86,8 +82,7 @@ public class TestApi {
     this.schema = schemaName;
     this.clock = clock;
     ResolvedModels models = ResolvedModels.of(entityModels);
-    this.entityModels = models.entityModels().stream().collect(toMap(EntityModel::id, identity()));
-    this.eventTypesByEntityModel = models.eventTypesByEntityModel();
+    this.models = models;
     this.eventTypeMapper = Mappers.eventTypeMapper(models.eventTypes());
     Storage storage = StorageProvider.storage(database, client, models, schemaName, clock);
     this.eventsByEntityId = storage.eventsByEntityId();
@@ -115,7 +110,7 @@ public class TestApi {
   /// The event log of an entity of an entity model, including id and index entities. Completes empty if the entity has
   /// no events.
   public Mono<EventLog> eventLog(EntityModel model, UUID entityId) {
-    EntityModel entityModel = entityModel(model.id());
+    EntityModel entityModel = run(model);
     return eventsByEntityId.execute(entityModel, eventTypes(entityModel), entityId)
         .onErrorResume(UnknownEntity.class, _ -> Mono.empty());
   }
@@ -154,7 +149,7 @@ public class TestApi {
   /// @param indexType an event type whose output data type is a [GroupedDataType] with groups of type `G`
   @SuppressWarnings("unchecked")
   public <G> Mono<EventLog> lastIndexed(EntityModel model, EventType<?, ?> indexType, G group) {
-    EntityModel entityModel = entityModel(model.id());
+    EntityModel entityModel = run(model);
     if (!(indexType.outputDataType() instanceof GroupedDataType<?, ?> dataType))
       return Mono.error(new IllegalArgumentException("Data type of index event type " + indexType.name() + " is not grouped"));
     byte[] marshalledGroup = ((GroupedDataType<?, G>) dataType).marshalGroup(group);
@@ -249,7 +244,7 @@ public class TestApi {
   /// triggered, but it triggers no other events and is not validated against the entity's state. For id and index entities the event
   /// is an id or index event, so an id must not be taken by another entity.
   public <T> Mono<Event<T>> append(EntityModel model, UUID entityId, EventType<?, T> type, T data) {
-    EntityModel entityModel = entityModel(model.id());
+    EntityModel entityModel = run(model);
     String table = switch (entityModel) {
       case IdEntityModel _ -> "IdEvent";
       case IndexEntityModel _ -> "IndexEvent";
@@ -292,20 +287,26 @@ public class TestApi {
         .update();
   }
 
-  /// The entity model given, or found from one given, with the id, which may be another instance than the one a test
-  /// has, e.g. of a model created from configuration
+  /// The entity model with the id, e.g. of an event log read
   private EntityModel entityModel(UUID id) {
-    EntityModel entityModel = entityModels.get(id);
+    EntityModel entityModel = models.entityModelsById().get(id);
     if (entityModel == null)
       throw new IllegalStateException("Unknown entity model " + id + ". Is it in the entity models given to the test API?");
     return entityModel;
   }
 
+  /// The entity model run with the id of the given one, which may be another instance of it, e.g. of a model created
+  /// from configuration again by a test
+  ///
+  /// @throws IllegalArgumentException if no entity model run has the id
+  private EntityModel run(EntityModel entityModel) {
+    return models.run(entityModel).orElseThrow(() -> new IllegalArgumentException(
+        "Unknown entity model " + entityModel.name() + ". Is it in the entity models given to the test API?"
+    ));
+  }
+
   private List<EventType<?, ?>> eventTypes(EntityModel entityModel) {
-    List<EventType<?, ?>> eventTypes = eventTypesByEntityModel.get(entityModel);
-    if (eventTypes == null)
-      throw new IllegalArgumentException("Unknown entity model " + entityModel.name() + ". Is it in the entity models given to the test API?");
-    return eventTypes;
+    return models.eventTypesByEntityModel().get(entityModel);
   }
 
   private EventType<?, ?> eventType(UUID id) {

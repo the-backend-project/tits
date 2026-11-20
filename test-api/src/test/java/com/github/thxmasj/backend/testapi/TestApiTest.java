@@ -220,8 +220,8 @@ public class TestApiTest {
   public void modelNotRunIsRejected() {
     var other = EntityModel.of("Other", UUID.randomUUID(), Map::of);
 
-    assertThrows(IllegalArgumentException.class, () -> machine.onStatus(entityId(UUID.randomUUID()), other));
-    assertThrows(IllegalStateException.class, () -> api.eventLog(other, UUID.randomUUID()));
+    assertThrows(IllegalArgumentException.class, () -> machine.onStatus(entityId(UUID.randomUUID()), other).block());
+    assertThrows(IllegalArgumentException.class, () -> api.eventLog(other, UUID.randomUUID()));
   }
 
   @Test

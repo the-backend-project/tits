@@ -26,6 +26,7 @@ import static com.github.thxmasj.backend.http.inbox.HttpInboxTest.States.On;
 import static com.github.thxmasj.backend.http.inbox.HttpInboxTest.States.Processing;
 import static com.github.thxmasj.backend.http.inbox.HttpInboxTest.States.Unreachable;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -863,13 +864,22 @@ public class HttpInboxTest {
     assertTrue(ProblemDetail.parse(other.body()).detail().startsWith("Light is on!"));
   }
 
-  /// Another inbox of the same requests has a routing model of its own, which the state machine doesn't run
+  /// Another inbox has a routing model of its own, with the id of the one the state machine runs, which it takes for
+  /// its own
   @Test
-  public void listenerOfAnotherInboxThanTheStateMachineIsRejected() {
-    var otherInbox = HttpInbox.of(requests);
-    assertThatThrownBy(() -> new HttpInboxListener(stateMachine, otherInbox))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("doesn't run the request routing of the inbox");
+  public void listenerOfAnotherInboxOfTheStateMachineIsAccepted() {
+    assertThatNoException().isThrownBy(() -> new HttpInboxListener(stateMachine, HttpInbox.of(requests)));
+  }
+
+  @Test
+  public void listenerOfAStateMachineWithoutAnInboxIsRejected() throws Exception {
+    // With a database client of its own, which closing it closes
+    try (var withoutInbox = new StateMachine(_ -> Mono.empty(), List.of(Chime), Init.database(), Init.newClient(),
+        Init.migrationDataSource(), UUID.randomUUID().toString(), "Test", Clock.systemUTC(), null, false)) {
+      assertThatThrownBy(() -> new HttpInboxListener(withoutInbox, inbox))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("doesn't run the request routing of the inbox");
+    }
   }
 
   @Test
