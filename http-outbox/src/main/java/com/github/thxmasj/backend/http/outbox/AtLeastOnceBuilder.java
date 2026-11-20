@@ -8,9 +8,8 @@ import com.github.thxmasj.backend.core.Tuples.Tuple2;
 import com.github.thxmasj.backend.core.Validated;
 import com.github.thxmasj.backend.core.http.HttpClient;
 import com.github.thxmasj.backend.http.outbox.AtLeastOnce.RetryContext;
-import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
-import com.github.thxmasj.backend.core.message.http.TypedHttpRequest;
-import com.github.thxmasj.backend.core.message.http.TypedHttpResponse;
+import com.github.thxmasj.backend.core.message.http.HttpRequest;
+import com.github.thxmasj.backend.core.message.http.HttpResponse;
 import java.time.Duration;
 import java.util.UUID;
 import java.util.function.BiFunction;
@@ -48,7 +47,7 @@ public final class AtLeastOnceBuilder {
   public interface RepeatMessageCreatorStep<RQ, RS> extends ForwarderStep<RQ, RS> {
 
     ForwarderStep<RQ, RS> repeatMessageCreator(
-        BiFunction<TransitionContext<Void>, TypedHttpRequest<RQ>, TypedHttpRequest<RQ>> repeatMessageCreator
+        BiFunction<TransitionContext<Void>, HttpRequest<RQ>, HttpRequest<RQ>> repeatMessageCreator
     );
   }
 
@@ -71,10 +70,10 @@ public final class AtLeastOnceBuilder {
 
   public interface ContentParserStep<RQ, RS> {
 
-    OnSuccessStep<RQ, RS> contentParser(Function<HttpResponseMessage, Validated<RS>> contentParser);
+    OnSuccessStep<RQ, RS> contentParser(Function<HttpResponse<byte[]>, Validated<RS>> contentParser);
 
     OnSuccessStep<RQ, RS> contentParser(
-        BiFunction<TypedHttpRequest<RQ>, HttpResponseMessage, Validated<RS>> contentParser
+        BiFunction<HttpRequest<RQ>, HttpResponse<byte[]>, Validated<RS>> contentParser
     );
   }
 
@@ -83,7 +82,7 @@ public final class AtLeastOnceBuilder {
 
     <S> IsAcceptedStep<RQ, RS> onSuccess(
         EventType<S, ?> eventType,
-        Function<TypedHttpResponse<RS>, S> dataAdapter
+        Function<HttpResponse<RS>, S> dataAdapter
     );
 
     IsAcceptedStep<RQ, RS> onSuccess(EventType<Void, ?> eventType);
@@ -91,27 +90,27 @@ public final class AtLeastOnceBuilder {
 
   public interface IsAcceptedStep<RQ, RS> {
 
-    IsFailureTransientStep<RQ, RS> isAccepted(Predicate<TypedHttpResponse<RS>> isAccepted);
+    IsFailureTransientStep<RQ, RS> isAccepted(Predicate<HttpResponse<RS>> isAccepted);
 
-    //IsFailureTransientStep<RQ, RS> isRollbackAccepted(Predicate<Tuple2<TypedHttpResponse<RS>, Boolean>> isRollbackAccepted);
+    //IsFailureTransientStep<RQ, RS> isRollbackAccepted(Predicate<Tuple2<HttpResponse<RS>, Boolean>> isRollbackAccepted);
   }
 
   public interface IsFailureTransientStep<RQ, RS> {
 
-    IsRejectedByInvalidResponseStep<RQ> isFailureTransient(Predicate<TypedHttpResponse<RS>> isFailureTransient);
+    IsRejectedByInvalidResponseStep<RQ> isFailureTransient(Predicate<HttpResponse<RS>> isFailureTransient);
   }
 
   public interface IsRejectedByInvalidResponseStep<RQ> {
 
     IsFailureByInvalidResponseTransientStep<RQ> isRejectedByInvalidResponse(
-        Predicate<Tuple2<HttpResponseMessage, String>> isRejectedByInvalidResponse
+        Predicate<Tuple2<HttpResponse<byte[]>, String>> isRejectedByInvalidResponse
     );
   }
 
   public interface IsFailureByInvalidResponseTransientStep<RQ> {
 
     IsAttemptAvailableStep<RQ> isFailureByInvalidResponseTransient(
-        Predicate<Tuple2<HttpResponseMessage, String>> isFailureByInvalidResponseTransient
+        Predicate<Tuple2<HttpResponse<byte[]>, String>> isFailureByInvalidResponseTransient
     );
   }
 
@@ -163,7 +162,7 @@ public final class AtLeastOnceBuilder {
 
     private final DataType<RQ> requestPayloadType;
     private final DataType<RS> responsePayloadType;
-    private BiFunction<TransitionContext<Void>, TypedHttpRequest<RQ>, TypedHttpRequest<RQ>> repeatMessageCreator =
+    private BiFunction<TransitionContext<Void>, HttpRequest<RQ>, HttpRequest<RQ>> repeatMessageCreator =
         (_, message) -> message;
     private HttpClient forwarder;
     private Duration inflightTimeout = Duration.ofSeconds(10);
@@ -179,7 +178,7 @@ public final class AtLeastOnceBuilder {
 
     @Override
     public ForwarderStep<RQ, RS> repeatMessageCreator(
-        BiFunction<TransitionContext<Void>, TypedHttpRequest<RQ>, TypedHttpRequest<RQ>> repeatMessageCreator
+        BiFunction<TransitionContext<Void>, HttpRequest<RQ>, HttpRequest<RQ>> repeatMessageCreator
     ) {
       this.repeatMessageCreator = repeatMessageCreator;
       return this;
@@ -204,7 +203,7 @@ public final class AtLeastOnceBuilder {
     }
 
     @Override
-    public OnSuccessStep<RQ, RS> contentParser(Function<HttpResponseMessage, Validated<RS>> contentParser) {
+    public OnSuccessStep<RQ, RS> contentParser(Function<HttpResponse<byte[]>, Validated<RS>> contentParser) {
       return new WithContentParser<>(
           requestPayloadType,
           responsePayloadType,
@@ -219,7 +218,7 @@ public final class AtLeastOnceBuilder {
 
     @Override
     public OnSuccessStep<RQ, RS> contentParser(
-        BiFunction<TypedHttpRequest<RQ>, HttpResponseMessage, Validated<RS>> contentParser
+        BiFunction<HttpRequest<RQ>, HttpResponse<byte[]>, Validated<RS>> contentParser
     ) {
       return new WithContentParser<>(
           requestPayloadType,
@@ -240,18 +239,18 @@ public final class AtLeastOnceBuilder {
 
     private final DataType<RQ> requestPayloadType;
     private final DataType<RS> responsePayloadType;
-    private final BiFunction<TransitionContext<Void>, TypedHttpRequest<RQ>, TypedHttpRequest<RQ>> repeatMessageCreator;
+    private final BiFunction<TransitionContext<Void>, HttpRequest<RQ>, HttpRequest<RQ>> repeatMessageCreator;
     private final HttpClient forwarder;
     private final Duration inflightTimeout;
     private final EntityModel processModel;
-    private final Function<HttpResponseMessage, Validated<RS>> contentParser;
-    private final BiFunction<TypedHttpRequest<RQ>, HttpResponseMessage, Validated<RS>> requestAwareContentParser;
-    private Callback<TypedHttpResponse<RS>, ?> onSuccess;
-    private Predicate<TypedHttpResponse<RS>> isAccepted;
-    //private Predicate<Tuple2<TypedHttpResponse<RS>, Boolean>> isRollbackAccepted;
-    private Predicate<TypedHttpResponse<RS>> isFailureTransient;
-    private Predicate<Tuple2<HttpResponseMessage, String>> isRejectedByInvalidResponse;
-    private Predicate<Tuple2<HttpResponseMessage, String>> isFailureByInvalidResponseTransient;
+    private final Function<HttpResponse<byte[]>, Validated<RS>> contentParser;
+    private final BiFunction<HttpRequest<RQ>, HttpResponse<byte[]>, Validated<RS>> requestAwareContentParser;
+    private Callback<HttpResponse<RS>, ?> onSuccess;
+    private Predicate<HttpResponse<RS>> isAccepted;
+    //private Predicate<Tuple2<HttpResponse<RS>, Boolean>> isRollbackAccepted;
+    private Predicate<HttpResponse<RS>> isFailureTransient;
+    private Predicate<Tuple2<HttpResponse<byte[]>, String>> isRejectedByInvalidResponse;
+    private Predicate<Tuple2<HttpResponse<byte[]>, String>> isFailureByInvalidResponseTransient;
     private Predicate<RetryContext> isAttemptAvailable;
     private Function<RetryContext, Duration> backoffAlgorithm;
     //private AtMostOnce<?, ?> superModel;
@@ -259,12 +258,12 @@ public final class AtLeastOnceBuilder {
     private WithContentParser(
         DataType<RQ> requestPayloadType,
         DataType<RS> responsePayloadType,
-        BiFunction<TransitionContext<Void>, TypedHttpRequest<RQ>, TypedHttpRequest<RQ>> repeatMessageCreator,
+        BiFunction<TransitionContext<Void>, HttpRequest<RQ>, HttpRequest<RQ>> repeatMessageCreator,
         HttpClient forwarder,
         Duration inflightTimeout,
         EntityModel processModel,
-        Function<HttpResponseMessage, Validated<RS>> contentParser,
-        BiFunction<TypedHttpRequest<RQ>, HttpResponseMessage, Validated<RS>> requestAwareContentParser
+        Function<HttpResponse<byte[]>, Validated<RS>> contentParser,
+        BiFunction<HttpRequest<RQ>, HttpResponse<byte[]>, Validated<RS>> requestAwareContentParser
     ) {
       this.requestPayloadType = requestPayloadType;
       this.responsePayloadType = responsePayloadType;
@@ -279,7 +278,7 @@ public final class AtLeastOnceBuilder {
     @Override
     public <S> IsAcceptedStep<RQ, RS> onSuccess(
         EventType<S, ?> eventType,
-        Function<TypedHttpResponse<RS>, S> dataAdapter
+        Function<HttpResponse<RS>, S> dataAdapter
     ) {
       this.onSuccess = new Callback<>(eventType, dataAdapter);
       return this;
@@ -291,20 +290,20 @@ public final class AtLeastOnceBuilder {
     }
 
     @Override
-    public IsFailureTransientStep<RQ, RS> isAccepted(Predicate<TypedHttpResponse<RS>> isAccepted) {
+    public IsFailureTransientStep<RQ, RS> isAccepted(Predicate<HttpResponse<RS>> isAccepted) {
       this.isAccepted = isAccepted;
       return this;
     }
 
 //    @Override
-//    public IsFailureTransientStep<RQ, RS> isRollbackAccepted(Predicate<Tuple2<TypedHttpResponse<RS>, Boolean>> isRollbackAccepted) {
+//    public IsFailureTransientStep<RQ, RS> isRollbackAccepted(Predicate<Tuple2<HttpResponse<RS>, Boolean>> isRollbackAccepted) {
 //      this.isRollbackAccepted = isRollbackAccepted;
 //      return this;
 //    }
 
     @Override
     public IsRejectedByInvalidResponseStep<RQ> isFailureTransient(
-        Predicate<TypedHttpResponse<RS>> isFailureTransient
+        Predicate<HttpResponse<RS>> isFailureTransient
     ) {
       this.isFailureTransient = isFailureTransient;
       return this;
@@ -312,7 +311,7 @@ public final class AtLeastOnceBuilder {
 
     @Override
     public IsFailureByInvalidResponseTransientStep<RQ> isRejectedByInvalidResponse(
-        Predicate<Tuple2<HttpResponseMessage, String>> isRejectedByInvalidResponse
+        Predicate<Tuple2<HttpResponse<byte[]>, String>> isRejectedByInvalidResponse
     ) {
       this.isRejectedByInvalidResponse = isRejectedByInvalidResponse;
       return this;
@@ -320,7 +319,7 @@ public final class AtLeastOnceBuilder {
 
     @Override
     public IsAttemptAvailableStep<RQ> isFailureByInvalidResponseTransient(
-        Predicate<Tuple2<HttpResponseMessage, String>> isFailureByInvalidResponseTransient
+        Predicate<Tuple2<HttpResponse<byte[]>, String>> isFailureByInvalidResponseTransient
     ) {
       this.isFailureByInvalidResponseTransient = isFailureByInvalidResponseTransient;
       return this;

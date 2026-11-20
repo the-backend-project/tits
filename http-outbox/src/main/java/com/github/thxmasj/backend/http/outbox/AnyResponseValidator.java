@@ -4,10 +4,10 @@ import static com.github.thxmasj.backend.core.Validated.invalid;
 import static com.github.thxmasj.backend.core.Validated.valid;
 
 import com.github.thxmasj.backend.core.Validated;
-import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
+import com.github.thxmasj.backend.core.message.http.HttpResponse;
 import java.util.function.Function;
 
-public class AnyResponseValidator implements Function<HttpResponseMessage, Validated<byte[]>> {
+public class AnyResponseValidator implements Function<HttpResponse<byte[]>, Validated<byte[]>> {
 
   private final int[] acceptedStatusCodes;
 
@@ -20,7 +20,7 @@ public class AnyResponseValidator implements Function<HttpResponseMessage, Valid
   }
 
   @Override
-  public Validated<byte[]> apply(HttpResponseMessage response) {
+  public Validated<byte[]> apply(HttpResponse<byte[]> response) {
     for (int v : acceptedStatusCodes) {
       if (v == response.statusCode())
         return valid(response.body());

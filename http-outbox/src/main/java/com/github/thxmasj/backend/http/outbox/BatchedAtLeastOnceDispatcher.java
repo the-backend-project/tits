@@ -1,7 +1,7 @@
 package com.github.thxmasj.backend.http.outbox;
 
 import com.github.thxmasj.backend.core.EventType;
-import com.github.thxmasj.backend.core.message.http.TypedHttpRequest;
+import com.github.thxmasj.backend.core.message.http.HttpRequest;
 import com.github.thxmasj.backend.http.outbox.HttpOutboxRequest.BatchedRequest;
 import java.util.function.BiFunction;
 import java.util.function.Function;
@@ -32,7 +32,7 @@ public final class BatchedAtLeastOnceDispatcher<X, RQ> extends BaseDispatcher<X,
 
   /// Sends an accepted or dead request again, as a retry would, on the entity selected by
   /// [HttpOutboxRequest#dispatchedBy]. See [AtLeastOnce#requestRedispatched()].
-  public EventType<Void, TypedHttpRequest<RQ>> requestRedispatched() {
+  public EventType<Void, HttpRequest<RQ>> requestRedispatched() {
     return atLeastOnce.requestRedispatched();
   }
 

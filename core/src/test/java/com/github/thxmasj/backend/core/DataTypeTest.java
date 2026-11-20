@@ -4,8 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.github.thxmasj.backend.core.Tuples.Tuple2;
 import com.github.thxmasj.backend.core.http.HttpDataType;
-import com.github.thxmasj.backend.core.message.http.HttpRequestMessage.Method;
-import com.github.thxmasj.backend.core.message.http.TypedHttpRequest;
+import com.github.thxmasj.backend.core.message.http.HttpRequest;
+import com.github.thxmasj.backend.core.message.http.HttpRequest.Method;
 import java.net.URI;
 import java.util.Map;
 import java.util.UUID;
@@ -17,44 +17,44 @@ public class DataTypeTest {
 
   @Test
   public void tuple2WithHttpRequestAndUuidMarshallingAndUnmarshalling() {
-    DataType<Tuple2<TypedHttpRequest<TestPayload>, UUID>> dataType = DataType.tuple(
+    DataType<Tuple2<HttpRequest<TestPayload>, UUID>> dataType = DataType.tuple(
         HttpDataType.forRequest(DataType.json(TestPayload.class)),
         DataType.uuid()
     );
 
-    TypedHttpRequest<TestPayload> request = new TypedHttpRequest<>(
+    HttpRequest<TestPayload> request = new HttpRequest<>(
         Method.POST,
         URI.create("/api/v1/resource"),
         Map.of("Content-Type", "application/json", "X-Request-ID", "12345"),
         new TestPayload("Hello World", 42)
     );
     UUID uuid = UUID.randomUUID();
-    Tuple2<TypedHttpRequest<TestPayload>, UUID> original = Tuples.tuple(request, uuid);
+    Tuple2<HttpRequest<TestPayload>, UUID> original = Tuples.tuple(request, uuid);
 
     byte[] marshalled = dataType.marshal(original);
-    Tuple2<TypedHttpRequest<TestPayload>, UUID> unmarshalled = dataType.unmarshal(marshalled);
+    Tuple2<HttpRequest<TestPayload>, UUID> unmarshalled = dataType.unmarshal(marshalled);
 
     assertEquals(original, unmarshalled);
   }
 
   @Test
   public void tuple2WithHttpRequestStringPayloadAndUuidMarshallingAndUnmarshalling() {
-    DataType<Tuple2<TypedHttpRequest<String>, UUID>> dataType = DataType.tuple(
+    DataType<Tuple2<HttpRequest<String>, UUID>> dataType = DataType.tuple(
         HttpDataType.forRequest(DataType.string()),
         DataType.uuid()
     );
 
-    TypedHttpRequest<String> request = new TypedHttpRequest<>(
+    HttpRequest<String> request = new HttpRequest<>(
         Method.PUT,
         URI.create("https://example.com/api/test"),
         Map.of("Authorization", "Bearer token123"),
         "payload-data"
     );
     UUID uuid = UUID.randomUUID();
-    Tuple2<TypedHttpRequest<String>, UUID> original = Tuples.tuple(request, uuid);
+    Tuple2<HttpRequest<String>, UUID> original = Tuples.tuple(request, uuid);
 
     byte[] marshalled = dataType.marshal(original);
-    Tuple2<TypedHttpRequest<String>, UUID> unmarshalled = dataType.unmarshal(marshalled);
+    Tuple2<HttpRequest<String>, UUID> unmarshalled = dataType.unmarshal(marshalled);
 
     assertEquals(original, unmarshalled);
   }

@@ -28,9 +28,8 @@ import com.github.thxmasj.backend.core.Validated;
 import com.github.thxmasj.backend.core.http.HttpClient;
 import com.github.thxmasj.backend.core.http.HttpDataType;
 import com.github.thxmasj.backend.core.internal.Memoized;
-import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
-import com.github.thxmasj.backend.core.message.http.TypedHttpRequest;
-import com.github.thxmasj.backend.core.message.http.TypedHttpResponse;
+import com.github.thxmasj.backend.core.message.http.HttpRequest;
+import com.github.thxmasj.backend.core.message.http.HttpResponse;
 import com.github.thxmasj.backend.http.outbox.HttpOutboxRequest.BatchedRequest;
 import java.time.Duration;
 import java.time.ZonedDateTime;
@@ -52,17 +51,17 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
   private record Shape<RQ, RS, S>(
       DataType<RQ> requestPayloadType,
       DataType<RS> responsePayloadType,
-      BiFunction<TransitionContext<Void>, TypedHttpRequest<RQ>, TypedHttpRequest<RQ>> repeatMessageCreator,
+      BiFunction<TransitionContext<Void>, HttpRequest<RQ>, HttpRequest<RQ>> repeatMessageCreator,
       ForwardAction forward,
       Duration inflightTimeout,
       com.github.thxmasj.backend.core.EntityModel processModel,
-      Callback<TypedHttpResponse<RS>, S> onSuccess,
-      Function<HttpResponseMessage, Validated<RS>> contentParser,
-      BiFunction<TypedHttpRequest<RQ>, HttpResponseMessage, Validated<RS>> requestAwareContentParser,
-      Predicate<TypedHttpResponse<RS>> isAccepted,
-      Predicate<TypedHttpResponse<RS>> isFailureTransient,
-      Predicate<Tuple2<HttpResponseMessage, String>> isRejectedByInvalidResponse,
-      Predicate<Tuple2<HttpResponseMessage, String>> isFailureByInvalidResponseTransient,
+      Callback<HttpResponse<RS>, S> onSuccess,
+      Function<HttpResponse<byte[]>, Validated<RS>> contentParser,
+      BiFunction<HttpRequest<RQ>, HttpResponse<byte[]>, Validated<RS>> requestAwareContentParser,
+      Predicate<HttpResponse<RS>> isAccepted,
+      Predicate<HttpResponse<RS>> isFailureTransient,
+      Predicate<Tuple2<HttpResponse<byte[]>, String>> isRejectedByInvalidResponse,
+      Predicate<Tuple2<HttpResponse<byte[]>, String>> isFailureByInvalidResponseTransient,
       Predicate<RetryContext> isAttemptAvailable,
       Function<RetryContext, Duration> backoffAlgorithm
   ) {
@@ -95,7 +94,7 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
       );
     }
 
-    EventType<TypedHttpRequest<RQ>, Tuple2<TypedHttpRequest<RQ>, UUID>> requestDispatched() {
+    EventType<HttpRequest<RQ>, Tuple2<HttpRequest<RQ>, UUID>> requestDispatched() {
       return BasicEventType.of(
           "Request dispatched",
           UUID.fromString("736f1f23-dba8-467e-a503-a9e2c516197e"),
@@ -104,7 +103,7 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
       );
     }
 
-    EventType<BatchedRequest<RQ>, Tuple2<TypedHttpRequest<RQ>, UUID>> batchedRequestDispatched() {
+    EventType<BatchedRequest<RQ>, Tuple2<HttpRequest<RQ>, UUID>> batchedRequestDispatched() {
       return BasicEventType.of(
           "Batched request dispatched",
           UUID.fromString("a0f1c0d9-3d55-4a0e-9a8f-5d3a6d9c2b71"),
@@ -114,15 +113,15 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
     }
 
     /// The request message and the process id of the dispatched request, whether batched or not.
-    Tuple2<TypedHttpRequest<RQ>, UUID> dispatched(EventLog log) {
+    Tuple2<HttpRequest<RQ>, UUID> dispatched(EventLog log) {
       return log.one(requestDispatched(), batchedRequestDispatched());
     }
 
-    Optional<Tuple2<TypedHttpRequest<RQ>, UUID>> dispatchedIfExists(EventLog log) {
+    Optional<Tuple2<HttpRequest<RQ>, UUID>> dispatchedIfExists(EventLog log) {
       return log.oneIfExists(requestDispatched()).or(() -> log.oneIfExists(batchedRequestDispatched()));
     }
 
-    EventType<Void, TypedHttpRequest<RQ>> requestRedispatched() {
+    EventType<Void, HttpRequest<RQ>> requestRedispatched() {
       return BasicEventType.of(
           "Request redispatched",
           UUID.fromString("a4be4a1a-2b51-42f5-851d-ea3d74504633"),
@@ -133,7 +132,7 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
 
     // Intermediate
     /// The valid response, and whether the request has been accepted before, i.e. is accepted again after a redispatch
-    EventType<TypedHttpResponse<RS>, Tuple2<TypedHttpResponse<RS>, Boolean>> validResponse() {
+    EventType<HttpResponse<RS>, Tuple2<HttpResponse<RS>, Boolean>> validResponse() {
       return BasicEventType.of(
           "Valid response received",
           UUID.fromString("c9fcf4d6-95f8-418f-aa6b-c3d987d3a3c3"),
@@ -142,7 +141,7 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
       );
     }
 
-    EventType<TypedHttpResponse<RS>, TypedHttpResponse<RS>> requestReceivedAndRejected() {
+    EventType<HttpResponse<RS>, HttpResponse<RS>> requestReceivedAndRejected() {
       return BasicEventType.of(
           "Request rejected",
           UUID.fromString("5362567f-792e-4f8a-81d6-3b201d44d3f0"),
@@ -151,7 +150,7 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
       );
     }
 
-    EventType<Void, TypedHttpResponse<RS>> requestReceivedAndRejectedTransiently() {
+    EventType<Void, HttpResponse<RS>> requestReceivedAndRejectedTransiently() {
       return BasicEventType.of(
           "Request rejected transiently",
           UUID.fromString("bcdf93f4-657d-4b26-b165-74279a5ea477"),
@@ -160,7 +159,7 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
       );
     }
 
-    EventType<TypedHttpResponse<RS>, TypedHttpResponse<RS>> requestReceivedAndRejectedPermanently() {
+    EventType<HttpResponse<RS>, HttpResponse<RS>> requestReceivedAndRejectedPermanently() {
       return BasicEventType.of(
           "Request rejected permanently",
           UUID.fromString("94b1169f-8e09-45d5-bdff-cae9b146db30"),
@@ -169,7 +168,7 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
       );
     }
 
-    EventType<Tuple2<HttpResponseMessage, String>, HttpResponseMessage> invalidResponseAndRejectedPermanently() {
+    EventType<Tuple2<HttpResponse<byte[]>, String>, HttpResponse<byte[]>> invalidResponseAndRejectedPermanently() {
       return BasicEventType.of(
           "Invalid response received, request rejected permanently",
           UUID.fromString("94eca92d-a229-4aa9-bc02-48260fa1bbf0"),
@@ -179,7 +178,7 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
     }
 
     // Leaf
-    EventType<TypedHttpResponse<RS>, TypedHttpResponse<RS>> requestAccepted() {
+    EventType<HttpResponse<RS>, HttpResponse<RS>> requestAccepted() {
       return BasicEventType.of(
           "Request accepted",
           RequestAcceptedId,
@@ -190,7 +189,7 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
   }
 
   @Override
-  public EventType<TypedHttpRequest<RQ>, ?> requestDispatched() {
+  public EventType<HttpRequest<RQ>, ?> requestDispatched() {
     return shape.requestDispatched();
   }
 
@@ -204,7 +203,7 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
   /// inflight timeout and the retries of the first attempt, which count from when it was dispatched. If it is accepted,
   /// the success callback is triggered unless the request was accepted before, and if it is rejected permanently or its
   /// attempts run out, it is dead. Select the request by [HttpOutboxRequest#dispatchedBy].
-  public EventType<Void, TypedHttpRequest<RQ>> requestRedispatched() {
+  public EventType<Void, HttpRequest<RQ>> requestRedispatched() {
     return shape.requestRedispatched();
   }
 
@@ -219,7 +218,7 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
   }
 
   @Override
-  public TypedHttpRequest<RQ> request(EventLog log) {
+  public HttpRequest<RQ> request(EventLog log) {
     return request(false, shape, log);
   }
 
@@ -227,15 +226,15 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
     return log.exists(shape.retryScheduled());
   }
 
-  public TypedHttpRequest<RQ> redispatchedRequest(EventLog log) {
+  public HttpRequest<RQ> redispatchedRequest(EventLog log) {
     return log.oneIfExists(shape.requestRedispatched()).orElse(null);
   }
 
-  public TypedHttpRequest<RQ> request(boolean optional, EventLog log) {
+  public HttpRequest<RQ> request(boolean optional, EventLog log) {
     return request(optional, shape, log);
   }
 
-  private TypedHttpRequest<RQ> request(boolean optional, Shape<RQ, ?, ?> shape, EventLog log) {
+  private HttpRequest<RQ> request(boolean optional, Shape<RQ, ?, ?> shape, EventLog log) {
     return optional ?
         log.oneIfExists(shape.requestRedispatched())
             .orElse(shape.dispatchedIfExists(log).map(d -> d.t1()).orElse(null)) :
@@ -243,14 +242,14 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
   }
 
   @Override
-  public TypedHttpResponse<?> response(EventLog log) {
+  public HttpResponse<?> response(EventLog log) {
     return response(shape, log);
   }
 
-  private <RS> TypedHttpResponse<RS> response(Shape<RQ, RS, ?> shape, EventLog log) {
+  private <RS> HttpResponse<RS> response(Shape<RQ, RS, ?> shape, EventLog log) {
     return log.oneIfExists(shape.requestAccepted())
         .orElse(log.oneIfExists(shape.invalidResponseAndRejectedPermanently())
-            .map(d -> new TypedHttpResponse<>(d.statusCode(), d.reasonPhrase(), d.headers(), (RS) null))
+            .map(d -> new HttpResponse<>(d.statusCode(), d.reasonPhrase(), d.headers(), (RS) null))
             .orElse(log.oneIfExists(shape.requestReceivedAndRejectedPermanently())
                 .orElse(null)));
   }
@@ -266,17 +265,17 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
       UUID id,
       DataType<RQ> requestPayloadType,
       DataType<RS> responsePayloadType,
-      BiFunction<TransitionContext<Void>, TypedHttpRequest<RQ>, TypedHttpRequest<RQ>> repeatMessageCreator,
+      BiFunction<TransitionContext<Void>, HttpRequest<RQ>, HttpRequest<RQ>> repeatMessageCreator,
       HttpClient forwarder,
       Duration inflightTimeout,
       com.github.thxmasj.backend.core.EntityModel processModel,
-      Callback<TypedHttpResponse<RS>, S> onSuccess,
-      Function<HttpResponseMessage, Validated<RS>> contentParser,
-      BiFunction<TypedHttpRequest<RQ>, HttpResponseMessage, Validated<RS>> requestAwareContentParser,
-      Predicate<TypedHttpResponse<RS>> isAccepted,
-      Predicate<TypedHttpResponse<RS>> isFailureTransient,
-      Predicate<Tuple2<HttpResponseMessage, String>> isRejectedByInvalidResponse,
-      Predicate<Tuple2<HttpResponseMessage, String>> isFailureByInvalidResponseTransient,
+      Callback<HttpResponse<RS>, S> onSuccess,
+      Function<HttpResponse<byte[]>, Validated<RS>> contentParser,
+      BiFunction<HttpRequest<RQ>, HttpResponse<byte[]>, Validated<RS>> requestAwareContentParser,
+      Predicate<HttpResponse<RS>> isAccepted,
+      Predicate<HttpResponse<RS>> isFailureTransient,
+      Predicate<Tuple2<HttpResponse<byte[]>, String>> isRejectedByInvalidResponse,
+      Predicate<Tuple2<HttpResponse<byte[]>, String>> isFailureByInvalidResponseTransient,
       Predicate<RetryContext> isAttemptAvailable,
       Function<RetryContext, Duration> backoffAlgorithm
   ) {
@@ -310,26 +309,26 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
       Shape<RQ, RS, S> shape
   ) {
     // Intermediate
-    EventType<Tuple2<HttpResponseMessage, String>, Tuple2<HttpResponseMessage, String>> invalidResponse = BasicEventType.of(
+    EventType<Tuple2<HttpResponse<byte[]>, String>, Tuple2<HttpResponse<byte[]>, String>> invalidResponse = BasicEventType.of(
         "Invalid response received",
         UUID.fromString("3bd020c3-caf8-4a9b-a10c-d818f98a6de7"),
         DataType.unknown()
     );
     // Intermediate
-    EventType<Tuple2<HttpResponseMessage, String>, HttpResponseMessage> invalidResponseAndRejected = BasicEventType.of(
+    EventType<Tuple2<HttpResponse<byte[]>, String>, HttpResponse<byte[]>> invalidResponseAndRejected = BasicEventType.of(
         "Invalid response received, request rejected",
         UUID.fromString("402f9bf4-855c-4383-ac54-3375f9d156d1"),
         DataType.unknown(),
         HttpDataType.forResponse()
     );
-    EventType<Void, HttpResponseMessage> invalidResponseAndRejectedTransiently = BasicEventType.of(
+    EventType<Void, HttpResponse<byte[]>> invalidResponseAndRejectedTransiently = BasicEventType.of(
         "Invalid response received, request rejected transiently",
         UUID.fromString("9f121370-4b8d-4a08-a7ef-30555c1e1f48"),
         DataType.unknown(),
         HttpDataType.forResponse()
     );
     // Leaf
-    EventType<Void, HttpResponseMessage> invalidResponseAndUnknown = BasicEventType.of(
+    EventType<Void, HttpResponse<byte[]>> invalidResponseAndUnknown = BasicEventType.of(
         "Invalid response received with unknown status",
         UUID.fromString("ecfb2c9d-178b-4c3e-b09e-c580e09b01b4"),
         DataType.unknown(),
@@ -383,7 +382,7 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
                 .when(d -> d.t2().isValid())
                 .then(
                     validResponseTransition(shape),
-                    d -> TypedHttpResponse.create(
+                    d -> HttpResponse.create(
                         d.t1().statusCode(),
                         d.t1().reasonPhrase(),
                         d.t1().headers(),
@@ -444,7 +443,7 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
 
   /// The request is sent again, as the repeat message creator makes it of the dispatched request, whether by a retry or
   /// on demand when it has been accepted or given up
-  private TransitionModel<Void, TypedHttpRequest<RQ>> redispatchTransition(Shape<RQ, ?, ?> shape) {
+  private TransitionModel<Void, HttpRequest<RQ>> redispatchTransition(Shape<RQ, ?, ?> shape) {
     return onEvent(shape.requestRedispatched()).to(InFlight)
         .assemble(c -> shape.repeatMessageCreator().apply(c, shape.dispatched(c.log()).t1()))
         .trigger(shape.forward()).with(d -> toHttpRequest(d, shape.requestPayloadType()))
@@ -457,7 +456,7 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
     return onEvent(shape.attemptsExhausted()).to(Dead).severity(Severity.Error).output();
   }
 
-  private <RS, S> TransitionModel<TypedHttpResponse<RS>, Tuple2<TypedHttpResponse<RS>, Boolean>>
+  private <RS, S> TransitionModel<HttpResponse<RS>, Tuple2<HttpResponse<RS>, Boolean>>
   validResponseTransition(
       Shape<RQ, RS, S> shape
   ) {
@@ -471,7 +470,7 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
             .otherwise(requestReceivedAndRejectedTransition(shape), d -> d.t1());
   }
 
-  private <RS, S> TransitionModel<TypedHttpResponse<RS>, TypedHttpResponse<RS>> requestAcceptedTransition(
+  private <RS, S> TransitionModel<HttpResponse<RS>, HttpResponse<RS>> requestAcceptedTransition(
       Shape<RQ, RS, S> shape
   ) {
     return shape.onSuccess() != null ?
@@ -487,7 +486,7 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
             .output(d -> d);
   }
 
-  private <RS, S> TransitionModel<TypedHttpResponse<RS>, TypedHttpResponse<RS>> requestAcceptedAgainTransition(
+  private <RS, S> TransitionModel<HttpResponse<RS>, HttpResponse<RS>> requestAcceptedAgainTransition(
       Shape<RQ, RS, S> shape
   ) {
     return onEvent(shape.requestAccepted()).to(Accepted)
@@ -495,7 +494,7 @@ public final class AtLeastOnce<RQ> implements HttpOutboxRequest<RQ> {
         .output(d -> d);
   }
 
-  private <RS, S> TransitionModel<TypedHttpResponse<RS>, TypedHttpResponse<RS>> requestReceivedAndRejectedTransition(
+  private <RS, S> TransitionModel<HttpResponse<RS>, HttpResponse<RS>> requestReceivedAndRejectedTransition(
       Shape<RQ, RS, S> shape
   ) {
     return onEvent(shape.requestReceivedAndRejected()).to(Intermediate)

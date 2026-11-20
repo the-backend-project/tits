@@ -15,7 +15,7 @@ import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.http.inbox.HttpInbox;
 import com.github.thxmasj.backend.http.inbox.HttpInboxRequest;
 import com.github.thxmasj.backend.http.inbox.ResponseEventType;
-import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
+import com.github.thxmasj.backend.core.message.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
@@ -45,7 +45,7 @@ public interface Greetings {
       .process(GreetingRequested, Greeting, newEntity())
       .response(
           GreetingResponseCreated,
-          c -> new HttpResponseMessage(
+          c -> new HttpResponse<>(
               200,
               "OK",
               Map.of("Content-Type", "text/html;charset=UTF-8", "X-Correlation-Id", c.correlationId()),

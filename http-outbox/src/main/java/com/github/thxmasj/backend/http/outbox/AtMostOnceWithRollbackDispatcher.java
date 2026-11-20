@@ -3,7 +3,7 @@ package com.github.thxmasj.backend.http.outbox;
 import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.Tuples.Tuple2;
 import com.github.thxmasj.backend.http.outbox.HttpOutboxRequest.BatchedRequest;
-import com.github.thxmasj.backend.core.message.http.TypedHttpRequest;
+import com.github.thxmasj.backend.core.message.http.HttpRequest;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import reactor.core.publisher.Mono;
@@ -19,21 +19,21 @@ import reactor.core.publisher.Mono;
 /// The outbox request of the dispatcher, see [#outbox()], is therefore a copy of the one it is created with, with the
 /// rollback message creator (see [AtMostOnce#withRollback(BiFunction)]). Requests are triggered on that copy, and it
 /// is the one the state machine runs.
-public final class AtMostOnceWithRollbackDispatcher<X, RQ, Y> extends BaseDispatcher<X, TypedHttpRequest<RQ>, AtMostOnce<RQ, ?>>
-    implements DispatcherWithRollback<X, TypedHttpRequest<RQ>, Y> {
+public final class AtMostOnceWithRollbackDispatcher<X, RQ, Y> extends BaseDispatcher<X, HttpRequest<RQ>, AtMostOnce<RQ, ?>>
+    implements DispatcherWithRollback<X, HttpRequest<RQ>, Y> {
 
   /// @param outbox the outbox request with the rollback message creator
   private <RRQ> AtMostOnceWithRollbackDispatcher(
       AtMostOnce<RQ, RRQ> outbox,
-      BiFunction<DispatchContext, X, Mono<TypedHttpRequest<RQ>>> inputCreator
+      BiFunction<DispatchContext, X, Mono<HttpRequest<RQ>>> inputCreator
   ) {
     super(outbox, outbox.requestDispatched(), inputCreator);
   }
 
   public static <X, RQ, Y, RRQ> AtMostOnceWithRollbackDispatcher<X, RQ, Y> of(
       AtMostOnce<RQ, RRQ> outbox,
-      Function<X, TypedHttpRequest<RQ>> inputCreator,
-      BiFunction<DispatchContext, Tuple2<Y, TypedHttpRequest<RQ>>, Mono<TypedHttpRequest<RRQ>>> rollbackMessageCreator
+      Function<X, HttpRequest<RQ>> inputCreator,
+      BiFunction<DispatchContext, Tuple2<Y, HttpRequest<RQ>>, Mono<HttpRequest<RRQ>>> rollbackMessageCreator
   ) {
     return reactive(outbox, BaseDispatcher.reactive(inputCreator), rollbackMessageCreator);
   }
@@ -42,8 +42,8 @@ public final class AtMostOnceWithRollbackDispatcher<X, RQ, Y> extends BaseDispat
   /// dispatching the request.
   public static <X, RQ, Y, RRQ> AtMostOnceWithRollbackDispatcher<X, RQ, Y> reactive(
       AtMostOnce<RQ, RRQ> outbox,
-      BiFunction<DispatchContext, X, Mono<TypedHttpRequest<RQ>>> inputCreator,
-      BiFunction<DispatchContext, Tuple2<Y, TypedHttpRequest<RQ>>, Mono<TypedHttpRequest<RRQ>>> rollbackMessageCreator
+      BiFunction<DispatchContext, X, Mono<HttpRequest<RQ>>> inputCreator,
+      BiFunction<DispatchContext, Tuple2<Y, HttpRequest<RQ>>, Mono<HttpRequest<RRQ>>> rollbackMessageCreator
   ) {
     requireRollbackModels(outbox);
     return new AtMostOnceWithRollbackDispatcher<>(outbox.<Y>withRollback(rollbackMessageCreator), inputCreator);
@@ -52,8 +52,8 @@ public final class AtMostOnceWithRollbackDispatcher<X, RQ, Y> extends BaseDispat
   /// A dispatcher with the rollback requests dispatched as part of batches.
   public static <X, RQ, Y, RRQ> AtMostOnceWithRollbackDispatcher<X, RQ, Y> ofBatchedRollback(
       AtMostOnce<RQ, RRQ> outbox,
-      Function<X, TypedHttpRequest<RQ>> inputCreator,
-      BiFunction<DispatchContext, Tuple2<Y, TypedHttpRequest<RQ>>, Mono<BatchedRequest<RRQ>>> rollbackMessageCreator
+      Function<X, HttpRequest<RQ>> inputCreator,
+      BiFunction<DispatchContext, Tuple2<Y, HttpRequest<RQ>>, Mono<BatchedRequest<RRQ>>> rollbackMessageCreator
   ) {
     return reactiveBatchedRollback(outbox, BaseDispatcher.reactive(inputCreator), rollbackMessageCreator);
   }
@@ -62,8 +62,8 @@ public final class AtMostOnceWithRollbackDispatcher<X, RQ, Y> extends BaseDispat
   /// reactively, from the data and the context of the transition dispatching the request.
   public static <X, RQ, Y, RRQ> AtMostOnceWithRollbackDispatcher<X, RQ, Y> reactiveBatchedRollback(
       AtMostOnce<RQ, RRQ> outbox,
-      BiFunction<DispatchContext, X, Mono<TypedHttpRequest<RQ>>> inputCreator,
-      BiFunction<DispatchContext, Tuple2<Y, TypedHttpRequest<RQ>>, Mono<BatchedRequest<RRQ>>> rollbackMessageCreator
+      BiFunction<DispatchContext, X, Mono<HttpRequest<RQ>>> inputCreator,
+      BiFunction<DispatchContext, Tuple2<Y, HttpRequest<RQ>>, Mono<BatchedRequest<RRQ>>> rollbackMessageCreator
   ) {
     requireRollbackModels(outbox);
     return new AtMostOnceWithRollbackDispatcher<>(outbox.<Y>withBatchedRollback(rollbackMessageCreator), inputCreator);

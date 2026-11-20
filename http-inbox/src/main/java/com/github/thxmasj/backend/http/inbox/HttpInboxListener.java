@@ -4,9 +4,9 @@ import static java.util.stream.Collectors.toMap;
 
 import com.github.thxmasj.backend.core.StateMachine;
 import com.github.thxmasj.backend.core.message.http.HttpMessageParser;
-import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
-import com.github.thxmasj.backend.core.message.http.HttpRequestMessage.Method;
-import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
+import com.github.thxmasj.backend.core.message.http.HttpRequest;
+import com.github.thxmasj.backend.core.message.http.HttpRequest.Method;
+import com.github.thxmasj.backend.core.message.http.HttpResponse;
 import io.netty.buffer.Unpooled;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import java.net.URI;
@@ -35,7 +35,7 @@ public class HttpInboxListener {
   @FunctionalInterface
   public interface Filter {
 
-    Mono<HttpResponseMessage> filter(HttpRequestMessage request, Function<HttpRequestMessage, Mono<HttpResponseMessage>> next);
+    Mono<HttpResponse<byte[]>> filter(HttpRequest<byte[]> request, Function<HttpRequest<byte[]>, Mono<HttpResponse<byte[]>>> next);
 
   }
 
@@ -96,19 +96,19 @@ public class HttpInboxListener {
 
   /// Starts listening with the given server, which can be preconfigured with e.g. host, port, TLS and protocols.
   public DisposableServer listen(HttpServer server) {
-    Function<HttpRequestMessage, Mono<HttpResponseMessage>> chain = this::exchange;
+    Function<HttpRequest<byte[]>, Mono<HttpResponse<byte[]>>> chain = this::exchange;
     for (Filter filter : filters.reversed()) {
-      Function<HttpRequestMessage, Mono<HttpResponseMessage>> next = chain;
+      Function<HttpRequest<byte[]>, Mono<HttpResponse<byte[]>>> next = chain;
       chain = request -> filter.filter(request, next);
     }
-    Function<HttpRequestMessage, Mono<HttpResponseMessage>> filteredExchange = chain;
+    Function<HttpRequest<byte[]>, Mono<HttpResponse<byte[]>>> filteredExchange = chain;
     return server.handle((request, response) -> handle(request, response, filteredExchange)).bindNow();
   }
 
   private Mono<Void> handle(
       HttpServerRequest request,
       HttpServerResponse response,
-      Function<HttpRequestMessage, Mono<HttpResponseMessage>> exchange
+      Function<HttpRequest<byte[]>, Mono<HttpResponse<byte[]>>> exchange
   ) {
     Method method;
     try {
@@ -127,7 +127,7 @@ public class HttpInboxListener {
         .onErrorResume(_ -> response.status(HttpResponseStatus.INTERNAL_SERVER_ERROR).send());
   }
 
-  private Mono<HttpResponseMessage> exchange(HttpRequestMessage requestMessage) {
+  private Mono<HttpResponse<byte[]>> exchange(HttpRequest<byte[]> requestMessage) {
     return stateMachine.onEvent(correlationId(requestMessage), inbox.trigger(), requestMessage)
         // First event is the triggered event, second is the response event
         .skip(1)
@@ -136,20 +136,20 @@ public class HttpInboxListener {
         .switchIfEmpty(Mono.error(() -> new IllegalStateException("No response event for " + requestMessage.requestLine())));
   }
 
-  private String correlationId(HttpRequestMessage requestMessage) {
+  private String correlationId(HttpRequest<byte[]> requestMessage) {
     String correlationId = requestMessage.headerValue(correlationIdHeader);
     if (correlationId == null || correlationId.isBlank())
       return "SYS-" + ThreadLocalRandom.current().nextLong(1000000000000000000L, Long.MAX_VALUE);
     return correlationId;
   }
 
-  private static HttpRequestMessage requestMessage(HttpServerRequest request, Method method, byte[] body) {
+  private static HttpRequest<byte[]> requestMessage(HttpServerRequest request, Method method, byte[] body) {
     Map<String, String> headers = request.requestHeaders().entries().stream()
         .collect(toMap(Entry::getKey, Entry::getValue, (a, b) -> a + ", " + b));
-    return new HttpRequestMessage(method, URI.create(request.uri()), headers, body);
+    return new HttpRequest<>(method, URI.create(request.uri()), headers, body);
   }
 
-  private static Mono<Void> send(HttpServerResponse response, HttpResponseMessage message) {
+  private static Mono<Void> send(HttpServerResponse response, HttpResponse<byte[]> message) {
     response.status(HttpResponseStatus.valueOf(message.statusCode(), message.reasonPhrase()));
     message.headers().forEach(response::header);
     return message.body() == null

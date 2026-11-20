@@ -1,87 +1,63 @@
 package com.github.thxmasj.backend.core.message.http;
 
-import java.nio.ByteBuffer;
-import java.util.Arrays;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.Objects;
-
 import static java.util.stream.Collectors.joining;
 
-public sealed abstract class HttpMessage permits HttpRequestMessage, HttpResponseMessage {
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.util.Map;
+import java.util.Map.Entry;
 
-  private final Map<String, String> headers;
-  private final byte[] body;
+/// An HTTP request or response, with a body of type `T`: the bytes of the body as sent, e.g. `byte[]`, or the payload
+/// they are parsed into, or marshalled from. A message without a body has a null body.
+public sealed interface HttpMessage<T> permits HttpRequest, HttpResponse {
 
-  protected HttpMessage(Map<String, String> headers, byte[] body) {
-    this.headers = headers;
-    this.body = body;
-  }
+  Map<String, String> headers();
 
-  public Map<String, String> headers() {
-    return headers;
-  }
+  T body();
 
-  public byte[] body() {
-    return body;
-  }
+  /// The start line, i.e. the request line of a request and the status line of a response
+  String startLine();
 
-  public String headerValue(String header) {
-    return headers.entrySet().stream()
+  /// The value of the header, whose name is compared without case, or null if the message has none
+  default String headerValue(String header) {
+    return headers().entrySet().stream()
         .filter(kv -> kv.getKey().equalsIgnoreCase(header))
         .map(Entry::getValue)
         .findFirst()
         .orElse(null);
   }
 
-  @Override
-  public String toString() {
-    return toString(startLine());
-  }
-
-  public byte[] toBytes() {
-    return toBytes(startLine());
-  }
-
-  public abstract String startLine();
-
-  protected String toString(String head) {
-    return new String(toBytes(head));
-  }
-
-  protected byte[] toBytes(String head) {
-    String m = head;
-    if (!headers.isEmpty()) {
-      m = m + "\n" + headers.entrySet().stream()
+  /// The message as sent: its start line, headers and body, which [HttpMessageParser] parses
+  ///
+  /// @throws IllegalStateException if the body is neither bytes nor absent, e.g. a payload not marshalled
+  default byte[] toBytes() {
+    if (body() != null && !(body() instanceof byte[]))
+      throw new IllegalStateException("The body of the message is not bytes, but " + body().getClass().getName());
+    String head = startLine();
+    if (!headers().isEmpty()) {
+      head = head + "\n" + headers().entrySet().stream()
           .map(entry -> entry.getKey() + ":" + entry.getValue())
           .collect(joining("\n"));
     }
-    if (body != null) {
-      return concat(m.getBytes(), "\n\n".getBytes(), body);
-    } else {
-      return m.getBytes();
-    }
+    byte[] headBytes = head.getBytes(StandardCharsets.UTF_8);
+    if (!(body() instanceof byte[] body))
+      return headBytes;
+    return ByteBuffer.allocate(headBytes.length + 2 + body.length)
+        .put(headBytes)
+        .put("\n\n".getBytes(StandardCharsets.UTF_8))
+        .put(body)
+        .array();
   }
 
-  protected boolean equals(HttpMessage other) {
-    return Arrays.equals(toBytes(), other.toBytes());
+  /// The message as text: as sent, if the body is bytes or absent, and otherwise with the payload as its string
+  static String toString(HttpMessage<?> message) {
+    if (message.body() == null || message.body() instanceof byte[])
+      return new String(message.toBytes(), StandardCharsets.UTF_8);
+    String head = message.startLine();
+    if (!message.headers().isEmpty())
+      head = head + "\n" + message.headers().entrySet().stream()
+          .map(entry -> entry.getKey() + ":" + entry.getValue())
+          .collect(joining("\n"));
+    return head + "\n\n" + message.body();
   }
-
-  private static byte[] concat(byte[]... arrays) {
-    int totalLength = 0;
-    for (byte[] array : arrays) {
-      totalLength += array.length;
-    }
-    ByteBuffer buffer = ByteBuffer.allocate(totalLength);
-    for (byte[] array : arrays) {
-      buffer.put(array);
-    }
-    return buffer.array();
-  }
-
-  @Override
-  public int hashCode() {
-    return Objects.hash(startLine(), Arrays.hashCode(body()));
-  }
-
 }

@@ -20,7 +20,7 @@ import com.github.thxmasj.backend.core.IdEntityModel;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.StateMachine;
 import com.github.thxmasj.backend.core.TransitionModel;
-import com.github.thxmasj.backend.core.message.http.HttpRequestMessage.Method;
+import com.github.thxmasj.backend.core.message.http.HttpRequest.Method;
 import com.github.thxmasj.backend.core.test.Init;
 import com.github.thxmasj.backend.http.inbox.HttpInbox;
 import com.github.thxmasj.backend.http.inbox.HttpInboxListener;

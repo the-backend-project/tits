@@ -3,7 +3,7 @@ package com.github.thxmasj.backend.http.outbox;
 import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.Tuples.Tuple2;
 import com.github.thxmasj.backend.http.outbox.HttpOutboxRequest.BatchedRequest;
-import com.github.thxmasj.backend.core.message.http.TypedHttpRequest;
+import com.github.thxmasj.backend.core.message.http.HttpRequest;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import reactor.core.publisher.Mono;
@@ -33,7 +33,7 @@ public final class BatchedAtMostOnceWithRollbackDispatcher<X, RQ, Y> extends Bas
   public static <X, RQ, Y, RRQ> BatchedAtMostOnceWithRollbackDispatcher<X, RQ, Y> of(
       AtMostOnce<RQ, RRQ> outbox,
       Function<X, BatchedRequest<RQ>> inputCreator,
-      BiFunction<DispatchContext, Tuple2<Y, TypedHttpRequest<RQ>>, Mono<TypedHttpRequest<RRQ>>> rollbackMessageCreator
+      BiFunction<DispatchContext, Tuple2<Y, HttpRequest<RQ>>, Mono<HttpRequest<RRQ>>> rollbackMessageCreator
   ) {
     return reactive(outbox, BaseDispatcher.reactive(inputCreator), rollbackMessageCreator);
   }
@@ -43,7 +43,7 @@ public final class BatchedAtMostOnceWithRollbackDispatcher<X, RQ, Y> extends Bas
   public static <X, RQ, Y, RRQ> BatchedAtMostOnceWithRollbackDispatcher<X, RQ, Y> reactive(
       AtMostOnce<RQ, RRQ> outbox,
       BiFunction<DispatchContext, X, Mono<BatchedRequest<RQ>>> inputCreator,
-      BiFunction<DispatchContext, Tuple2<Y, TypedHttpRequest<RQ>>, Mono<TypedHttpRequest<RRQ>>> rollbackMessageCreator
+      BiFunction<DispatchContext, Tuple2<Y, HttpRequest<RQ>>, Mono<HttpRequest<RRQ>>> rollbackMessageCreator
   ) {
     requireRollbackModels(outbox);
     return new BatchedAtMostOnceWithRollbackDispatcher<>(outbox.<Y>withRollback(rollbackMessageCreator), inputCreator);
@@ -53,7 +53,7 @@ public final class BatchedAtMostOnceWithRollbackDispatcher<X, RQ, Y> extends Bas
   public static <X, RQ, Y, RRQ> BatchedAtMostOnceWithRollbackDispatcher<X, RQ, Y> ofBatchedRollback(
       AtMostOnce<RQ, RRQ> outbox,
       Function<X, BatchedRequest<RQ>> inputCreator,
-      BiFunction<DispatchContext, Tuple2<Y, TypedHttpRequest<RQ>>, Mono<BatchedRequest<RRQ>>> rollbackMessageCreator
+      BiFunction<DispatchContext, Tuple2<Y, HttpRequest<RQ>>, Mono<BatchedRequest<RRQ>>> rollbackMessageCreator
   ) {
     return reactiveBatchedRollback(outbox, BaseDispatcher.reactive(inputCreator), rollbackMessageCreator);
   }
@@ -63,7 +63,7 @@ public final class BatchedAtMostOnceWithRollbackDispatcher<X, RQ, Y> extends Bas
   public static <X, RQ, Y, RRQ> BatchedAtMostOnceWithRollbackDispatcher<X, RQ, Y> reactiveBatchedRollback(
       AtMostOnce<RQ, RRQ> outbox,
       BiFunction<DispatchContext, X, Mono<BatchedRequest<RQ>>> inputCreator,
-      BiFunction<DispatchContext, Tuple2<Y, TypedHttpRequest<RQ>>, Mono<BatchedRequest<RRQ>>> rollbackMessageCreator
+      BiFunction<DispatchContext, Tuple2<Y, HttpRequest<RQ>>, Mono<BatchedRequest<RRQ>>> rollbackMessageCreator
   ) {
     requireRollbackModels(outbox);
     return new BatchedAtMostOnceWithRollbackDispatcher<>(outbox.<Y>withBatchedRollback(rollbackMessageCreator), inputCreator);

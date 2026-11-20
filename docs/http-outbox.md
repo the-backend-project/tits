@@ -244,10 +244,10 @@ AtMostOnce<AuthorisationRequest, ReversalRequest> authorisation = HttpOutboxRequ
     .processModel(Payment)
     .onMissingResponse(AuthorisationUnknown)
     .contentParser(JsonResponseValidator.json(AcquirerResponse.class))
-    .onSuccess(AcquirerResponded, TypedHttpResponse::payload)
-    .onFailure(AcquirerDeclined, TypedHttpResponse::payload)
-    .isAccepted(response -> response.payload().approved())
-    .isRejected(response -> !response.payload().approved())
+    .onSuccess(AcquirerResponded, HttpResponse::body)
+    .onFailure(AcquirerDeclined, HttpResponse::body)
+    .isAccepted(response -> response.body().approved())
+    .isRejected(response -> !response.body().approved())
     .isRejectedByInvalidResponse(_ -> false)
     .rollbackOnAcceptedModel(reversal)
     .rollbackOnUnknownModel(reversal)
@@ -274,6 +274,10 @@ the creator of its request message, from data of the transition dispatching it:
 | `BatchedAtMostOnceDispatcher`             | `AtMostOnce`, no rollback | The request message and the id of its batch |
 | `BatchedAtMostOnceWithRollbackDispatcher` | `AtMostOnce`, rollback    | The request message and the id of its batch |
 
+A request message is an `HttpRequest<RQ>`, whose body is the payload, e.g. `HttpRequest.create(POST, uri, payload)`,
+which the outbox marshals with its `requestPayloadType` into the bytes sent, an `HttpRequest<byte[]>`. The callbacks
+get the response the same way, as an `HttpResponse<RS>` with the payload parsed by the `contentParser`.
+
 `of(...)` takes a function creating the request message from the data, and `reactive(...)` one creating it
 reactively, from the data and the `DispatchContext` of the dispatching transition. A dispatcher with rollback also
 takes the rollback message creator. The rollback message creator is part of the transitions of the outbox request, so
@@ -283,8 +287,8 @@ name and id. Requests are triggered on the dispatcher's `outbox()`, which the st
 ```java
 var authorisations = AtMostOnceWithRollbackDispatcher.of(
     authorisation,
-    (Authorisation a) -> TypedHttpRequest.create(POST, acquirerUri, new AuthorisationRequest(a)),
-    (context, d) -> Mono.just(TypedHttpRequest.create(POST, reversalUri, new ReversalRequest(d.t2().payload())))
+    (Authorisation a) -> HttpRequest.create(POST, acquirerUri, new AuthorisationRequest(a)),
+    (context, d) -> Mono.just(HttpRequest.create(POST, reversalUri, new ReversalRequest(d.t2().body())))
 );
 ```
 

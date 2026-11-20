@@ -3,7 +3,7 @@ package com.github.thxmasj.backend.http.inbox;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.EventTrigger;
 import com.github.thxmasj.backend.core.internal.Memoized;
-import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
+import com.github.thxmasj.backend.core.message.http.HttpRequest;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -15,7 +15,7 @@ final class InboxModels implements HttpInbox {
   private final EntityModel requestRouting;
   private final List<HttpInboxRequest<?>> requests;
   private final Memoized<List<EntityModel>> entityModels;
-  private final EventTrigger<HttpRequestMessage, HttpRequestMessage, ?> trigger;
+  private final EventTrigger<HttpRequest<byte[]>, HttpRequest<byte[]>, ?> trigger;
 
   private InboxModels(List<HttpInboxRequest<?>> requests) {
     this.requestRouting = new RequestRoutingModel(requests);
@@ -45,7 +45,7 @@ final class InboxModels implements HttpInbox {
   }
 
   @Override
-  public EventTrigger<HttpRequestMessage, HttpRequestMessage, ?> trigger() {
+  public EventTrigger<HttpRequest<byte[]>, HttpRequest<byte[]>, ?> trigger() {
     return trigger;
   }
 

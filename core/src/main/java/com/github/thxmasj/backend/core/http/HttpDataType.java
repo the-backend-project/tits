@@ -2,15 +2,13 @@ package com.github.thxmasj.backend.core.http;
 
 import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.message.http.HttpMessageParser;
-import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
-import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
-import com.github.thxmasj.backend.core.message.http.TypedHttpRequest;
-import com.github.thxmasj.backend.core.message.http.TypedHttpResponse;
+import com.github.thxmasj.backend.core.message.http.HttpRequest;
+import com.github.thxmasj.backend.core.message.http.HttpResponse;
 import java.util.Objects;
 
 public class HttpDataType {
 
-  public static DataType<HttpRequestMessage> forRequest() {
+  public static DataType<HttpRequest<byte[]>> forRequest() {
     return new DataType<>() {
       @Override
       public String name() {
@@ -18,22 +16,22 @@ public class HttpDataType {
       }
 
       @Override
-      public HttpRequestMessage unmarshal(byte[] value) {
+      public HttpRequest<byte[]> unmarshal(byte[] value) {
         return HttpMessageParser.parseRequest(value);
       }
 
       @Override
-      public byte[] marshal(HttpRequestMessage request) {
+      public byte[] marshal(HttpRequest<byte[]> request) {
         return request.toBytes();
       }
     };
   }
 
-  public static <T> DataType<TypedHttpRequest<T>> forRequest(DataType<T> payloadType) {
-    return new TypedHttpRequestDataType<>(payloadType);
+  public static <T> DataType<HttpRequest<T>> forRequest(DataType<T> payloadType) {
+    return new RequestDataType<>(payloadType);
   }
 
-  public static DataType<HttpResponseMessage> forResponse() {
+  public static DataType<HttpResponse<byte[]>> forResponse() {
     return new DataType<>() {
       @Override
       public String name() {
@@ -41,26 +39,26 @@ public class HttpDataType {
       }
 
       @Override
-      public HttpResponseMessage unmarshal(byte[] value) {
+      public HttpResponse<byte[]> unmarshal(byte[] value) {
         return HttpMessageParser.parseResponse(value);
       }
 
       @Override
-      public byte[] marshal(HttpResponseMessage response) {
+      public byte[] marshal(HttpResponse<byte[]> response) {
         return response.toBytes();
       }
     };
   }
 
-  public static <T> DataType<TypedHttpResponse<T>> forResponse(DataType<T> payloadType) {
-    return new TypedHttpResponseDataType<>(payloadType);
+  public static <T> DataType<HttpResponse<T>> forResponse(DataType<T> payloadType) {
+    return new ResponseDataType<>(payloadType);
   }
 
-  private static class TypedHttpRequestDataType<T> implements DataType<TypedHttpRequest<T>> {
+  private static class RequestDataType<T> implements DataType<HttpRequest<T>> {
 
     private final DataType<T> payloadType;
 
-    public TypedHttpRequestDataType(DataType<T> payloadType) {
+    public RequestDataType(DataType<T> payloadType) {
       this.payloadType = payloadType;
     }
 
@@ -70,20 +68,20 @@ public class HttpDataType {
     }
 
     @Override
-    public TypedHttpRequest<T> unmarshal(byte[] value) {
-      HttpRequestMessage request = HttpMessageParser.parseRequest(value);
-      return new TypedHttpRequest<>(request.method(), request.uri(), request.headers(), payloadType.unmarshal(request.body()));
+    public HttpRequest<T> unmarshal(byte[] value) {
+      HttpRequest<byte[]> request = HttpMessageParser.parseRequest(value);
+      return new HttpRequest<>(request.method(), request.uri(), request.headers(), payloadType.unmarshal(request.body()));
     }
 
     @Override
-    public byte[] marshal(TypedHttpRequest<T> request) {
-      HttpRequestMessage r = new HttpRequestMessage(request.method(), request.uri(), request.headers(), payloadType.marshal(request.payload()));
+    public byte[] marshal(HttpRequest<T> request) {
+      HttpRequest<byte[]> r = new HttpRequest<>(request.method(), request.uri(), request.headers(), payloadType.marshal(request.body()));
       return r.toBytes();
     }
 
     @Override
     public boolean equals(Object o) {
-      if (!(o instanceof TypedHttpRequestDataType<?> that))
+      if (!(o instanceof RequestDataType<?> that))
         return false;
       return Objects.equals(payloadType, that.payloadType);
     }
@@ -94,11 +92,11 @@ public class HttpDataType {
     }
   }
 
-  private static class TypedHttpResponseDataType<T> implements DataType<TypedHttpResponse<T>> {
+  private static class ResponseDataType<T> implements DataType<HttpResponse<T>> {
 
     private final DataType<T> payloadType;
 
-    public TypedHttpResponseDataType(DataType<T> payloadType) {
+    public ResponseDataType(DataType<T> payloadType) {
       this.payloadType = payloadType;
     }
 
@@ -108,20 +106,20 @@ public class HttpDataType {
     }
 
     @Override
-    public TypedHttpResponse<T> unmarshal(byte[] value) {
-      HttpResponseMessage response = HttpMessageParser.parseResponse(value);
-      return new TypedHttpResponse<>(response.statusCode(), response.reasonPhrase(), response.headers(), payloadType.unmarshal(response.body()));
+    public HttpResponse<T> unmarshal(byte[] value) {
+      HttpResponse<byte[]> response = HttpMessageParser.parseResponse(value);
+      return new HttpResponse<>(response.statusCode(), response.reasonPhrase(), response.headers(), payloadType.unmarshal(response.body()));
     }
 
     @Override
-    public byte[] marshal(TypedHttpResponse<T> response) {
-      HttpResponseMessage r = new HttpResponseMessage(response.statusCode(), response.reasonPhrase(), response.headers(), payloadType.marshal(response.payload()));
+    public byte[] marshal(HttpResponse<T> response) {
+      HttpResponse<byte[]> r = new HttpResponse<>(response.statusCode(), response.reasonPhrase(), response.headers(), payloadType.marshal(response.body()));
       return r.toBytes();
     }
 
     @Override
     public boolean equals(Object o) {
-      if (!(o instanceof TypedHttpResponseDataType<?> that))
+      if (!(o instanceof ResponseDataType<?> that))
         return false;
       return Objects.equals(payloadType, that.payloadType);
     }

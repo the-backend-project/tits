@@ -1,6 +1,6 @@
 package com.github.thxmasj.backend.core.message.http;
 
-import com.github.thxmasj.backend.core.message.http.HttpRequestMessage.Method;
+import com.github.thxmasj.backend.core.message.http.HttpRequest.Method;
 import java.net.URI;
 import java.util.Collections;
 import java.util.Map;
@@ -8,17 +8,17 @@ import java.util.TreeMap;
 
 public class HttpMessageParser {
 
-  public static HttpRequestMessage parseRequest(byte[] rawMessage) {
+  public static HttpRequest<byte[]> parseRequest(byte[] rawMessage) {
     String message = new String(rawMessage);
     String requestLine = message.lines().findFirst().orElseThrow();
     Method method = Method.valueOf(requestLine.substring(0, requestLine.indexOf(" ")));
     URI uri = uri(message);
     Map<String, String> headers = HttpMessageParser.headers(message);
     byte[] body = HttpMessageParser.body(message);
-    return new HttpRequestMessage(method, uri, headers, body);
+    return new HttpRequest<>(method, uri, headers, body);
   }
 
-  public static HttpResponseMessage parseResponse(byte[] rawMessage) {
+  public static HttpResponse<byte[]> parseResponse(byte[] rawMessage) {
     String message = new String(rawMessage);
     String statusLine = message.lines().findFirst().orElseThrow();
     var s = statusLine.substring(statusLine.indexOf(" ") + 1);
@@ -26,7 +26,7 @@ public class HttpMessageParser {
     String reasonPhrase = statusLine.substring(statusLine.lastIndexOf(" ") + 1);
     Map<String, String> headers = HttpMessageParser.headers(message);
     byte[] body = HttpMessageParser.body(message);
-    return new HttpResponseMessage(statusCode, reasonPhrase, headers, body);
+    return new HttpResponse<>(statusCode, reasonPhrase, headers, body);
   }
 
   private static URI uri(String message) {

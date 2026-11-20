@@ -4,7 +4,7 @@ import static com.github.thxmasj.backend.core.EntitySelector.idEvent;
 import static com.github.thxmasj.backend.core.Tuples.tuple;
 import static com.github.thxmasj.backend.core.Validated.valid;
 import static com.github.thxmasj.backend.http.inbox.HttpInboxRequest.newEntity;
-import static com.github.thxmasj.backend.core.message.http.HttpRequestMessage.Method.POST;
+import static com.github.thxmasj.backend.core.message.http.HttpRequest.Method.POST;
 import static com.github.thxmasj.backend.templates.cardpayment.Identifiers.BatchNumberClaimed;
 import static com.github.thxmasj.backend.templates.cardpayment.PaymentTransitions.OutboxRequestModelIds.ApprovedAuthorisation;
 import static com.github.thxmasj.backend.templates.cardpayment.PaymentTransitions.OutboxRequestModelIds.ApprovedCapture;
@@ -54,10 +54,8 @@ import com.github.thxmasj.backend.http.outbox.BatchedAtMostOnceWithRollbackDispa
 import com.github.thxmasj.backend.http.outbox.Dispatcher;
 import com.github.thxmasj.backend.http.outbox.HttpOutboxRequest.BatchedRequest;
 import com.github.thxmasj.backend.http.outbox.HttpOutboxRequest;
-import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
-import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
-import com.github.thxmasj.backend.core.message.http.TypedHttpRequest;
-import com.github.thxmasj.backend.core.message.http.TypedHttpResponse;
+import com.github.thxmasj.backend.core.message.http.HttpRequest;
+import com.github.thxmasj.backend.core.message.http.HttpResponse;
 import com.github.thxmasj.backend.core.test.Init;
 import com.github.thxmasj.backend.templates.cardpayment.AuthenticationDataCreator.AuthenticationData;
 import com.github.thxmasj.backend.templates.cardpayment.DummyTransitions.Request;
@@ -159,8 +157,8 @@ public class CutOffReconciliationTest {
     assertEquals(400, responseTo(request(machine, "/merchants")).statusCode());
   }
 
-  private static HttpResponseMessage responseTo(Event<?> event) {
-    return (HttpResponseMessage) event.getUnmarshalledData();
+  private static HttpResponse<byte[]> responseTo(Event<?> event) {
+    return (HttpResponse<byte[]>) event.getUnmarshalledData();
   }
 
   private static String authorisationPath() {
@@ -174,7 +172,7 @@ public class CutOffReconciliationTest {
   }
 
   private static Event<?> request(Application application, String path) {
-    var message = new HttpRequestMessage(POST, URI.create(path), Map.of(), "{}".getBytes());
+    var message = new HttpRequest<>(POST, URI.create(path), Map.of(), "{}".getBytes());
     return application.machine().onEvent(UUID.randomUUID().toString(), application.inbox().trigger(), message)
         .switchIfEmpty(Mono.error(new RuntimeException("No response to " + path)))
         // First event is the triggered event, second is the response event
@@ -268,14 +266,14 @@ public class CutOffReconciliationTest {
   }
 
   /// The authentication of payments, made with the payment model
-  private static Dispatcher<AuthenticationData, TypedHttpRequest<Request>> authenticationDispatcher(EntityModel payment) {
+  private static Dispatcher<AuthenticationData, HttpRequest<Request>> authenticationDispatcher(EntityModel payment) {
     var authentication = HttpOutboxRequest.atMostOnce()
         .requestPayloadType(DataType.json(Request.class))
         .responsePayloadType(DataType.json(AuthenticationResult.class))
         .forwarder(forwarder())
         .processModel(payment)
         .contentParser(_ -> valid(new AuthenticationResult("authentication-reference", "provider", "cryptogram")))
-        .onSuccess(PaymentEvent.AuthorisationRequested, TypedHttpResponse::payload)
+        .onSuccess(PaymentEvent.AuthorisationRequested, HttpResponse::body)
         .isAccepted(_ -> true)
         .isRejected(_ -> false)
         .isRejectedByInvalidResponse(_ -> false)
@@ -300,8 +298,8 @@ public class CutOffReconciliationTest {
                 .authorisationCode("123456")
                 .batchNumber(2)
                 .build()))
-            .onSuccess(PaymentEvent.AcquirerResponded, TypedHttpResponse::payload)
-            .onFailure(PaymentEvent.AcquirerDeclined, TypedHttpResponse::payload)
+            .onSuccess(PaymentEvent.AcquirerResponded, HttpResponse::body)
+            .onFailure(PaymentEvent.AcquirerDeclined, HttpResponse::body)
             .isAccepted(_ -> true)
             .isRejected(_ -> false)
             .isRejectedByInvalidResponse(_ -> false)
@@ -313,7 +311,7 @@ public class CutOffReconciliationTest {
             );
     return BatchedAtMostOnceWithRollbackDispatcher.of(
         acquirerAuthorisation,
-        (Tuple6<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, UUID> d) -> new BatchedRequest<>(TypedHttpRequest.create(
+        (Tuple6<Authorisation, Merchant, AuthenticationResult, PaymentToken, AcquirerBatchNumber, UUID> d) -> new BatchedRequest<>(HttpRequest.create(
             POST,
             URI.create("http://localhost:" + acquirer.getAddress().getPort() + "/" + PaymentTransitions.OutboxRequestModelIds.Authorisation.name()),
             new AcquirerAuthorisationRequest(
@@ -335,19 +333,19 @@ public class CutOffReconciliationTest {
     return new NettyHttpClient(new NettyHttpClientBuilder().build());
   }
 
-  private static TypedHttpRequest<Request> request(Identifiable id) {
-    return TypedHttpRequest.create(
+  private static HttpRequest<Request> request(Identifiable id) {
+    return HttpRequest.create(
         POST,
         URI.create("http://localhost:" + acquirer.getAddress().getPort() + "/" + id.name()),
         new Request()
     );
   }
 
-  private static <X> Dispatcher<X, TypedHttpRequest<Request>> dispatcher(Identifiable id) {
+  private static <X> Dispatcher<X, HttpRequest<Request>> dispatcher(Identifiable id) {
     return dispatcher(id, _ -> {});
   }
 
-  private static <X> Dispatcher<X, TypedHttpRequest<Request>> dispatcher(Identifiable id, Consumer<X> dataListener) {
+  private static <X> Dispatcher<X, HttpRequest<Request>> dispatcher(Identifiable id, Consumer<X> dataListener) {
     return AtLeastOnceDispatcher.of(atLeastOnce(id), x -> {
       dataListener.accept(x);
       return request(id);

@@ -6,9 +6,9 @@ import static com.github.thxmasj.backend.identityprovider.Inbox.SecretHashHeader
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 import com.github.thxmasj.backend.core.DataType;
-import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
-import com.github.thxmasj.backend.core.message.http.HttpRequestMessage.Method;
-import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
+import com.github.thxmasj.backend.core.message.http.HttpRequest;
+import com.github.thxmasj.backend.core.message.http.HttpRequest.Method;
+import com.github.thxmasj.backend.core.message.http.HttpResponse;
 import com.github.thxmasj.backend.http.inbox.AccessTokenVerifier.AccessToken;
 import com.github.thxmasj.backend.http.inbox.Form;
 import com.github.thxmasj.backend.http.inbox.HttpInboxListener;
@@ -67,7 +67,7 @@ final class Edge implements HttpInboxListener.Filter {
   }
 
   @Override
-  public Mono<HttpResponseMessage> filter(HttpRequestMessage request, Function<HttpRequestMessage, Mono<HttpResponseMessage>> next) {
+  public Mono<HttpResponse<byte[]>> filter(HttpRequest<byte[]> request, Function<HttpRequest<byte[]>, Mono<HttpResponse<byte[]>>> next) {
     // The cookies hold the secrets of sign-ins, so they are kept out of the event log
     String cookies = request.headerValue("Cookie");
     request = withoutTrustedHeaders(request);
@@ -101,7 +101,7 @@ final class Edge implements HttpInboxListener.Filter {
   /// The authorization endpoint of RFC 6749 section 3.1. The state machine checks the request, and the user is
   /// redirected to the upstream provider to sign in, or back to the client with an error. The secret of the sign-in
   /// with the upstream provider is kept in a cookie, which binds it to the browser the user started it in.
-  private Mono<HttpResponseMessage> authorize(HttpRequestMessage request, Function<HttpRequestMessage, Mono<HttpResponseMessage>> next) {
+  private Mono<HttpResponse<byte[]>> authorize(HttpRequest<byte[]> request, Function<HttpRequest<byte[]>, Mono<HttpResponse<byte[]>>> next) {
     return next.apply(request).flatMap(response -> switch (response.statusCode()) {
       case 200 -> {
         String authorization = DataType.objectMapper.readTree(response.body()).get("authorization").asString();
@@ -111,7 +111,7 @@ final class Edge implements HttpInboxListener.Filter {
           headers.remove("Content-Type");
           headers.put("Location", url.toString());
           headers.put("Set-Cookie", cookie(authorization, secret, signInLifetime));
-          return new HttpResponseMessage(302, "Found", headers, null);
+          return new HttpResponse<>(302, "Found", headers, null);
         });
       }
       case 302 -> Mono.just(redirect(response, null));
@@ -122,7 +122,7 @@ final class Edge implements HttpInboxListener.Filter {
   /// The redirect URI of the identity provider at the upstream provider. The code of the upstream provider is redeemed
   /// here, and the user it signed in passed on to the state machine with the hash of the code generated for the
   /// client. The client gets the code by the redirect back to it.
-  private Mono<HttpResponseMessage> callback(HttpRequestMessage request, String cookies, Function<HttpRequestMessage, Mono<HttpResponseMessage>> next) {
+  private Mono<HttpResponse<byte[]>> callback(HttpRequest<byte[]> request, String cookies, Function<HttpRequest<byte[]>, Mono<HttpResponse<byte[]>>> next) {
     Map<String, String> query;
     try {
       String raw = request.uri().getRawQuery();
@@ -140,7 +140,7 @@ final class Edge implements HttpInboxListener.Filter {
     if (secret == null)
       return Mono.just(errorPage("The sign-in has expired, or was started in another browser. Please sign in again."));
     String clearCookie = cookie(authorization, "", Duration.ZERO);
-    Mono<HttpRequestMessage> passed;
+    Mono<HttpRequest<byte[]>> passed;
     String code;
     if (query.containsKey("error") || !query.containsKey("code")) {
       // The error of the upstream provider is passed on only if it is one of the known ones, which are short
@@ -177,18 +177,18 @@ final class Edge implements HttpInboxListener.Filter {
     }
   }
 
-  private static HttpRequestMessage signedIn(String authorization, Authorizations.User user, String codeHash) {
+  private static HttpRequest<byte[]> signedIn(String authorization, Authorizations.User user, String codeHash) {
     var headers = Map.of("Content-Type", "application/json", Inbox.AuthorizationIdHeader, authorization, Inbox.CodeHashHeader, codeHash);
-    return new HttpRequestMessage(Method.POST, URI.create("/callback"), headers, DataType.objectMapper.writeValueAsBytes(user));
+    return new HttpRequest<>(Method.POST, URI.create("/callback"), headers, DataType.objectMapper.writeValueAsBytes(user));
   }
 
-  private static HttpRequestMessage signInFailed(String authorization, Authorizations.Failure failure) {
+  private static HttpRequest<byte[]> signInFailed(String authorization, Authorizations.Failure failure) {
     var headers = Map.of("Content-Type", "application/json", Inbox.AuthorizationIdHeader, authorization);
-    return new HttpRequestMessage(Method.POST, URI.create("/callback"), headers, DataType.objectMapper.writeValueAsBytes(failure));
+    return new HttpRequest<>(Method.POST, URI.create("/callback"), headers, DataType.objectMapper.writeValueAsBytes(failure));
   }
 
   /// The UserInfo endpoint of OpenID Connect Core section 5.3, called with an access token of a user
-  private Mono<HttpResponseMessage> userInfo(HttpRequestMessage request, Function<HttpRequestMessage, Mono<HttpResponseMessage>> next) {
+  private Mono<HttpResponse<byte[]>> userInfo(HttpRequest<byte[]> request, Function<HttpRequest<byte[]>, Mono<HttpResponse<byte[]>>> next) {
     String authorization = request.headerValue("Authorization");
     if (authorization == null || !authorization.regionMatches(true, 0, "Bearer ", 0, 7))
       return Mono.just(bearerError(401, null, null, null));
@@ -202,16 +202,16 @@ final class Edge implements HttpInboxListener.Filter {
     var headers = new HashMap<>(request.headers());
     headers.keySet().removeIf(name -> name.equalsIgnoreCase("Authorization"));
     headers.put(Inbox.TokenIdHeader, tokenId.get());
-    return next.apply(new HttpRequestMessage(request.method(), request.uri(), headers, null))
+    return next.apply(new HttpRequest<>(request.method(), request.uri(), headers, null))
         .map(response -> response.statusCode() == 200 ?
-            new HttpResponseMessage(200, "OK", noStore(response.headers()), response.body()) :
+            new HttpResponse<>(200, "OK", noStore(response.headers()), response.body()) :
             // The token is not one of a user, e.g. of the client credentials grant
             bearerError(401, "invalid_token", "The access token is not one of a user", null));
   }
 
   /// The token endpoint of RFC 6749 section 3.2, for the client credentials grant and the authorization code grant,
   /// with the client authenticated by HTTP Basic, which RFC 6749 section 2.3.1 requires every server to support.
-  private Mono<HttpResponseMessage> token(HttpRequestMessage request, Function<HttpRequestMessage, Mono<HttpResponseMessage>> next) {
+  private Mono<HttpResponse<byte[]>> token(HttpRequest<byte[]> request, Function<HttpRequest<byte[]>, Mono<HttpResponse<byte[]>>> next) {
     String contentType = request.headerValue("Content-Type");
     if (contentType == null || !contentType.toLowerCase().startsWith("application/x-www-form-urlencoded"))
       return Mono.just(tokenError(400, "invalid_request", "Content-Type must be application/x-www-form-urlencoded"));
@@ -263,7 +263,7 @@ final class Edge implements HttpInboxListener.Filter {
     headers.keySet().removeIf(name -> name.equalsIgnoreCase("Authorization") || name.equalsIgnoreCase("Content-Length"));
     headers.put(ClientIdHeader, clientId);
     headers.put(SecretHashHeader, secretHash(clientId, secret));
-    return next.apply(new HttpRequestMessage(request.method(), request.uri(), headers, body))
+    return next.apply(new HttpRequest<>(request.method(), request.uri(), headers, body))
         .map(response -> switch (response.statusCode()) {
           case 200 -> grantType.equals(Clients.AuthorizationCode) ? userTokensResponse(response) : tokenResponse(response);
           case 401 -> withHeader(response, "WWW-Authenticate", basicChallenge());
@@ -280,18 +280,18 @@ final class Edge implements HttpInboxListener.Filter {
 
   /// The access token response of RFC 6749 section 5.1, with the token signed from the claims the state machine
   /// issued
-  private HttpResponseMessage tokenResponse(HttpResponseMessage issued) {
+  private HttpResponse<byte[]> tokenResponse(HttpResponse<byte[]> issued) {
     var token = DataType.objectMapper.readValue(issued.body(), Tokens.IssuedToken.class);
     var body = new LinkedHashMap<String, Object>();
     body.put("access_token", keys.sign(token));
     body.put("token_type", "Bearer");
     body.put("expires_in", token.expiresAt() - token.issuedAt());
     body.put("scope", token.scope());
-    return new HttpResponseMessage(200, "OK", noStore(issued.headers()), DataType.objectMapper.writeValueAsBytes(body));
+    return new HttpResponse<>(200, "OK", noStore(issued.headers()), DataType.objectMapper.writeValueAsBytes(body));
   }
 
   /// The access token response of RFC 6749 section 5.1 with the ID token of OpenID Connect Core section 3.1.3.3
-  private HttpResponseMessage userTokensResponse(HttpResponseMessage issued) {
+  private HttpResponse<byte[]> userTokensResponse(HttpResponse<byte[]> issued) {
     var tokens = DataType.objectMapper.readValue(issued.body(), Tokens.UserTokens.class);
     var body = new LinkedHashMap<String, Object>();
     body.put("access_token", keys.sign(tokens.accessToken()));
@@ -299,12 +299,12 @@ final class Edge implements HttpInboxListener.Filter {
     body.put("expires_in", tokens.accessToken().expiresAt() - tokens.accessToken().issuedAt());
     body.put("scope", tokens.accessToken().scope());
     body.put("id_token", keys.sign(tokens.idToken()));
-    return new HttpResponseMessage(200, "OK", noStore(issued.headers()), DataType.objectMapper.writeValueAsBytes(body));
+    return new HttpResponse<>(200, "OK", noStore(issued.headers()), DataType.objectMapper.writeValueAsBytes(body));
   }
 
   /// Registers a client on behalf of a client with the registration scope. The secret of the new client is generated
   /// here, so only its hash enters the event log.
-  private Mono<HttpResponseMessage> register(HttpRequestMessage request, Function<HttpRequestMessage, Mono<HttpResponseMessage>> next) {
+  private Mono<HttpResponse<byte[]>> register(HttpRequest<byte[]> request, Function<HttpRequest<byte[]>, Mono<HttpResponse<byte[]>>> next) {
     String authorization = request.headerValue("Authorization");
     if (authorization == null || !authorization.regionMatches(true, 0, "Bearer ", 0, 7))
       return Mono.just(bearerError(401, null, null, null));
@@ -323,19 +323,19 @@ final class Edge implements HttpInboxListener.Filter {
   /// A registration request as it enters the state machine
   ///
   /// @param registeredBy the client id of the client registering the client
-  static HttpRequestMessage registration(Map<String, String> headers, String registeredBy, String secretHash, HttpRequestMessage request) {
+  static HttpRequest<byte[]> registration(Map<String, String> headers, String registeredBy, String secretHash, HttpRequest<byte[]> request) {
     var trusted = new HashMap<>(headers);
     trusted.put(RegisteredByHeader, registeredBy);
     trusted.put(SecretHashHeader, secretHash);
-    return new HttpRequestMessage(request.method(), request.uri(), trusted, request.body());
+    return new HttpRequest<>(request.method(), request.uri(), trusted, request.body());
   }
 
-  private static HttpResponseMessage withSecret(HttpResponseMessage registered, String secret) {
+  private static HttpResponse<byte[]> withSecret(HttpResponse<byte[]> registered, String secret) {
     var body = (ObjectNode) DataType.objectMapper.readTree(registered.body());
     body.put("client_secret", secret);
     // The secret does not expire, RFC 7591 section 3.2.1
     body.put("client_secret_expires_at", 0);
-    return new HttpResponseMessage(201, "Created", noStore(registered.headers()), DataType.objectMapper.writeValueAsBytes(body));
+    return new HttpResponse<>(201, "Created", noStore(registered.headers()), DataType.objectMapper.writeValueAsBytes(body));
   }
 
   /// The client id and secret of a Basic Authorization header, which are form-urlencoded, RFC 6749 section 2.3.1
@@ -359,32 +359,32 @@ final class Edge implements HttpInboxListener.Filter {
 
   /// Requests can't set the headers the edge tells the state machine what it has authenticated with, and their
   /// cookies are not passed on
-  private static HttpRequestMessage withoutTrustedHeaders(HttpRequestMessage request) {
+  private static HttpRequest<byte[]> withoutTrustedHeaders(HttpRequest<byte[]> request) {
     if (request.headers().keySet().stream().noneMatch(Edge::isTrusted))
       return request;
     var headers = new HashMap<>(request.headers());
     headers.keySet().removeIf(Edge::isTrusted);
-    return new HttpRequestMessage(request.method(), request.uri(), headers, request.body());
+    return new HttpRequest<>(request.method(), request.uri(), headers, request.body());
   }
 
   private static boolean isTrusted(String header) {
     return header.equalsIgnoreCase("Cookie") || Inbox.trustedHeaders.stream().anyMatch(header::equalsIgnoreCase);
   }
 
-  private static Mono<HttpResponseMessage> get(HttpRequestMessage request, Supplier<HttpResponseMessage> response) {
+  private static Mono<HttpResponse<byte[]>> get(HttpRequest<byte[]> request, Supplier<HttpResponse<byte[]>> response) {
     return Mono.just(request.method() == Method.GET ? response.get() : methodNotAllowed("GET"));
   }
 
-  private static Mono<HttpResponseMessage> get(
-      HttpRequestMessage request,
-      Function<HttpRequestMessage, Mono<HttpResponseMessage>> next,
-      BiFunction<HttpRequestMessage, Function<HttpRequestMessage, Mono<HttpResponseMessage>>, Mono<HttpResponseMessage>> handler
+  private static Mono<HttpResponse<byte[]>> get(
+      HttpRequest<byte[]> request,
+      Function<HttpRequest<byte[]>, Mono<HttpResponse<byte[]>>> next,
+      BiFunction<HttpRequest<byte[]>, Function<HttpRequest<byte[]>, Mono<HttpResponse<byte[]>>>, Mono<HttpResponse<byte[]>>> handler
   ) {
     return request.method() == Method.GET ? handler.apply(request, next) : Mono.just(methodNotAllowed("GET"));
   }
 
   /// The redirect of the user to the client, which the state machine has made, with the code if the user signed in
-  private static HttpResponseMessage redirect(HttpResponseMessage response, String code) {
+  private static HttpResponse<byte[]> redirect(HttpResponse<byte[]> response, String code) {
     var redirect = DataType.objectMapper.readValue(response.body(), Inbox.Redirect.class);
     var parameters = new LinkedHashMap<String, String>();
     if (code != null && !redirect.parameters().containsKey("error"))
@@ -394,11 +394,11 @@ final class Edge implements HttpInboxListener.Filter {
     var headers = noStore(Map.of());
     headers.remove("Content-Type");
     headers.put("Location", uri + (uri.contains("?") ? "&" : "?") + Form.encode(parameters));
-    return new HttpResponseMessage(302, "Found", headers, null);
+    return new HttpResponse<>(302, "Found", headers, null);
   }
 
   /// A page for the user, when the client can't be redirected to, from the error response of the state machine
-  private static HttpResponseMessage errorPage(HttpResponseMessage response) {
+  private static HttpResponse<byte[]> errorPage(HttpResponse<byte[]> response) {
     String description = null;
     try {
       var body = DataType.objectMapper.readTree(response.body());
@@ -410,10 +410,10 @@ final class Edge implements HttpInboxListener.Filter {
     return errorPage(description != null ? description : "The sign-in request is invalid or has already been used");
   }
 
-  private static HttpResponseMessage errorPage(String description) {
+  private static HttpResponse<byte[]> errorPage(String description) {
     var headers = noStore(Map.of());
     headers.put("Content-Type", "text/plain;charset=UTF-8");
-    return new HttpResponseMessage(400, "Bad Request", headers, ("Sign-in failed: " + description + "\n").getBytes(UTF_8));
+    return new HttpResponse<>(400, "Bad Request", headers, ("Sign-in failed: " + description + "\n").getBytes(UTF_8));
   }
 
   /// The cookie with the secret of a sign-in, only sent to the callback. It is sent with the redirect from the
@@ -438,26 +438,26 @@ final class Edge implements HttpInboxListener.Filter {
     return null;
   }
 
-  private static Mono<HttpResponseMessage> post(
-      HttpRequestMessage request,
-      Function<HttpRequestMessage, Mono<HttpResponseMessage>> next,
-      BiFunction<HttpRequestMessage, Function<HttpRequestMessage, Mono<HttpResponseMessage>>, Mono<HttpResponseMessage>> handler
+  private static Mono<HttpResponse<byte[]>> post(
+      HttpRequest<byte[]> request,
+      Function<HttpRequest<byte[]>, Mono<HttpResponse<byte[]>>> next,
+      BiFunction<HttpRequest<byte[]>, Function<HttpRequest<byte[]>, Mono<HttpResponse<byte[]>>>, Mono<HttpResponse<byte[]>>> handler
   ) {
     return request.method() == Method.POST ? handler.apply(request, next) : Mono.just(methodNotAllowed("POST"));
   }
 
-  private static HttpResponseMessage methodNotAllowed(String allowed) {
-    return new HttpResponseMessage(405, "Method Not Allowed", Map.of("Allow", allowed), null);
+  private static HttpResponse<byte[]> methodNotAllowed(String allowed) {
+    return new HttpResponse<>(405, "Method Not Allowed", Map.of("Allow", allowed), null);
   }
 
-  private HttpResponseMessage tokenError(int status, String error, String description) {
+  private HttpResponse<byte[]> tokenError(int status, String error, String description) {
     var body = new LinkedHashMap<String, String>();
     body.put("error", error);
     body.put("error_description", description);
     var headers = noStore(Map.of());
     if (status == 401)
       headers.put("WWW-Authenticate", basicChallenge());
-    return new HttpResponseMessage(status, status == 401 ? "Unauthorized" : "Bad Request", headers, DataType.objectMapper.writeValueAsBytes(body));
+    return new HttpResponse<>(status, status == 401 ? "Unauthorized" : "Bad Request", headers, DataType.objectMapper.writeValueAsBytes(body));
   }
 
   private String basicChallenge() {
@@ -467,13 +467,13 @@ final class Edge implements HttpInboxListener.Filter {
   /// The error response of RFC 6750 section 3
   ///
   /// @param scope the scope required, for insufficient_scope
-  private HttpResponseMessage bearerError(int status, String error, String description, String scope) {
+  private HttpResponse<byte[]> bearerError(int status, String error, String description, String scope) {
     var challenge = new StringBuilder("Bearer realm=\"" + keys.issuer() + "\"");
     if (error != null)
       challenge.append(", error=\"").append(error).append("\", error_description=\"").append(description).append("\"");
     if (scope != null)
       challenge.append(", scope=\"").append(scope).append("\"");
-    return new HttpResponseMessage(status, status == 401 ? "Unauthorized" : "Forbidden", Map.of("WWW-Authenticate", challenge.toString()), null);
+    return new HttpResponse<>(status, status == 401 ? "Unauthorized" : "Forbidden", Map.of("WWW-Authenticate", challenge.toString()), null);
   }
 
   private static Map<String, String> noStore(Map<String, String> headers) {
@@ -484,14 +484,14 @@ final class Edge implements HttpInboxListener.Filter {
     return result;
   }
 
-  private static HttpResponseMessage withHeader(HttpResponseMessage response, String name, String value) {
+  private static HttpResponse<byte[]> withHeader(HttpResponse<byte[]> response, String name, String value) {
     var headers = new HashMap<>(response.headers());
     headers.put(name, value);
-    return new HttpResponseMessage(response.statusCode(), response.reasonPhrase(), headers, response.body());
+    return new HttpResponse<>(response.statusCode(), response.reasonPhrase(), headers, response.body());
   }
 
-  private static HttpResponseMessage response(int status, String reason, String contentType, String body) {
-    return new HttpResponseMessage(
+  private static HttpResponse<byte[]> response(int status, String reason, String contentType, String body) {
+    return new HttpResponse<>(
         status,
         reason,
         contentType != null ? Map.of("Content-Type", contentType) : Map.of(),

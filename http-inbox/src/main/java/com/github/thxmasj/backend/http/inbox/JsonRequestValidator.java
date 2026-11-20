@@ -2,10 +2,10 @@ package com.github.thxmasj.backend.http.inbox;
 
 import com.github.thxmasj.backend.core.Validated;
 import com.github.thxmasj.backend.core.internal.http.JsonContentValidator;
-import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
+import com.github.thxmasj.backend.core.message.http.HttpRequest;
 import java.util.function.Function;
 
-public class JsonRequestValidator<T> implements Function<HttpRequestMessage, Validated<T>> {
+public class JsonRequestValidator<T> implements Function<HttpRequest<byte[]>, Validated<T>> {
 
   private final JsonContentValidator<T> jsonContentParser;
 
@@ -14,7 +14,7 @@ public class JsonRequestValidator<T> implements Function<HttpRequestMessage, Val
   }
 
   @Override
-  public Validated<T> apply(HttpRequestMessage request) {
+  public Validated<T> apply(HttpRequest<byte[]> request) {
     return jsonContentParser.apply(request.body());
   }
 

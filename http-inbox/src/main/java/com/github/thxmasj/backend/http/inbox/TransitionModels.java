@@ -61,8 +61,8 @@ import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionContext;
 import com.github.thxmasj.backend.core.Tuples.Tuple2;
 import com.github.thxmasj.backend.core.Validated;
-import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
-import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
+import com.github.thxmasj.backend.core.message.http.HttpRequest;
+import com.github.thxmasj.backend.core.message.http.HttpResponse;
 import com.github.thxmasj.backend.http.inbox.Authorization.Refused;
 import com.github.thxmasj.backend.http.inbox.HttpInbox.MessageId;
 import com.github.thxmasj.backend.http.inbox.HttpInbox.RoutedRequest;
@@ -85,7 +85,7 @@ import java.util.UUID;
 interface TransitionModels {
 
   static Map<State, List<TransitionModel<?, ?>>> requestRoutingTransitions(List<HttpInboxRequest<?>> requests) {
-    var routes = new ArrayList<GuardedTransition<HttpRequestMessage, HttpRequestMessage, ?>>();
+    var routes = new ArrayList<GuardedTransition<HttpRequest<byte[]>, HttpRequest<byte[]>, ?>>();
     for (HttpInboxRequest<?> request : requests) {
       routes.add(new GuardedTransition<>(request::matches, routedTo(request, false), d -> d));
       if (request.rollback() != null)
@@ -119,7 +119,7 @@ interface TransitionModels {
   }
 
   /// Routes a request to a new entity of the inbox request, or a rollback to the entity of the request it rolls back
-  private static <T> TransitionModel<HttpRequestMessage, HttpRequestMessage> routedTo(HttpInboxRequest<T> request, boolean rollback) {
+  private static <T> TransitionModel<HttpRequest<byte[]>, HttpRequest<byte[]>> routedTo(HttpInboxRequest<T> request, boolean rollback) {
     return onEvent(RequestRouted).to(Routed)
         .assembleInput()
         .trigger(rollback ? RollbackRequestReceived : RequestReceived).with(d -> d).on(request)
@@ -129,7 +129,7 @@ interface TransitionModels {
 
   /// The entity of the request with the message id of the rollback, which is created if there is none, or a new entity
   /// to reject the rollback if it is invalid
-  private static <T> EntitySelector rollbackSelector(HttpInboxRequest<T> request, HttpRequestMessage message) {
+  private static <T> EntitySelector rollbackSelector(HttpInboxRequest<T> request, HttpRequest<byte[]> message) {
     var validation = validateRollback(request, message);
     return validation.routedRequest() != null ?
         idEvent(MessageIdClaimed, validation.routedRequest().messageId(), CreateIfNotExists) :
@@ -175,7 +175,7 @@ interface TransitionModels {
     return -1;
   }
 
-  private static <T> Validation<T> validate(HttpInboxRequest<T> request, HttpRequestMessage message) {
+  private static <T> Validation<T> validate(HttpInboxRequest<T> request, HttpRequest<byte[]> message) {
     Validated<T> body = request.contentParser().apply(message);
     if (body.isInvalid())
       return Validation.invalid("Invalid request body: " + body.invalidReason());
@@ -205,13 +205,13 @@ interface TransitionModels {
     );
   }
 
-  private static <T> Validation<T> validateRollback(HttpInboxRequest<T> request, HttpRequestMessage message) {
+  private static <T> Validation<T> validateRollback(HttpInboxRequest<T> request, HttpRequest<byte[]> message) {
     return validateRollback(request.rollback(), message);
   }
 
   /// Validates a rollback by its own content, authorizer and message id. The content is only used for that, so the
   /// routed rollback has no body.
-  private static <T, R> Validation<T> validateRollback(Rollback<R> rollback, HttpRequestMessage message) {
+  private static <T, R> Validation<T> validateRollback(Rollback<R> rollback, HttpRequest<byte[]> message) {
     Validated<R> body = rollback.contentParser().apply(message);
     if (body.isInvalid())
       return Validation.invalid("Invalid request body: " + body.invalidReason());
@@ -323,14 +323,14 @@ interface TransitionModels {
         validated.otherwise(contentChoiceTransition(request), Validation::dispatch);
   }
 
-  private static TransitionModel<String, HttpResponseMessage> rejectedAsInvalid() {
+  private static TransitionModel<String, HttpResponse<byte[]>> rejectedAsInvalid() {
     return onEvent(RequestRejectedAsInvalid).to(Completed)
         .assemble(c -> badRequest(c.input(), c.correlationId(), c.timestamp()))
         .trigger(ResponseCreated).with(d -> d).on(RequestRouting).identifiedBy(entityIdFromSession())
         .output(Tuple2::t1);
   }
 
-  private static TransitionModel<Refused, HttpResponseMessage> rejectedAsUnauthorized() {
+  private static TransitionModel<Refused, HttpResponse<byte[]>> rejectedAsUnauthorized() {
     return onEvent(RequestRejectedAsUnauthorized).to(Completed)
         .assemble(c -> refused(c.input(), c.correlationId(), c.timestamp()))
         .trigger(ResponseCreated).with(d -> d).on(RequestRouting).identifiedBy(entityIdFromSession())
@@ -350,7 +350,7 @@ interface TransitionModels {
   /// Whether the request is a repeat of the request of the entity which has its message id, accepted or rejected by
   /// the application, so that it gets the same response. An entity of another inbox request has another request, and
   /// one whose request is still being dispatched has no response yet, so the request is no repeat of them.
-  private static <T> boolean isSameRequest(HttpRequestMessage newRequest, EventLog existing, HttpInboxRequest<T> request) {
+  private static <T> boolean isSameRequest(HttpRequest<byte[]> newRequest, EventLog existing, HttpInboxRequest<T> request) {
     if (!existing.entityModel().equals(request) || !hasResponse(existing))
       return false;
     return existing.oneIfExists(RequestAccepted).map(Tuple2::t1)
@@ -547,7 +547,7 @@ interface TransitionModels {
   }
 
   /// Whether the rollback is equal to the first one with the same message id after normalizing, as for requests
-  private static <T> boolean isSameRollback(HttpInboxRequest<T> request, HttpRequestMessage rollback, HttpRequestMessage first) {
+  private static <T> boolean isSameRollback(HttpInboxRequest<T> request, HttpRequest<byte[]> rollback, HttpRequest<byte[]> first) {
     var normalizer = request.rollback().normalizer();
     return normalizer.apply(rollback).equals(normalizer.apply(first));
   }
@@ -684,11 +684,11 @@ interface TransitionModels {
         .output(Tuple2::t1);
   }
 
-  private static HttpResponseMessage badRequest(String detail, String correlationId, ZonedDateTime timestamp) {
+  private static HttpResponse<byte[]> badRequest(String detail, String correlationId, ZonedDateTime timestamp) {
     return createResponseMessage(new BadRequest(), null, correlationId, timestamp, detail);
   }
 
-  private static HttpResponseMessage refused(Refused refused, String correlationId, ZonedDateTime timestamp) {
+  private static HttpResponse<byte[]> refused(Refused refused, String correlationId, ZonedDateTime timestamp) {
     String reasonPhrase = switch (refused.statusCode()) {
       case 400 -> "Bad Request";
       case 401 -> "Unauthorized";
@@ -708,11 +708,11 @@ interface TransitionModels {
     return createResponseMessage(creator, null, correlationId, timestamp, refused.reason());
   }
 
-  private static HttpResponseMessage unprocessableEntity(String detail, String correlationId, ZonedDateTime timestamp) {
+  private static HttpResponse<byte[]> unprocessableEntity(String detail, String correlationId, ZonedDateTime timestamp) {
     return createResponseMessage(new UnprocessableEntity(), null, correlationId, timestamp, detail);
   }
 
-  private static HttpResponseMessage createResponseMessage(
+  private static HttpResponse<byte[]> createResponseMessage(
       HttpResponseCreator responseCreator,
       @Nullable EventReference eventReference,
       String correlationId,

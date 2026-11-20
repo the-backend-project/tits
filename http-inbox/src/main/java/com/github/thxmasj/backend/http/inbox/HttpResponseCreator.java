@@ -1,7 +1,7 @@
 package com.github.thxmasj.backend.http.inbox;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
+import com.github.thxmasj.backend.core.message.http.HttpResponse;
 import java.time.ZonedDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -26,13 +26,13 @@ class HttpResponseCreator {
     this.reasonPhrase = reasonPhrase;
   }
 
-  public HttpResponseMessage create(
+  public HttpResponse<byte[]> create(
       String data,
       UUID entityId,
       ZonedDateTime timestamp,
       String correlationId
   ) {
-    return new HttpResponseMessage(
+    return new HttpResponse<>(
         statusCode,
         reasonPhrase,
         headers(correlationId, data),

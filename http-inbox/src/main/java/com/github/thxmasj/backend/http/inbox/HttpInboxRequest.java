@@ -11,8 +11,8 @@ import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionContext;
 import com.github.thxmasj.backend.core.Validated;
-import com.github.thxmasj.backend.core.message.http.HttpRequestMessage;
-import com.github.thxmasj.backend.core.message.http.HttpResponseMessage;
+import com.github.thxmasj.backend.core.message.http.HttpRequest;
+import com.github.thxmasj.backend.core.message.http.HttpResponse;
 import com.github.thxmasj.backend.http.inbox.HttpInbox.RoutedRequest;
 import java.util.ArrayList;
 import java.util.List;
@@ -58,12 +58,12 @@ public final class HttpInboxRequest<T> implements EntityModel {
 
   private final String name;
   private final UUID id;
-  private final Predicate<HttpRequestMessage> matcher;
-  private final Function<HttpRequestMessage, Validated<T>> contentParser;
-  private final BiFunction<HttpRequestMessage, T, Validated<String>> deduplicateOn;
-  private final BiFunction<HttpRequestMessage, T, Authorization> authorizer;
+  private final Predicate<HttpRequest<byte[]>> matcher;
+  private final Function<HttpRequest<byte[]>, Validated<T>> contentParser;
+  private final BiFunction<HttpRequest<byte[]>, T, Validated<String>> deduplicateOn;
+  private final BiFunction<HttpRequest<byte[]>, T, Authorization> authorizer;
   private final List<Process<T, ?>> processes;
-  private final Function<HttpRequestMessage, HttpRequestMessage> normalizer;
+  private final Function<HttpRequest<byte[]>, HttpRequest<byte[]>> normalizer;
   private final List<Response<?>> responses;
   private final Rollback<?> rollback;
   private final Map<State, List<TransitionModel<?, ?>>> transitions;
@@ -95,7 +95,7 @@ public final class HttpInboxRequest<T> implements EntityModel {
   }
 
   /// Starts building an inbox request taking the requests the matcher matches, e.g. by their method and path
-  public static ContentStep matching(Predicate<HttpRequestMessage> matcher) {
+  public static ContentStep matching(Predicate<HttpRequest<byte[]>> matcher) {
     return new ContentStep(Objects.requireNonNull(matcher));
   }
 
@@ -127,24 +127,24 @@ public final class HttpInboxRequest<T> implements EntityModel {
   }
 
   /// Whether the request is one of this inbox request
-  public boolean matches(HttpRequestMessage request) {
+  public boolean matches(HttpRequest<byte[]> request) {
     return matcher.test(request);
   }
 
   /// Whether the request is a rollback of a request of this inbox request
-  public boolean matchesRollback(HttpRequestMessage request) {
+  public boolean matchesRollback(HttpRequest<byte[]> request) {
     return rollback != null && rollback.matcher().test(request);
   }
 
-  Function<HttpRequestMessage, Validated<T>> contentParser() {return contentParser;}
+  Function<HttpRequest<byte[]>, Validated<T>> contentParser() {return contentParser;}
 
-  BiFunction<HttpRequestMessage, T, Validated<String>> deduplicateOn() {return deduplicateOn;}
+  BiFunction<HttpRequest<byte[]>, T, Validated<String>> deduplicateOn() {return deduplicateOn;}
 
-  BiFunction<HttpRequestMessage, T, Authorization> authorizer() {return authorizer;}
+  BiFunction<HttpRequest<byte[]>, T, Authorization> authorizer() {return authorizer;}
 
   List<Process<T, ?>> processes() {return processes;}
 
-  Function<HttpRequestMessage, HttpRequestMessage> normalizer() {return normalizer;}
+  Function<HttpRequest<byte[]>, HttpRequest<byte[]>> normalizer() {return normalizer;}
 
   List<Response<?>> responses() {return responses;}
 
@@ -181,11 +181,11 @@ public final class HttpInboxRequest<T> implements EntityModel {
       EventType<U, ?> eventType,
       EntityModel entityModel,
       Function<RoutedRequest<T>, U> input,
-      BiFunction<HttpRequestMessage, T, ? extends Validated<? extends EntitySelector>> selector
+      BiFunction<HttpRequest<byte[]>, T, ? extends Validated<? extends EntitySelector>> selector
   ) {}
 
   /// A response the application gives by triggering the event type on the request, created from the event's data
-  record Response<I>(ResponseEventType<I> eventType, Function<TransitionContext<I>, HttpResponseMessage> messageCreator) {}
+  record Response<I>(ResponseEventType<I> eventType, Function<TransitionContext<I>, HttpResponse<byte[]>> messageCreator) {}
 
   /// Requests rolling back a request of an inbox request, given to [DeduplicatedBuilder#rollback(Rollback.Builder)].
   /// A rollback is built like the inbox request, with content of a type of its own, and its `deduplicateOn` gives the
@@ -213,11 +213,11 @@ public final class HttpInboxRequest<T> implements EntityModel {
   /// @param <R> the type of the content of a rollback
   public static final class Rollback<R> {
 
-    private final Predicate<HttpRequestMessage> matcher;
-    private final Function<HttpRequestMessage, Validated<R>> contentParser;
-    private final BiFunction<HttpRequestMessage, R, Validated<String>> deduplicateOn;
-    private final BiFunction<HttpRequestMessage, R, Authorization> authorizer;
-    private final Function<HttpRequestMessage, HttpRequestMessage> normalizer;
+    private final Predicate<HttpRequest<byte[]>> matcher;
+    private final Function<HttpRequest<byte[]>, Validated<R>> contentParser;
+    private final BiFunction<HttpRequest<byte[]>, R, Validated<String>> deduplicateOn;
+    private final BiFunction<HttpRequest<byte[]>, R, Authorization> authorizer;
+    private final Function<HttpRequest<byte[]>, HttpRequest<byte[]>> normalizer;
 
     private Rollback(Builder<R> builder) {
       this.matcher = builder.matcher;
@@ -228,32 +228,32 @@ public final class HttpInboxRequest<T> implements EntityModel {
     }
 
     /// Starts building a rollback taking the requests the matcher matches, e.g. by their method and path
-    public static ContentStep matching(Predicate<HttpRequestMessage> matcher) {
+    public static ContentStep matching(Predicate<HttpRequest<byte[]>> matcher) {
       return new ContentStep(Objects.requireNonNull(matcher));
     }
 
-    Predicate<HttpRequestMessage> matcher() {return matcher;}
+    Predicate<HttpRequest<byte[]>> matcher() {return matcher;}
 
-    Function<HttpRequestMessage, Validated<R>> contentParser() {return contentParser;}
+    Function<HttpRequest<byte[]>, Validated<R>> contentParser() {return contentParser;}
 
-    BiFunction<HttpRequestMessage, R, Validated<String>> deduplicateOn() {return deduplicateOn;}
+    BiFunction<HttpRequest<byte[]>, R, Validated<String>> deduplicateOn() {return deduplicateOn;}
 
-    BiFunction<HttpRequestMessage, R, Authorization> authorizer() {return authorizer;}
+    BiFunction<HttpRequest<byte[]>, R, Authorization> authorizer() {return authorizer;}
 
-    Function<HttpRequestMessage, HttpRequestMessage> normalizer() {return normalizer;}
+    Function<HttpRequest<byte[]>, HttpRequest<byte[]>> normalizer() {return normalizer;}
 
     /// The step introducing the type of the content of a rollback
     public static final class ContentStep {
 
-      private final Predicate<HttpRequestMessage> matcher;
+      private final Predicate<HttpRequest<byte[]>> matcher;
 
-      private ContentStep(Predicate<HttpRequestMessage> matcher) {
+      private ContentStep(Predicate<HttpRequest<byte[]>> matcher) {
         this.matcher = matcher;
       }
 
       /// The content of a rollback is parsed by the parser, and the rollback is answered with 400 Bad Request if it is
       /// invalid
-      public <R> DeduplicationStep<R> contentParser(Function<HttpRequestMessage, Validated<R>> contentParser) {
+      public <R> DeduplicationStep<R> contentParser(Function<HttpRequest<byte[]>, Validated<R>> contentParser) {
         return new DeduplicationStep<>(matcher, Objects.requireNonNull(contentParser));
       }
 
@@ -267,10 +267,10 @@ public final class HttpInboxRequest<T> implements EntityModel {
     /// The step introducing the message id of the request a rollback rolls back, which every rollback needs
     public static final class DeduplicationStep<R> {
 
-      private final Predicate<HttpRequestMessage> matcher;
-      private final Function<HttpRequestMessage, Validated<R>> contentParser;
+      private final Predicate<HttpRequest<byte[]>> matcher;
+      private final Function<HttpRequest<byte[]>, Validated<R>> contentParser;
 
-      private DeduplicationStep(Predicate<HttpRequestMessage> matcher, Function<HttpRequestMessage, Validated<R>> contentParser) {
+      private DeduplicationStep(Predicate<HttpRequest<byte[]>> matcher, Function<HttpRequest<byte[]>, Validated<R>> contentParser) {
         this.matcher = matcher;
         this.contentParser = contentParser;
       }
@@ -278,7 +278,7 @@ public final class HttpInboxRequest<T> implements EntityModel {
       /// The message id of the request a rollback rolls back, e.g. from its path or its content, the same one the
       /// request's `deduplicateOn` gives. Rollbacks with the same message id are deduplicated like requests: see
       /// [Builder#normalizer(Function)]. A rollback with an invalid message id is answered with 400 Bad Request.
-      public Builder<R> deduplicateOn(BiFunction<HttpRequestMessage, R, Validated<String>> deduplicateOn) {
+      public Builder<R> deduplicateOn(BiFunction<HttpRequest<byte[]>, R, Validated<String>> deduplicateOn) {
         return new Builder<>(matcher, contentParser, Objects.requireNonNull(deduplicateOn));
       }
 
@@ -287,16 +287,16 @@ public final class HttpInboxRequest<T> implements EntityModel {
     /// Builds a rollback. The authorizer is required if the request has one and not allowed otherwise.
     public static final class Builder<R> {
 
-      private final Predicate<HttpRequestMessage> matcher;
-      private final Function<HttpRequestMessage, Validated<R>> contentParser;
-      private final BiFunction<HttpRequestMessage, R, Validated<String>> deduplicateOn;
-      private BiFunction<HttpRequestMessage, R, Authorization> authorizer;
-      private Function<HttpRequestMessage, HttpRequestMessage> normalizer = Function.identity();
+      private final Predicate<HttpRequest<byte[]>> matcher;
+      private final Function<HttpRequest<byte[]>, Validated<R>> contentParser;
+      private final BiFunction<HttpRequest<byte[]>, R, Validated<String>> deduplicateOn;
+      private BiFunction<HttpRequest<byte[]>, R, Authorization> authorizer;
+      private Function<HttpRequest<byte[]>, HttpRequest<byte[]>> normalizer = Function.identity();
 
       private Builder(
-          Predicate<HttpRequestMessage> matcher,
-          Function<HttpRequestMessage, Validated<R>> contentParser,
-          BiFunction<HttpRequestMessage, R, Validated<String>> deduplicateOn
+          Predicate<HttpRequest<byte[]>> matcher,
+          Function<HttpRequest<byte[]>, Validated<R>> contentParser,
+          BiFunction<HttpRequest<byte[]>, R, Validated<String>> deduplicateOn
       ) {
         this.matcher = matcher;
         this.contentParser = contentParser;
@@ -306,7 +306,7 @@ public final class HttpInboxRequest<T> implements EntityModel {
       /// Authorizes a rollback, which rolls back the request with the message id the same subject sent. The rollback
       /// has an authorizer of its own, as its content is not the request's. A request with an authorizer needs a
       /// rollback with one, and a request without one a rollback without one.
-      public Builder<R> authorizer(BiFunction<HttpRequestMessage, R, Authorization> authorizer) {
+      public Builder<R> authorizer(BiFunction<HttpRequest<byte[]>, R, Authorization> authorizer) {
         this.authorizer = Objects.requireNonNull(authorizer);
         return this;
       }
@@ -316,7 +316,7 @@ public final class HttpInboxRequest<T> implements EntityModel {
       /// rejected with 400 Bad Request. Without a normalizer, rollbacks are compared as they are, headers and content
       /// included, so a retry must be sent as it was. A normalizer which removes e.g. the date and tracing headers lets
       /// a retry differ in them, and one which keeps e.g. `X-Correlation-Id` tells a second rollback by it.
-      public Builder<R> normalizer(Function<HttpRequestMessage, HttpRequestMessage> normalizer) {
+      public Builder<R> normalizer(Function<HttpRequest<byte[]>, HttpRequest<byte[]>> normalizer) {
         this.normalizer = Objects.requireNonNull(normalizer);
         return this;
       }
@@ -328,14 +328,14 @@ public final class HttpInboxRequest<T> implements EntityModel {
   /// The step introducing the type of the body of the request
   public static final class ContentStep {
 
-    private final Predicate<HttpRequestMessage> matcher;
+    private final Predicate<HttpRequest<byte[]>> matcher;
 
-    private ContentStep(Predicate<HttpRequestMessage> matcher) {
+    private ContentStep(Predicate<HttpRequest<byte[]>> matcher) {
       this.matcher = matcher;
     }
 
     /// The body of a request is parsed by the parser, and the request is answered with 400 Bad Request if it is invalid
-    public <T> Builder<T> contentParser(Function<HttpRequestMessage, Validated<T>> contentParser) {
+    public <T> Builder<T> contentParser(Function<HttpRequest<byte[]>, Validated<T>> contentParser) {
       return new Builder<>(matcher, Objects.requireNonNull(contentParser));
     }
 
@@ -350,16 +350,16 @@ public final class HttpInboxRequest<T> implements EntityModel {
   /// needs `deduplicateOn` first, which gives a [DeduplicatedBuilder].
   public static sealed class Builder<T> permits DeduplicatedBuilder {
 
-    private final Predicate<HttpRequestMessage> matcher;
-    private final Function<HttpRequestMessage, Validated<T>> contentParser;
-    private BiFunction<HttpRequestMessage, T, Validated<String>> deduplicateOn;
-    private BiFunction<HttpRequestMessage, T, Authorization> authorizer;
+    private final Predicate<HttpRequest<byte[]>> matcher;
+    private final Function<HttpRequest<byte[]>, Validated<T>> contentParser;
+    private BiFunction<HttpRequest<byte[]>, T, Validated<String>> deduplicateOn;
+    private BiFunction<HttpRequest<byte[]>, T, Authorization> authorizer;
     private final List<Process<T, ?>> processes = new ArrayList<>();
-    private Function<HttpRequestMessage, HttpRequestMessage> normalizer = Function.identity();
+    private Function<HttpRequest<byte[]>, HttpRequest<byte[]>> normalizer = Function.identity();
     private final List<Response<?>> responses = new ArrayList<>();
     private Rollback<?> rollback;
 
-    private Builder(Predicate<HttpRequestMessage> matcher, Function<HttpRequestMessage, Validated<T>> contentParser) {
+    private Builder(Predicate<HttpRequest<byte[]>> matcher, Function<HttpRequest<byte[]>, Validated<T>> contentParser) {
       this.matcher = matcher;
       this.contentParser = contentParser;
     }
@@ -377,13 +377,13 @@ public final class HttpInboxRequest<T> implements EntityModel {
     /// The message id of a request, e.g. from its path, by which a retried request is recognised and gets the response
     /// of the first one, and by which a request is rolled back. Without it, requests are not deduplicated: each one is
     /// dispatched to the application, and the request can't be rolled back.
-    public DeduplicatedBuilder<T> deduplicateOn(BiFunction<HttpRequestMessage, T, Validated<String>> deduplicateOn) {
+    public DeduplicatedBuilder<T> deduplicateOn(BiFunction<HttpRequest<byte[]>, T, Validated<String>> deduplicateOn) {
       return new DeduplicatedBuilder<>(this, Objects.requireNonNull(deduplicateOn));
     }
 
     /// Authorizes a request, e.g. with [HttpInbox#bearerToken(AccessTokenVerifier, String...)]. A refused request is
     /// answered as the [Authorization.Refused] says.
-    public Builder<T> authorizer(BiFunction<HttpRequestMessage, T, Authorization> authorizer) {
+    public Builder<T> authorizer(BiFunction<HttpRequest<byte[]>, T, Authorization> authorizer) {
       this.authorizer = authorizer;
       return this;
     }
@@ -399,7 +399,7 @@ public final class HttpInboxRequest<T> implements EntityModel {
         EventType<U, ?> eventType,
         EntityModel entityModel,
         Function<RoutedRequest<T>, U> input,
-        BiFunction<HttpRequestMessage, T, ? extends Validated<? extends EntitySelector>> selector
+        BiFunction<HttpRequest<byte[]>, T, ? extends Validated<? extends EntitySelector>> selector
     ) {
       return addProcess(null, eventType, entityModel, input, selector);
     }
@@ -418,7 +418,7 @@ public final class HttpInboxRequest<T> implements EntityModel {
         EventType<U, ?> eventType,
         EntityModel entityModel,
         Function<RoutedRequest<T>, U> input,
-        BiFunction<HttpRequestMessage, T, ? extends Validated<? extends EntitySelector>> selector
+        BiFunction<HttpRequest<byte[]>, T, ? extends Validated<? extends EntitySelector>> selector
     ) {
       return addProcess(Objects.requireNonNull(content), eventType, entityModel, input, selector);
     }
@@ -432,7 +432,7 @@ public final class HttpInboxRequest<T> implements EntityModel {
     public Builder<T> process(
         EventType<Void, ?> eventType,
         EntityModel entityModel,
-        BiFunction<HttpRequestMessage, T, ? extends Validated<? extends EntitySelector>> selector
+        BiFunction<HttpRequest<byte[]>, T, ? extends Validated<? extends EntitySelector>> selector
     ) {
       return addProcess(null, eventType, entityModel, _ -> null, selector);
     }
@@ -448,7 +448,7 @@ public final class HttpInboxRequest<T> implements EntityModel {
         Content<T> content,
         EventType<Void, ?> eventType,
         EntityModel entityModel,
-        BiFunction<HttpRequestMessage, T, ? extends Validated<? extends EntitySelector>> selector
+        BiFunction<HttpRequest<byte[]>, T, ? extends Validated<? extends EntitySelector>> selector
     ) {
       return addProcess(Objects.requireNonNull(content), eventType, entityModel, _ -> null, selector);
     }
@@ -458,7 +458,7 @@ public final class HttpInboxRequest<T> implements EntityModel {
         EventType<U, ?> eventType,
         EntityModel entityModel,
         Function<RoutedRequest<T>, U> input,
-        BiFunction<HttpRequestMessage, T, ? extends Validated<? extends EntitySelector>> selector
+        BiFunction<HttpRequest<byte[]>, T, ? extends Validated<? extends EntitySelector>> selector
     ) {
       processes.add(new Process<>(
           content,
@@ -474,7 +474,7 @@ public final class HttpInboxRequest<T> implements EntityModel {
     /// message creator from the data of the event the application triggers on the request
     public <I> Builder<T> response(
         ResponseEventType<I> eventType,
-        Function<TransitionContext<I>, HttpResponseMessage> messageCreator
+        Function<TransitionContext<I>, HttpResponse<byte[]>> messageCreator
     ) {
       responses.add(new Response<>(Objects.requireNonNull(eventType), Objects.requireNonNull(messageCreator)));
       return this;
@@ -482,7 +482,7 @@ public final class HttpInboxRequest<T> implements EntityModel {
 
     /// Normalizes a request before it is compared with the first request with the same message id, so that a retried
     /// request is recognised as one even if it differs in e.g. headers
-    public Builder<T> normalizer(Function<HttpRequestMessage, HttpRequestMessage> normalizer) {
+    public Builder<T> normalizer(Function<HttpRequest<byte[]>, HttpRequest<byte[]>> normalizer) {
       this.normalizer = Objects.requireNonNull(normalizer);
       return this;
     }
@@ -496,19 +496,19 @@ public final class HttpInboxRequest<T> implements EntityModel {
   /// Builds an inbox request with `deduplicateOn`, which can be rolled back by its message id
   public static final class DeduplicatedBuilder<T> extends Builder<T> {
 
-    private DeduplicatedBuilder(Builder<T> builder, BiFunction<HttpRequestMessage, T, Validated<String>> deduplicateOn) {
+    private DeduplicatedBuilder(Builder<T> builder, BiFunction<HttpRequest<byte[]>, T, Validated<String>> deduplicateOn) {
       super(builder);
       ((Builder<T>) this).deduplicateOn = deduplicateOn;
     }
 
     @Override
-    public DeduplicatedBuilder<T> deduplicateOn(BiFunction<HttpRequestMessage, T, Validated<String>> deduplicateOn) {
+    public DeduplicatedBuilder<T> deduplicateOn(BiFunction<HttpRequest<byte[]>, T, Validated<String>> deduplicateOn) {
       ((Builder<T>) this).deduplicateOn = Objects.requireNonNull(deduplicateOn);
       return this;
     }
 
     @Override
-    public DeduplicatedBuilder<T> authorizer(BiFunction<HttpRequestMessage, T, Authorization> authorizer) {
+    public DeduplicatedBuilder<T> authorizer(BiFunction<HttpRequest<byte[]>, T, Authorization> authorizer) {
       super.authorizer(authorizer);
       return this;
     }
@@ -518,7 +518,7 @@ public final class HttpInboxRequest<T> implements EntityModel {
         EventType<U, ?> eventType,
         EntityModel entityModel,
         Function<RoutedRequest<T>, U> input,
-        BiFunction<HttpRequestMessage, T, ? extends Validated<? extends EntitySelector>> selector
+        BiFunction<HttpRequest<byte[]>, T, ? extends Validated<? extends EntitySelector>> selector
     ) {
       super.process(eventType, entityModel, input, selector);
       return this;
@@ -530,7 +530,7 @@ public final class HttpInboxRequest<T> implements EntityModel {
         EventType<U, ?> eventType,
         EntityModel entityModel,
         Function<RoutedRequest<T>, U> input,
-        BiFunction<HttpRequestMessage, T, ? extends Validated<? extends EntitySelector>> selector
+        BiFunction<HttpRequest<byte[]>, T, ? extends Validated<? extends EntitySelector>> selector
     ) {
       super.process(content, eventType, entityModel, input, selector);
       return this;
@@ -540,7 +540,7 @@ public final class HttpInboxRequest<T> implements EntityModel {
     public DeduplicatedBuilder<T> process(
         EventType<Void, ?> eventType,
         EntityModel entityModel,
-        BiFunction<HttpRequestMessage, T, ? extends Validated<? extends EntitySelector>> selector
+        BiFunction<HttpRequest<byte[]>, T, ? extends Validated<? extends EntitySelector>> selector
     ) {
       super.process(eventType, entityModel, selector);
       return this;
@@ -551,7 +551,7 @@ public final class HttpInboxRequest<T> implements EntityModel {
         Content<T> content,
         EventType<Void, ?> eventType,
         EntityModel entityModel,
-        BiFunction<HttpRequestMessage, T, ? extends Validated<? extends EntitySelector>> selector
+        BiFunction<HttpRequest<byte[]>, T, ? extends Validated<? extends EntitySelector>> selector
     ) {
       super.process(content, eventType, entityModel, selector);
       return this;
@@ -560,14 +560,14 @@ public final class HttpInboxRequest<T> implements EntityModel {
     @Override
     public <I> DeduplicatedBuilder<T> response(
         ResponseEventType<I> eventType,
-        Function<TransitionContext<I>, HttpResponseMessage> messageCreator
+        Function<TransitionContext<I>, HttpResponse<byte[]>> messageCreator
     ) {
       super.response(eventType, messageCreator);
       return this;
     }
 
     @Override
-    public DeduplicatedBuilder<T> normalizer(Function<HttpRequestMessage, HttpRequestMessage> normalizer) {
+    public DeduplicatedBuilder<T> normalizer(Function<HttpRequest<byte[]>, HttpRequest<byte[]>> normalizer) {
       super.normalizer(normalizer);
       return this;
     }
@@ -605,13 +605,13 @@ public final class HttpInboxRequest<T> implements EntityModel {
   }
 
   /// A new entity for every request
-  public static <T> BiFunction<HttpRequestMessage, T, Validated<EntitySelector>> newEntity() {
+  public static <T> BiFunction<HttpRequest<byte[]>, T, Validated<EntitySelector>> newEntity() {
     return (_, _) -> valid(EntitySelector.newEntity());
   }
 
   /// The existing entity with the id in the request line. An entity can't be created with an id from a request, as
   /// it would not be time-ordered.
-  public static <T> BiFunction<HttpRequestMessage, T, Validated<EntitySelector>> parseEntityId(
+  public static <T> BiFunction<HttpRequest<byte[]>, T, Validated<EntitySelector>> parseEntityId(
       String requestLinePattern,
       int captureGroup
   ) {
@@ -620,7 +620,7 @@ public final class HttpInboxRequest<T> implements EntityModel {
 
   /// The existing entity with the id in the request line. An entity can't be created with an id from a request, as
   /// it would not be time-ordered.
-  public static <T> BiFunction<HttpRequestMessage, T, Validated<EntitySelector>> parseEntityId(
+  public static <T> BiFunction<HttpRequest<byte[]>, T, Validated<EntitySelector>> parseEntityId(
       Pattern requestLinePattern,
       int captureGroup
   ) {
@@ -638,7 +638,7 @@ public final class HttpInboxRequest<T> implements EntityModel {
   }
 
   /// The message id in the request line
-  public static <T> BiFunction<HttpRequestMessage, T, Validated<String>> parseMessageId(
+  public static <T> BiFunction<HttpRequest<byte[]>, T, Validated<String>> parseMessageId(
       String requestLinePattern,
       int captureGroup
   ) {
@@ -646,7 +646,7 @@ public final class HttpInboxRequest<T> implements EntityModel {
   }
 
   /// The message id in the request line
-  public static <T> BiFunction<HttpRequestMessage, T, Validated<String>> parseMessageId(
+  public static <T> BiFunction<HttpRequest<byte[]>, T, Validated<String>> parseMessageId(
       Pattern requestLinePattern,
       int captureGroup
   ) {
