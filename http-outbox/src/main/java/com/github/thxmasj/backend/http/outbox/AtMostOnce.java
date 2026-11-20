@@ -562,7 +562,7 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
   /// A copy of this outbox request, with the same name and id, whose transitions roll the request back with the
   /// rollback request message created by the given rollback message creator, from the data the rollback is dispatched
   /// with (of type `RI`) and the request being rolled back, and the context of the process rolling the request back.
-  /// The copy is the entity model to give the state machine and to trigger requests on, instead of this.
+  /// Requests are triggered on the copy instead of this, so it is the one the state machine runs.
   public <RI> AtMostOnce<RQ, RRQ> withRollback(
       BiFunction<DispatchContext, Tuple2<RI, TypedHttpRequest<RQ>>, Mono<TypedHttpRequest<RRQ>>> rollbackMessageCreator
   ) {

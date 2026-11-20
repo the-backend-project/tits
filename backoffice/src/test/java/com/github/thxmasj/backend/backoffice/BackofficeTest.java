@@ -84,7 +84,7 @@ public class BackofficeTest {
 
   @BeforeAll
   static void setUp() {
-    inbox = HttpInbox.of(List.of(PlaceOrder), List.of(Order, OrderNumbers));
+    inbox = HttpInbox.of(List.of(PlaceOrder));
     stateMachine = Init.stateMachine(schema, inbox.entityModels());
     BackofficeTest.application = new HttpInboxListener(stateMachine, inbox).listen(0);
     int port = freePort();

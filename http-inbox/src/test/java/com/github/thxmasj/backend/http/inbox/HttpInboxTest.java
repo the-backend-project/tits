@@ -25,7 +25,6 @@ import static com.github.thxmasj.backend.http.inbox.HttpInboxTest.States.Off;
 import static com.github.thxmasj.backend.http.inbox.HttpInboxTest.States.On;
 import static com.github.thxmasj.backend.http.inbox.HttpInboxTest.States.Processing;
 import static com.github.thxmasj.backend.http.inbox.HttpInboxTest.States.Unreachable;
-import static com.github.thxmasj.backend.http.outbox.HttpOutboxRequest.Index;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
@@ -63,7 +62,6 @@ import com.github.thxmasj.backend.core.test.Init;
 import com.github.thxmasj.backend.diagram.PlantUMLFormatter;
 import com.github.thxmasj.backend.http.inbox.HttpInbox.RoutedRequest;
 import com.github.thxmasj.backend.http.inbox.HttpInboxRequest.Rollback;
-import com.github.thxmasj.backend.http.outbox.AtMostOnce;
 import com.github.thxmasj.backend.http.outbox.HttpOutboxRequest;
 import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.jwk.JWKSet;
@@ -358,18 +356,10 @@ public class HttpInboxTest {
           .build("CancelRequest", UUID.fromString("f5ef4720-c6bc-4686-be8b-85eeb0fdc372"))
   );
 
-  private static StateMachine createStateMachine(List<HttpInboxRequest<?>> requests, List<HttpOutboxRequest<?>> outboxes) {
-    var entityModels = new ArrayList<EntityModel>(List.of(Lamp, Index));
-    for (var outbox : outboxes) {
-      entityModels.add(outbox);
-      if (outbox instanceof AtMostOnce<?, ?> amo) {
-        if (amo.rollbackOnAcceptedModel() != null)
-          entityModels.add(amo.rollbackOnAcceptedModel());
-        if (amo.rollbackOnUnknownModel() != null)
-          entityModels.add(amo.rollbackOnUnknownModel());
-      }
-    }
-    inbox = HttpInbox.of(requests, entityModels);
+  /// A state machine of the inbox, which also runs the lamps the requests trigger events on, and the outbox requests
+  /// the lamps send, with their rollback models
+  private static StateMachine createStateMachine(List<HttpInboxRequest<?>> requests) {
+    inbox = HttpInbox.of(requests);
     return Init.stateMachine(schema, inbox.entityModels());
   }
 
@@ -439,7 +429,7 @@ public class HttpInboxTest {
         .isAttemptAvailable(c -> Duration.between(c.enqueueTime(), c.now()).compareTo(Duration.ofHours(5)) < 0)
         .backoffAlgorithm(c -> new DelaySpecification(Duration.ofSeconds(10), Duration.ofMinutes(10), Duration.ofHours(5), 1.5).calculateDelay(c.attemptNumber()))
         .build("Process3Outbox", UUID.fromString("2e86f07c-50ed-4922-9839-54dca94be4b6"));
-    stateMachine = createStateMachine(requests, List.of(Process0Outbox, Process3Outbox));
+    stateMachine = createStateMachine(requests);
   }
 
   @Test
@@ -876,7 +866,7 @@ public class HttpInboxTest {
   /// Another inbox of the same requests has a routing model of its own, which the state machine doesn't run
   @Test
   public void listenerOfAnotherInboxThanTheStateMachineIsRejected() {
-    var otherInbox = HttpInbox.of(requests, inbox.entityModels());
+    var otherInbox = HttpInbox.of(requests);
     assertThatThrownBy(() -> new HttpInboxListener(stateMachine, otherInbox))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("doesn't run the request routing of the inbox");
@@ -893,7 +883,7 @@ public class HttpInboxTest {
   /// types triggered on the group
   @Test
   public void eventTypesAreRegisteredForInboxRequestsNotForTheGroup() {
-    var eventTypes = EventTypes.eventTypesByEntityModel(HttpInbox.of(requests, List.of(Lamp)).entityModels());
+    var eventTypes = EventTypes.eventTypesByEntityModel(stateMachine.entityModels());
     assertFalse(eventTypes.containsKey(Request));
     for (HttpInboxRequest<?> request : requests)
       assertThat(eventTypes.get(request)).contains(RequestCompleted, FailedRequestCompleted, InvalidRequestCompleted);
@@ -1151,7 +1141,7 @@ public class HttpInboxTest {
   public void responseGivenByProcessMustBeTakenByTheRequest() {
     var bell = bell(false);
     var request = bellRequest(bell).build("BellRequest", UUID.randomUUID());
-    assertThatThrownBy(() -> HttpInbox.of(List.of(request), List.of(bell)))
+    assertThatThrownBy(() -> HttpInbox.of(List.of(request)))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("The inbox request BellRequest doesn't take the response Rang, which Bell rung on Bell triggers on Request");
   }
@@ -1160,7 +1150,7 @@ public class HttpInboxTest {
   public void responseGivenByEntityModelTheProcessTriggersMustBeTakenByTheRequest() {
     var bell = bell(true);
     var request = bellRequest(bell).build("BellRequest", UUID.randomUUID());
-    assertThatThrownBy(() -> HttpInbox.of(List.of(request), List.of(bell, Chime)))
+    assertThatThrownBy(() -> HttpInbox.of(List.of(request)))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("The inbox request BellRequest doesn't take the response Rang, which Chime rung on Chime triggers on Request");
   }
@@ -1173,7 +1163,7 @@ public class HttpInboxTest {
     var polish = HttpInboxRequest.matching(m -> m.requestLine().matches("PUT /bell/polish")).noContent()
         .process(BellPolished, bell, newEntity())
         .build("PolishRequest", UUID.randomUUID());
-    assertThat(HttpInbox.of(List.of(polish, ring), List.of(bell, Chime)).entityModels()).contains(ring, polish, bell);
+    assertThat(HttpInbox.of(List.of(polish, ring)).requests()).containsExactly(polish, ring);
   }
 
   /// Ringing the bell later is in another session, which the check doesn't follow
@@ -1183,14 +1173,14 @@ public class HttpInboxTest {
     var schedule = HttpInboxRequest.matching(m -> m.requestLine().matches("PUT /bell/schedule")).noContent()
         .process(BellScheduled, bell, newEntity())
         .build("ScheduleRequest", UUID.randomUUID());
-    assertThat(HttpInbox.of(List.of(schedule), List.of(bell)).entityModels()).contains(schedule, bell);
+    assertThat(HttpInbox.of(List.of(schedule)).requests()).containsExactly(schedule);
   }
 
   @Test
   public void responseTakenByTheRequestPassesTheCheck() {
     var bell = bell(true);
     var request = bellRequest(bell).response(Rang, _ -> new HttpResponseMessage(200, "OK")).build("BellRequest", UUID.randomUUID());
-    assertThat(HttpInbox.of(List.of(request), List.of(bell, Chime)).entityModels()).contains(request, bell, Chime);
+    assertThat(HttpInbox.of(List.of(request)).requests()).containsExactly(request);
   }
 
   private HttpResponseMessage onOwnedRollback(String messageId, Map<String, String> headers) throws IOException {
@@ -1204,7 +1194,7 @@ public class HttpInboxTest {
 
   @Test
   public void formatModel() throws IOException {
-    System.out.println(new PlantUMLFormatter(HttpInbox.of(requests, List.of()).requestRouting()).formatToImage("/tmp"));
+    System.out.println(new PlantUMLFormatter(HttpInbox.of(requests).requestRouting()).formatToImage("/tmp"));
     System.out.println(new PlantUMLFormatter(InternalRequest).formatToImage("/tmp"));
   }
 

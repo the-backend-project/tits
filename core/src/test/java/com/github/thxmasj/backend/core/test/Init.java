@@ -65,7 +65,7 @@ public class Init {
 
   /// The storage of a schema in the test database
   public static Storage storage(String schemaName, List<? extends EntityModel> entityModels) {
-    return StorageProvider.storage(database, client, EntityModels.validated(entityModels), schemaName, Clock.systemUTC());
+    return StorageProvider.storage(database, client, EntityModels.resolve(entityModels), schemaName, Clock.systemUTC());
   }
 
   public static StateMachine stateMachine(

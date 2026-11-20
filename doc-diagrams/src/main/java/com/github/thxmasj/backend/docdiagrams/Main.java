@@ -56,7 +56,7 @@ public class Main {
     stateDiagram(name + ".EnrolmentResultReceived", enrolmentResult);
     var withRollback = DocExamples.PlaceOrderWithRollback;
     stateDiagram(name + ".PlaceOrderWithRollback", withRollback);
-    stateDiagram(name + ".RequestRouting", HttpInbox.of(List.of(withRollback), List.of()).requestRouting());
+    stateDiagram(name + ".RequestRouting", HttpInbox.of(List.of(withRollback)).requestRouting());
     stateDiagram(MessageIds);
     graphviz("http-inbox-rollback.dot", name + ".Rollback");
   }

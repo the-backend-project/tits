@@ -61,7 +61,8 @@ public class TestApi {
 
   /// The database is the one behind the data source (see [Database#of(DataSource)])
   ///
-  /// @param entityModels the entity models of the state machine, whose transitions give the event types
+  /// @param entityModels the entity models given to the state machine, which with those their transitions trigger
+  ///                     events on give the entity models and event types
   public TestApi(
       DataSource dataSource,
       String schemaName,
@@ -73,7 +74,8 @@ public class TestApi {
   }
 
   /// @param client a client of the database
-  /// @param entityModels the entity models of the state machine, whose transitions give the event types
+  /// @param entityModels the entity models given to the state machine, which with those their transitions trigger
+  ///                     events on give the entity models and event types
   public TestApi(
       Database database,
       DatabaseClient client,
@@ -84,7 +86,7 @@ public class TestApi {
     this.client = client;
     this.schema = schemaName;
     this.clock = clock;
-    List<EntityModel> models = EntityModels.validated(entityModels);
+    List<EntityModel> models = EntityModels.resolve(entityModels);
     this.entityModels = models.stream().collect(toMap(EntityModel::id, identity()));
     this.eventTypesByEntityModel = EventTypes.eventTypesByEntityModel(models);
     List<EventType<?, ?>> eventTypes = EventTypes.eventTypes(models);

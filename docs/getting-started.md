@@ -126,17 +126,19 @@ The diagram of `Greeting`, drawn from these transitions:
 
 [Open the Greeting diagram in full size](images/com.github.thxmasj.backend.helloworld.Greeting.svg)
 
-The inbox of the application is created from its inbox requests and its entity models. It asks for the transitions
-of the models to check the responses, so it is declared after the models and everything their transitions refer to:
+The inbox of the application is created from its inbox requests:
 
 ```java
-HttpInbox Inbox = HttpInbox.of(List.of(GreetingRequest), List.of(Greeting));
+HttpInbox Inbox = HttpInbox.of(List.of(GreetingRequest));
 ```
 
-Its `entityModels()` are those of the application with the inbox's own: the inbox requests, `RequestRouting`, which
-routes a request to the inbox request matching it, `MessageIds` and `RequestIndex`, which indexes the requests by the
-entities they were processed on. `HttpInbox.of` also checks that the inbox request takes the response the greeting
-gives, `GreetingResponseCreated`. All of it is in `Greetings.java` in the demo.
+Its `entityModels()` are the inbox's own: the inbox requests, `RequestRouting`, which routes a request to the inbox
+request matching it, `MessageIds` and `RequestIndex`, which indexes the requests by the entities they were processed
+on. The state machine is given them, and also runs the models their transitions trigger events on, here `Greeting`,
+and so on, so the models of the application are found from the inbox. `HttpInbox.of` also checks that the inbox
+request takes the response the greeting gives, `GreetingResponseCreated`. It asks for the transitions of the models to
+do so, so the inbox is declared after the models and everything their transitions refer to. All of it is in
+`Greetings.java` in the demo.
 
 ## Running it
 

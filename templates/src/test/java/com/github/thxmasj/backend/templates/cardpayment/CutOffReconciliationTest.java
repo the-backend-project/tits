@@ -248,7 +248,7 @@ public class CutOffReconciliationTest {
             .process(SettlementEvent.CutOffRequested, cardPayments.settlement(), _ -> cutOff, (_, _) -> new Valid<>(idEvent(BatchNumberClaimed, new BatchNumber(merchantId, 1))))
             .build("CutOffRequest", UUID.fromString("c3b0b8a0-6b0f-4a35-9d57-0a5f0f0e0003"))
     );
-    var inbox = HttpInbox.of(requests, cardPayments.entityModels());
+    var inbox = HttpInbox.of(requests);
 
     return new Application(
         new StateMachine(

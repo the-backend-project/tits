@@ -42,7 +42,6 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -342,10 +341,8 @@ final class Sessions {
         .process(ResourceRequested, resource, r -> r.body(), HttpInboxRequest.newEntity())
         .response(ReplyCreated, c -> response(c.input(), c.correlationId()))
         .build("BackofficeResourceRequest", UUID.fromString("9d4f1b7e-2c6a-4e83-a5b9-0e7c3f8d1a26"));
-    var entityModels = new ArrayList<EntityModel>(List.of(session, Tokens, resource, HttpOutboxRequest.Index));
-    entityModels.addAll(tokenRequests.entityModels());
     // In the order they are matched in, as the first matching one takes a request
-    this.inbox = HttpInbox.of(List.of(callbackRequest, signOutRequest, viewRequest, resourceRequest), entityModels);
+    this.inbox = HttpInbox.of(List.of(callbackRequest, signOutRequest, viewRequest, resourceRequest));
   }
 
   /// The model of the sessions
@@ -353,8 +350,8 @@ final class Sessions {
     return session;
   }
 
-  /// The inbox of the backoffice's state machine, whose entity models are those of the sessions, their tokens and
-  /// token requests, the other requests, and the inbox itself
+  /// The inbox of the backoffice's state machine, whose requests trigger events on the sessions and the other requests,
+  /// which in turn trigger events on the tokens and the token requests
   HttpInbox inbox() {
     return inbox;
   }

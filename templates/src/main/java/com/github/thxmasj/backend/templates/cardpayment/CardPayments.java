@@ -12,7 +12,6 @@ import com.github.thxmasj.backend.core.Tuples.Tuple7;
 import com.github.thxmasj.backend.core.Tuples.Tuple8;
 import com.github.thxmasj.backend.http.outbox.Dispatcher;
 import com.github.thxmasj.backend.http.outbox.DispatcherWithRollback;
-import com.github.thxmasj.backend.http.outbox.HttpOutboxRequest;
 import com.github.thxmasj.backend.templates.cardpayment.AcquirerResponse.ReconciliationValues;
 import com.github.thxmasj.backend.templates.cardpayment.AuthenticationDataCreator.AuthenticationData;
 import com.github.thxmasj.backend.templates.cardpayment.PaymentEvent.AuthenticationResult;
@@ -24,7 +23,6 @@ import com.github.thxmasj.backend.templates.cardpayment.PaymentEvent.PaymentToke
 import com.github.thxmasj.backend.templates.cardpayment.PaymentEvent.Refund;
 import com.github.thxmasj.backend.templates.cardpayment.PaymentEvent.ReversalData;
 import com.github.thxmasj.backend.templates.cardpayment.SettlementEvent.CutOff;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -140,13 +138,10 @@ public final class CardPayments {
     return settlementTransitions;
   }
 
-  /// The entity models to give the state machine, with those of an inbox: the merchants, payments and settlements,
-  /// their ids and indexes, and the outbox requests with their rollback models and index
+  /// The merchants, payments and settlements, to give the state machine if no inbox triggers events on them. The state
+  /// machine also runs the models they trigger events on, e.g. the outbox requests and the ids.
   public List<EntityModel> entityModels() {
-    var entityModels = new ArrayList<EntityModel>(List.of(merchant, payment, settlement, Identifiers.Ids, Identifiers.Index, HttpOutboxRequest.Index));
-    entityModels.addAll(paymentTransitions.outboxEntityModels());
-    entityModels.addAll(settlementTransitions.outboxEntityModels());
-    return List.copyOf(entityModels);
+    return List.of(merchant, payment, settlement);
   }
 
 }

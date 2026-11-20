@@ -165,11 +165,6 @@ public interface Clients {
     return null;
   }
 
-  /// The entity models, each with its transitions
-  static List<EntityModel> entityModels() {
-    return List.of(Client, ClientIds, ClientRegistration);
-  }
-
   private static Map<State, List<TransitionModel<?, ?>>> clientTransitions() {
     return Map.of(
         Begin, List.of(

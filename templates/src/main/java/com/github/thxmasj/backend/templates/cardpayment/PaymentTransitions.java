@@ -151,7 +151,6 @@ public class PaymentTransitions {
   private final EntityModel merchant;
   private final EntityModel settlement;
   private final List<EntityModel> outboxRequestModels;
-  private final List<EntityModel> outboxEntityModels;
 
   // To acquirer
   private final DispatcherWithRollback<Tuple4<Authorisation, Merchant, AuthenticationResult, PaymentToken>, ?, Tuple2<ReversalData, Merchant>> preauthorisation;
@@ -214,11 +213,6 @@ public class PaymentTransitions {
 
   public List<EntityModel> outboxRequestModels() {
     return outboxRequestModels;
-  }
-
-  /// The entity models of the outbox requests, including their rollback models
-  public List<EntityModel> outboxEntityModels() {
-    return outboxEntityModels;
   }
 
   /// The input types of the outbox requests are inferred from the dispatchers.
@@ -289,7 +283,6 @@ public class PaymentTransitions {
         declinedRefund
     );
     this.outboxRequestModels = dispatchers.stream().<EntityModel>map(Dispatcher::outbox).toList();
-    this.outboxEntityModels = entityModels(dispatchers);
 
     this.transitions = mergeModels(Map.of(
             Begin, List.of(
@@ -700,11 +693,6 @@ public class PaymentTransitions {
             declinedRefund
         )
     );
-  }
-
-  /// The entity models of the outbox requests of the dispatchers, including their rollback models
-  static List<EntityModel> entityModels(List<Dispatcher<?, ?>> dispatchers) {
-    return dispatchers.stream().flatMap(d -> d.entityModels().stream()).toList();
   }
 
   private static List<HttpOutboxRequest<?>> outboxes(Dispatcher<?, ?>... dispatchers) {

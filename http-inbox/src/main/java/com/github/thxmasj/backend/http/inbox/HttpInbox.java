@@ -24,11 +24,12 @@ import java.util.function.BiFunction;
 import java.util.function.Function;
 
 /// The HTTP inbox of an application: the [HttpInboxRequest]s it receives, and its `RequestRouting` entity model routing
-/// a received request to the inbox request matching it. The inbox is created from the requests and the entity models
-/// of the application with [#of(List, List)], and gives the entity models to create the state machine with:
+/// a received request to the inbox request matching it. The inbox is created from the requests with [#of(List)], and
+/// gives the entity models to create the state machine with. The state machine runs them with the entity models of the
+/// application the requests trigger events on, and so on:
 ///
 /// ```java
-/// HttpInbox inbox = HttpInbox.of(List.of(PlaceOrder), List.of(Orders));
+/// HttpInbox inbox = HttpInbox.of(List.of(PlaceOrder));
 /// StateMachine stateMachine = new StateMachine(inbox.entityModels(), dataSource, schemaName, true);
 /// DisposableServer server = new HttpInboxListener(stateMachine, inbox).listen(port);
 /// ```
@@ -206,8 +207,7 @@ public interface HttpInbox {
       ProcessReferenced
   );
 
-  /// The inbox of the requests, for an application with the entity models given, e.g. those of the processes the
-  /// requests trigger events on.
+  /// The inbox of the requests.
   ///
   /// Every inbox request is checked to take the responses its own processes may give. From the event of each process,
   /// the transitions taken on it in any state, with all the transitions they may choose, and the transitions of the
@@ -216,10 +216,9 @@ public interface HttpInbox {
   /// has a `response` for. Delayed and conditional triggers and actions, e.g. outbox requests, are not followed, as
   /// what they lead to is calculated later, so a response given that way is checked only when it is given.
   ///
-  /// @param application the entity models of the application, each with its transitions
   /// @throws IllegalArgumentException if an inbox request doesn't take a response its processes may give
-  static HttpInbox of(List<HttpInboxRequest<?>> requests, List<? extends EntityModel> application) {
-    return InboxModels.of(requests, application);
+  static HttpInbox of(List<HttpInboxRequest<?>> requests) {
+    return InboxModels.of(requests);
   }
 
   /// The entity model routing every request received to the inbox request matching it, one of [#RequestRouting]
@@ -228,8 +227,8 @@ public interface HttpInbox {
   /// The requests the inbox receives
   List<HttpInboxRequest<?>> requests();
 
-  /// The entity models to create the state machine with: those of the application, and the inbox's own, i.e.
-  /// [#requestRouting()], the inbox requests, [#MessageIds] and [#Index]
+  /// The entity models of the inbox, [#requestRouting()], the inbox requests, [#MessageIds] and [#Index], to create the
+  /// state machine with. It also runs the entity models of the application the inbox requests trigger events on.
   List<EntityModel> entityModels();
 
   /// Triggers a received request on a new entity of [#requestRouting()]

@@ -155,11 +155,6 @@ public interface Authorizations {
   );
   IdEntityModel Codes = IdEntityModel.of("Codes", UUID.fromString("a5b6d5e7-e5e9-4b16-9d7b-bd08c596bdd0"), CodeClaimed);
 
-  /// The entity models, each with its transitions
-  static List<EntityModel> entityModels() {
-    return List.of(Authorization, Codes);
-  }
-
   private static Map<State, List<TransitionModel<?, ?>>> authorizationTransitions() {
     return Map.of(
         Begin, List.of(

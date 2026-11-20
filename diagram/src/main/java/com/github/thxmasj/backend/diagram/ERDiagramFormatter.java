@@ -13,6 +13,7 @@ import com.github.thxmasj.backend.core.IdEntityModel;
 import com.github.thxmasj.backend.core.IndexEntityModel;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.TransitionModel;
+import com.github.thxmasj.backend.core.internal.EntityModels;
 import java.io.File;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -40,14 +41,15 @@ public class ERDiagramFormatter {
   private final boolean compact;
 
   /// @param name the name of the model, used for the names of the files the diagram is written to
-  /// @param entityModels the entity models given to the state machine
+  /// @param entityModels the entity models given to the state machine, which with those their transitions trigger events
+  ///                     on are the entities of the diagram
   public ERDiagramFormatter(String name, List<? extends EntityModel> entityModels) {
     this(name, transitions(entityModels), false);
   }
 
   private static Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions(List<? extends EntityModel> entityModels) {
     var transitions = new LinkedHashMap<EntityModel, Map<State, List<TransitionModel<?, ?>>>>();
-    entityModels.forEach(m -> transitions.put(m, m.transitions()));
+    EntityModels.resolve(entityModels).forEach(m -> transitions.put(m, m.transitions()));
     return transitions;
   }
 

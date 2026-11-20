@@ -47,12 +47,12 @@ public class EntityModelsTest {
 
   @Test
   public void modelGivenMoreThanOnceIsKeptOnce() {
-    assertThat(EntityModels.validated(List.of(Order, Order))).containsExactly(Order);
+    assertThat(EntityModels.resolve(List.of(Order, Order))).containsExactly(Order);
   }
 
   @Test
   public void groupIsRejected() {
-    assertThatThrownBy(() -> EntityModels.validated(List.of(Order, Orders)))
+    assertThatThrownBy(() -> EntityModels.resolve(List.of(Order, Orders)))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Entity model group Orders has no entities of its own");
   }
@@ -60,40 +60,37 @@ public class EntityModelsTest {
   @Test
   public void modelsWithTheSameIdAreRejected() {
     var copy = EntityModel.of("Copy", Order.id());
-    assertThatThrownBy(() -> EntityModels.validated(List.of(Order, copy)))
+    assertThatThrownBy(() -> EntityModels.resolve(List.of(Order, copy)))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessage("Entity models Order and Copy have the same id " + Order.id());
+        .hasMessageStartingWith("Entity models Order and Copy have the same id " + Order.id());
   }
 
+  /// The models triggered on directly, in a reversal or in a transition chosen are run, after the ones given
   @Test
-  public void triggersOnModelsGivenOrTheirGroupsPass() {
-    var process = process(Order, "trigger");
-    var toGroup = EntityModel.of("Responder", UUID.randomUUID(), () -> Map.of(Begin, List.of(
+  public void modelsTriggeredOnAreAdded() {
+    for (String how : List.of("trigger", "reversal", "choice")) {
+      var process = process(Order, how);
+      assertThat(EntityModels.resolve(List.of(process))).as(how).containsExactly(process, Order);
+    }
+  }
+
+  /// The models of a group are those run, so a group triggered on adds none
+  @Test
+  public void groupTriggeredOnIsNotAdded() {
+    var responder = EntityModel.of("Responder", UUID.randomUUID(), () -> Map.of(Begin, List.of(
         onEvent(Started).toSelf().trigger(Ordered).on(Orders).identifiedBy(entityIdFromSession()).output()
     )));
-    assertThat(EntityModels.validated(List.of(process, toGroup, Order))).containsExactly(process, toGroup, Order);
-  }
-
-  @Test
-  public void triggerOnModelNotGivenIsRejected() {
-    for (String how : List.of("trigger", "reversal", "choice"))
-      assertThatThrownBy(() -> EntityModels.validated(List.of(process(Order, how))))
-          .as(how)
-          .isInstanceOf(IllegalArgumentException.class)
-          .hasMessageContaining("triggers")
-          .hasMessageContaining("on Order, which is not one of the entity models given to the state machine")
-          .hasMessageNotContaining("Another entity model with its id");
+    assertThat(EntityModels.resolve(List.of(responder))).containsExactly(responder);
   }
 
   /// E.g. a trigger on an outbox request rather than on the copy of it its dispatcher has
   @Test
   public void triggerOnAnotherModelWithTheIdOfAModelGivenIsRejected() {
     var copy = EntityModel.of("Order", Order.id(), Order::transitions);
-    assertThatThrownBy(() -> EntityModels.validated(List.of(process(Order, "trigger"), copy)))
+    assertThatThrownBy(() -> EntityModels.resolve(List.of(copy, process(Order, "trigger"))))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessage("Started on Process triggers Ordered on Order, which is not one of the entity models given to the "
-            + "state machine. Another entity model with its id is, which the event is to be triggered on instead, e.g. "
-            + "the outbox() of the dispatcher of an outbox request");
+        .hasMessage("Entity models Order and Order have the same id " + Order.id() + ". If they are an outbox "
+            + "request and the outbox() of its dispatcher, trigger the requests on the outbox() of the dispatcher");
   }
 
 }

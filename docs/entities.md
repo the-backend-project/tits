@@ -29,12 +29,14 @@ They are first asked for by the state machine, or by `HttpInbox.of`, which check
 (see [HTTP inboxes](http-inbox.md)). Whatever the transitions refer to must be created by then, e.g. declared before an
 inbox created as a constant.
 
-The state machine is given the entity models it runs, and takes the transitions of each from the model. A model given
-more than once is run once. When the state machine is created, it checks that every model has an id of its own, and
-that the transitions trigger events only on the models it is given, or on a group of them. A model whose transitions
-depend on configuration, e.g. a lifetime, or the [outbox requests](http-outbox.md) it sends, is created from the
-configuration rather than declared as a constant. That instance is both the one given to the state machine and the one
-triggered on, so it is passed to the code triggering events on it, e.g. the inbox requests processing on it.
+The state machine takes the transitions of each entity model from the model. It is given the entity models nothing
+triggers events on, e.g. those of an [inbox](http-inbox.md), and runs them with the models their transitions trigger
+events on, and so on, each once. A group triggered on adds no models, as its models are those of the group which are
+run. When the state machine is created, it checks that every model it runs has an id of its own.
+
+A model whose transitions depend on configuration, e.g. a lifetime, or the [outbox requests](http-outbox.md) it sends,
+is created from the configuration rather than declared as a constant. That instance is the one triggered on, and
+thereby run, so it is passed to the code triggering events on it, e.g. the inbox requests processing on it.
 
 The entity an event is triggered on is selected by an `EntitySelector`: by its entity id, as a new entity, by an id it
 has, as the last one of a group it is indexed in, or as the last one referencing an id by an index event. The ids and

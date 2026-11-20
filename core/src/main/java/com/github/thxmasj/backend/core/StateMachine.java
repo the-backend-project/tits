@@ -132,10 +132,12 @@ public class StateMachine implements AutoCloseable {
   ///                request at an event. It is given a key `<correlation id>-<event type id>` of each new event, so an
   ///                event is identified by its [EventType#id()], which stays the same when the event type is renamed.
   ///                Null for no delay.
-  /// @param entityModels the entity models to run, each with its transitions. An [EntityModelGroup] is not one of
-  ///                     them, since it has no entities of its own. A model given more than once is run once.
-  /// @throws IllegalArgumentException if two entity models have the same id, or if a transition triggers an event on
-  ///                                  an entity model which is not given
+  /// @param entityModels the entity models to run, each with its transitions, of which the state machine also runs
+  ///                     the models the transitions trigger events on, and so on. It is enough to give the models
+  ///                     which nothing triggers events on, e.g. the entity models of an inbox (see
+  ///                     `HttpInbox#entityModels()`). An [EntityModelGroup] is not one of them, since it has no entities
+  ///                     of its own.
+  /// @throws IllegalArgumentException if two of the entity models have the same id
   /// @param client a client of the database, which is closed with the state machine
   /// @param schemaDataSource a data source of the database to create the schema with, or null if it is created
   ///                         elsewhere
@@ -151,7 +153,7 @@ public class StateMachine implements AutoCloseable {
       Listener listener,
       boolean withResolving
   ) {
-    List<EntityModel> models = EntityModels.validated(entityModels);
+    List<EntityModel> models = EntityModels.resolve(entityModels);
     this.entityModels = models;
     Debug.log("Supported entity models:\n" + models.stream().map(EntityModel::name).collect(joining("\n")));
     this.traversers = models.stream().collect(toMap(m -> m, m -> new Traverser(m.transitions())));
@@ -1165,7 +1167,7 @@ public class StateMachine implements AutoCloseable {
         );
   }
 
-  /// The entity models the state machine runs, each once
+  /// The entity models the state machine runs: those it was given, and those their transitions trigger events on
   public List<EntityModel> entityModels() {
     return entityModels;
   }

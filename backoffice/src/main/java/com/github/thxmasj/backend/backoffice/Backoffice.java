@@ -38,7 +38,8 @@ public final class Backoffice {
   /// @param config                 how the users sign in
   /// @param client                 a client of the database, whose role may read the schema of the application
   /// @param applicationSchema      the schema of the application's state machine
-  /// @param applicationModels      the entity models of the application's state machine, whose transitions give the
+  /// @param applicationModels      the entity models given to the application's state machine, which with those their
+  ///                               transitions trigger events on give the entity models and
   ///                               event types of the entities read
   public Backoffice(
       String service,
@@ -75,8 +76,8 @@ public final class Backoffice {
     ));
   }
 
-  /// The inbox of the backoffice's state machine, whose entity models are those of its sessions, its other requests
-  /// and the inbox itself, see [HttpInbox#entityModels()]
+  /// The inbox of the backoffice's state machine, whose entity models the state machine is created with. Its requests
+  /// trigger events on the sessions and the other requests, which the state machine thereby runs too.
   public HttpInbox inbox() {
     return sessions.inbox();
   }

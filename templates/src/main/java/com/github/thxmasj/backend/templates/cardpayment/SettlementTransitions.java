@@ -79,7 +79,6 @@ public class SettlementTransitions {
   private final EntityModel merchant;
   private final EntityModel settlement;
   private final List<EntityModel> outboxRequestModels;
-  private final List<EntityModel> outboxEntityModels;
   private final Dispatcher<Tuple3<BatchNumber, AcquirerBatchNumber, Merchant>, ?> reconciliation;
   private final Dispatcher<Tuple2<CutOff, ReconciliationValues>, ?> approvedCutOff;
 
@@ -97,11 +96,6 @@ public class SettlementTransitions {
 
   public List<EntityModel> outboxRequestModels() {
     return outboxRequestModels;
-  }
-
-  /// The entity models of the outbox requests
-  public List<EntityModel> outboxEntityModels() {
-    return outboxEntityModels;
   }
 
   /// The input types of the outbox requests are inferred from the dispatchers.
@@ -123,7 +117,6 @@ public class SettlementTransitions {
         reconciliationToAcquirer.outbox(),
         approvedCutOffToMerchant.outbox()
     );
-    this.outboxEntityModels = PaymentTransitions.entityModels(List.of(reconciliationToAcquirer, approvedCutOffToMerchant));
 
     this.transitions = Map.of(
         Begin, List.of(

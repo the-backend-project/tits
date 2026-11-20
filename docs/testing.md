@@ -36,8 +36,8 @@ Depend on the module in test scope only:
 ```
 
 Create a `TestApi` with a data source for the application's database, the schema name, and the same entity models as
-the state machine is given. Their transitions tell the test API the event types, so it can return the events with
-their data unmarshalled, for any entity model.
+the state machine is given. They and the models their transitions trigger events on tell the test API the entity
+models and event types, so it can return the events with their data unmarshalled, for any entity model.
 
 ```java
 var api = new TestApi(dataSource, "Payments", entityModels, Clock.systemUTC());

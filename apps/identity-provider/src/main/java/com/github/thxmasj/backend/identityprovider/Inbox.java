@@ -165,16 +165,12 @@ public interface Inbox {
     );
   }
 
-  /// The inbox of the identity provider, with the entity models of the clients, the token requests, whose tokens live
-  /// as long as the token lifetime, and the authorizations
+  /// The inbox of the identity provider, whose requests trigger events on the clients, the token requests, whose tokens
+  /// live as long as the token lifetime, and the authorizations
   static HttpInbox inbox(Duration tokenLifetime) {
     EntityModel tokenRequest = Tokens.tokenRequest(tokenLifetime);
-    var application = new ArrayList<EntityModel>();
-    application.addAll(Clients.entityModels());
-    application.add(tokenRequest);
-    application.addAll(Authorizations.entityModels());
     // In the order they are matched in, as the first matching one takes a request
-    List<HttpInboxRequest<?>> requests = List.of(
+    return HttpInbox.of(List.of(
         codeHttpRequest(tokenRequest),
         tokenHttpRequest(tokenRequest),
         RegistrationHttpRequest,
@@ -182,8 +178,7 @@ public interface Inbox {
         SignInHttpRequest,
         SignInFailureHttpRequest,
         userInfoHttpRequest(tokenRequest)
-    );
-    return HttpInbox.of(requests, application);
+    ));
   }
 
   /// The form is validated by the edge, which also authenticates the client

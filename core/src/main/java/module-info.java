@@ -27,6 +27,7 @@ module com.github.thxmasj.backend.core {
       com.github.thxmasj.backend.backoffice,
       com.github.thxmasj.backend.database.mssql,
       com.github.thxmasj.backend.database.pgsql.jdbc,
+      com.github.thxmasj.backend.diagram,
       com.github.thxmasj.backend.http.inbox,
       com.github.thxmasj.backend.http.outbox,
       com.github.thxmasj.backend.testapi;

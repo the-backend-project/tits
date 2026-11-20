@@ -31,18 +31,19 @@ HttpInboxRequest<Order> PlaceOrder = HttpInboxRequest
 | `normalizer`      | No       | Normalizes a request before it is compared with an earlier request with the same message id       |
 | `rollback`        | No       | Requests rolling back a request by its message id, with an authorizer of their own if the request has one. Needs `deduplicateOn`, see [rollback](#rollback) |
 
-`HttpInbox.of(requests, application)` creates the inbox of the requests, for an application with the given entity
-models. Its `entityModels()` are the entity models to create the state machine with: those of the application, and the
-inbox requests, `RequestRouting`, `MessageIds` and `Index`. The listener is given the inbox too:
+`HttpInbox.of(requests)` creates the inbox of the requests. Its `entityModels()` are the inbox's own, the inbox
+requests, `RequestRouting`, `MessageIds` and `Index`, to create the state machine with. The state machine also runs the
+entity models their transitions trigger events on, i.e. the models of the application the requests are processed on,
+and in turn the models those trigger events on, e.g. outbox requests. The listener is given the inbox too:
 
 ```java
-HttpInbox inbox = HttpInbox.of(List.of(PlaceOrder), List.of(Orders));
+HttpInbox inbox = HttpInbox.of(List.of(PlaceOrder));
 StateMachine stateMachine = new StateMachine(inbox.entityModels(), dataSource, schemaName, true);
 DisposableServer server = new HttpInboxListener(stateMachine, inbox).listen(port);
 ```
 
 An inbox request declares the custom responses its own processes give, and no others. `HttpInbox.of` checks this per
-request. It starts from the event of each process on its entity model, and follows:
+request. It starts from the event of each process on its entity model, and follows, through the models triggered on:
 
 - the transitions taken on that event, in any state, with every transition they may choose, as which one is taken is
   decided at runtime;
@@ -235,7 +236,7 @@ An accepted request is indexed by the entity of the application its event was tr
 index event `Process referenced` of the index entity model `RequestIndex`, `HttpInbox.Index`, with the entity id of the
 application's entity as key. The inbox requests of an entity are thereby found by its entity id, as its
 [outbox requests](http-outbox.md) are by the `Process referenced` of the outbox, e.g. by the
-[backoffice](backoffice.md). `HttpInbox.of` adds `Index` to the entity models along with `MessageIds`.
+[backoffice](backoffice.md). `Index` is one of the entity models of the inbox, along with `MessageIds`.
 
 ## Access tokens
 

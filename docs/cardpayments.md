@@ -18,4 +18,5 @@ The template is created as a `CardPayments`, which creates the entity models of 
 settlements together, as they trigger events on each other. The outbox requests of a payment or a settlement send
 their outcomes back to it, so each dispatcher is given as a factory of the model it is dispatched from, which the
 outbox request is built with as its process model, e.g. `payment -> AtMostOnceDispatcher.of(authentication(payment),
-...)`. Its `entityModels()` are those to give the state machine, with the ones of an [inbox](http-inbox.md).
+...)`. The state machine runs its models when an [inbox](http-inbox.md) given to it triggers events on them, and
+the outbox requests and ids they trigger events on.

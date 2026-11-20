@@ -18,7 +18,7 @@ import reactor.core.publisher.Mono;
 /// transition of the outbox request, the rollback message creator is part of the transitions of the outbox request.
 /// The outbox request of the dispatcher, see [#outbox()], is therefore a copy of the one it is created with, with the
 /// rollback message creator (see [AtMostOnce#withRollback(BiFunction)]). Requests are triggered on that copy, and it
-/// is the one given to the state machine, with [#entityModels()].
+/// is the one the state machine runs.
 public final class AtMostOnceWithRollbackDispatcher<X, RQ, Y> extends BaseDispatcher<X, TypedHttpRequest<RQ>>
     implements DispatcherWithRollback<X, TypedHttpRequest<RQ>, Y> {
 
@@ -29,7 +29,7 @@ public final class AtMostOnceWithRollbackDispatcher<X, RQ, Y> extends BaseDispat
       AtMostOnce<RQ, RRQ> outbox,
       BiFunction<DispatchContext, X, Mono<TypedHttpRequest<RQ>>> inputCreator
   ) {
-    super(outbox, outbox.requestDispatched(), inputCreator, withRollbackModels(outbox));
+    super(outbox, outbox.requestDispatched(), inputCreator);
     this.outbox = outbox;
   }
 

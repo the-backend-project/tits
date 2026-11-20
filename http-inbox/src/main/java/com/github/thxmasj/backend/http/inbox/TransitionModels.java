@@ -592,14 +592,13 @@ interface TransitionModels {
   /// session, are followed in the same way. Delayed and conditional triggers, and actions such as sending an outbox
   /// request, are not followed, as what they lead to is calculated later, so a response given that way is checked when
   /// it is given.
-  static void checkResponses(List<HttpInboxRequest<?>> requests, List<EntityModel> entityModels) {
-    Set<EntityModel> models = Set.copyOf(entityModels);
+  static void checkResponses(List<HttpInboxRequest<?>> requests) {
     for (HttpInboxRequest<?> request : requests) {
       Set<UUID> taken = request.transitions().get(Dispatched).stream()
           .map(transition -> transition.eventType().id())
           .collect(toSet());
       for (Process<?, ?> process : request.processes()) {
-        for (var given : responsesGiven(new Event(process.entityModel(), process.eventType()), models, request)) {
+        for (var given : responsesGiven(new Event(process.entityModel(), process.eventType()), request)) {
           if (!taken.contains(given.response().id()))
             throw new IllegalArgumentException(String.format(
                 "The inbox request %s doesn't take the response %s, which %s on %s triggers on %s, on the way from " +
@@ -633,7 +632,6 @@ interface TransitionModels {
   /// once, except on the inbox's own entity models
   private static List<Given> responsesGiven(
       Event start,
-      Set<EntityModel> models,
       HttpInboxRequest<?> request
   ) {
     var given = new ArrayList<Given>();
@@ -641,7 +639,7 @@ interface TransitionModels {
     var toVisit = new ArrayDeque<Event>(List.of(start));
     while (!toVisit.isEmpty()) {
       Event event = toVisit.removeFirst();
-      if (!visited.add(List.of(event.entityModel().id(), event.id())) || !models.contains(event.entityModel()))
+      if (!visited.add(List.of(event.entityModel().id(), event.id())) || event.entityModel() instanceof EntityModelGroup)
         continue;
       var taken = event.entityModel().transitions().values().stream()
           .flatMap(List::stream)

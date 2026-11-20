@@ -50,7 +50,7 @@ final class Graph {
   private final List<EventType<?, ?>> searchableIndexTypes;
 
   Graph(DatabaseClient client, String schema, List<? extends EntityModel> entityModels) {
-    List<EntityModel> models = EntityModels.validated(entityModels);
+    List<EntityModel> models = EntityModels.resolve(entityModels);
     this.client = client;
     this.schema = schema;
     this.entityModels = models.stream().collect(toMap(EntityModel::id, identity()));

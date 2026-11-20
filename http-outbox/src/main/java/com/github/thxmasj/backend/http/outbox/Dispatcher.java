@@ -1,8 +1,6 @@
 package com.github.thxmasj.backend.http.outbox;
 
-import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.EventType;
-import java.util.List;
 import reactor.core.publisher.Mono;
 
 /// Pairs an outbox request with the creator of its input (of type `I`), which creates it from data of type `X`, so
@@ -26,9 +24,5 @@ public sealed interface Dispatcher<X, I> permits AtLeastOnceDispatcher, BatchedA
   /// The input of the request dispatched event, created from the given data and context of the dispatching transition,
   /// both assembled in its assemble step.
   Mono<I> input(DispatchContext context, X data);
-
-  /// The entity models to give the state machine: the outbox request, its rollback models, if any, and the index of
-  /// the outbox requests, [HttpOutboxRequest#Index], which the requests are indexed in by the process dispatching them.
-  List<EntityModel> entityModels();
 
 }

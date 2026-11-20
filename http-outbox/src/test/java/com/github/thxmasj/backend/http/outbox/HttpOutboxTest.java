@@ -14,7 +14,6 @@ import static com.github.thxmasj.backend.core.message.http.HttpRequestMessage.Me
 import static com.github.thxmasj.backend.http.outbox.EventTypes.InvalidResponseReceived;
 import static com.github.thxmasj.backend.http.outbox.EventTypes.ResponseReceived;
 import static com.github.thxmasj.backend.http.outbox.EventTypes.TimeoutExpired;
-import static com.github.thxmasj.backend.http.outbox.HttpOutboxRequest.Index;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -86,11 +85,10 @@ public class HttpOutboxTest {
     server = Init.httpServer();
   }
 
-  /// A state machine of the process with the outbox requests
+  /// A state machine of the process with the outbox requests, which events are also triggered on directly by the tests
   private static StateMachine stateMachine(EntityModel process, List<? extends EntityModel> outboxes) {
     var entityModels = new ArrayList<EntityModel>(outboxes);
     entityModels.add(process);
-    entityModels.add(Index);
     return Init.stateMachine(entityModels);
   }
 
@@ -728,9 +726,7 @@ public class HttpOutboxTest {
         )
     ));
     String schema = UUID.randomUUID().toString();
-    var entityModels = new ArrayList<EntityModel>(dispatcher.entityModels());
-    entityModels.add(process);
-    entityModels.add(Index);
+    var entityModels = List.of(process, dispatcher.outbox());
     var machine = Init.stateMachine(schema, entityModels);
     var storage = Init.storage(schema, entityModels);
 
@@ -844,9 +840,7 @@ public class HttpOutboxTest {
         )
     ));
     String schema = UUID.randomUUID().toString();
-    var entityModels = new ArrayList<EntityModel>(dispatcher.entityModels());
-    entityModels.add(process);
-    entityModels.add(Index);
+    var entityModels = List.of(process, dispatcher.outbox());
     var machine = Init.stateMachine(schema, entityModels);
     var storage = Init.storage(schema, entityModels);
 
@@ -1031,7 +1025,7 @@ public class HttpOutboxTest {
           States.Done, List.of()
       ));
 
-      var machine = stateMachine(process, dispatcher.entityModels());
+      var machine = stateMachine(process, List.of(dispatcher.outbox()));
       return new ProcessModel(process, processStarted, processSucceeded, processFailed, responseMissed, outcomeUndetermined, dispatcher.outbox(), machine, path);
     }
 
