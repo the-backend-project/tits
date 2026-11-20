@@ -97,3 +97,39 @@ A transition has four kinds of triggers:
 Since side effects only happen after the events causing them are stored, an entity always knows what it has started.
 If the instance stops before an action completes, a delayed trigger stored with the action, such as the timeout of an
 outbox request, moves the entity on.
+
+## Events and entities not stored
+
+Every event is stored by default, which makes the event log the record of what happened. Some events are better left
+out of it: one with a credential, e.g. a session cookie or a code, one with bulky data derived from other entities,
+e.g. a rendered page, or one of no interest, e.g. a request for a static file. They can still be transitions, which are
+tested, drawn in the state diagrams and told the [monitoring](monitoring.md), without being stored:
+
+* **An event type which is not stored**, `BasicEventType.notStored(name, id, ...)`, takes part in its transition like
+  any other: it is calculated, may trigger events on other entities, which are stored if they are of stored types, is
+  given to the one who triggered it and is told the listener. It is not written to the event log, so the state of an
+  entity must not depend on it: on an entity which is stored, its transitions stay in their state (`toSelf()`), which
+  the state machine checks when it is created. The next event stored on the entity takes its event number. A
+  read-only event type (`BasicEventType.ReadOnly`) is one.
+* **An entity of the session only** is created by an event which is not stored, i.e. one from `Begin`, or is of an
+  entity model whose `stored()` is false. None of its events are stored, whatever their types, so its transitions may
+  go to any state. It is found by the transitions of the session, but not after it, so it can't have delayed or
+  conditional triggers, which fire later: the change fails if it has one. An inbox request which is
+  [not stored](http-inbox.md#requests-not-stored) is one.
+* **A masked event** is stored with its output masked: `.masked(mask)` on a transition, after `to(...)`, gives the
+  output as it is stored. The event in the session has the whole output, which its triggers, the one who triggered it
+  and the transitions of the same session see, while the event log has the masked one, which is what the log of the
+  entity has later. The [inbox](http-inbox.md#masking) masks the credentials of the requests it stores this way.
+
+```java
+// A page rendered from other entities, which is not stored
+EventType<View, Page> PageViewed = BasicEventType.notStored("Page viewed", UUID.fromString("..."), DataType.json(View.class), DataType.json(Page.class));
+
+// A secret kept in the browser, of which the event log only has the hash
+onEvent(SignInStarted).to(States.SigningIn).masked(Start::withoutSecret)
+```
+
+What isn't stored can't be read back, so it must be something the entity doesn't need later: the state it is in, a
+value a later transition reads from its log, or a request a retry is compared with. A rollback rolls back stored events
+only. Keep in the event log what the record needs, e.g. the hash of a secret and the claims of a user signed in, and
+leave out the secret, the token and the page.

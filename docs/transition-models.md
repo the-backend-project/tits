@@ -216,6 +216,8 @@ transitions they can choose. That has these consequences:
   share it.
 * **The severity is the one of the chosen transition.** The [severity](monitoring.md#severity) declared on the
   choosing transition is that of its own event, which is not stored when it chooses another transition.
+* **So is the mask.** An event is stored with the mask of the chosen transition, if it has one (see
+  [masked events](entities.md#events-and-entities-not-stored)).
 * **Data the choosing transition calculates is kept only through the chosen transition.** The output of the choosing
   transition is never stored, so anything it assembles, e.g. from another system, has to be passed on to the chosen
   transition, by `f`, and be in that transition's output to be read from the log later.

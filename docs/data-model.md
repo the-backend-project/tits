@@ -105,7 +105,9 @@ The event logs of entities. Each event belongs to an entity and is numbered from
 `(EntityId, EventNumber)` also guards against concurrent changes to the same entity: two transitions computed from the
 same state both try to insert the same event number, and only one of them succeeds.
 
-`Type` is the id of the event type, and `Data` is the event's data as marshalled by the event type's data type.
+`Type` is the id of the event type, and `Data` is the event's data as marshalled by the event type's data type, masked
+if its transition masks it. Events which are not stored, and the events of entities of the session only, have no rows
+(see [events and entities not stored](entities.md#events-and-entities-not-stored)).
 
 | Column      | SQL Server         | PostgreSQL  |
 |-------------|--------------------|-------------|

@@ -30,6 +30,8 @@ HttpInboxRequest<Order> PlaceOrder = HttpInboxRequest
 | `response`        | No       | A response of the application of its own, made from a `ResponseEventType` the application triggers |
 | `normalizer`      | No       | Normalizes a request before it is compared with an earlier request with the same message id       |
 | `rollback`        | No       | Requests rolling back a request by its message id, with an authorizer of their own if the request has one. Needs `deduplicateOn`, see [rollback](#rollback) |
+| `masking`         | No       | What of the requests and responses is masked in the event log, besides the credentials every request masks, see [masking](#masking) |
+| `notStored`       | No       | Neither the requests nor their routing are stored, see [requests not stored](#requests-not-stored). Not with `deduplicateOn` |
 
 `HttpInbox.of(requests)` creates the inbox of the requests. Its `entityModels()` are the inbox's own, the inbox
 requests, `RequestRouting`, `MessageIds` and `Index`, to create the state machine with. The state machine also runs the
@@ -80,7 +82,8 @@ machine takes it to the inbox request of the session:
 .trigger(RequestCompleted).with(d -> tuple("Order placed", d)).on(HttpInbox.Request).identifiedBy(entityIdFromSession())
 ```
 
-The response goes back to the `RequestRouting` entity, which the listener sends to the client.
+The response goes back to the `RequestRouting` entity, which the listener sends to the client, as the application gave
+it rather than as it is stored, which may be [masked](#masking).
 
 Requests carrying a message id are deduplicated through the `MessageIds` id entity model: a retried request gets the
 response of the first one, also if the application rejected it, without triggering anything again. A message id is
@@ -315,9 +318,76 @@ Mono<JWTClaimsSet> claims = client.redeem(code, secret);
 `Form` parses and encodes forms and queries, as the identity provider and the backoffice do.
 
 The sign-in is not an authorizer of inbox requests, like `bearerToken`: an authorizer checks one request, while a
-sign-in takes several, redirecting the user, keeping a secret in a cookie, and redeeming the code. It is done in a
-filter in front of the inbox, such as the identity provider's `Edge`, or in the transitions of an entity, such as the
-backoffice's sessions.
+sign-in takes several, redirecting the user, keeping a secret in a cookie, and redeeming the code. It is done in the
+transitions of an entity, such as the backoffice's sessions, which keep the secret, the code and the tokens out of the
+event log by [masking](#masking) and by redeeming the code in the transition of the callback.
+
+## Keeping secrets and bulky data out of the event log
+
+The inbox stores every request it receives, and every response it gives, in the event logs of the `RequestRouting`
+entity and the inbox request. Some of it is better left out: credentials, e.g. a session cookie, an authorization code,
+an ID token or a client secret, bulky or derived data, e.g. an HTML page rendered from other entities, and requests of
+no interest, e.g. for static files or health checks. Rather than handling them in a filter in front of the inbox, an
+inbox request can mask what it stores, or not store its requests at all, so the work is done in transitions, which are
+tested, drawn in the state diagrams and recorded. The application's own events can be kept out of the event log the
+same way (see [events and entities not stored](entities.md#events-and-entities-not-stored)).
+
+### Masking
+
+Every inbox request masks the values of the headers which carry credentials, `Authorization`, `Proxy-Authorization`,
+`Cookie` and `Set-Cookie` (`Masking.CREDENTIALS`), in the requests and responses it stores. `masking` adds what else
+is masked: other headers, query parameters, the fields of an `application/x-www-form-urlencoded` body, or the whole
+body of a response:
+
+```java
+HttpInboxRequest<Callback> SignInCallback = HttpInboxRequest
+    .matching(m -> m.uri().getPath().equals("/callback"))
+    .contentParser(Callback::parse)
+    .masking(Masking.queryParameters("code").andResponseBody())
+    .process(CallbackReceived, Sessions, RoutedRequest::body, (_, callback) -> entityId(callback.state()))
+    .build("SignInCallback", UUID.fromString("..."));
+```
+
+What is masked is replaced by `***` in the event log, e.g. `GET /callback?state=…&code=***` with `Cookie: ***`. The
+transitions see the whole request: the content parser, the authorizer and the process read the code and the cookie,
+and the application's response is sent to the client as it gave it, with its `Set-Cookie`.
+
+As the event log only has the masked request, a retried request with the same message id is compared with the first
+one after masking both: a retry may differ from the first request in what is masked, e.g. in a refreshed access token.
+The retry gets the response of the first one as stored, so without what is masked of it, e.g. a `Set-Cookie`. A
+request whose response has a credential the client needs again should therefore not be deduplicated, or give it in a
+way a retry can do without.
+
+The monitoring writes no data of the events, and the [backoffice](backoffice.md) shows what is masked as `***`.
+
+### Requests not stored
+
+An inbox request with `notStored()` stores neither its requests nor their `RequestRouting` entities: the request is
+routed by `Request routed, not stored`, an event which is not stored, and the inbox request is an entity model which
+is not stored, so both are [entities of the session only](entities.md#events-and-entities-not-stored). The event its
+process triggers on the application is stored if it is of a stored type, so a request not stored can still change an
+entity which is. It suits requests for static files and health checks, pages rendered from other entities, and the
+like:
+
+```java
+HttpInboxRequest<Void> HealthCheck = HttpInboxRequest
+    .matching(m -> m.requestLine().equals("GET /health"))
+    .noContent()
+    .notStored()
+    .process(HealthChecked, Status, HttpInboxRequest.newEntity())
+    .response(HealthReported, c -> ok(c.input()))
+    .build("HealthCheck", UUID.fromString("..."));
+```
+
+A request not stored can't be found after its session, so:
+
+- it can't be deduplicated, as a retry is recognised by the first request stored, so `deduplicateOn` is refused, and
+  without it there is no `rollback`;
+- the application must respond in the session of the request, e.g. not by the callback of an outbox request;
+- it is not indexed by the entity of the application, as the [requests of an entity](#the-requests-of-an-entity) are.
+
+The events of a request not stored are still told the listener, and the [monitoring](monitoring.md#the-lines) writes
+them with `"stored":false`.
 
 ## State diagrams
 

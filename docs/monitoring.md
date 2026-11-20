@@ -99,15 +99,17 @@ Every accepted event is a line of JSON, here an outbox request which is given up
 | `message`       | The event in words                                                              |
 | `entityModel`   | The name of the entity model                                                    |
 | `entityId`      | The id of the entity                                                            |
-| `eventNumber`   | The number of the event in the event log of the entity                          |
+| `eventNumber`   | The number of the event in the event log of the entity, left out for an event not stored |
+| `stored`        | `false` for an event which is [not stored](entities.md#events-and-entities-not-stored), and left out otherwise |
 | `eventType`     | The name of the event type                                                      |
 | `correlationId` | The correlation id of what led to the event, e.g. of the request to the [HTTP inbox](http-inbox.md) |
 
 * **The data of the events is not written**, as it may be sensitive. The event log has it, and the entity model,
   entity id and event number of a line find the event there.
 * **Events are written when they have happened.** Delayed events and conditional triggers are not written when they
-  are stored, but as events when they fire. Read-only events are written too, though they are not stored, so the
-  event log does not have them.
+  are stored, but as events when they fire. Events which are [not stored](entities.md#events-and-entities-not-stored),
+  e.g. read-only events and the events of a request not stored, are written too, with `"stored":false` and no
+  `eventNumber`, as the event log does not have them.
 * **The events of a transaction are written together**, after it is committed, with those of an entity in the order
   of their numbers. They are written whether or not the one who triggered them still waits for them.
 * **A failed transition** is written as a line of severity `ERROR`. A transition fails when one of its functions
