@@ -158,7 +158,7 @@ public class CutOffReconciliationTest {
   }
 
   private static HttpResponse<byte[]> responseTo(Event<?> event) {
-    return (HttpResponse<byte[]>) event.getUnmarshalledData();
+    return HttpResponse.raw(event.getUnmarshalledData());
   }
 
   private static String authorisationPath() {

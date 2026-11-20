@@ -77,4 +77,15 @@ public class HttpMessageTest {
     assertThrows(NullPointerException.class, () -> HttpResponse.create(204, "No Content", null));
     assertThrows(NullPointerException.class, () -> new HttpRequest<>(Method.GET, URI.create("/"), null));
   }
+
+  /// The data of an event is typed as Object, so a message of bytes is read from it with raw(..)
+  @Test
+  public void messageOfBytesIsReadFromData() {
+    Object response = new HttpResponse<>(200, "OK", Map.of(), "done".getBytes());
+    assertArrayEquals("done".getBytes(), HttpResponse.raw(response).body());
+    Object request = new HttpRequest<>(Method.GET, URI.create("/orders"));
+    assertEquals(URI.create("/orders"), HttpRequest.raw(request).uri());
+    assertThrows(IllegalArgumentException.class, () -> HttpResponse.raw(HttpResponse.create(200, "OK", "a payload")));
+    assertThrows(IllegalArgumentException.class, () -> HttpRequest.raw("not a request"));
+  }
 }

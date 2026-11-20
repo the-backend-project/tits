@@ -39,6 +39,18 @@ public record HttpResponse<T>(int statusCode, String reasonPhrase, Map<String, S
     return new HttpResponse<>(statusCode, reasonPhrase, headers, body);
   }
 
+  /// The response as sent or received, i.e. with a body of bytes or none, e.g. the unmarshalled data of an event
+  /// whose data type is [com.github.thxmasj.backend.core.http.HttpDataType#forResponse()], which is typed as
+  /// `Object` and so can't be matched against `HttpResponse<byte[]>`
+  ///
+  /// @throws IllegalArgumentException if the value is not a response, or its body is not bytes
+  @SuppressWarnings("unchecked")
+  public static HttpResponse<byte[]> raw(Object value) {
+    if (!(value instanceof HttpResponse<?> response) || response.body() != null && !(response.body() instanceof byte[]))
+      throw new IllegalArgumentException("Not a response of bytes: " + (value == null ? null : value.getClass().getName()));
+    return (HttpResponse<byte[]>) response;
+  }
+
   /// This response with the body mapped by the function, e.g. bytes parsed into a payload
   public <U> HttpResponse<U> map(Function<? super T, ? extends U> mapper) {
     return new HttpResponse<>(statusCode, reasonPhrase, headers, mapper.apply(body));

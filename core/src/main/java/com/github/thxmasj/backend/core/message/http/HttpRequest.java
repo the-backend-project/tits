@@ -45,6 +45,18 @@ public record HttpRequest<T>(Method method, URI uri, Map<String, String> headers
     return new HttpRequest<>(method, uri, headers, body);
   }
 
+  /// The request as sent or received, i.e. with a body of bytes or none, e.g. the unmarshalled data of an event whose
+  /// data type is [com.github.thxmasj.backend.core.http.HttpDataType#forRequest()], which is typed as `Object` and so
+  /// can't be matched against `HttpRequest<byte[]>`
+  ///
+  /// @throws IllegalArgumentException if the value is not a request, or its body is not bytes
+  @SuppressWarnings("unchecked")
+  public static HttpRequest<byte[]> raw(Object value) {
+    if (!(value instanceof HttpRequest<?> request) || request.body() != null && !(request.body() instanceof byte[]))
+      throw new IllegalArgumentException("Not a request of bytes: " + (value == null ? null : value.getClass().getName()));
+    return (HttpRequest<byte[]>) request;
+  }
+
   /// This request with the body mapped by the function, e.g. a payload marshalled into bytes
   public <U> HttpRequest<U> map(Function<? super T, ? extends U> mapper) {
     return new HttpRequest<>(method, uri, headers, mapper.apply(body));

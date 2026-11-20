@@ -276,7 +276,9 @@ the creator of its request message, from data of the transition dispatching it:
 
 A request message is an `HttpRequest<RQ>`, whose body is the payload, e.g. `HttpRequest.create(POST, uri, payload)`,
 which the outbox marshals with its `requestPayloadType` into the bytes sent, an `HttpRequest<byte[]>`. The callbacks
-get the response the same way, as an `HttpResponse<RS>` with the payload parsed by the `contentParser`.
+get the response the same way, as an `HttpResponse<RS>` with the payload parsed by the `contentParser`. A message as sent or
+received is an `HttpRequest<byte[]>` or `HttpResponse<byte[]>`, which `HttpRequest.raw(..)` and
+`HttpResponse.raw(..)` read from the data of an event, as that is typed as `Object`.
 
 `of(...)` takes a function creating the request message from the data, and `reactive(...)` one creating it
 reactively, from the data and the `DispatchContext` of the dispatching transition. A dispatcher with rollback also
