@@ -1,8 +1,9 @@
 # The Integratable Transaction Server
 
 An event-sourcing library for Java. You model your domain as state machines in plain Java, following domain-driven
-design. The library appends every event to an immutable event log, takes the transitions in ACID transactions with
-optimistic concurrency, deduplicates incoming HTTP requests, and sends outgoing ones through a transactional outbox.
+design. The library appends the events to an immutable event log, which secrets are masked in or kept out of, takes
+the transitions in ACID transactions with optimistic concurrency, deduplicates incoming HTTP requests, and sends
+outgoing ones through a transactional outbox.
 It is reactive and stateless, runs on the JVM or as a GraalVM native image, and keeps everything in a database,
 with no framework or message broker.
 
