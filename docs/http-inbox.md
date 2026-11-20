@@ -63,10 +63,9 @@ request, is not checked in advance. It is rejected when it is given, if the requ
 The `HttpInboxListener` receives HTTP requests with reactor-netty and passes them to the inbox. A `RequestRouting` entity
 is created for every request, of the inbox's `requestRouting()`, and routes it to a new entity of the first inbox
 request matching it. Its transitions depend on the inbox requests, so each inbox has a routing model of its own, and
-starting a request on it takes the inbox's `trigger()`. The routing models of all inboxes are in the group
-`HttpInbox.RequestRouting`, which the inbox requests give their responses to, identified by the session, and they have
-the same id, by which their entities are stored. A request no inbox
-request matches is answered with 400 Bad Request. The inbox request validates the request: its body, message id,
+starting a request on it takes the inbox's `trigger()`. The inbox requests give their responses to the routing model of
+the session, whichever inbox it is of. The routing models of all inboxes have the same id, by which their entities are
+stored. A request no inbox request matches is answered with 400 Bad Request. The inbox request validates the request: its body, message id,
 authorization and the entity it selects. If it is valid, the inbox request triggers the event on the application's
 entity and waits for the application to respond.
 

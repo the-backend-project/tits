@@ -30,9 +30,8 @@ import com.github.thxmasj.backend.core.internal.ActionTrigger;
 import com.github.thxmasj.backend.core.internal.Calculation;
 import com.github.thxmasj.backend.core.internal.Debug;
 import com.github.thxmasj.backend.core.internal.DelayedEvent;
-import com.github.thxmasj.backend.core.internal.EntityModels;
-import com.github.thxmasj.backend.core.internal.EventTypes;
 import com.github.thxmasj.backend.core.internal.TransitionStep;
+import com.github.thxmasj.backend.core.internal.ResolvedModels;
 import com.github.thxmasj.backend.core.internal.TransitionStep.ActionStep;
 import com.github.thxmasj.backend.core.internal.TransitionStep.AssembleStep;
 import com.github.thxmasj.backend.core.internal.TransitionStep.ChoiceStep;
@@ -87,6 +86,7 @@ public class StateMachine implements AutoCloseable {
   private final DatabaseClient client;
   private final Storage storage;
   private final List<EntityModel> entityModels;
+  private final Map<UUID, EntityModel> entityModelsById;
   private final Map<EntityModel, Traverser> traversers;
   private final Map<EntityModel, List<EventType<?, ?>>> eventTypesByEntityModel;
 
@@ -137,7 +137,9 @@ public class StateMachine implements AutoCloseable {
   ///                     which nothing triggers events on, e.g. the entity models of an inbox (see
   ///                     `HttpInbox#entityModels()`). An [EntityModelGroup] is not one of them, since it has no entities
   ///                     of its own.
-  /// @throws IllegalArgumentException if two of the entity models have the same id
+  /// @throws IllegalArgumentException if one of the entity models given is an [EntityModelGroup], or if two of the
+  ///                                  models run have the same id
+  /// @throws NullPointerException if one of the entity models given is null, e.g. a constant not created yet
   /// @param client a client of the database, which is closed with the state machine
   /// @param schemaDataSource a data source of the database to create the schema with, or null if it is created
   ///                         elsewhere
@@ -153,11 +155,13 @@ public class StateMachine implements AutoCloseable {
       Listener listener,
       boolean withResolving
   ) {
-    List<EntityModel> models = EntityModels.resolve(entityModels);
+    ResolvedModels resolved = ResolvedModels.of(entityModels);
+    List<EntityModel> models = resolved.entityModels();
     this.entityModels = models;
+    this.entityModelsById = models.stream().collect(toMap(EntityModel::id, m -> m));
     Debug.log("Supported entity models:\n" + models.stream().map(EntityModel::name).collect(joining("\n")));
     this.traversers = models.stream().collect(toMap(m -> m, m -> new Traverser(m.transitions())));
-    this.eventTypesByEntityModel = EventTypes.eventTypesByEntityModel(models);
+    this.eventTypesByEntityModel = resolved.eventTypesByEntityModel();
     this.delayer = delayer != null ? delayer : _ -> Mono.empty();
     if (schemaDataSource != null) {
       database.createSchema(schemaDataSource, schemaName, role)
@@ -166,7 +170,7 @@ public class StateMachine implements AutoCloseable {
     }
     this.clock = clock;
     this.client = client;
-    this.storage = StorageProvider.storage(database, client, models, schemaName, clock);
+    this.storage = StorageProvider.storage(database, client, resolved, schemaName, clock);
     this.listener = listener;
     if (withResolving) {
       Looper<ResolverStatus> resolverLooper = new Looper<>(
@@ -421,8 +425,23 @@ public class StateMachine implements AutoCloseable {
     return onEvent(UUID.randomUUID().toString(), eventTrigger, input);
   }
 
+  /// @throws IllegalArgumentException if the state machine runs no entity model with the id of the one triggered on
   public <T, I, O> Flux<Event<?>> onEvent(String correlationId, EventTrigger<T, I, O> eventTrigger, T input) {
-    return onEvent(correlationId, eventTrigger, input, null);
+    EntityModel run = run(eventTrigger.entityModel());
+    return onEvent(correlationId, run == eventTrigger.entityModel() ? eventTrigger : eventTrigger.on(run), input, null);
+  }
+
+  /// The entity model the state machine runs with the id of the given one, which may be another instance, e.g. of a
+  /// model created from configuration. A group, or no model, is left as it is.
+  ///
+  /// @throws IllegalArgumentException if the state machine runs no entity model with the id
+  private EntityModel run(EntityModel entityModel) {
+    if (entityModel == null || entityModel instanceof EntityModelGroup)
+      return entityModel;
+    EntityModel run = entityModelsById.get(entityModel.id());
+    if (run == null)
+      throw new IllegalArgumentException("The state machine runs no entity model " + entityModel.name() + " with id " + entityModel.id());
+    return run;
   }
 
   private <T, I, O> Flux<Event<?>> onEvent(
@@ -660,9 +679,12 @@ public class StateMachine implements AutoCloseable {
 
 
   /// The current state of the selected entity. Completes empty if the entity does not exist.
+  ///
+  /// @throws IllegalArgumentException if the state machine runs no entity model with the id of the given one
   public Mono<State> onStatus(EntitySelector entitySelector, EntityModel entityModel) {
-    return eventLog(entitySelector, entityModel, null)
-        .map(log -> traversers.get(entityModel).currentState(log))
+    EntityModel run = run(entityModel);
+    return eventLog(entitySelector, run, null)
+        .map(log -> traversers.get(run).currentState(log))
         .onErrorResume(UnknownEntity.class, _ -> Mono.empty());
   }
 

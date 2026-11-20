@@ -10,7 +10,7 @@ import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.IdEntityModel;
 import com.github.thxmasj.backend.core.IndexEntityModel;
 import com.github.thxmasj.backend.core.database.DatabaseClient;
-import com.github.thxmasj.backend.core.internal.EventTypes;
+import com.github.thxmasj.backend.core.internal.ResolvedModels;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -49,13 +49,13 @@ final class Graph {
   private final List<EventType<?, ?>> searchableIndexTypes;
 
   Graph(DatabaseClient client, String schema, List<? extends EntityModel> entityModels) {
-    List<EntityModel> models = EntityModel.reachable(entityModels);
+    ResolvedModels models = ResolvedModels.of(entityModels);
     this.client = client;
     this.schema = schema;
-    this.entityModels = models.stream().collect(toMap(EntityModel::id, identity()));
-    Map<UUID, EventType<?, ?>> eventTypesById = EventTypes.eventTypes(models).stream().collect(toMap(EventType::id, identity()));
+    this.entityModels = models.entityModels().stream().collect(toMap(EntityModel::id, identity()));
+    Map<UUID, EventType<?, ?>> eventTypesById = models.eventTypes().stream().collect(toMap(EventType::id, identity()));
     this.eventTypeMapper = eventTypesById::get;
-    var eventTypesByModel = EventTypes.eventTypesByEntityModel(models);
+    var eventTypesByModel = models.eventTypesByEntityModel();
     var referenceTypes = new LinkedHashSet<EventType<?, ?>>();
     var idTypes = new LinkedHashSet<EventType<?, ?>>();
     var indexTypes = new LinkedHashSet<EventType<?, ?>>();

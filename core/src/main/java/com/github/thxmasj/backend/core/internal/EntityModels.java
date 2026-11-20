@@ -27,9 +27,15 @@ public final class EntityModels {
   ///
   /// @throws IllegalArgumentException if a model given is an [EntityModelGroup], which has no entities of its own, or
   ///                                  if two models have the same id
+  /// @throws NullPointerException if a model given is null
   public static List<EntityModel> resolve(List<? extends EntityModel> entityModels) {
     for (EntityModel model : entityModels)
-      if (model instanceof EntityModelGroup)
+      if (model == null)
+        throw new NullPointerException(
+            "One of the entity models given is null. If it is a constant, it is read before it is created, e.g. by " +
+                "another constant declared before it"
+        );
+      else if (model instanceof EntityModelGroup)
         throw new IllegalArgumentException("Entity model group " + model.name() + " has no entities of its own");
     Set<EntityModel> seen = Collections.newSetFromMap(new IdentityHashMap<>());
     Map<UUID, EntityModel> byId = new HashMap<>();

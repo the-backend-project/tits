@@ -35,16 +35,6 @@ import java.util.function.Function;
 /// ```
 public interface HttpInbox {
 
-  /// The routing model of any inbox, which an inbox request responds to by triggering [#ResponseCreated] on it,
-  /// identified by the session. Every request received is routed to the inbox request matching it by an entity of the
-  /// inbox's [#requestRouting()], and answered with the response the inbox request gives it. A request matching no
-  /// inbox request is answered with 400 Bad Request.
-  EntityModelGroup RequestRouting = EntityModelGroup.of(
-      "RequestRouting",
-      UUID.fromString("7c2e9a41-5d8b-4f36-b0e7-1a4c6f8d2b95"),
-      model -> model instanceof RequestRoutingModel
-  );
-
   /// Any inbox request, which an application responds to by triggering a [ResponseEventType] such as
   /// [#RequestCompleted] on it, identified by the session, without knowing which inbox request it is:
   ///
@@ -221,7 +211,8 @@ public interface HttpInbox {
     return InboxModels.of(requests);
   }
 
-  /// The entity model routing every request received to the inbox request matching it, one of [#RequestRouting]
+  /// The entity model routing every request received to the inbox request matching it, and answering it with the
+  /// response the inbox request gives it. A request matching no inbox request is answered with 400 Bad Request.
   EntityModel requestRouting();
 
   /// The requests the inbox receives

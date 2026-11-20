@@ -27,7 +27,6 @@ import static com.github.thxmasj.backend.http.inbox.HttpInbox.RequestRejectedAsI
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.RequestRejectedAsUnauthorized;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.RequestRejectedAsUnroutable;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.RequestRouted;
-import static com.github.thxmasj.backend.http.inbox.HttpInbox.RequestRouting;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.ResponseCreated;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.RollbackMessageIdClaimed;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.RollbackRequestAccepted;
@@ -41,6 +40,7 @@ import static com.github.thxmasj.backend.http.inbox.HttpInbox.States.RejectedRol
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.States.RolledBack;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.States.RollingBack;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.States.Routed;
+import static com.github.thxmasj.backend.http.inbox.RequestRoutingModel.RequestRouting;
 import static java.util.stream.Collectors.toSet;
 
 import com.github.thxmasj.backend.core.BasicEventType;

@@ -1,10 +1,9 @@
 package com.github.thxmasj.backend.core.internal.database;
 
-import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.database.Database;
 import com.github.thxmasj.backend.core.database.DatabaseClient;
+import com.github.thxmasj.backend.core.internal.ResolvedModels;
 import java.time.Clock;
-import java.util.List;
 import java.util.ServiceLoader;
 import java.util.ServiceLoader.Provider;
 
@@ -18,10 +17,10 @@ public interface StorageProvider {
   /// The queries and updates of the schema
   ///
   /// @param client a client of the database
-  /// @param entityModels the entity models of the state machine, whose transitions give the event types
+  /// @param models the entity models the state machine runs, with their event types
   Storage storage(
       DatabaseClient client,
-      List<EntityModel> entityModels,
+      ResolvedModels models,
       String schemaName,
       Clock clock
   );
@@ -30,7 +29,7 @@ public interface StorageProvider {
   static Storage storage(
       Database database,
       DatabaseClient client,
-      List<EntityModel> entityModels,
+      ResolvedModels models,
       String schemaName,
       Clock clock
   ) {
@@ -39,6 +38,6 @@ public interface StorageProvider {
         .filter(provider -> provider.database().equals(database.name()))
         .findFirst()
         .orElseThrow(() -> new IllegalArgumentException("No storage of database " + database.name()))
-        .storage(client, entityModels, schemaName, clock);
+        .storage(client, models, schemaName, clock);
   }
 }

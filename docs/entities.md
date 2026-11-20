@@ -37,7 +37,9 @@ run. When the state machine is created, it checks that every model it runs has a
 
 A model whose transitions depend on configuration, e.g. a lifetime, or the [outbox requests](http-outbox.md) it sends,
 is created from the configuration rather than declared as a constant. That instance is the one triggered on, and
-thereby run, so it is passed to the code triggering events on it, e.g. the inbox requests processing on it.
+thereby run, so it is passed to the code triggering events on it, e.g. the inbox requests processing on it. Created
+again from the same configuration, e.g. by a test asking for the state of an entity of it, it is another instance with
+the same id, which the state machine and the test API take for the one they run.
 
 The entity an event is triggered on is selected by an `EntitySelector`: by its entity id, as a new entity, by an id it
 has, as the last one of a group it is indexed in, or as the last one referencing an id by an index event. The ids and

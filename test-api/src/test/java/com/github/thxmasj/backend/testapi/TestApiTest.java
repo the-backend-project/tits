@@ -11,6 +11,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.github.thxmasj.backend.core.BasicEventType;
@@ -201,6 +202,26 @@ public class TestApiTest {
     assertEquals(Account, log.entityModel());
     assertEquals(List.of("1:Account opened"), eventNames(log));
     assertEquals("1001", log.one(AccountOpened));
+  }
+
+  /// A model created from configuration may be created again, e.g. by a test, as another instance with the same id
+  @Test
+  public void anotherInstanceOfAModelRunIsTheModelRun() {
+    UUID account = open("1009");
+    var sameAccount = EntityModel.of("Account", Account.id(), Map::of);
+
+    assertEquals(Account, api.eventLog(sameAccount, account).block().entityModel());
+    assertEquals(AccountStates.Opened, machine.onStatus(entityId(account), sameAccount).block());
+    assertEquals(AccountStates.Opened, machine.onStatus(entityId(account), Account).block());
+  }
+
+  /// A model with an id no model run has is told apart from an entity which doesn't exist
+  @Test
+  public void modelNotRunIsRejected() {
+    var other = EntityModel.of("Other", UUID.randomUUID(), Map::of);
+
+    assertThrows(IllegalArgumentException.class, () -> machine.onStatus(entityId(UUID.randomUUID()), other));
+    assertThrows(IllegalStateException.class, () -> api.eventLog(other, UUID.randomUUID()));
   }
 
   @Test

@@ -3,7 +3,7 @@ package com.github.thxmasj.backend.database.pgsql.internal;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.database.DatabaseClient;
-import com.github.thxmasj.backend.core.internal.EventTypes;
+import com.github.thxmasj.backend.core.internal.ResolvedModels;
 import com.github.thxmasj.backend.core.internal.database.ConditionalTriggers;
 import com.github.thxmasj.backend.core.internal.database.DeleteDelayedTrigger;
 import com.github.thxmasj.backend.core.internal.database.EntitiesByIndex;
@@ -28,18 +28,19 @@ public class PgsqlStorage implements StorageProvider {
   @Override
   public Storage storage(
       DatabaseClient client,
-      List<EntityModel> entityModels,
+      ResolvedModels models,
       String schemaName,
       Clock clock
   ) {
-    Map<EntityModel, List<EventType<?, ?>>> eventTypesByEntityModel = EventTypes.eventTypesByEntityModel(entityModels);
+    List<EntityModel> entityModels = models.entityModels();
+    Map<EntityModel, List<EventType<?, ?>>> eventTypesByEntityModel = models.eventTypesByEntityModel();
     return new Storage(
         new ChangeState(client, schemaName, clock),
         new EventsByEntityId(client, table -> Queries.eventsByEntityId(schemaName, table), entityModels, clock),
         new EventsByIdEvent(client, Queries.eventsByIdEvent(schemaName), eventTypesByEntityModel, clock),
         new EventsByLastIndexEvent(client, Queries.eventsByLastIndexEvent(schemaName), clock),
         new EntitiesByIndex(client, Queries.entitiesByIndex(schemaName), eventTypesByEntityModel, clock),
-        new NextDelayedTrigger(client, Queries.nextDelayedTrigger(schemaName), EventTypes.eventTypes(entityModels), clock, entityModels),
+        new NextDelayedTrigger(client, Queries.nextDelayedTrigger(schemaName), models.eventTypes(), clock, entityModels),
         new DeleteDelayedTrigger(client, Queries.deleteDelayedTrigger(schemaName)),
         new ConditionalTriggers(client, Queries.conditionalTriggers(schemaName), eventTypesByEntityModel, clock)
     );

@@ -1,8 +1,7 @@
 package com.github.thxmasj.backend.core;
 
-import static java.util.Objects.requireNonNull;
-
 import com.github.thxmasj.backend.core.internal.EntityModels;
+import com.github.thxmasj.backend.core.internal.Memoized;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -20,16 +19,11 @@ public interface EntityModel extends Identifiable {
   /// An entity model whose transitions are created when they are first asked for, so that they can refer to the model
   /// itself and to other models created the same way, e.g. as constants which refer to each other.
   static EntityModel of(String name, UUID id, Supplier<Map<State, List<TransitionModel<?, ?>>>> transitions) {
-    requireNonNull(transitions);
+    var created = new Memoized<>(transitions, "transitions of entity model " + name);
     return new EntityModel() {
-      private Map<State, List<TransitionModel<?, ?>>> created;
       @Override public String name() {return name;}
       @Override public UUID id() {return id;}
-      @Override public synchronized Map<State, List<TransitionModel<?, ?>>> transitions() {
-        if (created == null)
-          created = requireNonNull(transitions.get(), () -> "Entity model " + name + " has no transitions");
-        return created;
-      }
+      @Override public Map<State, List<TransitionModel<?, ?>>> transitions() {return created.get();}
       @Override public String toString() {return name;}
     };
   }
@@ -40,6 +34,7 @@ public interface EntityModel extends Identifiable {
   ///
   /// @throws IllegalArgumentException if one of the entity models given is an [EntityModelGroup], or if two of the
   ///                                  models have the same id
+  /// @throws NullPointerException if one of the entity models given is null, e.g. a constant not created yet
   static List<EntityModel> reachable(List<? extends EntityModel> entityModels) {
     return EntityModels.resolve(entityModels);
   }

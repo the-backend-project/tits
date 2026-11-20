@@ -22,7 +22,7 @@ import reactor.netty.DisposableServer;
 ///
 /// ```java
 /// public static void main(String[] args) {
-///   BackofficeApp.run("Orders", "orders", Orders.transitions(), args, System.getenv());
+///   BackofficeApp.run("Orders", "orders", Orders.Inbox.entityModels(), args, System.getenv());
 /// }
 /// ```
 ///

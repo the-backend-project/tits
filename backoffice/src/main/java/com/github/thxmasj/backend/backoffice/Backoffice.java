@@ -27,7 +27,7 @@ import java.util.stream.Collectors;
 /// [BackofficeApp] runs it:
 ///
 /// ```java
-/// BackofficeApp.run("Orders", "orders", Orders.transitions(), args, System.getenv());
+/// BackofficeApp.run("Orders", "orders", Orders.Inbox.entityModels(), args, System.getenv());
 /// ```
 public final class Backoffice {
 
