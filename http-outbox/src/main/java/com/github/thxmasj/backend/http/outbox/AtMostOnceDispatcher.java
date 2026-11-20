@@ -6,7 +6,7 @@ import java.util.function.Function;
 import reactor.core.publisher.Mono;
 
 /// A [Dispatcher] of requests to an [AtMostOnce] outbox request which can't be rolled back. See [AtMostOnceWithRollbackDispatcher] for one which can.
-public final class AtMostOnceDispatcher<X, RQ> extends BaseDispatcher<X, TypedHttpRequest<RQ>> implements Dispatcher<X, TypedHttpRequest<RQ>> {
+public final class AtMostOnceDispatcher<X, RQ> extends BaseDispatcher<X, TypedHttpRequest<RQ>, AtMostOnce<RQ, Void>> implements Dispatcher<X, TypedHttpRequest<RQ>> {
 
   private AtMostOnceDispatcher(AtMostOnce<RQ, Void> outbox, BiFunction<DispatchContext, X, Mono<TypedHttpRequest<RQ>>> inputCreator) {
     super(outbox, outbox.requestDispatched(), inputCreator);

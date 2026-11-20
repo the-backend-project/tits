@@ -883,7 +883,7 @@ public class HttpOutboxTest {
         .repeatMessageCreator((_, o) -> o)
         .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
         .inflightTimeout(Duration.ofSeconds(7))
-        .processModel(EntityModel.of("Process", UUID.randomUUID()))
+        .processModel(EntityModel.of("Process", UUID.randomUUID(), Map::of))
         .contentParser(_ -> valid(null))
         .isAccepted(r -> r.statusCode() == 200)
         .isFailureTransient(_ -> true)
@@ -1175,7 +1175,7 @@ public class HttpOutboxTest {
       HttpOutboxRequest<Void> exchange
   ) {
     static ProcessModelWithDefaultMissingResponse create() {
-      EntityModel process = EntityModel.of("Process", UUID.randomUUID());
+      EntityModel process = EntityModel.of("Process", UUID.randomUUID(), Map::of);
       String path = "/" + UUID.randomUUID();
       HttpOutboxRequest<Void> exchange = HttpOutboxRequest.atMostOnce()
           .requestPayloadType(DataType.<Void>unknown())

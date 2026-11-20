@@ -962,7 +962,7 @@ public class HttpInboxTest {
     assertThatThrownBy(() -> HttpInboxRequest.matching(_ -> true).noContent()
         .deduplicateOn(parseMessageId("(.*)", 1))
         .process(when("one", _ -> true), InternalProcessingRequested, Lamp, newEntity())
-        .process(InternalProcessingRequested, EntityModel.of("Other", UUID.randomUUID()), newEntity())
+        .process(InternalProcessingRequested, EntityModel.of("Other", UUID.randomUUID(), Map::of), newEntity())
         .rollback(Rollback.matching(_ -> false).noContent().deduplicateOn(parseMessageId("(.*)", 1)))
         .build("Invalid", UUID.randomUUID()))
         .isInstanceOf(IllegalArgumentException.class)
@@ -1163,7 +1163,7 @@ public class HttpInboxTest {
     var polish = HttpInboxRequest.matching(m -> m.requestLine().matches("PUT /bell/polish")).noContent()
         .process(BellPolished, bell, newEntity())
         .build("PolishRequest", UUID.randomUUID());
-    assertThat(HttpInbox.of(List.of(polish, ring)).requests()).containsExactly(polish, ring);
+    assertThat(EntityModel.reachable(HttpInbox.of(List.of(polish, ring)).entityModels())).contains(ring, polish, bell, Chime);
   }
 
   /// Ringing the bell later is in another session, which the check doesn't follow
@@ -1173,14 +1173,15 @@ public class HttpInboxTest {
     var schedule = HttpInboxRequest.matching(m -> m.requestLine().matches("PUT /bell/schedule")).noContent()
         .process(BellScheduled, bell, newEntity())
         .build("ScheduleRequest", UUID.randomUUID());
-    assertThat(HttpInbox.of(List.of(schedule)).requests()).containsExactly(schedule);
+    assertThat(EntityModel.reachable(HttpInbox.of(List.of(schedule)).entityModels())).contains(schedule, bell);
   }
 
   @Test
   public void responseTakenByTheRequestPassesTheCheck() {
     var bell = bell(true);
     var request = bellRequest(bell).response(Rang, _ -> new HttpResponseMessage(200, "OK")).build("BellRequest", UUID.randomUUID());
-    assertThat(HttpInbox.of(List.of(request)).requests()).containsExactly(request);
+    // The chime is reached only through the bell
+    assertThat(EntityModel.reachable(HttpInbox.of(List.of(request)).entityModels())).contains(request, bell, Chime);
   }
 
   private HttpResponseMessage onOwnedRollback(String messageId, Map<String, String> headers) throws IOException {

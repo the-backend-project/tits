@@ -37,7 +37,7 @@ class ERDiagramFormatterTest {
 
   static final EntityModel Car = EntityModel.of("Car", UUID.randomUUID(), ERDiagramFormatterTest::carTransitions);
   static final EntityModel Speed = EntityModel.of("Speed", UUID.randomUUID(), ERDiagramFormatterTest::speedTransitions);
-  static final EntityModel Engine = EntityModel.of("Engine", UUID.randomUUID());
+  static final EntityModel Engine = EntityModel.of("Engine", UUID.randomUUID(), Map::of);
   static final IdEntityModel Ids = IdEntityModel.of("Ids", UUID.randomUUID(), NameClaimed);
 
   static List<EntityModel> model() {

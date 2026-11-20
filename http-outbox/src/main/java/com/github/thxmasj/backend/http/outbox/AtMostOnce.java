@@ -56,7 +56,8 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
   private final AtLeastOnce<RRQ> rollbackOnUnknownModel;
   private final Shape<?, ?, ?, ?, ?, ?, ?, RQ, ?> shape;
   private final Function<AtMostOnce<RQ, RRQ>, Map<State, List<TransitionModel<?, ?>>>> transitionsCreator;
-  private Map<State, List<TransitionModel<?, ?>>> transitions;
+  /// Holds the transitions once they are created
+  private final EntityModel transitions;
 
   private record Shape<T1, T2, T3, T4, T5, T6, T7, RQ, RS>(
       DataType<RQ> requestPayloadType,
@@ -293,6 +294,7 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
   ) {
     this.name = name;
     this.id = id;
+    this.transitions = EntityModel.of(name, id, this::createTransitions);
     this.shape = new Shape<>(
         requestPayloadType,
         responsePayloadType,
@@ -331,6 +333,7 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
   ) {
     this.name = outbox.name;
     this.id = outbox.id;
+    this.transitions = EntityModel.of(name, id, this::createTransitions);
     this.shape = outbox.shape;
     this.rollbackOnAcceptedModel = outbox.rollbackOnAcceptedModel;
     this.rollbackOnUnknownModel = outbox.rollbackOnUnknownModel;
@@ -553,10 +556,12 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
   /// The transitions of this outbox request. Unless it is the copy of [#withRollback(BiFunction)] or
   /// [#withBatchedRollback(BiFunction)], they have no rollback message creator, so a rollback of the request fails.
   @Override
-  public synchronized Map<State, List<TransitionModel<?, ?>>> transitions() {
-    if (transitions == null)
-      transitions = transitionsCreator.apply(this);
-    return transitions;
+  public Map<State, List<TransitionModel<?, ?>>> transitions() {
+    return transitions.transitions();
+  }
+
+  private Map<State, List<TransitionModel<?, ?>>> createTransitions() {
+    return transitionsCreator.apply(this);
   }
 
   /// A copy of this outbox request, with the same name and id, whose transitions roll the request back with the

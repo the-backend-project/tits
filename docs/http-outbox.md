@@ -312,8 +312,8 @@ The outbox request is built with its process model, `processModel(Payment)`, who
 request on the dispatcher's outbox. A process model declared as a constant with `EntityModel.of(name, id, transitions)`
 takes care of that, as its transitions are created when the state machine first asks for them, after the outbox
 requests are built. If one transition triggers on the outbox request the dispatcher was created with, and another on
-its `outbox()`, the state machine finds two entity models with the same id when it is created, and fails, telling to
-trigger on the `outbox()`.
+its `outbox()`, the state machine finds two entity models with the same id when it is created, and fails. Trigger on
+the `outbox()`.
 
 ## Finding the requests of a process
 

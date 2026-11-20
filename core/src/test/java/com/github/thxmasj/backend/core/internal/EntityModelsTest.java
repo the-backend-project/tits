@@ -30,7 +30,8 @@ public class EntityModelsTest {
   )));
   static final EntityModelGroup Orders = EntityModelGroup.of("Orders", UUID.randomUUID(), m -> m == Order);
 
-  /// A process triggering an event on the model, directly, in its reversal or in a transition it may choose
+  /// A process triggering an event on the model, directly, in its reversal, in a transition it may choose, or in a
+  /// transition its reversal may choose
   private static EntityModel process(EntityModel target, String how) {
     return EntityModel.of("Process", UUID.randomUUID(), () -> Map.of(Begin, List.of(switch (how) {
       case "trigger" -> onEvent(Started).toSelf().trigger(Ordered).on(target).identifiedBy(newEntityId()).output();
@@ -38,6 +39,11 @@ public class EntityModelsTest {
           .assemble(TransitionContext::entityId)
           .reversible(assemble((_, _) -> UUID.randomUUID())
               .trigger(Undone).on(target).identifiedBy(newEntityId()))
+          .output();
+      case "choice in reversal" -> onEvent(Started).toSelf()
+          .assemble(TransitionContext::entityId)
+          .reversible(assemble((_, _) -> (Void) null)
+              .when(_ -> true).then(onEvent(Chosen).toSelf().trigger(Undone).on(target).identifiedBy(newEntityId()).output()))
           .output();
       case "choice" -> onEvent(Started).toSelf().assembleInput()
           .otherwise(onEvent(Chosen).toSelf().trigger(Ordered).on(target).identifiedBy(newEntityId()).output(), d -> d);
@@ -59,16 +65,16 @@ public class EntityModelsTest {
 
   @Test
   public void modelsWithTheSameIdAreRejected() {
-    var copy = EntityModel.of("Copy", Order.id());
+    var copy = EntityModel.of("Copy", Order.id(), Map::of);
     assertThatThrownBy(() -> EntityModels.resolve(List.of(Order, copy)))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageStartingWith("Entity models Order and Copy have the same id " + Order.id());
+        .hasMessage("Entity models Order and Copy have the same id " + Order.id());
   }
 
   /// The models triggered on directly, in a reversal or in a transition chosen are run, after the ones given
   @Test
   public void modelsTriggeredOnAreAdded() {
-    for (String how : List.of("trigger", "reversal", "choice")) {
+    for (String how : List.of("trigger", "reversal", "choice", "choice in reversal")) {
       var process = process(Order, how);
       assertThat(EntityModels.resolve(List.of(process))).as(how).containsExactly(process, Order);
     }
@@ -89,8 +95,7 @@ public class EntityModelsTest {
     var copy = EntityModel.of("Order", Order.id(), Order::transitions);
     assertThatThrownBy(() -> EntityModels.resolve(List.of(copy, process(Order, "trigger"))))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessage("Entity models Order and Order have the same id " + Order.id() + ". If they are an outbox "
-            + "request and the outbox() of its dispatcher, trigger the requests on the outbox() of the dispatcher");
+        .hasMessage("Entity models Order and Order have the same id " + Order.id());
   }
 
 }

@@ -27,7 +27,8 @@ EntityModel Greeting = EntityModel.of("Greeting", UUID.fromString("..."), Greeti
 
 They are first asked for by the state machine, or by `HttpInbox.of`, which checks the responses of the inbox requests
 (see [HTTP inboxes](http-inbox.md)). Whatever the transitions refer to must be created by then, e.g. declared before an
-inbox created as a constant.
+inbox created as a constant. A trigger on a model which isn't created yet, and so is null, fails as the transitions are
+created.
 
 The state machine takes the transitions of each entity model from the model. It is given the entity models nothing
 triggers events on, e.g. those of an [inbox](http-inbox.md), and runs them with the models their transitions trigger

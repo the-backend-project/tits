@@ -41,13 +41,9 @@ public final class EntityModels {
         continue;
       EntityModel other = byId.putIfAbsent(model.id(), model);
       if (other != null)
-        throw new IllegalArgumentException(String.format(
-            "Entity models %s and %s have the same id %s. If they are an outbox request and the outbox() of its " +
-                "dispatcher, trigger the requests on the outbox() of the dispatcher",
-            other.name(),
-            model.name(),
-            model.id()
-        ));
+        throw new IllegalArgumentException(
+            "Entity models " + other.name() + " and " + model.name() + " have the same id " + model.id()
+        );
       resolved.add(model);
       for (List<TransitionModel<?, ?>> transitions : model.transitions().values())
         for (TransitionModel<?, ?> transition : transitions)
@@ -56,12 +52,12 @@ public final class EntityModels {
     return List.copyOf(resolved);
   }
 
-  /// Adds the entity models the transition triggers events on, in its reversal and in the transitions it may choose.
-  /// A group is left out, as its models are those of the group which are run.
+  /// Adds the entity models the transition triggers events on, in its reversal and in the transitions it may choose,
+  /// and so on. A group is left out, as its models are those of the group which are run.
   private static void addTargets(TransitionModel<?, ?> transition, Deque<EntityModel> toVisit) {
     addTargets(transition.triggers(), toVisit);
     if (transition.reverseModel() != null)
-      addTargets(transition.reverseModel().triggers(), toVisit);
+      addTargets(transition.reverseModel(), toVisit);
     for (var filter : transition.filters())
       addTargets(filter.alternative().model(), toVisit);
   }

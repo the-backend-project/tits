@@ -7,7 +7,7 @@ import java.util.function.Function;
 import reactor.core.publisher.Mono;
 
 /// A [Dispatcher] of requests to an [AtLeastOnce] outbox request.
-public final class AtLeastOnceDispatcher<X, RQ> extends BaseDispatcher<X, TypedHttpRequest<RQ>> implements Dispatcher<X, TypedHttpRequest<RQ>> {
+public final class AtLeastOnceDispatcher<X, RQ> extends BaseDispatcher<X, TypedHttpRequest<RQ>, AtLeastOnce<RQ>> implements Dispatcher<X, TypedHttpRequest<RQ>> {
 
   private final AtLeastOnce<RQ> atLeastOnce;
 

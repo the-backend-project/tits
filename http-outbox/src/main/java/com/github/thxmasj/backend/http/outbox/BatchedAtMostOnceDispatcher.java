@@ -6,7 +6,7 @@ import java.util.function.Function;
 import reactor.core.publisher.Mono;
 
 /// A [Dispatcher] of requests to an [AtMostOnce] outbox request which can't be rolled back, as part of batches. See [BatchedAtMostOnceWithRollbackDispatcher] for one which can be rolled back.
-public final class BatchedAtMostOnceDispatcher<X, RQ> extends BaseDispatcher<X, BatchedRequest<RQ>> implements Dispatcher<X, BatchedRequest<RQ>> {
+public final class BatchedAtMostOnceDispatcher<X, RQ> extends BaseDispatcher<X, BatchedRequest<RQ>, AtMostOnce<RQ, Void>> implements Dispatcher<X, BatchedRequest<RQ>> {
 
   private BatchedAtMostOnceDispatcher(AtMostOnce<RQ, Void> outbox, BiFunction<DispatchContext, X, Mono<BatchedRequest<RQ>>> inputCreator) {
     super(outbox, outbox.batchedRequestDispatched(), inputCreator);

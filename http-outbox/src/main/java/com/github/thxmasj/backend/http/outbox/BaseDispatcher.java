@@ -5,15 +5,15 @@ import java.util.function.BiFunction;
 import java.util.function.Function;
 import reactor.core.publisher.Mono;
 
-/// The state common to the [Dispatcher] implementations.
-abstract class BaseDispatcher<X, I> {
+/// The state common to the [Dispatcher] implementations, of an outbox request of type `R`.
+abstract class BaseDispatcher<X, I, R extends HttpOutboxRequest<?>> {
 
-  private final HttpOutboxRequest<?> outbox;
+  private final R outbox;
   private final EventType<I, ?> requestDispatched;
   private final BiFunction<DispatchContext, X, Mono<I>> inputCreator;
 
   BaseDispatcher(
-      HttpOutboxRequest<?> outbox,
+      R outbox,
       EventType<I, ?> requestDispatched,
       BiFunction<DispatchContext, X, Mono<I>> inputCreator
   ) {
@@ -22,7 +22,7 @@ abstract class BaseDispatcher<X, I> {
     this.inputCreator = inputCreator;
   }
 
-  public HttpOutboxRequest<?> outbox() {
+  public R outbox() {
     return outbox;
   }
 

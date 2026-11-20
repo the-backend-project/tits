@@ -8,7 +8,7 @@ import java.util.function.Function;
 import reactor.core.publisher.Mono;
 
 /// A [Dispatcher] of requests to an [AtLeastOnce] outbox request, as part of batches.
-public final class BatchedAtLeastOnceDispatcher<X, RQ> extends BaseDispatcher<X, BatchedRequest<RQ>> implements Dispatcher<X, BatchedRequest<RQ>> {
+public final class BatchedAtLeastOnceDispatcher<X, RQ> extends BaseDispatcher<X, BatchedRequest<RQ>, AtLeastOnce<RQ>> implements Dispatcher<X, BatchedRequest<RQ>> {
 
   private final AtLeastOnce<RQ> atLeastOnce;
 

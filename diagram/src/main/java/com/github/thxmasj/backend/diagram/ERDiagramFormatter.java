@@ -11,9 +11,7 @@ import com.github.thxmasj.backend.core.EventTrigger;
 import com.github.thxmasj.backend.core.EventType;
 import com.github.thxmasj.backend.core.IdEntityModel;
 import com.github.thxmasj.backend.core.IndexEntityModel;
-import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.TransitionModel;
-import com.github.thxmasj.backend.core.internal.EntityModels;
 import java.io.File;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -37,36 +35,31 @@ import net.sourceforge.plantuml.SourceStringReader;
 public class ERDiagramFormatter {
 
   private final String name;
-  private final Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions;
+  private final List<EntityModel> entityModels;
   private final boolean compact;
 
   /// @param name the name of the model, used for the names of the files the diagram is written to
   /// @param entityModels the entity models given to the state machine, which with those their transitions trigger events
   ///                     on are the entities of the diagram
   public ERDiagramFormatter(String name, List<? extends EntityModel> entityModels) {
-    this(name, transitions(entityModels), false);
+    this(name, EntityModel.reachable(entityModels), false);
   }
 
-  private static Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions(List<? extends EntityModel> entityModels) {
-    var transitions = new LinkedHashMap<EntityModel, Map<State, List<TransitionModel<?, ?>>>>();
-    EntityModels.resolve(entityModels).forEach(m -> transitions.put(m, m.transitions()));
-    return transitions;
-  }
 
   private ERDiagramFormatter(
       String name,
-      Map<EntityModel, Map<State, List<TransitionModel<?, ?>>>> transitions,
+      List<EntityModel> entityModels,
       boolean compact
   ) {
     this.name = name;
-    this.transitions = transitions;
+    this.entityModels = entityModels;
     this.compact = compact;
   }
 
   /// This formatter without the event types of the entities, for models with many entities or event types. The event
   /// types involved in the triggers are still shown on the relations.
   public ERDiagramFormatter compact() {
-    return new ERDiagramFormatter(name, transitions, true);
+    return new ERDiagramFormatter(name, entityModels, true);
   }
 
   public File formatToFile(String directory) throws IOException {
@@ -96,15 +89,15 @@ public class ERDiagramFormatter {
     // Entities triggered by the model without being part of it are included too, with the event types triggered on them
     Map<EntityModel, Set<EventType<?, ?>>> eventTypes = new LinkedHashMap<>();
     Set<Relation> relations = new LinkedHashSet<>();
-    transitions.entrySet().stream()
-        .filter(entry -> shown(entry.getKey()))
-        .sorted(comparing(entry -> entry.getKey().name()))
-        .forEach(entry -> {
-          eventTypes.computeIfAbsent(entry.getKey(), _ -> new LinkedHashSet<>());
-          entry.getValue().entrySet().stream()
+    entityModels.stream()
+        .filter(ERDiagramFormatter::shown)
+        .sorted(comparing(EntityModel::name))
+        .forEach(model -> {
+          eventTypes.computeIfAbsent(model, _ -> new LinkedHashSet<>());
+          model.transitions().entrySet().stream()
               .sorted(comparing(e -> e.getKey().name()))
               .flatMap(e -> e.getValue().stream())
-              .forEach(transition -> collect(entry.getKey(), transition, eventTypes, relations));
+              .forEach(transition -> collect(model, transition, eventTypes, relations));
         });
     List<EntityModel> entities = new ArrayList<>(eventTypes.keySet());
     entities.sort(comparing(EntityModel::name));
@@ -173,7 +166,7 @@ public class ERDiagramFormatter {
   private List<EntityModel> targets(EntityModel target) {
     if (!(target instanceof EntityModelGroup group))
       return List.of(target);
-    List<EntityModel> members = transitions.keySet().stream()
+    List<EntityModel> members = entityModels.stream()
         .filter(group::includes)
         .sorted(comparing(EntityModel::name))
         .toList();

@@ -19,10 +19,8 @@ import reactor.core.publisher.Mono;
 /// The outbox request of the dispatcher, see [#outbox()], is therefore a copy of the one it is created with, with the
 /// rollback message creator (see [AtMostOnce#withRollback(BiFunction)]). Requests are triggered on that copy, and it
 /// is the one the state machine runs.
-public final class AtMostOnceWithRollbackDispatcher<X, RQ, Y> extends BaseDispatcher<X, TypedHttpRequest<RQ>>
+public final class AtMostOnceWithRollbackDispatcher<X, RQ, Y> extends BaseDispatcher<X, TypedHttpRequest<RQ>, AtMostOnce<RQ, ?>>
     implements DispatcherWithRollback<X, TypedHttpRequest<RQ>, Y> {
-
-  private final AtMostOnce<RQ, ?> outbox;
 
   /// @param outbox the outbox request with the rollback message creator
   private <RRQ> AtMostOnceWithRollbackDispatcher(
@@ -30,7 +28,6 @@ public final class AtMostOnceWithRollbackDispatcher<X, RQ, Y> extends BaseDispat
       BiFunction<DispatchContext, X, Mono<TypedHttpRequest<RQ>>> inputCreator
   ) {
     super(outbox, outbox.requestDispatched(), inputCreator);
-    this.outbox = outbox;
   }
 
   public static <X, RQ, Y, RRQ> AtMostOnceWithRollbackDispatcher<X, RQ, Y> of(
@@ -72,15 +69,9 @@ public final class AtMostOnceWithRollbackDispatcher<X, RQ, Y> extends BaseDispat
     return new AtMostOnceWithRollbackDispatcher<>(outbox.<Y>withBatchedRollback(rollbackMessageCreator), inputCreator);
   }
 
-  /// The outbox request with the rollback message creator, which requests are triggered on
-  @Override
-  public AtMostOnce<RQ, ?> outbox() {
-    return outbox;
-  }
-
   @Override
   public EventType<Y, Void> rollbackDispatched() {
-    return outbox.rollbackDispatched();
+    return outbox().rollbackDispatched();
   }
 
 }

@@ -345,6 +345,7 @@ public class TransitionModelBuilder<I, T, O> {
     ) {
 
       public ConditionalWithEntity<I, T, O, I1, O1> on(EntityModel entityModel) {
+        requireTarget(entityModel);
         return new ConditionalWithEntity<>(this, entityModel);
       }
 
@@ -380,6 +381,7 @@ public class TransitionModelBuilder<I, T, O> {
       }
 
       public WithEntity<I, T, O, I1, O1> on(EntityModel entityModel) {
+        requireTarget(entityModel);
         return new WithEntity<>(this, entityModel);
       }
 
@@ -462,6 +464,7 @@ public class TransitionModelBuilder<I, T, O> {
     }
 
     public WithEntity<I, T, O, I1, O1> on(EntityModel entityModel) {
+      requireTarget(entityModel);
       return new WithEntity<>(new WithEventTypeAndData<>(this, _ -> null), entityModel);
     }
 
@@ -928,6 +931,16 @@ public class TransitionModelBuilder<I, T, O> {
 
   static void log(ModelContext<?, ?> modelContext, String text) {
     Debug.log(ZonedDateTime.now() + ": " + modelContext.description() + ": " + text);
+  }
+
+  /// A trigger on an entity model which is null, e.g. a constant read while its class is being initialised as the
+  /// transitions are created, would be taken as a trigger on the entity itself
+  private static void requireTarget(EntityModel entityModel) {
+    if (entityModel == null)
+      throw new NullPointerException(
+          "The entity model to trigger the event on is null. If it is a constant, the transitions are created before " +
+              "it is, e.g. by an inbox declared before it"
+      );
   }
 
 }

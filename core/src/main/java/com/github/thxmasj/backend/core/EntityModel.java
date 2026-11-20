@@ -2,6 +2,7 @@ package com.github.thxmasj.backend.core;
 
 import static java.util.Objects.requireNonNull;
 
+import com.github.thxmasj.backend.core.internal.EntityModels;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -33,8 +34,13 @@ public interface EntityModel extends Identifiable {
     };
   }
 
-  /// An entity model without transitions, whose entities are only created and identified, e.g. in tests
-  static EntityModel of(String name, UUID id) {
-    return of(name, id, Map::of);
+  /// The entity models, and those their transitions trigger events on, directly, in reversals and in the transitions they
+  /// may choose, and so on, each once: the models a state machine given the entity models runs. A group triggered on
+  /// adds no models, as its models are those of the group which are run. The models found follow the ones given.
+  ///
+  /// @throws IllegalArgumentException if one of the entity models given is an [EntityModelGroup], or if two of the
+  ///                                  models have the same id
+  static List<EntityModel> reachable(List<? extends EntityModel> entityModels) {
+    return EntityModels.resolve(entityModels);
   }
 }

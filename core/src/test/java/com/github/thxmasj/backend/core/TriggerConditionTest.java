@@ -4,6 +4,7 @@ import static com.github.thxmasj.backend.core.EntitySelector.entityId;
 import static com.github.thxmasj.backend.core.TransitionModelBuilder.WithEvent.onEvent;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
@@ -15,7 +16,7 @@ public class TriggerConditionTest {
 
   enum States implements State {Begin, Processing, Accepted}
 
-  static final EntityModel Banana = EntityModel.of("Banana", UUID.fromString("f01199a0-d2f0-4cc3-8c05-b44e0da7c3d1"));
+  static final EntityModel Banana = EntityModel.of("Banana", UUID.fromString("f01199a0-d2f0-4cc3-8c05-b44e0da7c3d1"), Map::of);
 
   static EventType<Void, Void>
       BananaForwarded = BasicEventType.of("Banana forwarded", UUID.fromString("7f1a8a3e-4c52-4e0b-9b0e-2f6d1f1c2a01")),

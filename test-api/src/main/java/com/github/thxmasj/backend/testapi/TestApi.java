@@ -14,7 +14,6 @@ import com.github.thxmasj.backend.core.database.Database;
 import com.github.thxmasj.backend.core.database.DatabaseClient;
 import com.github.thxmasj.backend.core.database.UnknownEntity;
 import com.github.thxmasj.backend.core.internal.DelayedEvent;
-import com.github.thxmasj.backend.core.internal.EntityModels;
 import com.github.thxmasj.backend.core.internal.EventTypes;
 import com.github.thxmasj.backend.core.internal.database.ChangeState;
 import com.github.thxmasj.backend.core.internal.database.ChangeState.Change;
@@ -86,7 +85,7 @@ public class TestApi {
     this.client = client;
     this.schema = schemaName;
     this.clock = clock;
-    List<EntityModel> models = EntityModels.resolve(entityModels);
+    List<EntityModel> models = EntityModel.reachable(entityModels);
     this.entityModels = models.stream().collect(toMap(EntityModel::id, identity()));
     this.eventTypesByEntityModel = EventTypes.eventTypesByEntityModel(models);
     List<EventType<?, ?>> eventTypes = EventTypes.eventTypes(models);
