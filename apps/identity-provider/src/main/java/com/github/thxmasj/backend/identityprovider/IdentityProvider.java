@@ -8,7 +8,6 @@ import com.github.thxmasj.backend.core.JsonLinesListener;
 import com.github.thxmasj.backend.core.StateMachine;
 import com.github.thxmasj.backend.core.database.DataSourceBuilder;
 import com.github.thxmasj.backend.core.database.Database;
-import com.github.thxmasj.backend.http.HttpMessageParser;
 import com.github.thxmasj.backend.http.HttpRequest;
 import com.github.thxmasj.backend.http.HttpRequest.Method;
 import com.github.thxmasj.backend.http.HttpResponse;
@@ -200,7 +199,7 @@ public final class IdentityProvider {
         // First event is the triggered event, second is the response event
         .skip(1)
         .next()
-        .map(event -> HttpMessageParser.parseResponse(event.data()))
+        .map(event -> HttpResponse.raw(event.getUnmarshalledData()))
         .timeout(Duration.ofSeconds(30))
         .block();
   }

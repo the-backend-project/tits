@@ -60,6 +60,13 @@ public interface HttpInbox {
       UUID.fromString("5b0d7e3c-2a6f-4f81-9c4e-7d1a8b2e6f39"),
       HttpDataType.forRequest()
   );
+  /// The request is routed to an inbox request which is not stored (see [HttpInboxRequest.Builder#notStored()]). The
+  /// event is not stored, which makes the `RequestRouting` entity one of the session only.
+  EventType<HttpRequest<byte[]>, HttpRequest<byte[]>> RequestRoutedNotStored = BasicEventType.notStored(
+      "Request routed, not stored",
+      UUID.fromString("f00b06f4-9271-4454-b000-cff9dfdb0d74"),
+      HttpDataType.forRequest()
+  );
   EventType<HttpRequest<byte[]>, Void> RollbackRequestReceived = BasicEventType.of(
       "Rollback request received",
       UUID.fromString("c2e94f17-6b3a-4d58-a0e1-3f7c5b9d2a84"),

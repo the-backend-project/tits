@@ -27,6 +27,7 @@ import static com.github.thxmasj.backend.http.inbox.HttpInbox.RequestRejectedAsI
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.RequestRejectedAsUnauthorized;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.RequestRejectedAsUnroutable;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.RequestRouted;
+import static com.github.thxmasj.backend.http.inbox.HttpInbox.RequestRoutedNotStored;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.ResponseCreated;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.RollbackMessageIdClaimed;
 import static com.github.thxmasj.backend.http.inbox.HttpInbox.RollbackRequestAccepted;
@@ -80,11 +81,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.UnaryOperator;
 
 /// The transitions of `RequestRouting` and of the inbox requests
 interface TransitionModels {
 
   static Map<State, List<TransitionModel<?, ?>>> requestRoutingTransitions(List<HttpInboxRequest<?>> requests) {
+    // The response of a request is masked as its inbox request masks it, of which the routing has the union
+    Masking masking = requests.stream().map(HttpInboxRequest::masking).reduce(Masking.CREDENTIALS, Masking::and);
     var routes = new ArrayList<GuardedTransition<HttpRequest<byte[]>, HttpRequest<byte[]>, ?>>();
     for (HttpInboxRequest<?> request : requests) {
       routes.add(new GuardedTransition<>(request::matches, routedTo(request, false), d -> d));
@@ -105,12 +109,12 @@ interface TransitionModels {
                 )
         ),
         Routed, List.of(
-            onEvent(ResponseCreated).to(Completed)
+            onEvent(ResponseCreated).to(Completed).masked(masking::mask)
                 .assembleInput()
                 .output(d -> d)
         ),
         Rejected, List.of(
-            onEvent(BadRequestResponseCreated).to(Completed)
+            onEvent(BadRequestResponseCreated).to(Completed).masked(Masking.CREDENTIALS::mask)
                 .assemble(c -> c)
                 .output(d -> badRequest(d.input(), d.correlationId(), d.timestamp()))
         ),
@@ -118,9 +122,10 @@ interface TransitionModels {
     );
   }
 
-  /// Routes a request to a new entity of the inbox request, or a rollback to the entity of the request it rolls back
+  /// Routes a request to a new entity of the inbox request, or a rollback to the entity of the request it rolls back.
+  /// A request which is not stored is routed by an event which is not stored, so neither is its routing.
   private static <T> TransitionModel<HttpRequest<byte[]>, HttpRequest<byte[]>> routedTo(HttpInboxRequest<T> request, boolean rollback) {
-    return onEvent(RequestRouted).to(Routed)
+    return onEvent(request.stored() ? RequestRouted : RequestRoutedNotStored).to(Routed).masked(requestMask(request))
         .assembleInput()
         .trigger(rollback ? RollbackRequestReceived : RequestReceived).with(d -> d).on(request)
         .identifiedBy(d -> rollback ? rollbackSelector(request, d) : newEntity())
@@ -246,18 +251,18 @@ interface TransitionModels {
         List.of(receivedTransition(request))
     );
     var dispatched = new ArrayList<TransitionModel<?, ?>>();
-    request.responses().forEach(response -> dispatched.add(customResponse(response)));
+    request.responses().forEach(response -> dispatched.add(customResponse(request, response)));
     dispatched.addAll(List.of(
-        onEvent(RequestCompleted).to(Completed)
+        onEvent(RequestCompleted).to(Completed).masked(responseEventMask(request))
             .assemble(c -> tuple(createResponseMessage(new Created(), c.input().t2(), c.correlationId(), c.timestamp(), c.input().t1()), c.input().t2()))
             .trigger(ResponseCreated).with(Tuple2::t1).on(RequestRouting).identifiedBy(entityIdFromSession())
             .output(Tuple2::t1),
-        onEvent(InvalidRequestCompleted).to(Completed)
+        onEvent(InvalidRequestCompleted).to(Completed).masked(responseEventMask(request))
             .assemble(c -> tuple(createResponseMessage(new BadRequest(), c.input().t2(), c.correlationId(), c.timestamp(), c.input().t1()), c.input().t2()))
             .trigger(ResponseCreated).with(Tuple2::t1).on(RequestRouting).identifiedBy(entityIdFromSession())
             .output(Tuple2::t1),
         // The response is 500 Internal Server Error
-        onEvent(FailedRequestCompleted).to(Completed).severity(Severity.Error)
+        onEvent(FailedRequestCompleted).to(Completed).severity(Severity.Error).masked(responseEventMask(request))
             .assemble(c -> tuple(createResponseMessage(new InternalServerError(), c.input().t2(), c.correlationId(), c.timestamp(), c.input().t1()), c.input().t2()))
             .trigger(ResponseCreated).with(Tuple2::t1).on(RequestRouting).identifiedBy(entityIdFromSession())
             .output(Tuple2::t1)
@@ -267,38 +272,38 @@ interface TransitionModels {
     transitions.put(Dispatched, dispatched);
     transitions.put(Completed, rollback ? List.of(rollbackTransition(request, RejectedRollbackFromCompleted)) : List.of());
     transitions.put(Rejected, List.of(
-        onEvent(RequestCompleted).to(Completed)
+        onEvent(RequestCompleted).to(Completed).masked(responseEventMask(request))
             .assemble(c -> tuple(createResponseMessage(new UnprocessableEntity(), c.input().t2(), c.correlationId(), c.timestamp(), c.input().t1()), c.input().t2()))
             .trigger(ResponseCreated).with(Tuple2::t1).on(RequestRouting).identifiedBy(entityIdFromSession())
             .output(Tuple2::t1),
-        onEvent(RejectedRequestCompleted).to(Completed)
+        onEvent(RejectedRequestCompleted).to(Completed).masked(responseMask(request))
             .assembleInput()
             .trigger(ResponseCreated).with(d -> d).on(RequestRouting).identifiedBy(entityIdFromSession())
             .output(Tuple2::t1),
-        onEvent(DuplicatedRequestCompleted).to(Completed)
+        onEvent(DuplicatedRequestCompleted).to(Completed).masked(responseMask(request))
             .assemble(TransitionContext::input)
             .trigger(ResponseCreated).with(d -> d).on(RequestRouting).identifiedBy(entityIdFromSession())
             .output(Tuple2::t1)
     ));
     if (rollback) {
       transitions.put(RollingBack, List.of(
-          onEvent(RollbackRequestCompleted).to(RolledBack)
+          onEvent(RollbackRequestCompleted).to(RolledBack).masked(responseEventMask(request))
               .assemble(c -> tuple(createResponseMessage(new Created(), c.input().t2(), c.correlationId(), c.timestamp(), c.input().t1()), c.input().t2()))
               .trigger(ResponseCreated).with(Tuple2::t1).on(RequestRouting).identifiedBy(entityIdFromSession())
               .output(Tuple2::t1),
-          onEvent(DuplicatedRequestCompleted).to(RolledBack)
+          onEvent(DuplicatedRequestCompleted).to(RolledBack).masked(responseMask(request))
               .assemble(TransitionContext::input)
               .trigger(ResponseCreated).with(d -> d).on(RequestRouting).identifiedBy(entityIdFromSession())
               .output(Tuple2::t1)
       ));
       transitions.put(RejectedRollbackFromCompleted, List.of(
-          onEvent(RollbackRequestCompleted).to(Completed)
+          onEvent(RollbackRequestCompleted).to(Completed).masked(responseEventMask(request))
               .assemble(c -> tuple(createResponseMessage(new UnprocessableEntity(), c.input().t2(), c.correlationId(), c.timestamp(), c.input().t1()), c.input().t2()))
               .trigger(ResponseCreated).with(Tuple2::t1).on(RequestRouting).identifiedBy(entityIdFromSession())
               .output(Tuple2::t1)
       ));
       transitions.put(RejectedRollbackFromDispatched, List.of(
-          onEvent(RollbackRequestCompleted).to(Dispatched)
+          onEvent(RollbackRequestCompleted).to(Dispatched).masked(responseEventMask(request))
               .assemble(c -> tuple(createResponseMessage(new UnprocessableEntity(), c.input().t2(), c.correlationId(), c.timestamp(), c.input().t1()), c.input().t2()))
               .trigger(ResponseCreated).with(Tuple2::t1).on(RequestRouting).identifiedBy(entityIdFromSession())
               .output(Tuple2::t1)
@@ -314,8 +319,8 @@ interface TransitionModels {
   private static <T> TransitionModel<?, ?> receivedTransition(HttpInboxRequest<T> request) {
     var validated = onEvent(RequestReceived).to(Dispatched)
         .assemble(c -> validate(request, c.input()))
-        .when(Validation::isInvalid).then(rejectedAsInvalid(), Validation::invalidReason)
-        .when(Validation::isRefused).then(rejectedAsUnauthorized(), Validation::refused);
+        .when(Validation::isInvalid).then(rejectedAsInvalid(request), Validation::invalidReason)
+        .when(Validation::isRefused).then(rejectedAsUnauthorized(request), Validation::refused);
     if (request.deduplicateOn() != null)
       return validated.otherwise(dispatchChoiceTransition(request), Validation::dispatch);
     return request.processes().size() == 1 ?
@@ -323,15 +328,15 @@ interface TransitionModels {
         validated.otherwise(contentChoiceTransition(request), Validation::dispatch);
   }
 
-  private static TransitionModel<String, HttpResponse<byte[]>> rejectedAsInvalid() {
-    return onEvent(RequestRejectedAsInvalid).to(Completed)
+  private static TransitionModel<String, HttpResponse<byte[]>> rejectedAsInvalid(HttpInboxRequest<?> request) {
+    return onEvent(RequestRejectedAsInvalid).to(Completed).masked(responseMask(request))
         .assemble(c -> badRequest(c.input(), c.correlationId(), c.timestamp()))
         .trigger(ResponseCreated).with(d -> d).on(RequestRouting).identifiedBy(entityIdFromSession())
         .output(Tuple2::t1);
   }
 
-  private static TransitionModel<Refused, HttpResponse<byte[]>> rejectedAsUnauthorized() {
-    return onEvent(RequestRejectedAsUnauthorized).to(Completed)
+  private static TransitionModel<Refused, HttpResponse<byte[]>> rejectedAsUnauthorized(HttpInboxRequest<?> request) {
+    return onEvent(RequestRejectedAsUnauthorized).to(Completed).masked(responseMask(request))
         .assemble(c -> refused(c.input(), c.correlationId(), c.timestamp()))
         .trigger(ResponseCreated).with(d -> d).on(RequestRouting).identifiedBy(entityIdFromSession())
         .output(Tuple2::t1);
@@ -355,7 +360,9 @@ interface TransitionModels {
       return false;
     return existing.oneIfExists(RequestAccepted).map(Tuple2::t1)
         .or(() -> existing.oneIfExists(RequestRejected))
-        .map(original -> request.normalizer().apply(newRequest).equals(request.normalizer().apply(original)))
+        // The first request is stored masked, so the two are compared masked
+        .map(original -> request.normalizer().apply(request.masking().mask(newRequest))
+            .equals(request.normalizer().apply(request.masking().mask(original))))
         .orElse(false);
   }
 
@@ -397,7 +404,7 @@ interface TransitionModels {
         .assemble(c -> tuple(c.input(), c.entityId()))
         .trigger(MessageIdClaimed).with(d -> d.t1().routedRequest().messageId()).on(MessageIds).identifiedBy(d -> entityId(d.t2(), CreateIfNotExists))
         .when(d -> d.t2().isIdExists() && d.t2().idExists().log().oneIfExists(RollbackRequestAccepted).isPresent()).then(
-            onEvent(RequestRejected).to(Rejected)
+            onEvent(RequestRejected).to(Rejected).masked(requestMask(request))
                 .assemble(c -> tuple(
                     c.input().t1(), // reason
                     c.input().t2(), // original entity id
@@ -410,7 +417,7 @@ interface TransitionModels {
             d -> tuple("Rolled back", d.t2().idExists().log().entityId(), d.t1().t1().routedRequest().request())
         )
         .when(d -> d.t2().isIdExists() && isSameRequest(d.t1().t1().routedRequest().request(), d.t2().idExists().log(), request)).then(
-            onEvent(DuplicateRequestRejected).to(Rejected)
+            onEvent(DuplicateRequestRejected).to(Rejected).masked(requestMask(request))
                 .assembleInput()
                 .trigger(DuplicatedRequestCompleted).with(Tuple2::t2).on(request).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t1()),
@@ -420,7 +427,7 @@ interface TransitionModels {
             )
         )
         .when(d -> d.t2().isIdExists()).then(
-            onEvent(RequestRejected).to(Rejected)
+            onEvent(RequestRejected).to(Rejected).masked(requestMask(request))
                 .assemble(c -> tuple(
                     c.input().t1(), // reason
                     c.input().t2(), // original entity id
@@ -445,7 +452,7 @@ interface TransitionModels {
         .assembleInput()
         .trigger(process.eventType()).with(process.input()).on(process.entityModel()).identifiedBy(RoutedRequest::processSelector)
         .when(d -> d.t2().isRejected()).then(
-            onEvent(RequestRejected).to(Rejected)
+            onEvent(RequestRejected).to(Rejected).masked(requestMask(request))
                 .assembleInput()
                 .trigger(RequestCompleted)
                 .with(d -> tuple(d.t1(), new EventReference(d.t2(), 0))) // TODO
@@ -455,59 +462,68 @@ interface TransitionModels {
             d -> tuple(d.t2().rejected().exception().getMessage(), d.t2().rejected().exception().entityId(), d.t1().request())
         )
         .when(d -> d.t2().isUnknownId()).then(
-            onEvent(RequestRejected).to(Rejected)
+            onEvent(RequestRejected).to(Rejected).masked(requestMask(request))
                 .assemble(c -> c)
                 .trigger(RejectedRequestCompleted).with(d -> badRequest("No such entity", d.correlationId(), d.timestamp())).on(request).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().input().t3()),
             d -> tuple(d.t2().unknownId().exception().getMessage(), null, d.t1().request())
         )
         .when(_ -> process.eventType() instanceof BasicEventType.Rollback).then(
-            onEvent(RequestAccepted).to(Dispatched)
-                .assemble(c -> tuple(c.input().t1(), c.input().t2(), c.entityId()))
-                .trigger(ProcessReferenced).with(d -> d.t2().entityId()).on(Index).identifiedBy(d -> entityId(d.t3(), CreateIfNotExists))
-                .trigger(RequestCompleted).with(d -> tuple("Cancelled", d.t1().t2())).on(request).identifiedBy(entityIdFromSession())
-                .output(d -> tuple(d.t1().t1().t1().request(), d.t1().t1().t2())),
+            request.stored() ?
+                onEvent(RequestAccepted).to(Dispatched).masked(acceptedMask(request))
+                    .assemble(c -> tuple(c.input().t1(), c.input().t2(), c.entityId()))
+                    .trigger(ProcessReferenced).with(d -> d.t2().entityId()).on(Index).identifiedBy(d -> entityId(d.t3(), CreateIfNotExists))
+                    .trigger(RequestCompleted).with(d -> tuple("Cancelled", d.t1().t2())).on(request).identifiedBy(entityIdFromSession())
+                    .output(d -> tuple(d.t1().t1().t1().request(), d.t1().t1().t2())) :
+                onEvent(RequestAccepted).to(Dispatched)
+                    .assembleInput()
+                    .trigger(RequestCompleted).with(d -> tuple("Cancelled", d.t2())).on(request).identifiedBy(entityIdFromSession())
+                    .output(d -> tuple(d.t1().t1().request(), d.t1().t2())),
             d -> tuple(d.t1(), new EventReference(d.t2().accepted().event().entityId(), d.t2().accepted().event().eventNumber()))
         )
         .when(d -> d.t2().isAccepted()).then(
-            onEvent(RequestAccepted).to(Dispatched)
-                .assemble(c -> tuple(c.input().t1(), c.input().t2(), c.entityId()))
-                .trigger(ProcessReferenced).with(d -> d.t2().entityId()).on(Index).identifiedBy(d -> entityId(d.t3(), CreateIfNotExists))
-                .output(d -> tuple(d.t1().t1().request(), d.t1().t2())),
+            accepted(request),
             d -> tuple(d.t1(), new EventReference(d.t2().accepted().event().entityId(), d.t2().accepted().event().eventNumber()))
         )
         .when(d -> d.t2().isCompleted()).then(
-            onEvent(RequestAccepted).to(Dispatched)
-                .assemble(c -> tuple(c.input().t1(), c.input().t2(), c.entityId()))
-                .trigger(ProcessReferenced).with(d -> d.t2().entityId()).on(Index).identifiedBy(d -> entityId(d.t3(), CreateIfNotExists))
-                .output(d -> tuple(d.t1().t1().request(), d.t1().t2())),
+            accepted(request),
             d -> tuple(d.t1(), new EventReference(d.t2().completed().entityId(), d.t2().completed().eventNumber()))
         )
         .when(d -> d.t2() instanceof ProcessResult.Pending<?, ?, ?> p && RequestRouting.includes(p.exception().entityModel())).then(
             // TODO: Can immediate reply in router be handled like this?
-            onEvent(RequestAccepted).to(Dispatched)
+            onEvent(RequestAccepted).to(Dispatched).masked(acceptedMask(request))
                 .assemble((input, log) -> tuple(input.t1(), input.t2(), log.entityId()))
                 .output(d -> tuple(d.t1().request(), d.t2())),
             d -> tuple(d.t1(), new EventReference(d.t2().pending().exception().entityId(), 0 /* eventNumber not used in transition anyways */))
         )
         .otherwise(
             // TODO: How to handle unknown process result? ("should never happen")
-            onEvent(RequestAccepted).to(Dispatched)
-                .assemble(c -> tuple(c.input().t1(), c.input().t2(), c.entityId()))
-                .trigger(ProcessReferenced).with(d -> d.t2().entityId()).on(Index).identifiedBy(d -> entityId(d.t3(), CreateIfNotExists))
-                .output(d -> tuple(d.t1().t1().request(), d.t1().t2())),
+            accepted(request),
             d -> tuple(d.t1(), new EventReference(d.t2().accepted().event().entityId(), d.t2().accepted().event().eventNumber()))
         );
+  }
+
+  /// The request is accepted by the application, and indexed by the entity of the application, by which the requests of
+  /// an entity are found. A request which is not stored is not indexed, as it can't be found.
+  private static <T> TransitionModel<Tuple2<RoutedRequest<?>, EventReference>, Tuple2<HttpRequest<byte[]>, EventReference>> accepted(HttpInboxRequest<T> request) {
+    if (!request.stored())
+      return onEvent(RequestAccepted).to(Dispatched)
+          .assembleInput()
+          .output(d -> tuple(d.t1().request(), d.t2()));
+    return onEvent(RequestAccepted).to(Dispatched).masked(acceptedMask(request))
+        .assemble(c -> tuple(c.input().t1(), c.input().t2(), c.entityId()))
+        .trigger(ProcessReferenced).with(d -> d.t2().entityId()).on(Index).identifiedBy(d -> entityId(d.t3(), CreateIfNotExists))
+        .output(d -> tuple(d.t1().t1().request(), d.t1().t2()));
   }
 
   /// A rollback of a request not received: the message id is claimed so that a later request with it is rejected
   private static <T> TransitionModel<?, ?> rollbackReceivedTransition(HttpInboxRequest<T> request) {
     return onEvent(RollbackRequestReceived).to(RollingBack)
         .assemble(c -> validateRollback(request, c.input()))
-        .when(Validation::isInvalid).then(rejectedAsInvalid(), Validation::invalidReason)
-        .when(Validation::isRefused).then(rejectedAsUnauthorized(), Validation::refused)
+        .when(Validation::isInvalid).then(rejectedAsInvalid(request), Validation::invalidReason)
+        .when(Validation::isRefused).then(rejectedAsUnauthorized(request), Validation::refused)
         .otherwise(
-            onEvent(RollbackRequestAccepted).to(RollingBack)
+            onEvent(RollbackRequestAccepted).to(RollingBack).masked(requestMask(request))
                 .assemble(c -> tuple(c.input(), c.entityId()))
                 .trigger(MessageIdClaimed).with(d -> d.t1().t2().messageId()).on(MessageIds).identifiedBy(d -> entityId(d.t2(), CreateIfNotExists))
                 .trigger(RollbackRequestCompleted)
@@ -525,14 +541,14 @@ interface TransitionModels {
         .assemble((input, log) -> tuple(validateRollback(request, input).routedRequest(), log.entityId(), log.one(RequestAccepted).t2(), log.one(ResponseEventType.outputDataType).t2()))
         .trigger(EventsRolledBack).with(d -> new Data(d.t3().eventNumber() - 1, "HTTP request")).on(request.processes().getFirst().entityModel()).identifiedBy(d -> entityId(d.t3().entityId()))
         .when(d -> d.t2().isRejected()).then(
-            onEvent(RequestRejected).to(rejectedState)
+            onEvent(RequestRejected).to(rejectedState).masked(requestMask(request))
                 .assembleInput()
                 .trigger(RollbackRequestCompleted).with(d -> tuple(d.t1(), new EventReference(d.t2(), 0))).on(request).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t3()),
             d -> tuple(d.t2().rejected().exception().getMessage(), d.t2().rejected().exception().entityId(), d.t1().t1().request())
         )
         .when(d -> d.t2().isAccepted()).then(
-            onEvent(RollbackRequestAccepted).to(RollingBack)
+            onEvent(RollbackRequestAccepted).to(RollingBack).masked(requestMask(request))
                 .assemble(c -> tuple(c.input(), c.entityId()))
                 .trigger(RollbackMessageIdClaimed).with(d -> d.t1().t2().messageId()).on(MessageIds).identifiedBy(d -> entityId(d.t2(), CreateIfNotExists))
                 .trigger(RollbackRequestCompleted).with(d -> tuple(d.t1().t1().t1(), d.t1().t1().t3())).on(request).identifiedBy(entityIdFromSession())
@@ -549,7 +565,8 @@ interface TransitionModels {
   /// Whether the rollback is equal to the first one with the same message id after normalizing, as for requests
   private static <T> boolean isSameRollback(HttpInboxRequest<T> request, HttpRequest<byte[]> rollback, HttpRequest<byte[]> first) {
     var normalizer = request.rollback().normalizer();
-    return normalizer.apply(rollback).equals(normalizer.apply(first));
+    // The first rollback is stored masked, so the two are compared masked
+    return normalizer.apply(request.masking().mask(rollback)).equals(normalizer.apply(request.masking().mask(first)));
   }
 
   /// A rollback repeated after the request is rolled back, or found to have nothing to roll back, gets the response of
@@ -564,14 +581,14 @@ interface TransitionModels {
         ))
         // A retry of the first rollback is equal to it after normalizing
         .when(d -> isSameRollback(request, d.t1().request(), d.t2())).then(
-            onEvent(DuplicateRequestRejected).to(RollingBack)
+            onEvent(DuplicateRequestRejected).to(RollingBack).masked(requestMask(request))
                 .assembleInput()
                 .trigger(DuplicatedRequestCompleted).with(Tuple2::t2).on(request).identifiedBy(entityIdFromSession())
                 .output(d -> d.t1().t1()),
             d -> tuple(d.t1().request(), d.t3().t1())
         )
         .otherwise(
-            onEvent(RequestRejected).to(Rejected)
+            onEvent(RequestRejected).to(Rejected).masked(requestMask(request))
                 .assemble(c -> tuple(
                     c.input().t1(), // reason
                     c.input().t2(), // original entity id
@@ -677,11 +694,31 @@ interface TransitionModels {
     return triggers;
   }
 
-  private static <I> TransitionModel<?, ?> customResponse(Response<I> response) {
-    return onEvent(response.eventType()).to(Completed)
+  private static <I> TransitionModel<?, ?> customResponse(HttpInboxRequest<?> request, Response<I> response) {
+    return onEvent(response.eventType()).to(Completed).masked(responseEventMask(request))
         .assemble(c -> tuple(response.messageCreator().apply(c), c.eventReference()))
         .trigger(ResponseCreated).with(Tuple2::t1).on(RequestRouting).identifiedBy(entityIdFromSession())
         .output(Tuple2::t1);
+  }
+
+  /// Masks a request of the inbox request as it is stored
+  private static UnaryOperator<HttpRequest<byte[]>> requestMask(HttpInboxRequest<?> request) {
+    return request.masking()::mask;
+  }
+
+  /// Masks a response of the inbox request as it is stored
+  private static UnaryOperator<HttpResponse<byte[]>> responseMask(HttpInboxRequest<?> request) {
+    return request.masking()::mask;
+  }
+
+  /// Masks the response of a [ResponseEventType] as it is stored
+  private static UnaryOperator<Tuple2<HttpResponse<byte[]>, EventReference>> responseEventMask(HttpInboxRequest<?> request) {
+    return d -> tuple(request.masking().mask(d.t1()), d.t2());
+  }
+
+  /// Masks the request of [HttpInbox#RequestAccepted] as it is stored
+  private static UnaryOperator<Tuple2<HttpRequest<byte[]>, EventReference>> acceptedMask(HttpInboxRequest<?> request) {
+    return d -> tuple(request.masking().mask(d.t1()), d.t2());
   }
 
   private static HttpResponse<byte[]> badRequest(String detail, String correlationId, ZonedDateTime timestamp) {

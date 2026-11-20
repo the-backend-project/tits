@@ -308,8 +308,23 @@ public class HttpInboxTest {
       .process(InternalProcessingRequested, Lamp, newEntity())
       .build("NormalizedRequest", UUID.fromString("5c2e8b17-4d9a-4f36-b0e1-7a3d6c9f2e58"));
 
+  /// Masks a query parameter besides the credentials every inbox request masks
+  static HttpInboxRequest<byte[]> MaskedRequest = withBody("PUT .*/masked/.*")
+      .deduplicateOn(parseMessageId("PUT .*/masked/([^?]*).*", 1))
+      .masking(Masking.queryParameters("code"))
+      .process(InternalProcessingRequested, Lamp, newEntity())
+      .build("MaskedRequest", UUID.fromString("c1a7e3f9-5b2d-4c80-9e46-a8d2f0b4c613"));
+
+  /// Neither the request nor its routing is stored, while the lamp it switches on is
+  static HttpInboxRequest<byte[]> NotStoredRequest = withBody("PUT .*/not-stored/.*")
+      .notStored()
+      .process(InternalProcessingRequested, Lamp, newEntity())
+      .build("NotStoredRequest", UUID.fromString("7f3b9d1e-2c6a-4e85-b0d7-e4a8c2f6b519"));
+
   static List<HttpInboxRequest<?>> requests = List.of(
       ContentRequest,
+      MaskedRequest,
+      NotStoredRequest,
       NormalizedRequest,
       OwnedRequest,
       ReversibleRequest,
@@ -468,6 +483,67 @@ public class HttpInboxTest {
       assertTrue(requestModelIds.contains(entityModelId(requestId)), "The index entity is that of an inbox request");
       assertEquals(Lamp.id(), entityModelId(processId), "The index key is the entity the request was processed on");
     });
+  }
+
+  /// The data of the stored event of the type on the entity, or null if there is none
+  private static byte[] storedData(UUID entityId, EventType<?, ?> type) {
+    return Init.client().sql("SELECT Data FROM \"" + schema + "\".\"Event\" WHERE EntityId=:entityId AND Type=:type")
+        .name("Test.StoredData")
+        .bind("entityId", entityId)
+        .bind("type", type.id())
+        .map(row -> row.get("Data", byte[].class))
+        .one()
+        .block();
+  }
+
+  private HttpRequest<byte[]> maskedRequest(String messageId, String code, String token) {
+    return new HttpRequest<>(
+        PUT,
+        URI.create("/masked/" + messageId + "?code=" + code + "&state=s1"),
+        Map.of("Authorization", "Bearer " + token, "Cookie", "session=" + token, "X-Other", "kept"),
+        asJson(new InternalProcess("Hello", 1))
+    );
+  }
+
+  @Test
+  public void whenRequestIsStoredThenCredentialsAndMaskedParametersAreMasked() throws IOException {
+    Event<?> response = onRequest(inbox.trigger(), maskedRequest(UUID.randomUUID().toString(), "c0de", "t0ken"));
+    assertEquals(201, HttpResponse.raw(response.getUnmarshalledData()).statusCode());
+
+    HttpRequest<byte[]> stored = HttpMessageParser.parseRequest(storedData(response.entityId(), HttpInbox.RequestRouted));
+    assertEquals("code=***&state=s1", stored.uri().getRawQuery());
+    assertEquals("***", stored.headerValue("Authorization"));
+    assertEquals("***", stored.headerValue("Cookie"));
+    assertEquals("kept", stored.headerValue("X-Other"));
+  }
+
+  @Test
+  public void whenRetryDiffersOnlyInWhatIsMaskedThenItGetsTheFirstResponse() throws IOException {
+    String messageId = UUID.randomUUID().toString();
+    HttpResponse<byte[]> first = HttpResponse.raw(onRequest(inbox.trigger(), maskedRequest(messageId, "c0de", "t0ken")).getUnmarshalledData());
+    HttpResponse<byte[]> retry = HttpResponse.raw(onRequest(inbox.trigger(), maskedRequest(messageId, "0ther", "refreshed")).getUnmarshalledData());
+    assertEquals(201, retry.statusCode());
+    assertArrayEquals(first.body(), retry.body());
+  }
+
+  @Test
+  public void whenRequestIsNotStoredThenNeitherIsItsRouting() {
+    Event<?> response = onRequest(PUT, URI.create("/not-stored/" + UUID.randomUUID()), asJson(new InternalProcess("Hello", 1)));
+    HttpResponse<byte[]> message = HttpResponse.raw(response.getUnmarshalledData());
+    assertEquals(201, message.statusCode());
+    assertTrue(new String(message.body()).contains("Light is on!"));
+    assertEquals(null, entityModelId(response.entityId()), "The routing is not stored");
+  }
+
+  @Test
+  public void notStoredRequestCantBeDeduplicated() {
+    assertThatThrownBy(() -> withBody("PUT .*/x/.*")
+        .notStored()
+        .deduplicateOn(parseMessageId("PUT .*/x/(.*)", 1))
+        .process(InternalProcessingRequested, Lamp, newEntity())
+        .build("X", UUID.randomUUID()))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("is not stored, so it can't be deduplicated");
   }
 
   private static UUID entityModelId(UUID entityId) {
