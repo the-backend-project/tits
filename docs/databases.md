@@ -98,9 +98,10 @@ Cons:
 
 Pros:
 
-* Non-blocking, on the event loops of Reactor Netty, which the state machine uses already.
+* Non-blocking, on the event loops of Reactor Netty, which the HTTP inbox and outbox use already.
 * R2DBC is a standard API built on Reactive Streams, which fits the state machine's Reactor pipeline.
-* Few dependencies of its own: the R2DBC SPI, the driver, its pool and the SCRAM authentication.
+* Few dependencies of its own: the R2DBC SPI, the driver, its pool, the SCRAM authentication, and Reactor Netty if
+  the application has no HTTP inbox or outbox.
 
 Cons:
 

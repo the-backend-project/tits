@@ -3,7 +3,7 @@
 | Module                                                                | Contains                                                                                       |
 |-----------------------------------------------------------------------|------------------------------------------------------------------------------------------------|
 | core                                                                  | The state machine, the builder of transition models, and the interface of the databases        |
-| http                                                                  | HTTP messages, HTTP clients and the data types of HTTP messages, shared by http-inbox and http-outbox |
+| [http](http-outbox.md#dispatching-a-request)                          | HTTP messages, HTTP clients and their data types, shared by http-inbox and http-outbox         |
 | [database-mssql, database-pgsql-*](databases.md)                      | The SQL of a database and the driver it is reached through, one module per database and driver |
 | [http-inbox](http-inbox.md)                                           | Inboxes: entity models receiving HTTP requests and routing them to the entities of an application |
 | [http-outbox](http-outbox.md)                                         | Outboxes: entity models sending HTTP requests at least once or at most once                    |

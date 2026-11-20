@@ -79,8 +79,8 @@ body is refused (see [Credentials](#credentials)). Errors are the error response
 An unknown client and a wrong secret get the same response, so the token endpoint does not tell which clients exist.
 
 Access tokens are JWTs as profiled by [RFC 9068](https://www.rfc-editor.org/rfc/rfc9068): of type `at+jwt`, signed with
-RS256, and with the claims `iss`, `sub`, `client_id`, `scope`, `jti`, `iat`, `exp`, and `aud` if configured. Core's
-`AccessTokenSupplier` gets tokens from the identity provider as from any other.
+RS256, and with the claims `iss`, `sub`, `client_id`, `scope`, `jti`, `iat`, `exp`, and `aud` if configured. The
+`AccessTokenSupplier` of the http module gets tokens from the identity provider as from any other.
 
 The `sub` of a token is the subject of its client, or the client id if the client has no subject. The `client_id` is
 always the client id. A subject lets a client be known to a service by a value a client id can't hold, e.g.
