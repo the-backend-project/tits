@@ -45,6 +45,18 @@ public final class Event<T> {
     this.unmarshalledData = data;
   }
 
+  /// An event whose data in the session differs from the data stored, e.g. masked. [#getUnmarshalledData()] gives the
+  /// data, while [#getMarshalledData()], which is what is stored, has the stored data.
+  public Event(UUID entityId, int eventNumber, EventType<?, T> type, ZonedDateTime timestamp, T data, T storedData) {
+    requireNonNull(type, "type is null");
+    this.entityId = entityId;
+    this.eventNumber = eventNumber;
+    this.type = type;
+    this.timestamp = timestamp;
+    this.data = type.outputDataType().marshal(storedData);
+    this.unmarshalledData = data;
+  }
+
   public Event(UUID entityId, Integer eventNumber, EventType<?, T> type, LocalDateTime timestamp, Clock clock, byte[] data) {
     this.entityId = entityId;
     requireNonNull(eventNumber, "eventNumber is null");

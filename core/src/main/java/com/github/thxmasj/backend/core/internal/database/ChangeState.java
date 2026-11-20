@@ -1,6 +1,5 @@
 package com.github.thxmasj.backend.core.internal.database;
 
-import com.github.thxmasj.backend.core.BasicEventType;
 import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.Event;
@@ -195,7 +194,7 @@ public abstract class ChangeState {
               newEvent().typeName() + "]:" +
               newEvent().eventNumber() + ":data=" +
               (newEvent().data() != null ? capString(newEvent().getUnmarshalledData().toString()) : "N/A") +
-              (newEvent().type() instanceof BasicEventType.ReadOnly<?,?> ? " (read-only)" : "");
+              (!newEvent().type().stored() ? " (not stored)" : "");
         }
 
       };

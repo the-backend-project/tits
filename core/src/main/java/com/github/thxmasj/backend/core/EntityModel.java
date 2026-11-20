@@ -16,6 +16,14 @@ public interface EntityModel extends Identifiable {
   /// The transitions of the entities of the model, by the state they are taken from
   Map<State, List<TransitionModel<?, ?>>> transitions();
 
+  /// Whether the entities of the model are stored. The entities of a model which is not stored are entities of the
+  /// session only: their transitions are taken, and the events they trigger on other entities are stored if those
+  /// are, but none of their own events are stored, and they can't be found after the session. Their transitions may
+  /// therefore go to any state, but they can't have delayed or conditional triggers, which fire after the session.
+  default boolean stored() {
+    return true;
+  }
+
   /// An entity model whose transitions are created when they are first asked for, so that they can refer to the model
   /// itself and to other models created the same way, e.g. as constants which refer to each other.
   static EntityModel of(String name, UUID id, Supplier<Map<State, List<TransitionModel<?, ?>>>> transitions) {

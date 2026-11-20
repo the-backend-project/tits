@@ -21,8 +21,36 @@ class Traverser {
   private final Map<State, List<TransitionModel<?, ?>>> transitions;
 
   public Traverser(Map<State, List<TransitionModel<?, ?>>> transitions) {
+    this(transitions, true);
+  }
+
+  /// @param stored whether the entities are stored (see [EntityModel#stored()]), so that an event which is not
+  ///               stored must not change their state
+  public Traverser(Map<State, List<TransitionModel<?, ?>>> transitions, boolean stored) {
     this.transitions = transitions;
     transitions.forEach(this::requireUniquePaths);
+    if (stored)
+      transitions.forEach(this::requireNotStoredToSelf);
+  }
+
+  /// An event which is not stored is not in the log, so it must not change the state of an entity which is stored. One
+  /// creating an entity, from [EntityModel#Begin], makes the entity one of the session only, whose state is not found
+  /// from a log.
+  private void requireNotStoredToSelf(State from, List<TransitionModel<?, ?>> transitionsFromState) {
+    if (from == Begin)
+      return;
+    for (var transition : transitionsFromState) {
+      for (var leaf : leaves(transition)) {
+        if (!leaf.eventType().stored() && leaf.toState() != null && !leaf.toState().equals(from))
+          throw new IllegalArgumentException(String.format(
+              "Event type %s is not stored, but its transition from %s goes to %s. The state of an entity is found " +
+                  "from its stored events, so a transition on an event which is not stored must stay in its state",
+              leaf.eventType().name(),
+              from.name(),
+              leaf.toState().name()
+          ));
+      }
+    }
   }
 
   /// Only the event of a chosen transition is stored, so a logged event is matched with the transitions from a state

@@ -85,4 +85,36 @@ public class TraverserTest {
     )));
   }
 
+  static EventType<Void, Void> Viewed = BasicEventType.notStored("Viewed", UUID.fromString("2c5f0a4e-8d1b-4f6a-9c3e-7b2d1e0f4a05"));
+
+  @Test
+  public void anEventNotStoredStayingInItsStateIsAccepted() {
+    assertDoesNotThrow(() -> new Traverser(Map.of(
+        Begin, List.of(acceptance),
+        States.Accepted, List.of(onEvent(Viewed).toSelf().output())
+    )));
+    assertDoesNotThrow(() -> new Traverser(Map.of(
+        Begin, List.of(acceptance),
+        States.Accepted, List.of(onEvent(Viewed).to(States.Accepted).output())
+    )));
+  }
+
+  @Test
+  public void anEventNotStoredChangingTheStateOfAStoredEntityIsRejected() {
+    var e = assertThrows(IllegalArgumentException.class, () -> new Traverser(Map.of(
+        Begin, List.of(acceptance),
+        States.Accepted, List.of(onEvent(Retried).toSelf().assembleInput().when(_ -> true).then(onEvent(Viewed).to(States.Rejected).output()).otherwise(reject(States.Rejected)))
+    )));
+    assertTrue(e.getMessage().startsWith("Event type Viewed is not stored, but its transition from Accepted goes to Rejected"), e.getMessage());
+  }
+
+  @Test
+  public void anEventNotStoredCreatingAnEntityOrOnAnEntityNotStoredMayChangeItsState() {
+    assertDoesNotThrow(() -> new Traverser(Map.of(Begin, List.of(onEvent(Viewed).to(States.Accepted).output()))));
+    assertDoesNotThrow(() -> new Traverser(Map.of(
+        Begin, List.of(acceptance),
+        States.Accepted, List.of(onEvent(Viewed).to(States.Rejected).output())
+    ), false));
+  }
+
 }

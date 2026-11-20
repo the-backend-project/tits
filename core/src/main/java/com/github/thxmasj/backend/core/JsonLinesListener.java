@@ -19,7 +19,9 @@ import java.util.function.Consumer;
 /// The lines go to stdout, for the execution environment to collect, and to alert on by their `severity`, which is
 /// `INFO`, `WARNING`, `ERROR` or `CRITICAL`. The data of the events is not written, as it may be sensitive.
 ///
-/// Delayed events and conditional triggers are not written before their events happen. A transition which failed, as
+/// An event which is not stored (see [Change.Event#stored()]) is written too, with `"stored":false` and no event
+/// number, as the event log does not have it. Delayed events and conditional triggers are not written before their
+/// events happen. A transition which failed, as
 /// a function of it threw an exception, is written as a line of severity `ERROR` with the entity, the event type and
 /// the exception, but no event number, as no event was stored. A failure to process a delayed trigger is written as a
 /// line of severity `ERROR` with no event, and with the failure as it is for its message.
@@ -54,8 +56,12 @@ public class JsonLinesListener implements Listener {
       );
       line.put("entityModel", change.entity().model());
       line.put("entityId", change.entity().id().toString());
-      line.put("eventNumber", event.number());
+      // An event which is not stored has no number in the event log
+      if (event.stored())
+        line.put("eventNumber", event.number());
       line.put("eventType", event.type());
+      if (!event.stored())
+        line.put("stored", false);
       line.put("correlationId", correlationId);
       write(line);
     }
