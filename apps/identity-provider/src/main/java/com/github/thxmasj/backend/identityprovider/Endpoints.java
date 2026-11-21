@@ -5,9 +5,6 @@ import static com.github.thxmasj.backend.core.Validated.valid;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 import com.github.thxmasj.backend.core.DataType;
-import com.github.thxmasj.backend.core.EntityModel;
-import com.github.thxmasj.backend.core.State;
-import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionContext;
 import com.github.thxmasj.backend.core.Validated;
 import com.github.thxmasj.backend.http.HttpRequest;
@@ -526,23 +523,6 @@ final class Endpoints {
         contentType != null ? Map.of("Content-Type", contentType) : Map.of(),
         body != null ? body.getBytes(UTF_8) : null
     );
-  }
-
-  /// An entity model whose entities are of the session only (see [EntityModel#stored()]), with the transitions created
-  /// when they are first asked for
-  static EntityModel sessionOnly(String name, UUID id, Supplier<Map<State, List<TransitionModel<?, ?>>>> transitions) {
-    return new EntityModel() {
-      private Map<State, List<TransitionModel<?, ?>>> created;
-      @Override public String name() {return name;}
-      @Override public UUID id() {return id;}
-      @Override public boolean stored() {return false;}
-      @Override public String toString() {return name;}
-      @Override public synchronized Map<State, List<TransitionModel<?, ?>>> transitions() {
-        if (created == null)
-          created = transitions.get();
-        return created;
-      }
-    };
   }
 
   /// The authorization server metadata of RFC 8414, which is also the provider metadata of OpenID Connect Discovery

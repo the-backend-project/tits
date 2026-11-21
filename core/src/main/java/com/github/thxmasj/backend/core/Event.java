@@ -17,6 +17,8 @@ public final class Event<T> {
   private final ZonedDateTime timestamp;
   private byte[] data;
   private T unmarshalledData;
+  /// Whether the data stored is given apart from the data, so that it is never marshalled from the data
+  private boolean storedApart;
 
   public Event(UUID entityId, Integer eventNumber, EventType<?, T> type, Clock clock) {
     this(entityId, eventNumber, type, LocalDateTime.ofInstant(clock.instant(), clock.getZone()), clock, null);
@@ -53,8 +55,9 @@ public final class Event<T> {
     this.eventNumber = eventNumber;
     this.type = type;
     this.timestamp = timestamp;
-    this.data = type.outputDataType().marshal(storedData);
+    this.data = storedData != null ? type.outputDataType().marshal(storedData) : null;
     this.unmarshalledData = data;
+    this.storedApart = true;
   }
 
   public Event(UUID entityId, Integer eventNumber, EventType<?, T> type, LocalDateTime timestamp, Clock clock, byte[] data) {
@@ -112,7 +115,7 @@ public final class Event<T> {
   }
 
   public byte[] getMarshalledData() {
-    if (data == null && unmarshalledData != null) {
+    if (data == null && unmarshalledData != null && !storedApart) {
       data = type.outputDataType().marshal(unmarshalledData);
     }
     return data;

@@ -132,7 +132,8 @@ public record Masking(Set<String> headers, Set<String> queryParameters, Set<Stri
     if (formFields.isEmpty() || stored.body() == null || !isForm(stored))
       return false;
     return Stream.of(new String(stored.body(), UTF_8).split("&", -1))
-        .anyMatch(pair -> pair.equals(MASK) || formFields.stream().anyMatch(name -> pair.startsWith(name + "=")));
+        // By the value, as the name of a field is kept as written, which may be encoded
+        .anyMatch(pair -> pair.equals(MASK) || pair.endsWith("=" + MASK));
   }
 
   private Map<String, String> maskHeaders(Map<String, String> original) {

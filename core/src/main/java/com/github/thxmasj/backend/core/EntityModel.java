@@ -36,6 +36,19 @@ public interface EntityModel extends Identifiable {
     };
   }
 
+  /// An entity model which is not stored, whose entities are of the session only (see [#stored()]), with its transitions
+  /// created when they are first asked for, as [#of(String, UUID, Supplier)]
+  static EntityModel notStored(String name, UUID id, Supplier<Map<State, List<TransitionModel<?, ?>>>> transitions) {
+    var created = new Memoized<>(transitions, "transitions of entity model " + name);
+    return new EntityModel() {
+      @Override public String name() {return name;}
+      @Override public UUID id() {return id;}
+      @Override public Map<State, List<TransitionModel<?, ?>>> transitions() {return created.get();}
+      @Override public boolean stored() {return false;}
+      @Override public String toString() {return name;}
+    };
+  }
+
   /// The entity models, and those their transitions trigger events on, directly, in reversals and in the transitions they
   /// may choose, and so on, each once: the models a state machine given the entity models runs. A group triggered on
   /// adds no models, as its models are those of the group which are run. The models found follow the ones given.

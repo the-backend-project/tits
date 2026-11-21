@@ -786,6 +786,12 @@ public class TransitionModelBuilder<I, T, O> {
   /// the transition's, or, if the transition's event is not stored, the number of that event, which the next event stored
   /// takes
   private <I1, O1> TransitionModelBuilder<I, T, O> triggerDelayed(EventType<I1, O1> eventType, Function<T, I1> dataAdapter, Function<T, Duration> delay) {
+    // The delayed trigger is deleted with the event it fires, so that event must be stored
+    if (!eventType.stored())
+      throw new IllegalArgumentException(String.format(
+          "%s is not stored, so it can't be a delayed event, whose trigger is deleted with the event it fires",
+          eventType.name()
+      ));
     int after = modelContext.eventType() != null && !modelContext.eventType().stored() ? 0 : 1;
     Function<Mono<TransitionStep<T>>, Mono<TransitionStep<T>>> f =
         transitionStep -> transitionStep

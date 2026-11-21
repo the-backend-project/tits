@@ -322,7 +322,7 @@ public interface Authorizations {
   /// and the tokens of the upstream provider, and the secret of the sign-in, never enter the event log. Only the user
   /// signed in, or the failure, is passed on to the authorization.
   static EntityModel upstreamSignIn(OpenIdConnectClient upstream) {
-    return Endpoints.sessionOnly("Upstream sign-in", UUID.fromString("9f2d6b8e-3a1c-4e57-b9d4-6c0a2e8f1b73"), () -> signInTransitions(upstream));
+    return EntityModel.notStored("Upstream sign-in", UUID.fromString("9f2d6b8e-3a1c-4e57-b9d4-6c0a2e8f1b73"), () -> signInTransitions(upstream));
   }
 
   private static Map<State, List<TransitionModel<?, ?>>> signInTransitions(OpenIdConnectClient upstream) {

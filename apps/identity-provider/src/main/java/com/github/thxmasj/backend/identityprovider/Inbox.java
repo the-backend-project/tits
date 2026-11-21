@@ -96,7 +96,7 @@ public interface Inbox {
   enum AnswerStates implements State {Answered}
 
   /// The answers of the requests answered at once, which are entities of the session only
-  EntityModel Answers = Endpoints.sessionOnly("Answers", UUID.fromString("5d0a8e2c-7f4b-4c19-9e63-b1f8d4a2c705"), () -> Map.of(
+  EntityModel Answers = EntityModel.notStored("Answers", UUID.fromString("5d0a8e2c-7f4b-4c19-9e63-b1f8d4a2c705"), () -> Map.of(
       EntityModel.Begin, List.of(
           onEvent(AnswerRequested).to(AnswerStates.Answered)
               .assembleInput()

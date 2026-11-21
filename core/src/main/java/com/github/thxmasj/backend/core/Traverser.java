@@ -9,12 +9,15 @@ import static java.util.stream.Collectors.joining;
 
 import com.github.thxmasj.backend.core.Tuples.Tuple2;
 import com.github.thxmasj.backend.core.internal.Debug;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 class Traverser {
 
@@ -29,16 +32,39 @@ class Traverser {
   public Traverser(Map<State, List<TransitionModel<?, ?>>> transitions, boolean stored) {
     this.transitions = transitions;
     transitions.forEach(this::requireUniquePaths);
-    if (stored)
-      transitions.forEach(this::requireNotStoredToSelf);
+    if (stored) {
+      var reached = statesOfStoredEntities();
+      transitions.forEach((from, fromState) -> {
+        if (reached.contains(from))
+          requireNotStoredToSelf(from, fromState);
+      });
+    }
+  }
+
+  /// The states an entity which is stored reaches: from `Begin` by the events stored, as one created by an event not
+  /// stored is an entity of the session only, and from there by any event. The states only entities of the session
+  /// reach may be left by events not stored.
+  private Set<State> statesOfStoredEntities() {
+    var reached = new HashSet<State>();
+    var toVisit = new ArrayDeque<State>();
+    for (var transition : transitions.getOrDefault(Begin, List.of()))
+      for (var leaf : leaves(transition))
+        if (leaf.eventType().stored() && leaf.toState() != null && reached.add(leaf.toState()))
+          toVisit.add(leaf.toState());
+    while (!toVisit.isEmpty()) {
+      State state = toVisit.removeFirst();
+      for (var transition : transitions.getOrDefault(state, List.of()))
+        for (var leaf : leaves(transition))
+          if (leaf.toState() != null && reached.add(leaf.toState()))
+            toVisit.add(leaf.toState());
+    }
+    return reached;
   }
 
   /// An event which is not stored is not in the log, so it must not change the state of an entity which is stored. One
   /// creating an entity, from [EntityModel#Begin], makes the entity one of the session only, whose state is not found
   /// from a log.
   private void requireNotStoredToSelf(State from, List<TransitionModel<?, ?>> transitionsFromState) {
-    if (from == Begin)
-      return;
     for (var transition : transitionsFromState) {
       for (var leaf : leaves(transition)) {
         if (!leaf.eventType().stored() && leaf.toState() != null && !leaf.toState().equals(from))

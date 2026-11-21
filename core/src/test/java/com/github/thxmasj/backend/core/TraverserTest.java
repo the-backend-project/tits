@@ -111,6 +111,12 @@ public class TraverserTest {
   @Test
   public void anEventNotStoredCreatingAnEntityOrOnAnEntityNotStoredMayChangeItsState() {
     assertDoesNotThrow(() -> new Traverser(Map.of(Begin, List.of(onEvent(Viewed).to(States.Accepted).output()))));
+    // The entities of a stored model created by an event not stored are of the session only, so the states only they
+    // reach may be left by events not stored
+    assertDoesNotThrow(() -> new Traverser(Map.of(
+        Begin, List.of(onEvent(Viewed).to(States.Requested).output()),
+        States.Requested, List.of(onEvent(Viewed).to(States.Accepted).output())
+    )));
     assertDoesNotThrow(() -> new Traverser(Map.of(
         Begin, List.of(acceptance),
         States.Accepted, List.of(onEvent(Viewed).to(States.Rejected).output())

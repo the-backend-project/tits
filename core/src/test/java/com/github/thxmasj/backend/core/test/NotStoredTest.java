@@ -53,12 +53,7 @@ public class NotStoredTest {
   static EntityModel Views = EntityModel.of("Views", UUID.fromString("b6e2a8d4-0c5f-4e17-9a3b-f1d7c9e5a283"), NotStoredTest::viewTransitions);
   static EntityModel SignIn = EntityModel.of("SignIn", UUID.fromString("f3a7c1e5-9d2b-4f68-8c0a-b4e6d8f0a159"), NotStoredTest::signInTransitions);
   /// A model which is not stored
-  static EntityModel Session = new EntityModel() {
-    @Override public String name() {return "Session";}
-    @Override public UUID id() {return UUID.fromString("0d6b2f8e-4a1c-4b73-95e7-c3a9f5d1b724");}
-    @Override public Map<State, List<TransitionModel<?, ?>>> transitions() {return sessionTransitions();}
-    @Override public boolean stored() {return false;}
-  };
+  static EntityModel Session = EntityModel.notStored("Session", UUID.fromString("0d6b2f8e-4a1c-4b73-95e7-c3a9f5d1b724"), NotStoredTest::sessionTransitions);
 
   private static final List<String> lines = new CopyOnWriteArrayList<>();
   private static final String schema = UUID.randomUUID().toString();
@@ -178,10 +173,12 @@ public class NotStoredTest {
   }
 
   /// The delayed event fires unless another event is stored first, so it has the number of the event not stored,
-  /// which the next event stored takes
+  /// which the next event stored takes, and replaces the trigger pending with that number
   @Test
   public void aDelayedEventOfAnEventNotStoredFires() throws InterruptedException {
     UUID account = machine.onEvent(trigger(AccountOpened, Account), "a").blockFirst().entityId();
+    machine.onEvent(trigger(ReminderScheduled, Account, account), null).blockFirst(Duration.ofSeconds(10));
+    // Scheduled again, which replaces the pending trigger, as it has the same number
     machine.onEvent(trigger(ReminderScheduled, Account, account), null).blockFirst(Duration.ofSeconds(10));
 
     List<String> events = List.of();

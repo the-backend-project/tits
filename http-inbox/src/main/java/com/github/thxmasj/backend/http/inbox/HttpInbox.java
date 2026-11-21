@@ -17,6 +17,7 @@ import com.github.thxmasj.backend.core.Validated;
 import com.github.thxmasj.backend.http.HttpDataType;
 import com.github.thxmasj.backend.http.HttpRequest;
 import com.github.thxmasj.backend.http.HttpResponse;
+import com.github.thxmasj.backend.http.Masking;
 import com.github.thxmasj.backend.http.inbox.Authorization.Refused;
 import java.util.List;
 import java.util.UUID;
@@ -161,10 +162,16 @@ public interface HttpInbox {
       DataType.json(Refused.class),
       HttpDataType.forResponse()
   );
-  EventType<HttpResponse<byte[]>, HttpResponse<byte[]>> ResponseCreated = BasicEventType.of(
+  /// The response of an inbox request, given to its `RequestRouting` entity, with the masking of the inbox request,
+  /// which the routing stores the response with
+  record RoutedResponse(HttpResponse<byte[]> response, Masking masking) {}
+
+  /// The response an inbox request gives its `RequestRouting` entity, which is stored masked as the inbox request masks
+  /// it
+  EventType<RoutedResponse, HttpResponse<byte[]>> ResponseCreated = BasicEventType.of(
       "Response created",
       UUID.fromString("2387a6a5-a483-428d-839f-26b5fe485247"),
-      HttpDataType.forResponse(),
+      DataType.unknown(),
       HttpDataType.forResponse()
   );
   EventType<String, HttpResponse<byte[]>> BadRequestResponseCreated = BasicEventType.of(

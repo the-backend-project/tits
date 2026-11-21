@@ -23,6 +23,7 @@ import java.time.Clock;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.Map;
 import java.time.Duration;
 import java.util.Set;
@@ -162,14 +163,21 @@ public final class OpenIdConnectClient {
   ///
   /// A code can be redeemed only once, so the same code and secret redeemed again within a minute get the result of
   /// the first redemption, rather than a refusal of the provider: a transition redeeming the code may be calculated
-  /// again, e.g. after a concurrent change of its entity.
+  /// again, e.g. after a concurrent change of its entity. A redemption which failed is not remembered, so it is tried
+  /// again.
   public Mono<JWTClaimsSet> redeem(String code, String secret) {
     long now = System.nanoTime();
     redemptions.values().removeIf(r -> now - r.startedAt() > redemptionMemory.toNanos());
-    return redemptions.computeIfAbsent(
-        Secrets.hash(code + "\n" + secret),
-        _ -> new Redemption(redeemed(code, secret).cache(), now)
-    ).result();
+    String key = Secrets.hash(code + "\n" + secret);
+    return redemptions.computeIfAbsent(key, _ -> {
+      var redemption = new AtomicReference<Redemption>();
+      // A redemption which failed is forgotten, as the failure may be of the moment, e.g. the provider out of reach
+      redemption.set(new Redemption(
+          redeemed(code, secret).doOnError(_ -> redemptions.remove(key, redemption.get())).cache(),
+          now
+      ));
+      return redemption.get();
+    }).result();
   }
 
   private Mono<JWTClaimsSet> redeemed(String code, String secret) {

@@ -73,4 +73,14 @@ public class MaskingTest {
     assertEquals(true, Masking.responseBody().hasMasked(new HttpResponse<>(200, "OK", Map.of(), "***".getBytes(UTF_8))));
     assertEquals(false, Masking.responseBody().hasMasked(new HttpResponse<byte[]>(204, "No Content", Map.of(), null)));
   }
+
+  /// A masked field is found by its value, also when its name is written encoded
+  @Test
+  public void aStoredFormFieldWithAnEncodedNameIsFoundMasked() {
+    var masking = Masking.formFields("client_secret");
+    var response = new HttpResponse<>(200, "OK", form, "client%5Fsecret=s3cret&x=1".getBytes(UTF_8));
+    var stored = masking.mask(response);
+    assertEquals("client%5Fsecret=***&x=1", new String(stored.body(), UTF_8));
+    assertEquals(true, masking.hasMasked(stored));
+  }
 }
