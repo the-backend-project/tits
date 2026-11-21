@@ -193,7 +193,8 @@ public abstract class ChangeState {
               entityId() + ":ev:[" +
               newEvent().typeName() + "]:" +
               newEvent().eventNumber() + ":data=" +
-              (newEvent().data() != null ? capString(newEvent().getUnmarshalledData().toString()) : "N/A") +
+              // As stored, so that what is masked isn't written to the debug output
+              (newEvent().getMarshalledData() != null ? capString(new String(newEvent().getMarshalledData(), java.nio.charset.StandardCharsets.UTF_8)) : "N/A") +
               (!newEvent().type().stored() ? " (not stored)" : "");
         }
 

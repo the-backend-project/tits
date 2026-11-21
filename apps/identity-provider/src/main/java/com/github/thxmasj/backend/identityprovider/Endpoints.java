@@ -22,12 +22,14 @@ import com.github.thxmasj.backend.identityprovider.Inbox.Reply;
 import java.net.URI;
 import java.time.Duration;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.WeakHashMap;
 import java.util.function.Supplier;
 
 /// The endpoints of the identity provider: what the inbox requests do with the credentials of the requests, and the
@@ -68,8 +70,24 @@ final class Endpoints {
     return upstream;
   }
 
+  /// The answers of the requests answered at once, by the request, as the inbox request of the requests answered at once
+  /// asks for it both when matching a request and when parsing it. They are kept while the request is. A request which
+  /// is processed is checked again by its content parser, e.g. its access token verified, so an answer of an equal
+  /// request kept a while longer lets nothing through.
+  private final Map<HttpRequest<byte[]>, Optional<HttpResponse<byte[]>>> answers = Collections.synchronizedMap(new WeakHashMap<>());
+
   /// The response of a request answered at once, or null for a request for the entities of the identity provider
   HttpResponse<byte[]> immediate(HttpRequest<byte[]> request) {
+    return answers.computeIfAbsent(request, r -> Optional.ofNullable(answer(r))).orElse(null);
+  }
+
+  /// The access token, if it is valid. It is verified each time, rather than remembered, so that an expired token is
+  /// never taken as valid.
+  private Optional<AccessToken> verify(String token) {
+    return keys.verify(token);
+  }
+
+  private HttpResponse<byte[]> answer(HttpRequest<byte[]> request) {
     String path = request.uri().getPath();
     if (upstream != null) {
       switch (path) {
@@ -228,7 +246,7 @@ final class Endpoints {
     String authorization = request.headerValue("Authorization");
     if (authorization == null || !authorization.regionMatches(true, 0, "Bearer ", 0, 7))
       return bearerError(401, null, null, null);
-    Optional<AccessToken> principal = keys.verify(authorization.substring(7).trim());
+    Optional<AccessToken> principal = verify(authorization.substring(7).trim());
     if (principal.isEmpty())
       return bearerError(401, "invalid_token", "The access token is invalid or expired", null);
     if (!principal.get().scopes().contains(Clients.RegistrationScope))
@@ -239,7 +257,12 @@ final class Endpoints {
   /// A registration on behalf of the client of the access token. The secret of the new client is generated here, so
   /// only its hash enters the event log, and the secret the response, which the event log masks.
   Validated<Clients.RegistrationRequest> registration(HttpRequest<byte[]> request) {
-    AccessToken principal = keys.verify(request.headerValue("Authorization").substring(7).trim()).orElseThrow();
+    Optional<AccessToken> verified = verify(request.headerValue("Authorization").substring(7).trim())
+        .filter(token -> token.scopes().contains(Clients.RegistrationScope));
+    // Checked by the answer at once, unless the token has expired since
+    if (verified.isEmpty())
+      return invalid("The access token is invalid or expired");
+    AccessToken principal = verified.get();
     String secret = Secrets.generate();
     Validated<Clients.Registration> registration = Inbox.registration(request, principal.clientId(), Secrets.hash(secret));
     return registration.isInvalid() ?
@@ -355,7 +378,7 @@ final class Endpoints {
     if (authorization == null || !authorization.regionMatches(true, 0, "Bearer ", 0, 7))
       return bearerError(401, null, null, null);
     String token = authorization.substring(7).trim();
-    Optional<AccessToken> principal = keys.verify(token);
+    Optional<AccessToken> principal = verify(token);
     Optional<String> tokenId = principal.flatMap(_ -> Keys.tokenId(token));
     if (tokenId.isEmpty())
       return bearerError(401, "invalid_token", "The access token is invalid or expired", null);
@@ -367,7 +390,7 @@ final class Endpoints {
   /// The `jti` of the verified access token of a UserInfo request, the entity id of the token request which issued it
   Validated<String> tokenId(HttpRequest<byte[]> request) {
     String token = request.headerValue("Authorization").substring(7).trim();
-    return keys.verify(token).flatMap(_ -> Keys.tokenId(token)).map(Validated::valid).orElseGet(() -> invalid("Unauthenticated"));
+    return verify(token).flatMap(_ -> Keys.tokenId(token)).map(Validated::valid).orElseGet(() -> invalid("Unauthenticated"));
   }
 
   /// The UserInfo response, or the refusal of a token which is not one of a user, e.g. of the client credentials grant

@@ -640,6 +640,23 @@ public class IdentityProviderTest {
   }
 
   @Test
+  public void whenCallbackHasNeitherCodeNorErrorThenClientIsRedirectedWithServerError() throws Exception {
+    registerWebApp("codeless");
+    var first = send(HttpRequest.newBuilder(authorizeUri("codeless", appRedirectUri.toString(), "openid", "s", null)).GET().build());
+    assertThat(first.statusCode()).isEqualTo(302);
+    String cookie = first.headers().firstValue("Set-Cookie").orElseThrow().split(";")[0];
+    var atUpstream = send(HttpRequest.newBuilder(URI.create(first.headers().firstValue("Location").orElseThrow())).GET().build());
+    var callback = URI.create(atUpstream.headers().firstValue("Location").orElseThrow());
+    String state = Form.parse(callback.getRawQuery()).get("state");
+
+    var response = send(HttpRequest.newBuilder(URI.create(callback.toString().substring(0, callback.toString().indexOf('?')) + "?state=" + state))
+        .header("Cookie", cookie).GET().build());
+
+    assertThat(response.statusCode()).as(response.body()).isEqualTo(302);
+    assertThat(response.headers().firstValue("Location").orElseThrow()).contains("error=server_error");
+  }
+
+  @Test
   public void whenCallbackHasNoCookieThenErrorPage() throws Exception {
     registerWebApp("cookieless");
     // The upstream provider redirects to the callback, which is called by another browser, without the cookie

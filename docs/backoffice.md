@@ -31,6 +31,10 @@ change the application's data. Its sessions and the load of its users stay out o
 
 [Open the diagram in full size](images/com.github.thxmasj.backend.backoffice.BackofficeSession.svg)
 
+The state `Redeeming`, with `Code redemption requested` and `Token request failed`, is only there for the sessions
+stored before the code was redeemed in the transition of the callback, by an outbox request: no session goes there now,
+but those stored are read.
+
 A refused sign-in is an event of [severity](monitoring.md#severity) `Warning`, so attempts to get in show up in the
 monitoring. A session expires after its lifetime, or after 30,000 events, as the event numbers of an entity are
 `SMALLINT`.

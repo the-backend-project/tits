@@ -120,6 +120,21 @@ public record Masking(Set<String> headers, Set<String> queryParameters, Set<Stri
     return new HttpResponse<>(response.statusCode(), response.reasonPhrase(), maskHeaders(response.headers()), body);
   }
 
+  /// Whether the response, as stored, has something masked: a header or form field this masking masks, or its body if
+  /// this masking masks the body of a response
+  public boolean hasMasked(HttpResponse<byte[]> stored) {
+    if (stored == null)
+      return false;
+    if (wholeResponseBody && stored.body() != null)
+      return true;
+    if (stored.headers().keySet().stream().anyMatch(this::isMaskedHeader))
+      return true;
+    if (formFields.isEmpty() || stored.body() == null || !isForm(stored))
+      return false;
+    return Stream.of(new String(stored.body(), UTF_8).split("&", -1))
+        .anyMatch(pair -> pair.equals(MASK) || formFields.stream().anyMatch(name -> pair.startsWith(name + "=")));
+  }
+
   private Map<String, String> maskHeaders(Map<String, String> original) {
     if (headers.isEmpty() || original.keySet().stream().noneMatch(this::isMaskedHeader))
       return original;

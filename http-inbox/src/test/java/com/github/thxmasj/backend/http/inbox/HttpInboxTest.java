@@ -79,6 +79,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.UUID;
+import java.util.function.Function;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
@@ -321,9 +322,16 @@ public class HttpInboxTest {
       .process(InternalProcessingRequested, Lamp, newEntity())
       .build("NotStoredRequest", UUID.fromString("7f3b9d1e-2c6a-4e85-b0d7-e4a8c2f6b519"));
 
+  /// Masks the body of its response, which the routing of the other requests doesn't
+  static HttpInboxRequest<byte[]> BodyMaskedRequest = withBody("PUT .*/body-masked/.*")
+      .masking(Masking.responseBody())
+      .process(InternalProcessingRequested, Lamp, newEntity())
+      .build("BodyMaskedRequest", UUID.fromString("3e9a5c1f-7b2d-4e64-a8f0-c6d2b4e8a135"));
+
   static List<HttpInboxRequest<?>> requests = List.of(
       ContentRequest,
       MaskedRequest,
+      BodyMaskedRequest,
       NotStoredRequest,
       NormalizedRequest,
       OwnedRequest,
@@ -515,6 +523,51 @@ public class HttpInboxTest {
     assertEquals("***", stored.headerValue("Authorization"));
     assertEquals("***", stored.headerValue("Cookie"));
     assertEquals("kept", stored.headerValue("X-Other"));
+    // The routing masks the response as the request routed masks it, which is not its body
+    HttpResponse<byte[]> storedResponse = HttpMessageParser.parseResponse(storedData(response.entityId(), HttpInbox.ResponseCreated));
+    assertTrue(new String(storedResponse.body()).contains("Light is on!"));
+  }
+
+  @Test
+  public void whenRequestMasksTheBodyOfItsResponseThenItsRoutingDoesToo() {
+    Event<?> response = onRequest(PUT, URI.create("/body-masked/" + UUID.randomUUID()), asJson(new InternalProcess("Hello", 1)));
+    assertTrue(new String(HttpResponse.raw(response.getUnmarshalledData()).body()).contains("Light is on!"));
+    HttpResponse<byte[]> stored = HttpMessageParser.parseResponse(storedData(response.entityId(), HttpInbox.ResponseCreated));
+    assertEquals("***", new String(stored.body()));
+  }
+
+  @Test
+  public void requestMaskingTheBodyOfItsResponseCantBeDeduplicated() {
+    assertThatThrownBy(() -> withBody("PUT .*/x/.*")
+        .deduplicateOn(parseMessageId("PUT .*/x/(.*)", 1))
+        .masking(Masking.responseBody())
+        .process(InternalProcessingRequested, Lamp, newEntity())
+        .build("X", UUID.randomUUID()))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("masks the body of its response, so it can't be deduplicated");
+  }
+
+  /// The first response sets a cookie, which is masked in the event log, so a retry can't be given it
+  @Test
+  public void whenRetryOfARequestWhoseResponseIsMaskedThenConflict() {
+    var bell = bell(false);
+    var request = HttpInboxRequest.matching(m -> m.requestLine().matches("PUT /bell/.*")).noContent()
+        .deduplicateOn(parseMessageId("PUT /bell/(.*)", 1))
+        .process(BellRung, bell, newEntity())
+        .response(Rang, _ -> new HttpResponse<>(200, "OK", Map.of("Set-Cookie", "session=s3cret"), null))
+        .build("CookieRequest", UUID.fromString("9b1d7f3a-5c2e-4a86-b4d0-e8f6a2c4b917"));
+    var cookieInbox = HttpInbox.of(List.of(request));
+    var machine = Init.stateMachine(UUID.randomUUID().toString(), cookieInbox.entityModels());
+    var message = new HttpRequest<byte[]>(PUT, URI.create("/bell/" + UUID.randomUUID()), Map.of(), null);
+    Function<HttpRequest<byte[]>, HttpResponse<byte[]>> send = m -> HttpResponse.raw(machine.onEvent(UUID.randomUUID().toString(), cookieInbox.trigger(), m)
+        .skip(1).next().block(Duration.ofSeconds(5)).getUnmarshalledData());
+
+    HttpResponse<byte[]> first = send.apply(message);
+    assertEquals(200, first.statusCode());
+    assertEquals("session=s3cret", first.headerValue("Set-Cookie"));
+    HttpResponse<byte[]> retry = send.apply(message);
+    assertEquals(409, retry.statusCode());
+    assertEquals(null, retry.headerValue("Set-Cookie"));
   }
 
   @Test

@@ -66,4 +66,13 @@ public class MaskingTest {
     assertEquals(Map.of("X-Api-Key", "***", "Cookie", "***"), masked.headers());
     assertEquals("/cb?code=***", masked.uri().toString());
   }
+
+  @Test
+  public void aStoredResponseHasSomethingMaskedIfItHasAMaskedHeaderOrBody() {
+    var cookie = Masking.CREDENTIALS.mask(new HttpResponse<byte[]>(200, "OK", Map.of("Set-Cookie", "s=1"), null));
+    assertEquals(true, Masking.CREDENTIALS.hasMasked(cookie));
+    assertEquals(false, Masking.CREDENTIALS.hasMasked(new HttpResponse<>(201, "Created", Map.of("Content-Type", "application/json"), "{}".getBytes(UTF_8))));
+    assertEquals(true, Masking.responseBody().hasMasked(new HttpResponse<>(200, "OK", Map.of(), "***".getBytes(UTF_8))));
+    assertEquals(false, Masking.responseBody().hasMasked(new HttpResponse<byte[]>(204, "No Content", Map.of(), null)));
+  }
 }

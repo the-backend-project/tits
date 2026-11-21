@@ -2,7 +2,6 @@ package com.github.thxmasj.backend.backoffice;
 
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.database.DatabaseClient;
-import com.github.thxmasj.backend.http.HttpClient;
 import com.github.thxmasj.backend.http.inbox.HttpInbox;
 import com.github.thxmasj.backend.http.inbox.OpenIdConnectClient;
 import java.net.URI;
@@ -48,21 +47,9 @@ public final class Backoffice {
       String applicationSchema,
       List<? extends EntityModel> applicationModels
   ) {
-    this(service, config, client, applicationSchema, applicationModels, new JdkHttpClient());
-  }
-
-  /// @param forwarder the HTTP client the token requests to the provider are sent with
-  Backoffice(
-      String service,
-      Config config,
-      DatabaseClient client,
-      String applicationSchema,
-      List<? extends EntityModel> applicationModels,
-      HttpClient forwarder
-  ) {
     Objects.requireNonNull(config, "config");
     var pages = new Pages(new Graph(client, applicationSchema, applicationModels), service + " backoffice");
-    this.sessions = new Sessions(config, openIdConnectClient(config), pages, Sessions.files(), forwarder);
+    this.sessions = new Sessions(config, openIdConnectClient(config), pages, Sessions.files());
   }
 
   /// The provider is discovered when the first user signs in, so the application may be its own provider

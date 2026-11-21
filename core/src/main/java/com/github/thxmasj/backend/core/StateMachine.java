@@ -1211,7 +1211,10 @@ public class StateMachine implements AutoCloseable {
                                   toList()
                               ))
                               .forEach((entityId, changeList) -> {
-                                changeList.sort(comparing(change -> change.newEvent().eventNumber()));
+                                // An event not stored and the event stored after it on the entity have the same number, so the one not
+                                // stored comes first
+                                changeList.sort(Comparator.<Change, Integer>comparing(change -> change.newEvent().eventNumber())
+                                    .thenComparing(change -> isStored(change, sessionOnly)));
                                 Optional<Many<Event<?>>> responseSink = ctx.getOrEmpty("RS/" + entityId);
                                 if (responseSink.isPresent()) {
                                   Debug.log("Found response sink for " + changeList.stream().map(c -> c.entityModel().name() + "/" + c.entityId() + "/" + c.newEvent().typeName()).toList());

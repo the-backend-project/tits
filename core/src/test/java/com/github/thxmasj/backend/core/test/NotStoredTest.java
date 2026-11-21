@@ -45,6 +45,8 @@ public class NotStoredTest {
   static EventType<UUID, String> SignedIn = BasicEventType.of("Signed in", UUID.fromString("7a3e9c1d-5b0f-4d62-a8e4-c9f1b3d5e708"), DataType.uuid(), DataType.string());
   static EventType<String, String> SecretIssued = BasicEventType.of("Secret issued", UUID.fromString("4c8f2a6e-1d9b-4357-b0e3-d7a5c9f1e842"), DataType.string());
 
+  /// Not stored, and schedules a stored event on its entity
+  static EventType<Void, Void> ReminderScheduled = BasicEventType.notStored("Reminder scheduled", UUID.fromString("8e2c4a6f-0b1d-4f37-95e9-a3c5e7b9d148"));
   static EventType<String, String> PasswordSet = BasicEventType.of("Password set", UUID.fromString("6a1f3c5e-8b2d-4e90-a7c4-d9e1b3f5a768"), DataType.string());
 
   static EntityModel Account = EntityModel.of("Account", UUID.fromString("8d4b0f2a-6e3c-4a91-b7d5-e9c1f3a5b067"), NotStoredTest::accountTransitions);
@@ -76,6 +78,7 @@ public class NotStoredTest {
         Begin, List.of(onEvent(AccountOpened).to(States.Opened).assembleInput().output(d -> d)),
         States.Opened, List.of(
             onEvent(AccountTouched).toSelf().output(),
+            onEvent(ReminderScheduled).toSelf().assembleInput().trigger(AccountTouched).after(_ -> Duration.ofMillis(100)).output(),
             onEvent(PasswordSet).toSelf().masked(_ -> "***").assembleInput().output(d -> d),
             onEvent(PageViewed).toSelf()
                 .assemble(c -> c.log().entityId())
@@ -172,5 +175,20 @@ public class NotStoredTest {
     EventLog log = log(Account, List.of(AccountOpened, PasswordSet), account);
     assertEquals(List.of("1:Account opened", "2:Password set"), events(log));
     assertEquals("***", log.events().getLast().getUnmarshalledData());
+  }
+
+  /// The delayed event fires unless another event is stored first, so it has the number of the event not stored,
+  /// which the next event stored takes
+  @Test
+  public void aDelayedEventOfAnEventNotStoredFires() throws InterruptedException {
+    UUID account = machine.onEvent(trigger(AccountOpened, Account), "a").blockFirst().entityId();
+    machine.onEvent(trigger(ReminderScheduled, Account, account), null).blockFirst(Duration.ofSeconds(10));
+
+    List<String> events = List.of();
+    for (int i = 0; i < 100 && events.size() < 2; i++) {
+      Thread.sleep(200);
+      events = events(log(Account, List.of(AccountOpened, AccountTouched), account));
+    }
+    assertEquals(List.of("1:Account opened", "2:Account touched"), events);
   }
 }

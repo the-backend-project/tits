@@ -109,8 +109,9 @@ tested, drawn in the state diagrams and told the [monitoring](monitoring.md), wi
   any other: it is calculated, may trigger events on other entities, which are stored if they are of stored types, is
   given to the one who triggered it and is told the listener. It is not written to the event log, so the state of an
   entity must not depend on it: on an entity which is stored, its transitions stay in their state (`toSelf()`), which
-  the state machine checks when it is created. The next event stored on the entity takes its event number. A
-  read-only event type (`BasicEventType.ReadOnly`) is one.
+  the state machine checks when it is created. The next event stored on the entity takes its event number, and so does
+  a delayed event its transition triggers, which fires unless another event is stored first. Its transition can't have
+  a conditional trigger, which refers to the event. A read-only event type (`BasicEventType.ReadOnly`) is one.
 * **An entity of the session only** is created by an event which is not stored, i.e. one from `Begin`, or is of an
   entity model whose `stored()` is false. None of its events are stored, whatever their types, so its transitions may
   go to any state. It is found by the transitions of the session, but not after it, so it can't have delayed or

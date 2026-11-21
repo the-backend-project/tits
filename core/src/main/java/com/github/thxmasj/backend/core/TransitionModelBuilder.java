@@ -55,7 +55,7 @@ public class TransitionModelBuilder<I, T, O> {
       List<Filter<?, ?, ?>> filters,
       TransitionModel<Data, Data> reverseModel,
       Severity severity,
-      UnaryOperator<O> mask
+      BiFunction<TransitionContext<I>, O, O> mask
   ) {
 
     public String description() {
@@ -248,6 +248,13 @@ public class TransitionModelBuilder<I, T, O> {
     /// A transition which chooses another one stores the event of the chosen transition, with the mask declared on that
     /// one.
     public WithToState<I, O> masked(UnaryOperator<O> mask) {
+      requireNonNull(mask, "mask is null");
+      return masked((_, output) -> mask.apply(output));
+    }
+
+    /// Masks the output of the transition when its event is stored, as [#masked(UnaryOperator)], by a mask which
+    /// depends on the transition, e.g. on the log of the entity
+    public WithToState<I, O> masked(BiFunction<TransitionContext<I>, O, O> mask) {
       return new WithToState<>(new ModelContext<>(
           modelContext.reversal,
           modelContext.to,
@@ -775,7 +782,11 @@ public class TransitionModelBuilder<I, T, O> {
     );
   }
 
+  /// The delayed event fires unless another event is stored on the entity first, so it has the number of the event after
+  /// the transition's, or, if the transition's event is not stored, the number of that event, which the next event stored
+  /// takes
   private <I1, O1> TransitionModelBuilder<I, T, O> triggerDelayed(EventType<I1, O1> eventType, Function<T, I1> dataAdapter, Function<T, Duration> delay) {
+    int after = modelContext.eventType() != null && !modelContext.eventType().stored() ? 0 : 1;
     Function<Mono<TransitionStep<T>>, Mono<TransitionStep<T>>> f =
         transitionStep -> transitionStep
             .flatMap(c -> step(c, () -> Mono.just(new DelayedTriggerStep<>(
@@ -784,7 +795,7 @@ public class TransitionModelBuilder<I, T, O> {
                     c.inputStep().log().entityModel(),
                     c.inputStep().log().entityId(),
                     eventType,
-                    c.inputStep().eventNumber() + 1,
+                    c.inputStep().eventNumber() + after,
                     dataAdapter.apply(c.stepOutput()),
                     c.inputStep().timestamp().plus(delay.apply(c.stepOutput()))
                 )
@@ -799,6 +810,12 @@ public class TransitionModelBuilder<I, T, O> {
       EventTrigger<T, I1, O1> conditionalTrigger,
       Function<T, Mono<I1>> reactiveDataAdapter
   ) {
+    // The conditional trigger refers to the event of the transition, which must therefore be stored
+    if (modelContext.eventType() != null && !modelContext.eventType().stored())
+      throw new IllegalArgumentException(String.format(
+          "%s is not stored, so its transition can't have a conditional trigger, which refers to its event",
+          modelContext.eventType().name()
+      ));
     Function<Mono<TransitionStep<T>>, Mono<TransitionStep<T>>> f =
         transitionStep -> transitionStep
             // The event is always stored as a ConditionalTrigger. If its condition is already met it is fired right after
@@ -904,6 +921,7 @@ public class TransitionModelBuilder<I, T, O> {
   }
 
   /// The event of the transition with the output, stored masked if the transition has a mask
+  @SuppressWarnings("unchecked")
   private Event<O> event(InputStep<?> inputStep, O output) {
     return new Event<>(
         inputStep.log().entityId(),
@@ -911,7 +929,7 @@ public class TransitionModelBuilder<I, T, O> {
         modelContext.eventType(),
         inputStep.timestamp(),
         output,
-        modelContext.mask() != null && output != null ? modelContext.mask().apply(output) : output
+        modelContext.mask() != null && output != null ? modelContext.mask().apply((InputStep<I>) inputStep, output) : output
     );
   }
 

@@ -305,8 +305,10 @@ Mono<JWTClaimsSet> claims = client.redeem(code, secret);
 - The secret of a sign-in, e.g. of `Secrets.generate()`, is kept in the browser the sign-in was started in. The PKCE
   verifier (S256) and the nonce are derived from it, which binds the sign-in to that browser. A secret which is not a
   valid PKCE verifier, 43 to 128 characters of letters, digits and `-._~`, fails the sign-in at once.
-- `redeem` sends the token request with the HTTP client of the JDK. To send it otherwise, e.g. by an at-most-once
-  [outbox](http-outbox.md) as a code can be redeemed only once, take the request from `tokenRequest(code, secret)`
+- `redeem` sends the token request with the HTTP client of the JDK. As a code can be redeemed only once, the same
+  code and secret redeemed again within a minute get the result of the first redemption, so a transition redeeming
+  it can be calculated again, e.g. after a concurrent change of its entity. To send it otherwise, e.g. by an
+  at-most-once [outbox](http-outbox.md), take the request from `tokenRequest(code, secret)`
   and verify the response with `verify(tokenResponse, secret)`.
 - A confidential client authenticates with its secret by HTTP Basic, a public client without a secret sends its
   `client_id` instead.
@@ -354,9 +356,13 @@ and the application's response is sent to the client as it gave it, with its `Se
 
 As the event log only has the masked request, a retried request with the same message id is compared with the first
 one after masking both: a retry may differ from the first request in what is masked, e.g. in a refreshed access token.
-The retry gets the response of the first one as stored, so without what is masked of it, e.g. a `Set-Cookie`. A
-request whose response has a credential the client needs again should therefore not be deduplicated, or give it in a
-way a retry can do without.
+A retry gets the response of the first one as stored, which can't give what is masked of it. So an inbox request which
+masks the body of its responses can't have `deduplicateOn`, which `build` refuses, and a retry of a request whose
+first response has a masked header, e.g. a `Set-Cookie`, is answered with 409 Conflict and the detail
+`The response of the first request can't be repeated, as it is masked`, rather than with the header as `***`, which
+the client would take as its value. A request whose response has a credential the client may need again, after a
+retry, is better not deduplicated. Encrypting such responses instead, so a retry could get them, is
+[#304](https://github.com/the-backend-project/backend/issues/304).
 
 The monitoring writes no data of the events, and the [backoffice](backoffice.md) shows what is masked as `***`.
 

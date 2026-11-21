@@ -22,7 +22,6 @@ import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.core.Tuples.Tuple2;
 import com.github.thxmasj.backend.core.Validated;
-import com.github.thxmasj.backend.http.HttpClient;
 import com.github.thxmasj.backend.http.HttpRequest;
 import com.github.thxmasj.backend.http.HttpRequest.Method;
 import com.github.thxmasj.backend.http.HttpResponse;
@@ -76,6 +75,9 @@ final class Sessions {
 
   enum States implements State {
     SigningIn,
+    /// The code redeemed by an outbox request, as the sessions stored before the code was redeemed in the transition of
+    /// the callback were. No session goes there now, but those stored are read.
+    Redeeming,
     SignedIn,
     Refused,
     Failed,
@@ -199,6 +201,19 @@ final class Sessions {
       DataType.json(Callback.class),
       DataType.none()
   );
+  /// The code dispatched to be redeemed by an outbox request, of the sessions stored before the code was redeemed in the
+  /// transition of the callback, which are read by it
+  static final EventType<Callback, Callback> CodeRedemptionRequested = BasicEventType.of(
+      "Code redemption requested",
+      UUID.fromString("e9b1d5f3-8c2a-4e67-a3d0-7f4c1b9e6d25"),
+      DataType.json(Callback.class)
+  );
+  /// The token request of an outbox failed, of the sessions stored before the code was redeemed in the transition of
+  /// the callback, which are read by it
+  static final EventType<Void, Void> TokenRequestFailed = BasicEventType.of(
+      "Token request failed",
+      UUID.fromString("c6a4e8b2-5d1f-4c93-8e07-1f9b3d6a2c48")
+  );
   static final EventType<Failure, Failure> SignInFailed = BasicEventType.of(
       "Sign-in failed",
       UUID.fromString("e8b4f2a6-0d7c-4e39-9a51-6f3d1c8b2e94"),
@@ -276,24 +291,19 @@ final class Sessions {
   private final OpenIdConnectClient provider;
   private final Pages pages;
   private final Map<String, String> files;
-  /// The HTTP client the token requests are sent with
-  private final HttpClient forwarder;
   /// The sessions of the users
   private final EntityModel session;
   /// A request not of a session, e.g. for a static file or the health check
   private final EntityModel resource;
   private final HttpInbox inbox;
 
-  /// @param forwarder the HTTP client the token requests are sent with
-  Sessions(Backoffice.Config config, OpenIdConnectClient provider, Pages pages, Map<String, String> files, HttpClient forwarder) {
+  Sessions(Backoffice.Config config, OpenIdConnectClient provider, Pages pages, Map<String, String> files) {
     this.config = config;
     this.provider = provider;
     this.pages = pages;
     this.files = Map.copyOf(files);
     this.session = EntityModel.of("BackofficeSession", UUID.fromString("4b6f2c8e-1d3a-4f57-9e0b-7a2c5d8f3e61"), this::sessionTransitions);
     this.resource = EntityModel.of("BackofficeResource", UUID.fromString("8e3c1a6f-4b2d-4d97-a5e0-2f7b9c4d1e83"), this::resourceTransitions);
-    this.forwarder = forwarder;
-
     // The user returning from the provider, with the session as state
     HttpInboxRequest<Callback> callbackRequest = HttpInboxRequest
         .matching(m -> m.method() == Method.GET && m.uri().getPath().equals(Path + "/callback"))
@@ -390,6 +400,8 @@ final class Sessions {
             signedOut()
         ),
         States.SigningIn, List.of(
+            // A session stored before the code was redeemed in the transition below, see Redeeming
+            onEvent(CodeRedemptionRequested).to(States.Redeeming).assembleInput().output(d -> d),
             // The code is redeemed, and the ID token verified, in the session of the callback, so that neither the
             // secret of the sign-in, the code nor the token response enter the event log
             onEvent(CallbackReceived).to(States.SignedIn)
@@ -412,6 +424,15 @@ final class Sessions {
                         .output(d -> d.t1().t1().t1()),
                     d -> new SignedIn(user(d.t1().claims()), d.t2() + config.sessionLifetime().toSeconds(), d.t1().returnPath())
                 )
+        ),
+        // The sessions stored before the code was redeemed in the transition of the callback, which redeemed it by an
+        // outbox request, are read by these transitions, which nothing triggers any more
+        States.Redeeming, List.of(
+            onEvent(UserSignedIn).to(States.SignedIn).assembleInput().output(d -> d),
+            onEvent(SignInRefused).to(States.Refused).assembleInput().output(d -> d),
+            onEvent(SignInFailed).to(States.Failed).assembleInput().output(d -> d),
+            onEvent(TokenRequestFailed).to(States.Failed).output(),
+            callbackRefused()
         ),
         States.SignedIn, List.of(
             onEvent(ViewRequested).to(States.SignedIn)
@@ -495,11 +516,10 @@ final class Sessions {
     if (callback.error() != null || callback.code() == null)
       return Mono.just(failed(start, new Failure(callback.error() != null ? callback.error() : "server_error", "The sign-in failed at the identity provider: " + callback.error(), 401)));
     var failure = new Failure("server_error", "The sign-in with the identity provider failed. Please try again.", 502);
-    return provider.tokenRequest(callback.code(), callback.secret())
-        .flatMap(request -> forwarder.exchange(request.map(body -> body.getBytes(UTF_8))))
-        .flatMap(response -> response.statusCode() == 200 && response.body() != null ?
-            provider.verify(new String(response.body(), UTF_8), callback.secret()).map(claims -> new Outcome(claims, null, start.returnPath())) :
-            Mono.just(failed(start, failure)))
+    // The provider client gives a transition calculated again the result of the first redemption, as a code can be
+    // redeemed only once
+    return provider.redeem(callback.code(), callback.secret())
+        .map(claims -> new Outcome(claims, null, start.returnPath()))
         .onErrorResume(e -> {
           System.err.println("Backoffice can't redeem the code at the identity provider: " + e);
           return Mono.just(failed(start, failure));

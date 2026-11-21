@@ -360,7 +360,7 @@ public interface Authorizations {
     UUID authorization = callback.authorization();
     if (callback.upstreamError() != null || callback.upstreamCode() == null) {
       // The error of the upstream provider is passed on only if it is one of the known ones, which are short
-      String error = upstreamErrors.contains(callback.upstreamError()) ? callback.upstreamError() : "server_error";
+      String error = callback.upstreamError() != null && upstreamErrors.contains(callback.upstreamError()) ? callback.upstreamError() : "server_error";
       return Mono.just(new Outcome(authorization, null, new Failure(error, "The sign-in failed at the identity provider: " + error)));
     }
     return upstream.redeem(callback.upstreamCode(), callback.secret())

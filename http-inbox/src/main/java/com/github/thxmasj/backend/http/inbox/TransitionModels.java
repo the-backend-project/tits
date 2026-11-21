@@ -59,7 +59,6 @@ import com.github.thxmasj.backend.core.Severity;
 import com.github.thxmasj.backend.core.State;
 import com.github.thxmasj.backend.core.StateMachine.ProcessResult;
 import com.github.thxmasj.backend.core.TransitionModel;
-import com.github.thxmasj.backend.core.TransitionModelBuilder.TransitionContext;
 import com.github.thxmasj.backend.core.Tuples.Tuple2;
 import com.github.thxmasj.backend.core.Validated;
 import com.github.thxmasj.backend.http.HttpRequest;
@@ -87,8 +86,8 @@ import java.util.function.UnaryOperator;
 interface TransitionModels {
 
   static Map<State, List<TransitionModel<?, ?>>> requestRoutingTransitions(List<HttpInboxRequest<?>> requests) {
-    // The response of a request is masked as its inbox request masks it, of which the routing has the union
-    Masking masking = requests.stream().map(HttpInboxRequest::masking).reduce(Masking.CREDENTIALS, Masking::and);
+    // A request unrouted, or whose route isn't found, is masked by the union of the maskings of the inbox requests
+    Masking all = requests.stream().map(HttpInboxRequest::masking).reduce(Masking.CREDENTIALS, Masking::and);
     var routes = new ArrayList<GuardedTransition<HttpRequest<byte[]>, HttpRequest<byte[]>, ?>>();
     for (HttpInboxRequest<?> request : requests) {
       routes.add(new GuardedTransition<>(request::matches, routedTo(request, false), d -> d));
@@ -109,7 +108,8 @@ interface TransitionModels {
                 )
         ),
         Routed, List.of(
-            onEvent(ResponseCreated).to(Completed).masked(masking::mask)
+            // The response is masked as the inbox request the request was routed to masks it
+            onEvent(ResponseCreated).to(Completed).masked((c, response) -> routedMasking(requests, c.log(), all).mask(response))
                 .assembleInput()
                 .output(d -> d)
         ),
@@ -120,6 +120,14 @@ interface TransitionModels {
         ),
         Completed, List.of()
     );
+  }
+
+  /// The masking of the inbox request the routing routed its request to, the first one matching it, as it was routed
+  private static Masking routedMasking(List<HttpInboxRequest<?>> requests, EventLog routing, Masking otherwise) {
+    return routing.oneIfExists(RequestRouted)
+        .flatMap(routed -> requests.stream().filter(r -> r.matches(routed) || r.matchesRollback(routed)).findFirst())
+        .map(HttpInboxRequest::masking)
+        .orElse(otherwise);
   }
 
   /// Routes a request to a new entity of the inbox request, or a rollback to the entity of the request it rolls back.
@@ -281,7 +289,7 @@ interface TransitionModels {
             .trigger(ResponseCreated).with(d -> d).on(RequestRouting).identifiedBy(entityIdFromSession())
             .output(Tuple2::t1),
         onEvent(DuplicatedRequestCompleted).to(Completed).masked(responseMask(request))
-            .assemble(TransitionContext::input)
+            .assemble(c -> repeated(request, c.input(), c.correlationId(), c.timestamp()))
             .trigger(ResponseCreated).with(d -> d).on(RequestRouting).identifiedBy(entityIdFromSession())
             .output(Tuple2::t1)
     ));
@@ -292,7 +300,7 @@ interface TransitionModels {
               .trigger(ResponseCreated).with(Tuple2::t1).on(RequestRouting).identifiedBy(entityIdFromSession())
               .output(Tuple2::t1),
           onEvent(DuplicatedRequestCompleted).to(RolledBack).masked(responseMask(request))
-              .assemble(TransitionContext::input)
+              .assemble(c -> repeated(request, c.input(), c.correlationId(), c.timestamp()))
               .trigger(ResponseCreated).with(d -> d).on(RequestRouting).identifiedBy(entityIdFromSession())
               .output(Tuple2::t1)
       ));
@@ -743,6 +751,15 @@ interface TransitionModels {
       }
     };
     return createResponseMessage(creator, null, correlationId, timestamp, refused.reason());
+  }
+
+  /// The response of a retried request or rollback: the response of the first one as stored, unless something of it is
+  /// masked, which the retry can't be given. It is then refused, rather than given a response with `***` for e.g. a
+  /// cookie, which the client would take as the value.
+  private static HttpResponse<byte[]> repeated(HttpInboxRequest<?> request, HttpResponse<byte[]> stored, String correlationId, ZonedDateTime timestamp) {
+    if (!request.masking().hasMasked(stored))
+      return stored;
+    return createResponseMessage(new Conflict(), null, correlationId, timestamp, "The response of the first request can't be repeated, as it is masked");
   }
 
   private static HttpResponse<byte[]> unprocessableEntity(String detail, String correlationId, ZonedDateTime timestamp) {

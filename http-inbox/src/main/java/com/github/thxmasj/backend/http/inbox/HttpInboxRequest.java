@@ -95,6 +95,8 @@ public final class HttpInboxRequest<T> implements EntityModel {
       throw new IllegalArgumentException("The processes of the request " + name + ", which can be rolled back, must have the same entity model");
     this.masking = Masking.CREDENTIALS.and(builder.masking);
     this.stored = builder.stored;
+    if (deduplicateOn != null && masking.wholeResponseBody())
+      throw new IllegalArgumentException("The request " + name + " masks the body of its response, so it can't be deduplicated, as a retry gets the response of the first request as stored");
     if (!stored && deduplicateOn != null)
       throw new IllegalArgumentException("The request " + name + " is not stored, so it can't be deduplicated, as a retry is recognised by the request stored");
     this.transitions = TransitionModels.requestTransitions(this);
@@ -516,7 +518,8 @@ public final class HttpInboxRequest<T> implements EntityModel {
     ///
     /// A retried request is compared with the first one as stored, so the two are masked before they are compared: a
     /// retry may differ from the first request in what is masked. A retry gets the response of the first one as
-    /// stored, so without what is masked of it, e.g. a `Set-Cookie`.
+    /// stored, so a request which masks the body of its response can't be deduplicated, and a retry whose first
+    /// response has a masked header, e.g. a `Set-Cookie`, is answered with 409 Conflict, as it can't be repeated.
     public Builder<T> masking(Masking masking) {
       this.masking = this.masking.and(Objects.requireNonNull(masking));
       return this;

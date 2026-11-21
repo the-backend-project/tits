@@ -22,6 +22,9 @@ import java.text.ParseException;
 import java.time.Clock;
 import java.util.Base64;
 import java.util.LinkedHashMap;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.Map;
+import java.time.Duration;
 import java.util.Set;
 import java.util.regex.Pattern;
 import reactor.core.publisher.Mono;
@@ -93,8 +96,8 @@ public final class OpenIdConnectClient {
     });
   }
 
-  /// The request redeeming the code the user returned with at the token endpoint, e.g. for an at-most-once outbox to
-  /// send, as a code can be redeemed only once. The response is verified with [#verify(String, String)].
+  /// The request redeeming the code the user returned with at the token endpoint, to send it otherwise than by
+  /// [#redeem(String, String)], e.g. by an at-most-once outbox, as a code can be redeemed only once. The response is verified with [#verify(String, String)].
   public Mono<HttpRequest<String>> tokenRequest(String code, String secret) {
     return checked(secret).then(provider).map(provider -> {
       var parameters = new LinkedHashMap<String, String>();
@@ -135,10 +138,31 @@ public final class OpenIdConnectClient {
     });
   }
 
+  /// How long a redemption is remembered, see [#redeem(String, String)]
+  private static final Duration redemptionMemory = Duration.ofMinutes(1);
+
+  /// A redemption of a code with a secret, by the hash of the two, and when it was started
+  private record Redemption(Mono<JWTClaimsSet> result, long startedAt) {}
+
+  private final Map<String, Redemption> redemptions = new ConcurrentHashMap<>();
+
   /// Redeems the code the user returned with, by sending the [token request][#tokenRequest(String, String)] with the
   /// HTTP client of the JDK, and [verifies][#verify(String, String)] the response. Fails if the code is refused or the
   /// ID token is invalid.
+  ///
+  /// A code can be redeemed only once, so the same code and secret redeemed again within a minute get the result of
+  /// the first redemption, rather than a refusal of the provider: a transition redeeming the code may be calculated
+  /// again, e.g. after a concurrent change of its entity.
   public Mono<JWTClaimsSet> redeem(String code, String secret) {
+    long now = System.nanoTime();
+    redemptions.values().removeIf(r -> now - r.startedAt() > redemptionMemory.toNanos());
+    return redemptions.computeIfAbsent(
+        Secrets.hash(code + "\n" + secret),
+        _ -> new Redemption(redeemed(code, secret).cache(), now)
+    ).result();
+  }
+
+  private Mono<JWTClaimsSet> redeemed(String code, String secret) {
     return tokenRequest(code, secret)
         .flatMap(request -> {
           var builder = java.net.http.HttpRequest.newBuilder(request.uri()).timeout(RemoteKeys.timeout).POST(BodyPublishers.ofString(request.body()));
