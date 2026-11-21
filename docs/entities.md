@@ -97,3 +97,6 @@ A transition has four kinds of triggers:
 Since side effects only happen after the events causing them are stored, an entity always knows what it has started.
 If the instance stops before an action completes, a delayed trigger stored with the action, such as the timeout of an
 outbox request, moves the entity on.
+
+How the transitions of an event, the transaction storing them and the transactions of the actions' outcomes relate is
+described in [Sessions, transactions and transitions](sessions.md).

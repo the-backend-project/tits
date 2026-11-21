@@ -31,7 +31,8 @@ transaction fails on the event number and the event is [processed again](entitie
 state. No change is ever silently overwritten.
 
 Anything that can't be part of the transaction, such as an HTTP request to another system, is stored in the
-transaction and done after it commits. Its outcome comes back as a new event. That is why
+transaction and done after it commits. Its outcome comes back as a new event, in a transaction of its own but in
+the same [session](sessions.md). That is why
 [outboxes](http-outbox.md) can promise at-least-once or at-most-once delivery, and why
 [inboxes](http-inbox.md) can deduplicate retried requests.
 

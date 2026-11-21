@@ -14,7 +14,8 @@ the entities in the meantime, the transaction fails and the event is
 What can't be part of the transaction is done around it. Events to be triggered later, such as timeouts, are stored in
 the same transaction, and triggered by a transaction of their own when they are due. Side effects outside the
 database, such as sending an HTTP request, are run after the transaction is committed, and their outcome is processed
-as a new event, again in a transaction of its own.
+as a new event, again in a transaction of its own. The transactions an event leads to this way are a session, see
+[Sessions, transactions and transitions](sessions.md).
 
 The transaction server receives requests through [HTTP inboxes](http-inbox.md) and sends requests to other systems
 through [HTTP outboxes](http-outbox.md). They are entity models too, and every request received or sent is an entity

@@ -10,6 +10,7 @@ import java.util.function.Predicate;
 /// triggered on the entity of the session whose model is in the group, such as the inbox request an application
 /// responds to, without the triggering transition knowing which model that is. A group has no entities or transitions
 /// of its own, so it is not given to the state machine, and its entities can't be identified in any other way.
+/// Sessions are described in docs/sessions.md.
 public interface EntityModelGroup extends EntityModel {
 
   /// None, as the transitions are those of the entity models in the group

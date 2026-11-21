@@ -15,6 +15,7 @@ nav = [
     { "Overview" = "architecture.md" },
     { "Modules" = "modules.md" },
     { "Entities and events" = "entities.md" },
+    { "Sessions, transactions and transitions" = "sessions.md" },
     { "Transition models" = "transition-models.md" },
     { "Existing ids" = "existing-ids.md" },
     { "HTTP inboxes" = "http-inbox.md" },
