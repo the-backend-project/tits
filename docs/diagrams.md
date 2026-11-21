@@ -22,7 +22,8 @@ rendered by `GraphvizFormatter` with `dot`.
 
 A state diagram shows the details of an event when the mouse hovers over its name: its data and the events and actions
 it triggers. An event whose transition has a [severity](monitoring.md#severity) above `Info` is named in bold, after a
-symbol and in a colour for its severity: ⚠ in amber for `Warning`, ✖ in orange for `Error` and ‼ in red for `Critical`.
+symbol and in a colour for its severity: ⚠ in amber for `Warning`, ✖ in orange for `Error` and ‼ in red for `Critical`. An
+event of a type which is [not stored](entities.md#events-and-entities-not-stored) is named in italics.
 
 To keep a state diagram small, the transitions between the same two states are drawn as one arrow with their events
 stacked, and the self transitions of a state as one loop. Choices with the same branches, i.e. the same events to the

@@ -60,10 +60,12 @@ import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
@@ -158,7 +160,7 @@ public class StateMachine implements AutoCloseable {
     List<EntityModel> models = resolved.entityModels();
     this.models = resolved;
     Debug.log("Supported entity models:\n" + models.stream().map(EntityModel::name).collect(joining("\n")));
-    this.traversers = models.stream().collect(toMap(m -> m, m -> new Traverser(m.transitions())));
+    this.traversers = models.stream().collect(toMap(m -> m, m -> new Traverser(m.transitions(), m.stored())));
     this.eventTypesByEntityModel = resolved.eventTypesByEntityModel();
     this.delayer = delayer != null ? delayer : _ -> Mono.empty();
     if (schemaDataSource != null) {
@@ -509,8 +511,13 @@ public class StateMachine implements AutoCloseable {
         case OutputStep<?> occ -> lastOutput = occ;
         case ActionStep<?, ?> acc -> {
           if (lastOutput != null && lastOutput.stepOutput().isAccepted()) {
+            Event<?> event = lastOutput.stepOutput().accepted().event();
+            // An event which is not stored is not in the log of a stored entity, so the event the action leads to is
+            // the next one stored
             actionTriggers.add(
-                acc.actionTrigger().withEvent(lastOutput.stepOutput().accepted().event())
+                event.type().stored() || isSessionOnly(acc.actionTrigger().eventLog().withNewEvent(event)) ?
+                    acc.actionTrigger().withEvent(event) :
+                    acc.actionTrigger()
             );
           }
         }
@@ -840,10 +847,70 @@ public class StateMachine implements AutoCloseable {
           && event.entityId().equals(entityId)
           && model.equals(entityModel)
           && !(previous instanceof ChoiceStep)) {
-        return c.inputStep().log().withNewEvent(event);
+        EventLog log = c.inputStep().log().withNewEvent(event);
+        // An event which is not stored is not in the log of a stored entity, which the next event stored follows
+        if (!event.type().stored() && !isSessionOnly(log))
+          continue;
+        return log;
       }
     }
     return null;
+  }
+
+  /// Whether the entity of the log is one of the session only, whose events are not stored: of a model which is not
+  /// stored, or created by an event which is not stored
+  private static boolean isSessionOnly(EventLog log) {
+    return !log.entityModel().stored() || (!log.events().isEmpty() && !log.events().getFirst().type().stored());
+  }
+
+  private record EntityKey(UUID entityModelId, UUID entityId) {
+    static EntityKey of(Change change) {
+      return new EntityKey(change.entityModel().id(), change.entityId());
+    }
+  }
+
+  /// The entities of the session only among those the transition step accepted events on
+  private static Set<EntityKey> sessionOnlyEntities(TransitionStep<?> tail) {
+    var keys = new HashSet<EntityKey>();
+    for (var c = tail; c != null; c = c.previous()) {
+      if (c instanceof OutputStep<?>(TransitionStep<?> previous, ProcessResult<?> stepOutput)
+          && stepOutput instanceof Accepted<?>(Event<?> event, EntityModel model, _, _, _)
+          && !(previous instanceof ChoiceStep)
+          && isSessionOnly(c.inputStep().log().withNewEvent(event)))
+        keys.add(new EntityKey(model.id(), event.entityId()));
+    }
+    return keys;
+  }
+
+  private static boolean isStored(Change change, Set<EntityKey> sessionOnly) {
+    if (sessionOnly.contains(EntityKey.of(change)))
+      return false;
+    return change.newEvent() == null || change.newEvent().type().stored();
+  }
+
+  /// Fails for a change which is not stored but would have to be: a delayed or conditional trigger of an entity of the
+  /// session only, which fires after the session, or an event fired by a stored trigger, which is deleted with the
+  /// event
+  private static void requireStorable(List<Change> changes, Set<EntityKey> sessionOnly) {
+    for (var change : changes) {
+      if (isStored(change, sessionOnly))
+        continue;
+      if (change.delayedEvent() != null || change.conditionalTrigger() != null)
+        throw new IllegalStateException(String.format(
+            "%s on %s/%s is a delayed or conditional trigger of an entity of the session only, whose events are not " +
+                "stored, but it fires after the session",
+            change.delayedEvent() != null ? change.delayedEvent().type().name() : change.conditionalTrigger().type().name(),
+            change.entityModel().name(),
+            change.entityId()
+        ));
+      if (change.triggerType() != null)
+        throw new IllegalStateException(String.format(
+            "%s on %s/%s is not stored, but was fired by a stored trigger, which is deleted with the event it fires",
+            change.newEvent().type().name(),
+            change.entityModel().name(),
+            change.entityId()
+        ));
+    }
   }
 
   private void checkCircular(TransitionStep<?> tail, EntityModel entityModel, UUID entityId, InputEvent<?> inputEvent) {
@@ -1082,7 +1149,7 @@ public class StateMachine implements AutoCloseable {
 
   /// The changes for the listener, in the order they were calculated, which is the reverse of the order they are
   /// collected in. The accepted events of an entity are thereby in the order of their numbers.
-  private List<Listener.Change> toListenerFormat(List<Change> changes) {
+  private List<Listener.Change> toListenerFormat(List<Change> changes, Set<EntityKey> sessionOnly) {
     return changes.reversed().stream()
         .map(change -> new Listener.Change(
                 new Listener.Change.Entity(
@@ -1093,7 +1160,8 @@ public class StateMachine implements AutoCloseable {
                     change.newEvent().eventNumber(),
                     change.newEvent().type().name(),
                     change.severity(),
-                    change.newEvent().timestamp()
+                    change.newEvent().timestamp(),
+                    isStored(change, sessionOnly)
                 ) : (change.delayedEvent() != null ? new Listener.Change.DelayedEvent(
                     change.delayedEvent().eventNumber(),
                     change.delayedEvent().type().name(),
@@ -1110,8 +1178,10 @@ public class StateMachine implements AutoCloseable {
       TransitionStep<?> transitionStep
   ) {
     List<Change> changes = changes(transitionStep);
+    var sessionOnly = sessionOnlyEntities(transitionStep);
     Debug.log("Changes to store:\n" + changes.stream().map(Object::toString).collect(joining("\n")));
-    return Mono.just("")
+    return Mono.fromRunnable(() -> requireStorable(changes, sessionOnly))
+        .thenReturn("")
         .delayUntil(_ -> delayer.apply(changes.stream()
             .filter(change -> change.newEvent() != null)
             .map(change -> correlationId + "-" + change.newEvent().type().id())
@@ -1121,7 +1191,7 @@ public class StateMachine implements AutoCloseable {
                     timestamp,
                     correlationId,
                     changes.stream()
-                        .filter(c -> c.newEvent() == null || !(c.newEvent().type() instanceof BasicEventType.ReadOnly))
+                        .filter(c -> isStored(c, sessionOnly))
                         .toList()
                 )
                 .collectList()
@@ -1129,7 +1199,7 @@ public class StateMachine implements AutoCloseable {
                 // that one has stopped listening, e.g. after the first event or a timeout
                 .doOnNext(_ -> {
                   if (!changes.isEmpty() && listener != null) {
-                    listener.changeAccepted(correlationId, toListenerFormat(changes));
+                    listener.changeAccepted(correlationId, toListenerFormat(changes, sessionOnly));
                   }
                 })
                 .flatMap(x -> Mono.just("")
@@ -1141,7 +1211,10 @@ public class StateMachine implements AutoCloseable {
                                   toList()
                               ))
                               .forEach((entityId, changeList) -> {
-                                changeList.sort(comparing(change -> change.newEvent().eventNumber()));
+                                // An event not stored and the event stored after it on the entity have the same number, so the one not
+                                // stored comes first
+                                changeList.sort(Comparator.<Change, Integer>comparing(change -> change.newEvent().eventNumber())
+                                    .thenComparing(change -> isStored(change, sessionOnly)));
                                 Optional<Many<Event<?>>> responseSink = ctx.getOrEmpty("RS/" + entityId);
                                 if (responseSink.isPresent()) {
                                   Debug.log("Found response sink for " + changeList.stream().map(c -> c.entityModel().name() + "/" + c.entityId() + "/" + c.newEvent().typeName()).toList());

@@ -219,6 +219,29 @@ The events of an `AtMostOnce` request have no [severity](monitoring.md#severity)
 the outcomes by the callbacks, and its transitions on them declare the severity which fits, e.g. a warning for an
 authorisation whose outcome is unknown.
 
+### Masking
+
+An `AtMostOnce` request stores its request in `Request dispatched` and its response in the event of its outcome, like
+every outbox request. As it is never sent again from the event log, what of it is a secret can be
+[masked](http-inbox.md#masking) there, as the inbox masks its requests: every `AtMostOnce` request masks the headers
+which carry credentials (`Masking.CREDENTIALS`), e.g. its `Authorization`, and `masking(...)`, after
+`isRejectedByInvalidResponse`, adds what else is masked, e.g. the form fields of a token request and the body of its
+response:
+
+```java
+HttpOutboxRequest.atMostOnce()
+    // ...
+    .isRejectedByInvalidResponse(d -> d.t1().statusCode() >= 400)
+    .masking(Masking.formFields("code", "code_verifier").andResponseBody())
+    .build("TokenRequest", UUID.fromString("..."));
+```
+
+The request is sent, and its response given to the callbacks, as they are: only the events stored are masked. What
+reads the request from the event log later gets it masked, e.g. a request aware content parser, which parses the
+response in a later session, and the rollback message creator. A body which can't be read as the payload once masked,
+e.g. a masked JSON body, is stored as none. An `AtLeastOnce` request is sent again from its event log, so it can't be
+masked ([#305](https://github.com/the-backend-project/backend/issues/305)).
+
 ### Rollback
 
 An `AtMostOnce` request can have two rollback models, both `AtLeastOnce` outboxes: one for rolling back a request that

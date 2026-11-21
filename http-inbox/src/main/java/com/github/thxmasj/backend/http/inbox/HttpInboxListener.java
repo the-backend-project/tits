@@ -3,7 +3,6 @@ package com.github.thxmasj.backend.http.inbox;
 import static java.util.stream.Collectors.toMap;
 
 import com.github.thxmasj.backend.core.StateMachine;
-import com.github.thxmasj.backend.http.HttpMessageParser;
 import com.github.thxmasj.backend.http.HttpRequest;
 import com.github.thxmasj.backend.http.HttpRequest.Method;
 import com.github.thxmasj.backend.http.HttpResponse;
@@ -132,7 +131,8 @@ public class HttpInboxListener {
         // First event is the triggered event, second is the response event
         .skip(1)
         .next()
-        .map(event -> HttpMessageParser.parseResponse(event.data()))
+        // The response as given, which the event log may have masked
+        .map(event -> HttpResponse.raw(event.getUnmarshalledData()))
         .switchIfEmpty(Mono.error(() -> new IllegalStateException("No response event for " + requestMessage.requestLine())));
   }
 

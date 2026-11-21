@@ -89,7 +89,36 @@ public class BasicEventType<I, O> implements EventType<I, O> {
     }
   }
 
-  public static class ReadOnly<I, O> extends BasicEventType<I, O> {
+  /// An event type which is not stored, see [EventType#stored()]
+  public static <I, O> EventType<I, O> notStored(String name, UUID id, DataType<I> inputDataType, DataType<O> outputDataType) {
+    return new NotStored<>(name, id, inputDataType, outputDataType);
+  }
+
+  /// An event type which is not stored, see [EventType#stored()]
+  public static EventType<Void, Void> notStored(String name, UUID id) {
+    return notStored(name, id, DataType.none(), DataType.none());
+  }
+
+  /// An event type which is not stored, see [EventType#stored()]
+  public static <T> EventType<T, T> notStored(String name, UUID id, DataType<T> dataType) {
+    return notStored(name, id, dataType, dataType);
+  }
+
+  /// An event type which is not stored, see [EventType#stored()]
+  public static class NotStored<I, O> extends BasicEventType<I, O> {
+
+    public NotStored(String name, UUID id, DataType<I> inputDataType, DataType<O> outputDataType) {
+      super(name, id, inputDataType, outputDataType);
+    }
+
+    @Override
+    public boolean stored() {
+      return false;
+    }
+  }
+
+  /// An event type which is not stored, reading an entity, e.g. for another entity to assemble from
+  public static class ReadOnly<I, O> extends NotStored<I, O> {
 
     public ReadOnly(String name, UUID id, DataType<I> inputDataType, DataType<O> outputDataType) {
       super(name, id, inputDataType, outputDataType);

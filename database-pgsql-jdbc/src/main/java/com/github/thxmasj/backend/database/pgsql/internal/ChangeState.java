@@ -146,11 +146,12 @@ class ChangeState extends com.github.thxmasj.backend.core.internal.database.Chan
     }
 
     if (delayedEvent != null) {
-      // Replace the previous delayed trigger, which may not have been deleted yet by the new event's change
+      // Replace the previous delayed trigger, which may not have been deleted yet by the new event's change. One of a
+      // transition on an event not stored has the number of the pending one, which it replaces.
       sql +=
           """
           DELETE FROM {DelayedTrigger}
-          WHERE EntityId=:entityId AND EventNumber<:eventNumber;
+          WHERE EntityId=:entityId AND EventNumber<=:eventNumber;
           """.replace("{DelayedTrigger}", table(schema, "DelayedTrigger"));
       sql +=
           """

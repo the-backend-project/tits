@@ -32,6 +32,7 @@ import com.github.thxmasj.backend.http.HttpDataType;
 import com.github.thxmasj.backend.core.internal.Memoized;
 import com.github.thxmasj.backend.http.HttpRequest;
 import com.github.thxmasj.backend.http.HttpResponse;
+import com.github.thxmasj.backend.http.Masking;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -82,8 +83,35 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
       BiFunction<HttpRequest<RQ>, HttpResponse<byte[]>, Validated<RS>> requestAwareContentParser,
       Predicate<HttpResponse<RS>> isAccepted,
       Predicate<HttpResponse<RS>> isRejected,
-      Predicate<Tuple2<HttpResponse<byte[]>, String>> isRejectedByInvalidResponse
+      Predicate<Tuple2<HttpResponse<byte[]>, String>> isRejectedByInvalidResponse,
+      Masking masking
   ) {
+
+    /// The request as stored, masked as bytes. A body which can't be read as the payload once masked is stored as none.
+    HttpRequest<RQ> maskedRequest(HttpRequest<RQ> request) {
+      HttpRequest<byte[]> raw = request.map(body -> body != null ? requestPayloadType.marshal(body) : null);
+      HttpRequest<byte[]> masked = masking.mask(raw);
+      return masked.equals(raw) ? request : masked.map(body -> payload(requestPayloadType, body));
+    }
+
+    /// The response as stored, masked as bytes. A body which can't be read as the payload once masked, e.g. a masked
+    /// JSON body, is stored as none.
+    HttpResponse<RS> maskedResponse(HttpResponse<RS> response) {
+      HttpResponse<byte[]> raw = response.map(body -> body != null ? responsePayloadType.marshal(body) : null);
+      HttpResponse<byte[]> masked = masking.mask(raw);
+      return masked.equals(raw) ? response : masked.map(body -> payload(responsePayloadType, body));
+    }
+
+    private static <P> P payload(DataType<P> payloadType, byte[] body) {
+      if (body == null)
+        return null;
+      try {
+        return payloadType.unmarshal(body);
+      } catch (RuntimeException e) {
+        return null;
+      }
+    }
+
     EventType<HttpRequest<RQ>, Tuple2<HttpRequest<RQ>, UUID>> requestDispatched() {
       return BasicEventType.of(
           "Request dispatched",
@@ -251,6 +279,39 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
       AtLeastOnce<RRQ> rollbackOnUnknownModel
   ) {
     this(
+        name, id, requestPayloadType, responsePayloadType, forwarder, inflightTimeout, processModel, onPeerUnavailable,
+        onMissingResponse, onSuccess, onFailure, onValidResponseUnknown, onInvalidResponseRejection,
+        onInvalidResponseUnknown, contentParser, requestAwareContentParser, isAccepted, isRejected,
+        isRejectedByInvalidResponse, rollbackOnAcceptedModel, rollbackOnUnknownModel, Masking.CREDENTIALS
+    );
+  }
+
+  /// @param masking what of the request and response is masked in the event log, see [Masking]
+  public <T1, T2, T3, T4, T5, T6, T7, RS> AtMostOnce(
+      String name,
+      UUID id,
+      DataType<RQ> requestPayloadType,
+      DataType<RS> responsePayloadType,
+      HttpClient forwarder,
+      Duration inflightTimeout,
+      com.github.thxmasj.backend.core.EntityModel processModel,
+      Callback<EntityModel, T1> onPeerUnavailable,
+      Callback<EntityModel, T2> onMissingResponse,
+      Callback<HttpResponse<RS>, T3> onSuccess,
+      Callback<HttpResponse<RS>, T4> onFailure,
+      Callback<HttpResponse<RS>, T7> onValidResponseUnknown, // Rollback
+      Callback<Tuple2<HttpResponse<byte[]>, String>, T5> onInvalidResponseRejection,
+      Callback<Tuple2<HttpResponse<byte[]>, String>, T6> onInvalidResponseUnknown, // Rollback
+      Function<HttpResponse<byte[]>, Validated<RS>> contentParser,
+      BiFunction<HttpRequest<RQ>, HttpResponse<byte[]>, Validated<RS>> requestAwareContentParser,
+      Predicate<HttpResponse<RS>> isAccepted,
+      Predicate<HttpResponse<RS>> isRejected,
+      Predicate<Tuple2<HttpResponse<byte[]>, String>> isRejectedByInvalidResponse,
+      AtLeastOnce<RRQ> rollbackOnAcceptedModel,
+      AtLeastOnce<RRQ> rollbackOnUnknownModel,
+      Masking masking
+  ) {
+    this(
         name,
         id,
         requestPayloadType,
@@ -271,7 +332,8 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
         isRejected,
         isRejectedByInvalidResponse,
         _ -> rollbackOnAcceptedModel,
-        _ -> rollbackOnUnknownModel
+        _ -> rollbackOnUnknownModel,
+        masking
     );
   }
 
@@ -297,6 +359,42 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
       Predicate<Tuple2<HttpResponse<byte[]>, String>> isRejectedByInvalidResponse,
       Function<AtMostOnce<RQ, RRQ>, AtLeastOnce<RRQ>> rollbackOnAcceptedModelSupplier,
       Function<AtMostOnce<RQ, RRQ>, AtLeastOnce<RRQ>> rollbackOnUnknownModelSupplier
+  ) {
+    this(
+        name, id, requestPayloadType, responsePayloadType, forwarder, inflightTimeout, processModel, onPeerUnavailable,
+        onMissingResponse, onSuccess, onFailure, onValidResponseUnknown, onInvalidResponseRejection,
+        onInvalidResponseUnknown, contentParser, requestAwareContentParser, isAccepted, isRejected,
+        isRejectedByInvalidResponse, rollbackOnAcceptedModelSupplier, rollbackOnUnknownModelSupplier, Masking.CREDENTIALS
+    );
+  }
+
+  /// @param masking what of the request and response is masked in the event log, besides [Masking#CREDENTIALS],
+  ///                which every at-most-once request masks. The request is never sent again from the event log, so it
+  ///                can be masked, but what reads it from the log, e.g. a request aware content parser in the session
+  ///                of the response, or a rollback message creator, gets it masked.
+  public <T1, T2, T3, T4, T5, T6, T7, RS> AtMostOnce(
+      String name,
+      UUID id,
+      DataType<RQ> requestPayloadType,
+      DataType<RS> responsePayloadType,
+      HttpClient forwarder,
+      Duration inflightTimeout,
+      com.github.thxmasj.backend.core.EntityModel processModel,
+      Callback<EntityModel, T1> onPeerUnavailable,
+      Callback<EntityModel, T2> onMissingResponse,
+      Callback<HttpResponse<RS>, T3> onSuccess,
+      Callback<HttpResponse<RS>, T4> onFailure,
+      Callback<HttpResponse<RS>, T7> onValidResponseUnknown, // Rollback
+      Callback<Tuple2<HttpResponse<byte[]>, String>, T5> onInvalidResponseRejection,
+      Callback<Tuple2<HttpResponse<byte[]>, String>, T6> onInvalidResponseUnknown, // Rollback
+      Function<HttpResponse<byte[]>, Validated<RS>> contentParser,
+      BiFunction<HttpRequest<RQ>, HttpResponse<byte[]>, Validated<RS>> requestAwareContentParser,
+      Predicate<HttpResponse<RS>> isAccepted,
+      Predicate<HttpResponse<RS>> isRejected,
+      Predicate<Tuple2<HttpResponse<byte[]>, String>> isRejectedByInvalidResponse,
+      Function<AtMostOnce<RQ, RRQ>, AtLeastOnce<RRQ>> rollbackOnAcceptedModelSupplier,
+      Function<AtMostOnce<RQ, RRQ>, AtLeastOnce<RRQ>> rollbackOnUnknownModelSupplier,
+      Masking masking
   ) {
     this.name = name;
     this.id = id;
@@ -324,7 +422,8 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
         requestAwareContentParser,
         isAccepted,
         isRejected,
-        isRejectedByInvalidResponse
+        isRejectedByInvalidResponse,
+        Masking.CREDENTIALS.and(masking)
     );
     this.rollbackOnAcceptedModelSupplier = rollbackOnAcceptedModelSupplier;
     this.rollbackOnUnknownModelSupplier = rollbackOnUnknownModelSupplier;
@@ -357,7 +456,7 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
   ) {
     return Map.of(
         Begin, List.of(
-            onEvent(shape.requestDispatched()).to(InFlight)
+            onEvent(shape.requestDispatched()).to(InFlight).masked(d -> tuple(shape.maskedRequest(d.t1()), d.t2()))
                 .assemble(c -> tuple(
                     c.input(),
                     c.triggerEvent(), // process id
@@ -372,7 +471,7 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
                 .trigger(shape.forward()).with(d -> toHttpRequest(d.t1().t1(), shape.requestPayloadType()))
                 .trigger(TimeoutExpired).after(_ -> shape.inflightTimeout())
                 .output(d -> tuple(d.t1().t1(), d.t1().t2().entityId())),
-            onEvent(shape.batchedRequestDispatched()).to(InFlight)
+            onEvent(shape.batchedRequestDispatched()).to(InFlight).masked(d -> tuple(shape.maskedRequest(d.t1()), d.t2()))
                 .assemble(c -> tuple(
                     c.input().request(),
                     c.triggerEvent(), // process id
@@ -447,41 +546,41 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
                         .when(shape.isAccepted())
                         .then(
                             shape.onSuccess() != null ?
-                                onEvent(shape.requestAccepted()).to(Accepted)
+                                onEvent(shape.requestAccepted()).to(Accepted).masked(shape::maskedResponse)
                                     .assembleInput()
                                     .trigger(shape.onSuccess().eventType())
                                     .with(shape.onSuccess().dataAdapter())
                                     .on(shape.processModel())
                                     .identifiedBy(entityIdFromSession())
                                     .output(d -> d.t1()) :
-                                onEvent(shape.requestAccepted()).to(Accepted)
+                                onEvent(shape.requestAccepted()).to(Accepted).masked(shape::maskedResponse)
                                     .assembleInput()
                                     .output(d -> d)
                         )
                         .when(shape.isRejected())
                         .then(
                             shape.onFailure() != null ?
-                                onEvent(shape.validResponseAndRejected()).to(Failed)
+                                onEvent(shape.validResponseAndRejected()).to(Failed).masked(shape::maskedResponse)
                                     .assembleInput()
                                     .trigger(shape.onFailure().eventType())
                                     .with(shape.onFailure().dataAdapter())
                                     .on(shape.processModel())
                                     .identifiedBy(entityIdFromSession())
                                     .output(d -> d.t1()) :
-                                onEvent(shape.validResponseAndRejected()).to(Failed)
+                                onEvent(shape.validResponseAndRejected()).to(Failed).masked(shape::maskedResponse)
                                     .assembleInput()
                                     .output(d -> d)
                         )
                         .otherwise(
                             shape.onValidResponseUnknown() != null ?
-                                onEvent(shape.validResponseAndUnknown()).to(Unknown)
+                                onEvent(shape.validResponseAndUnknown()).to(Unknown).masked(shape::maskedResponse)
                                     .assembleInput()
                                     .trigger(shape.onValidResponseUnknown().eventType())
                                     .with(shape.onValidResponseUnknown().dataAdapter())
                                     .on(shape.processModel())
                                     .identifiedBy(entityIdFromSession())
                                     .output(d -> d.t1()) :
-                                onEvent(shape.validResponseAndUnknown()).to(Unknown)
+                                onEvent(shape.validResponseAndUnknown()).to(Unknown).masked(shape::maskedResponse)
                                     .assembleInput()
                                     .output(d -> d)
                         ),
@@ -497,27 +596,27 @@ public final class AtMostOnce<RQ, RRQ> implements HttpOutboxRequest<RQ> {
                         .when(shape.isRejectedByInvalidResponse())
                         .then(
                             shape.onInvalidResponseRejection() != null ?
-                                onEvent(shape.invalidResponseAndRejected()).to(Failed)
+                                onEvent(shape.invalidResponseAndRejected()).to(Failed).masked(shape.masking()::mask)
                                     .assembleInput()
                                     .trigger(shape.onInvalidResponseRejection().eventType())
                                     .with(shape.onInvalidResponseRejection().dataAdapter())
                                     .on(shape.processModel())
                                     .identifiedBy(entityIdFromSession())
                                     .output(d -> d.t1().t1()) :
-                                onEvent(shape.invalidResponseAndRejected()).to(Failed)
+                                onEvent(shape.invalidResponseAndRejected()).to(Failed).masked(shape.masking()::mask)
                                     .assembleInput()
                                     .output(d -> d.t1())
                         )
                         .otherwise(
                             shape.onInvalidResponseUnknown() != null ?
-                                onEvent(shape.invalidResponseAndUnknown()).to(Unknown)
+                                onEvent(shape.invalidResponseAndUnknown()).to(Unknown).masked(shape.masking()::mask)
                                     .assembleInput()
                                     .trigger(shape.onInvalidResponseUnknown().eventType())
                                     .with(shape.onInvalidResponseUnknown().dataAdapter())
                                     .on(shape.processModel())
                                     .identifiedBy(entityIdFromSession())
                                     .output(d -> d.t1().t1()) :
-                                onEvent(shape.invalidResponseAndUnknown()).to(Unknown)
+                                onEvent(shape.invalidResponseAndUnknown()).to(Unknown).masked(shape.masking()::mask)
                                     .assembleInput()
                                     .output(d -> d.t1())
                         ),

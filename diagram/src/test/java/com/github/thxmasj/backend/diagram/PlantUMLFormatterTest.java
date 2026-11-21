@@ -123,6 +123,19 @@ class PlantUMLFormatterTest {
   }
 
   @Test
+  void eventNotStoredIsNamedInItalics(@TempDir Path directory) throws IOException {
+    EventType<Void, Void> viewed = BasicEventType.notStored("Viewed", UUID.fromString("0e6c4a2f-8b1d-4e37-9f5a-2c7d9b1e3a64"));
+    Map<State, List<TransitionModel<?, ?>>> transitions = Map.of(
+        Begin, List.of(onEvent(Requested).to(States.Accepted).output()),
+        States.Accepted, List.of(onEvent(viewed).toSelf().output())
+    );
+    var formatter = formatter(transitions);
+    assertThat(formatter.format()).contains(": <i>Viewed</i>\n").contains(": Requested\n");
+    String svg = Files.readString(formatter.formatToImage(new File(directory.toFile(), "Request.svg")).toPath());
+    assertThat(svg).containsPattern("<text [^>]*font-style=\"italic\"[^>]*>Viewed</text>");
+  }
+
+  @Test
   void eventNameIsColouredAfterTheSeverityOfItsTransition(@TempDir Path directory) throws IOException {
     Map<State, List<TransitionModel<?, ?>>> transitions = Map.of(
         Begin, List.of(

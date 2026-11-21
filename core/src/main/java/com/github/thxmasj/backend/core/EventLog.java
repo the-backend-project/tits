@@ -27,7 +27,7 @@ public record EventLog(
         .stream()
         .filter(e -> e.eventNumber() == number && eventType.equals(e.type()))
         .findFirst()
-        .map(e -> eventType.outputDataType().unmarshal(e.data()))
+        .map(e -> EventLog.<T>data(e))
         .orElseThrow(() -> new NoSuchElementException("number(" + number + ", " + eventType.name() + "). Have:\n" + effectiveEvents().stream().map(e -> e.toString()).collect(joining("\n"))));
   }
 
@@ -36,13 +36,13 @@ public record EventLog(
         .stream()
         .filter(e -> e.eventNumber() == number && eventType.equals(e.type()))
         .findFirst()
-        .map(e -> eventType.outputDataType().unmarshal(e.data()));
+        .map(e -> EventLog.<T>data(e));
   }
 
   public <T> T one(DataType<T> dataType) {
     return effectiveEvents().stream()
         .filter(e -> dataType.equals(e.type().outputDataType()))
-        .map(e -> dataType.unmarshal(e.data()))
+        .map(e -> EventLog.<T>data(e))
         .filter(e -> e != null)
         .findFirst()
         .orElseThrow(() -> new NoSuchElementException("one(" + dataType.name() + "). Have:\n" + effectiveEvents().stream().map(e -> e.toString()).collect(joining("\n"))));
@@ -60,7 +60,7 @@ public record EventLog(
   public <T> T one(EventType<?, T> eventType) {
     return effectiveEvents().stream()
         .filter(e -> e.type().id().equals(eventType.id()))
-        .map(e -> eventType.outputDataType().unmarshal(e.data()))
+        .map(e -> EventLog.<T>data(e))
         .findFirst()
         .orElseThrow(() -> new NoSuchElementException(String.format("one(%s) on %s [log: %s]",
             eventType.name(),
@@ -158,6 +158,14 @@ public record EventLog(
 
   public static EventLog empty(UUID id, EntityModel model) {
     return new EventLog(model, id, List.of());
+  }
+
+
+  /// The data of the event: as the session has it for an event of the session, which may be stored masked, and as it is
+  /// stored otherwise
+  @SuppressWarnings("unchecked")
+  private static <T> T data(Event<?> event) {
+    return ((Event<T>) event).getUnmarshalledData();
   }
 
 }

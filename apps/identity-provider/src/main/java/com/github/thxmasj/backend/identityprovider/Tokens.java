@@ -174,7 +174,12 @@ public interface Tokens {
                 // of others without its secret
                 .otherwise(redeem(lifetime), Tuple2::t1)
         ),
-        States.Issued, List.of(),
+        // The token of a client is not one of a user, which the UserInfo endpoint refuses
+        States.Issued, List.of(
+            onEvent(UserInfoRequested).toSelf()
+                .trigger(Inbox.ReplyCreated).with(_ -> Reply.error(401, "invalid_token", "The access token is not one of a user")).on(Request).identifiedBy(entityIdFromSession())
+                .output()
+        ),
         States.UserTokensIssued, List.of(
             onEvent(UserInfoRequested).toSelf()
                 .assemble((_, log) -> log.one(UserTokensIssued))
@@ -274,7 +279,8 @@ public interface Tokens {
   }
 
   /// The error response of RFC 6749 section 5.2. A failed client authentication with the Authorization header is
-  /// answered with 401, and the edge adds the WWW-Authenticate header with its realm.
+  /// answered with 401, to which the response creator of the token endpoint adds the WWW-Authenticate header with its
+  /// realm, see [Endpoints].
   private static Reply reply(Refusal refusal) {
     return Reply.error(refusal.error().equals("invalid_client") ? 401 : 400, refusal.error(), refusal.description());
   }

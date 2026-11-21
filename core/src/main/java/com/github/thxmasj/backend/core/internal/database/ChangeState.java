@@ -1,6 +1,5 @@
 package com.github.thxmasj.backend.core.internal.database;
 
-import com.github.thxmasj.backend.core.BasicEventType;
 import com.github.thxmasj.backend.core.DataType;
 import com.github.thxmasj.backend.core.EntityModel;
 import com.github.thxmasj.backend.core.Event;
@@ -194,8 +193,9 @@ public abstract class ChangeState {
               entityId() + ":ev:[" +
               newEvent().typeName() + "]:" +
               newEvent().eventNumber() + ":data=" +
-              (newEvent().data() != null ? capString(newEvent().getUnmarshalledData().toString()) : "N/A") +
-              (newEvent().type() instanceof BasicEventType.ReadOnly<?,?> ? " (read-only)" : "");
+              // As stored, so that what is masked isn't written to the debug output
+              (newEvent().getMarshalledData() != null ? capString(new String(newEvent().getMarshalledData(), java.nio.charset.StandardCharsets.UTF_8)) : "N/A") +
+              (!newEvent().type().stored() ? " (not stored)" : "");
         }
 
       };

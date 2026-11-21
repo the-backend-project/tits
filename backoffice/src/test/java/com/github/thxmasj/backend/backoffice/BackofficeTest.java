@@ -22,7 +22,9 @@ import com.github.thxmasj.backend.core.StateMachine;
 import com.github.thxmasj.backend.core.TransitionModel;
 import com.github.thxmasj.backend.http.HttpRequest.Method;
 import com.github.thxmasj.backend.core.test.Init;
+import com.github.thxmasj.backend.http.inbox.Form;
 import com.github.thxmasj.backend.http.inbox.HttpInbox;
+import com.github.thxmasj.backend.http.inbox.Secrets;
 import com.github.thxmasj.backend.http.inbox.HttpInboxListener;
 import com.github.thxmasj.backend.http.inbox.HttpInboxRequest;
 import java.net.URI;
@@ -301,6 +303,43 @@ public class BackofficeTest {
   }
 
   @Test
+  void noSecretsEnterTheEventLog() throws Exception {
+    provider.signInAs(ada);
+    var start = get(server, "/backoffice/", null);
+    String signInCookie = start.headers().firstValue("Set-Cookie").orElseThrow().split(";")[0];
+    String secret = signInCookie.substring(signInCookie.indexOf('=') + 1);
+    var authorized = http.send(HttpRequest.newBuilder(URI.create(start.headers().firstValue("Location").orElseThrow())).build(), BodyHandlers.ofString());
+    URI callback = URI.create(authorized.headers().firstValue("Location").orElseThrow());
+    String code = Form.parse(callback.getRawQuery()).get("code");
+    var signedIn = get(server, callback.getRawPath() + "?" + callback.getRawQuery(), signInCookie);
+    String cookie = sessionCookie(signedIn);
+    assertThat(get(server, "/backoffice/", cookie).statusCode()).isEqualTo(200);
+
+    List<String> stored = allEventData(backofficeSchema);
+    assertThat(stored).isNotEmpty().noneSatisfy(data -> assertThat(data).contains(secret));
+    assertThat(stored).noneSatisfy(data -> assertThat(data).contains(code));
+    assertThat(stored).noneSatisfy(data -> assertThat(data).containsAnyOf(tokens.toArray(String[]::new)));
+    // No token of the provider, which are JWTs, nor a page rendered
+    assertThat(stored).noneSatisfy(data -> assertThat(data).contains("eyJ"));
+    assertThat(stored).noneSatisfy(data -> assertThat(data).contains("<html"));
+    // But the sign-in is recorded, by the hash of its secret
+    assertThat(eventData(backofficeSchema, Sessions.SignInStarted)).anySatisfy(data -> assertThat(data).contains(Secrets.hash(secret)));
+  }
+
+  @Test
+  void resourcesAreNotStored() throws Exception {
+    assertThat(get(server, "/health", null).statusCode()).isEqualTo(200);
+    assertThat(get(server, "/backoffice/static/backoffice.css", null).statusCode()).isEqualTo(200);
+    long resources = Init.client().sql("SELECT COUNT(*) AS N FROM \"" + backofficeSchema + "\".\"Entity\" WHERE EntityModelId=:model")
+        .name("Test.Resources")
+        .bind("model", UUID.fromString("8e3c1a6f-4b2d-4d97-a5e0-2f7b9c4d1e83"))
+        .map(row -> row.get("N", Integer.class).longValue())
+        .one()
+        .block();
+    assertThat(resources).isZero();
+  }
+
+  @Test
   void staticFilesAreServed() throws Exception {
     var htmx = get(server, "/backoffice/static/htmx.min.js", null);
     assertThat(htmx.statusCode()).isEqualTo(200);
@@ -352,6 +391,19 @@ public class BackofficeTest {
     String value = cookie.split(";")[0];
     tokens.add(value.substring(value.indexOf('=') + 1));
     return value;
+  }
+
+  /// The data of all the events in a schema, as text
+  private static List<String> allEventData(String schemaName) {
+    return Init.client().sql("SELECT Data FROM \"" + schemaName + "\".\"Event\"")
+        .name("Test.AllEventData")
+        .map(row -> {
+          byte[] data = row.get("Data", byte[].class);
+          return data != null ? new String(data, UTF_8) : "";
+        })
+        .all()
+        .collectList()
+        .block();
   }
 
   /// The data of the events of a type in a schema, as text

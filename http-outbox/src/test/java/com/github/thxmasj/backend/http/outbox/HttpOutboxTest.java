@@ -2,6 +2,7 @@ package com.github.thxmasj.backend.http.outbox;
 
 import static com.github.thxmasj.backend.core.BuiltinEventTypes.EventsRolledBack;
 import static com.github.thxmasj.backend.core.EntityModel.Begin;
+import static org.assertj.core.api.Assertions.assertThat;
 import static com.github.thxmasj.backend.core.EntitySelector.entityId;
 import static com.github.thxmasj.backend.core.EntitySelector.newEntityId;
 import static com.github.thxmasj.backend.core.EventTrigger.trigger;
@@ -46,6 +47,7 @@ import com.github.thxmasj.backend.core.internal.TransitionStep.TriggerStep;
 import com.github.thxmasj.backend.core.internal.Transitions;
 import com.github.thxmasj.backend.core.internal.database.Storage;
 import com.github.thxmasj.backend.http.HttpRequest;
+import com.github.thxmasj.backend.http.Masking;
 import com.github.thxmasj.backend.http.HttpResponse;
 import com.github.thxmasj.backend.core.test.Init;
 import com.github.thxmasj.backend.http.outbox.HttpOutboxRequest.BatchedRequest;
@@ -289,6 +291,94 @@ public class HttpOutboxTest {
 
     assertNotNull(exchange.requestDispatched().outputDataType());
     assertEquals("(HTTP request<string>, uuid)", exchange.requestDispatched().outputDataType().name());
+  }
+
+  /// The data of the stored events of the type, as text
+  private static List<String> stored(String schema, EventType<?, ?> type) {
+    return Init.client().sql("SELECT Data FROM \"" + schema + "\".\"Event\" WHERE Type=:type")
+        .name("Test.Stored")
+        .bind("type", type.id())
+        .map(row -> {
+          byte[] data = row.get("Data", byte[].class);
+          return data != null ? new String(data) : "";
+        })
+        .all()
+        .collectList()
+        .block();
+  }
+
+  @Test
+  public void atMostOnceRequestIsStoredMaskedAndSentWhole() {
+    var processTransitions = new AtomicReference<Map<State, List<TransitionModel<?, ?>>>>();
+    EntityModel process = EntityModel.of("Process", UUID.randomUUID(), processTransitions::get);
+    EventType<Void, Void> processStarted = BasicEventType.of("Process started", UUID.randomUUID());
+    EventType<String, String> processSucceeded = BasicEventType.of("Process succeeded", UUID.randomUUID(), DataType.string(), DataType.string());
+    EventType<Void, Void> processFailed = BasicEventType.of("Process failed", UUID.randomUUID());
+    String path = "/" + UUID.randomUUID();
+    var received = new AtomicReference<String>();
+    server.createContext(path, exchange -> {
+      received.set(exchange.getRequestHeaders().getFirst("Authorization") + " " + new String(exchange.getRequestBody().readAllBytes()));
+      byte[] body = "{\"id_token\":\"t0ken\"}".getBytes();
+      exchange.sendResponseHeaders(200, body.length);
+      exchange.getResponseBody().write(body);
+      exchange.close();
+    });
+    HttpOutboxRequest<String> exchange = HttpOutboxRequest.atMostOnce()
+        .requestPayloadType(DataType.string())
+        .responsePayloadType(DataType.string())
+        .forwarder(new NettyHttpClient(new NettyHttpClientBuilder().build()))
+        .processModel(process)
+        .onPeerUnavailable(processFailed)
+        .onMissingResponse(processFailed)
+        .onInvalidResponseRejection(processFailed)
+        .onInvalidResponseUnknown(processFailed)
+        .contentParser(res -> valid(res.body() != null ? new String(res.body()) : null))
+        .onSuccess(processSucceeded, HttpResponse::body)
+        .onFailure(processFailed)
+        .isAccepted(r -> r.statusCode() == 200)
+        .isRejected(r -> r.statusCode() >= 400)
+        .isRejectedByInvalidResponse(r -> r.t1().statusCode() >= 400)
+        .masking(Masking.formFields("code").andResponseBody())
+        .build("MaskedExchange", UUID.fromString("6f2b8d4a-1c3e-4a57-9b0d-e5f7a9c1b368"));
+    processTransitions.set(Map.of(
+        Begin, List.of(
+            onEvent(processStarted).to(States.WaitingForResponse)
+                .trigger(exchange.requestDispatched())
+                .with(_ -> HttpRequest.create(
+                    POST,
+                    URI.create("http://localhost:" + server.getAddress().getPort() + path),
+                    Map.of("Authorization", "Basic c2VjcmV0", "Content-Type", "application/x-www-form-urlencoded"),
+                    "grant_type=authorization_code&code=s3cret"
+                ))
+                .on(exchange).identifiedBy(newEntityId())
+                .output()
+        ),
+        States.WaitingForResponse, List.of(
+            onEvent(processSucceeded).to(States.Done).assembleInput().output(d -> d),
+            onEvent(processFailed).to(States.Done).output()
+        ),
+        States.Done, List.of()
+    ));
+    String schema = UUID.randomUUID().toString();
+    var entityModels = new ArrayList<EntityModel>(List.of(exchange, process));
+    var machine = Init.stateMachine(schema, entityModels);
+
+    StepVerifier.create(machine.onEvent(trigger(processStarted, process)))
+        .assertNext(event -> assertEquals(processStarted, event.type()))
+        .assertNext(event -> {
+          assertEquals(processSucceeded, event.type());
+          // The process is given the whole response
+          assertEquals("{\"id_token\":\"t0ken\"}", event.getUnmarshalledData());
+        })
+        .thenCancel().verify();
+
+    // The request is sent whole
+    assertEquals("Basic c2VjcmV0 grant_type=authorization_code&code=s3cret", received.get());
+    // but stored masked, with its response
+    assertThat(stored(schema, exchange.requestDispatched())).singleElement().satisfies(data -> assertThat(data)
+        .contains("Authorization:***", "grant_type=authorization_code&code=***").doesNotContain("s3cret", "c2VjcmV0"));
+    var accepted = BasicEventType.of("Request accepted", HttpOutboxRequest.RequestAcceptedId, DataType.string());
+    assertThat(stored(schema, accepted)).singleElement().satisfies(data -> assertThat(data).doesNotContain("t0ken").endsWith("***"));
   }
 
   @Test

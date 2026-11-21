@@ -25,8 +25,8 @@ change the application's data. Its sessions and the load of its users stay out o
 | Entity | Description |
 |---|---|
 | `BackofficeSession` | A sign-in of a user: the sign-in started, the code redeemed, who signed in, or was refused, every page viewed, and the sign-out or expiry. Found by the hash of the token of the session cookie, which is an id event of `BackofficeTokens`. |
-| `BackofficeTokenRequest` | The request redeeming the code of a sign-in at the provider, an at-most-once [outbox](http-outbox.md) request, as a code can be redeemed only once |
-| `BackofficeResource` | A request not of a session: a static file, the health check, a redirect to the start page, or a page not found |
+| `BackofficeTokenRequest` | The request redeeming the code of a sign-in at the provider, an at-most-once [outbox](http-outbox.md) request, as a code can be redeemed only once. Its code, PKCE verifier and client secret, and the tokens of its response, are [masked](http-outbox.md#masking). |
+| `BackofficeResource` | A request not of a session: a static file, the health check, a redirect to the start page, or a page not found. It is an entity of the session only, which is [not stored](entities.md#events-and-entities-not-stored), nor is its inbox request. |
 
 <object data="../images/com.github.thxmasj.backend.backoffice.BackofficeSession.svg" type="image/svg+xml"></object>
 
@@ -60,11 +60,21 @@ which they render from the application's schema. Calling the provider is the onl
 find its endpoints and check ID tokens against its keys through a helper, and an outbox sends the token request. The
 backoffice serves the pages under `/backoffice`, its static files and `/health`.
 
-As every request and response is stored, the event log of the backoffice holds the cookies, the secret of each sign-in,
-the codes and token responses of the provider and the pages, and every request creates entities, also requests of
-someone who hasn't signed in. Keeping such data out of the event log is
-[#285](https://github.com/the-backend-project/backend/issues/285). Until then, give the backoffice's schema the
-protection of its credentials, and keep the backoffice where only its users reach it.
+The event log of the backoffice records who signed in and which pages they viewed, but keeps no secrets and no pages
+(see [what is kept out of the event log](http-inbox.md#keeping-secrets-and-bulky-data-out-of-the-event-log)):
+
+- The cookies, with the token of a session and the secret of a sign-in, are
+  [masked](http-inbox.md#masking) in the stored requests and responses, as every inbox request masks them. The token
+  of a session is stored as its hash, by which the session is found. Of the secret of a sign-in, the session stores
+  its hash, by which the callback is checked, and the nonce derived from it, by which the ID token is checked.
+- The code of the callback is masked in its stored request and in the session's event of its redemption. The token
+  request redeeming it is [masked](http-outbox.md#masking) in the event log of the outbox: its code, its PKCE
+  verifier, its client secret and the tokens of the response. Only the claims of the user are stored.
+- The bodies of the responses, i.e. the pages, are masked, as they are rendered from the application's schema when
+  viewed.
+- The static files and the health check are not stored, neither their requests nor their entities.
+
+A page requested without a session still starts a sign-in, which is stored, also for someone who doesn't sign in.
 
 ## The database
 
@@ -91,7 +101,9 @@ and role are not shared with it.
 | `/backoffice/entities/{id}` | An entity: its events with their data, its ids and index keys, the event it waits for and the entities it refers to and is referred to by |
 
 The data of an event is shown as its data type marshalled it: JSON indented, HTTP messages as text, and other bytes as
-text if they are UTF-8 and as hexadecimal otherwise. Entity ids in the data are links to the entities.
+text if they are UTF-8 and as hexadecimal otherwise. Entity ids in the data are links to the entities. The data is
+shown as stored, so what the application [masks](http-inbox.md#masking) is shown as `***`, and the events it doesn't
+store are not shown.
 
 An entity refers to other entities by their entity ids in the data of its events. An inbox request refers to the
 entity its request was processed on in its `Request accepted` event, for example. An entity is referred to by the
@@ -112,17 +124,18 @@ with a client secret or public without one:
 
 1. A page requested without a session, or with the cookie of no session, starts a sign-in in a new `BackofficeSession`.
    The user is redirected to the provider with the entity id of the session as `state`, and a secret, from which the
-   PKCE verifier and the nonce are derived, is kept with the session and in a cookie named after it, only sent to
-   `/backoffice/callback`.
+   PKCE verifier and the nonce are derived, is kept in a cookie named after it, only sent to `/backoffice/callback`.
+   The session keeps the hash of the secret and the nonce.
 2. The provider redirects the user back to `/backoffice/callback`, which is an event of the session. The session
-   checks the cookie against its secret, which binds the sign-in to the browser it was started in, and dispatches the
-   token request redeeming the code, an at-most-once outbox request, so that a code is never redeemed twice, also if
-   the transition is computed again.
+   checks the secret of the cookie against its hash, which binds the sign-in to the browser it was started in, and
+   dispatches the token request redeeming the code with the secret, an at-most-once outbox request, so that a code is
+   never redeemed twice, also if the transition is computed again.
 3. The outbox tells the session the response of the provider. The session verifies the ID token with the keys of the
-   provider and against its nonce, and decides by the claims: if the configured claim has one of the permitted
-   values, e.g. the claim `roles` the value `backoffice`, the user is signed in, with a new token in the session cookie,
-   and sent back to the page first requested. Otherwise the session records that the sign-in was refused, with the
-   claims of the user. The browser's request at the callback waits for this answer.
+   provider and against the nonce, and decides by the claims:
+   if the configured claim has one of the permitted values, e.g. the claim `roles` the value `backoffice`, the user is
+   signed in, with a new token in the session cookie, and sent back to the page first requested. Otherwise the session
+   records that the sign-in was refused, with the claims of the user. The browser's request at the callback waits for
+   this answer.
 
 A sign-in failing at the provider, e.g. as the user cancelled, or of a browser without the cookie, fails the session
 with a page telling the user.
@@ -192,8 +205,6 @@ organisation's accounts.
   ([#281](https://github.com/the-backend-project/backend/issues/281)).
 - The backoffice shows the entities of the application, not its own sessions, which are in its own schema and in its
   [monitoring](monitoring.md) events.
-- Every request and response is stored, credentials and pages included, and every request creates entities
-  ([#285](https://github.com/the-backend-project/backend/issues/285)).
 - The current state of an entity is not shown, as it is computed by the transitions, not stored. Its last event tells
   it.
 - A `RequestRouting` entity has no reference to the inbox request it routed a request to, so the two aren't linked.

@@ -17,6 +17,8 @@ public final class Event<T> {
   private final ZonedDateTime timestamp;
   private byte[] data;
   private T unmarshalledData;
+  /// Whether the data stored is given apart from the data, so that it is never marshalled from the data
+  private boolean storedApart;
 
   public Event(UUID entityId, Integer eventNumber, EventType<?, T> type, Clock clock) {
     this(entityId, eventNumber, type, LocalDateTime.ofInstant(clock.instant(), clock.getZone()), clock, null);
@@ -43,6 +45,19 @@ public final class Event<T> {
     this.timestamp = timestamp;
     this.data = type.outputDataType().marshal(data);
     this.unmarshalledData = data;
+  }
+
+  /// An event whose data in the session differs from the data stored, e.g. masked. [#getUnmarshalledData()] gives the
+  /// data, while [#getMarshalledData()], which is what is stored, has the stored data.
+  public Event(UUID entityId, int eventNumber, EventType<?, T> type, ZonedDateTime timestamp, T data, T storedData) {
+    requireNonNull(type, "type is null");
+    this.entityId = entityId;
+    this.eventNumber = eventNumber;
+    this.type = type;
+    this.timestamp = timestamp;
+    this.data = storedData != null ? type.outputDataType().marshal(storedData) : null;
+    this.unmarshalledData = data;
+    this.storedApart = true;
   }
 
   public Event(UUID entityId, Integer eventNumber, EventType<?, T> type, LocalDateTime timestamp, Clock clock, byte[] data) {
@@ -100,7 +115,7 @@ public final class Event<T> {
   }
 
   public byte[] getMarshalledData() {
-    if (data == null && unmarshalledData != null) {
+    if (data == null && unmarshalledData != null && !storedApart) {
       data = type.outputDataType().marshal(unmarshalledData);
     }
     return data;
