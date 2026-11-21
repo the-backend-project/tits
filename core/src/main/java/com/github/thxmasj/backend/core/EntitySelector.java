@@ -48,6 +48,9 @@ public sealed class EntitySelector permits ById, ByIdFromSession, ByIdEvent, ByL
     return new ById(entityId.value(), AlwaysCreate);
   }
 
+  /// The entity of the model that a transition of the session was taken on, e.g. the inbox request an application
+  /// responds to. The session is the transactions an event leads to through actions, and the entity is found in the
+  /// current transaction and the one that ran the action. See docs/sessions.md.
   public static <T> Function<T, ByIdFromSession> entityIdFromSession() {
     return _ -> new ByIdFromSession();
   }
