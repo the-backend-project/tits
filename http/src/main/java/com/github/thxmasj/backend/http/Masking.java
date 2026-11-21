@@ -1,11 +1,9 @@
-package com.github.thxmasj.backend.http.inbox;
+package com.github.thxmasj.backend.http;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
-import com.github.thxmasj.backend.http.HttpMessage;
-import com.github.thxmasj.backend.http.HttpRequest;
-import com.github.thxmasj.backend.http.HttpResponse;
 import java.net.URI;
+import java.net.URLDecoder;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -15,7 +13,8 @@ import java.util.TreeSet;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-/// What of the requests and responses of an inbox request is masked in the event log: the values of headers, of
+/// What of the requests and responses of an inbox request, or of an at-most-once outbox request, is masked in the event
+/// log: the values of headers, of
 /// query parameters and of the fields of a form body, or the whole body of a response. The transitions see the whole
 /// request and response, while the event log has [#MASK] in place of what is masked, e.g. of a session cookie, an
 /// authorization code or a token.
@@ -24,7 +23,8 @@ import java.util.stream.Stream;
 /// .masking(Masking.queryParameters("code").andFormFields("client_secret").andResponseBody())
 /// ```
 ///
-/// Every inbox request masks [#CREDENTIALS], the headers which carry credentials, and what its `masking` adds.
+/// Every inbox request and at-most-once outbox request masks [#CREDENTIALS], the headers which carry credentials, and
+/// what its `masking` adds.
 ///
 /// @param headers         the names of the headers whose values are masked, in requests and responses, compared
 ///                        without case
@@ -181,7 +181,7 @@ public record Masking(Set<String> headers, Set<String> queryParameters, Set<Stri
           String rawName = i < 0 ? pair : pair.substring(0, i);
           String name;
           try {
-            name = Form.decode(rawName);
+            name = URLDecoder.decode(rawName, UTF_8);
           } catch (IllegalArgumentException e) {
             return MASK;
           }

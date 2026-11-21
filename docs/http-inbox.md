@@ -308,8 +308,10 @@ Mono<JWTClaimsSet> claims = client.redeem(code, secret);
 - `redeem` sends the token request with the HTTP client of the JDK. As a code can be redeemed only once, the same
   code and secret redeemed again within a minute get the result of the first redemption, so a transition redeeming
   it can be calculated again, e.g. after a concurrent change of its entity. To send it otherwise, e.g. by an
-  at-most-once [outbox](http-outbox.md), take the request from `tokenRequest(code, secret)`
-  and verify the response with `verify(tokenResponse, secret)`.
+  at-most-once [outbox](http-outbox.md#masking), take the request from `tokenRequest(code, secret)` and verify the
+  response with `verify(tokenResponse, secret)`, or, in the later session the outbox gives the response in, with
+  `verifyWithNonce(tokenResponse, nonce)`, as the nonce, `OpenIdConnectClient.nonce(secret)`, can be stored, unlike
+  the secret.
 - A confidential client authenticates with its secret by HTTP Basic, a public client without a secret sends its
   `client_id` instead.
 - The ID token must be signed with RS256, ES256 or PS256 by a key of the provider, issued by the provider for the client,

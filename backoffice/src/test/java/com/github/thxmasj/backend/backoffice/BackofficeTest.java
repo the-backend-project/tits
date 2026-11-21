@@ -261,6 +261,8 @@ public class BackofficeTest {
     // The sessions are in the backoffice's own schema, not the application's
     assertThat(eventData(backofficeSchema, Sessions.PageViewed)).anySatisfy(data -> assertThat(data).contains("/backoffice/search", path.substring(path.indexOf("q=") + 2)));
     assertThat(eventData(backofficeSchema, Sessions.UserSignedIn)).anySatisfy(data -> assertThat(data).contains("Ada Lovelace"));
+    // The code was redeemed by an outbox request of the session
+    assertThat(eventData(backofficeSchema, Sessions.CodeRedemptionRequested)).isNotEmpty();
     assertThat(eventData(schema, Sessions.PageViewed)).isEmpty();
     // and the application's models are listed, not the backoffice's
     var home = get(server, "/backoffice/", cookie).body();

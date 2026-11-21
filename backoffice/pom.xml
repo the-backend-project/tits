@@ -23,6 +23,12 @@
       <version>${project.version}</version>
     </dependency>
     <dependency>
+      <!-- The code of a sign-in is redeemed by an outbox request -->
+      <groupId>com.github.thxmasj.backend</groupId>
+      <artifactId>http-outbox</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
       <groupId>com.nimbusds</groupId>
       <artifactId>nimbus-jose-jwt</artifactId>
     </dependency>

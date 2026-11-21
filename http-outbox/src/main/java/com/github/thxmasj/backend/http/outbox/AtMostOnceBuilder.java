@@ -12,7 +12,9 @@ import com.github.thxmasj.backend.core.Validated;
 import com.github.thxmasj.backend.http.HttpClient;
 import com.github.thxmasj.backend.http.HttpRequest;
 import com.github.thxmasj.backend.http.HttpResponse;
+import com.github.thxmasj.backend.http.Masking;
 import java.time.Duration;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.function.BiFunction;
 import java.util.function.Function;
@@ -162,8 +164,14 @@ public final class AtMostOnceBuilder {
     );
   }
 
-  /// Optional: the rollback on accepted model defaults to none.
+  /// Optional: the masking defaults to [Masking#CREDENTIALS], and the rollback on accepted model to none.
   public interface RollbackOnAcceptedModelStep<RQ> extends BuildStep<RQ, Void> {
+
+    /// Masks what the masking gives of the request and the response in the event log, besides [Masking#CREDENTIALS],
+    /// which every at-most-once request masks, e.g. the form fields of a token request and the body of its response.
+    /// The request is sent and the response handled as they are: only the events stored are masked. As an at-most-once
+    /// request is never sent again from the event log, masking it doesn't change what is sent.
+    RollbackOnAcceptedModelStep<RQ> masking(Masking masking);
 
     <RRQ> RollbackOnUnknownModelStep<RQ, RRQ> rollbackOnAcceptedModel(AtLeastOnce<RRQ> rollbackOnAcceptedModel);
 
@@ -360,6 +368,7 @@ public final class AtMostOnceBuilder {
     private Predicate<HttpResponse<RS>> isAccepted;
     private Predicate<HttpResponse<RS>> isRejected;
     private Predicate<Tuple2<HttpResponse<byte[]>, String>> isRejectedByInvalidResponse;
+    private Masking masking = Masking.NONE;
 
     private WithContentParser(
         DataType<RQ> requestPayloadType,
@@ -474,8 +483,15 @@ public final class AtMostOnceBuilder {
           isRejected,
           isRejectedByInvalidResponse,
           rollbackOnAcceptedModel,
-          rollbackOnUnknownModel
+          rollbackOnUnknownModel,
+          masking
       );
+    }
+
+    @Override
+    public RollbackOnAcceptedModelStep<RQ> masking(Masking masking) {
+      this.masking = this.masking.and(Objects.requireNonNull(masking));
+      return this;
     }
 
     @Override

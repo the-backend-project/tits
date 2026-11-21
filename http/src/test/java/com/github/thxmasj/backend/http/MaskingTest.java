@@ -1,11 +1,9 @@
-package com.github.thxmasj.backend.http.inbox;
+package com.github.thxmasj.backend.http;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import com.github.thxmasj.backend.http.HttpRequest;
 import com.github.thxmasj.backend.http.HttpRequest.Method;
-import com.github.thxmasj.backend.http.HttpResponse;
 import java.net.URI;
 import java.util.Map;
 import org.junit.jupiter.api.Test;

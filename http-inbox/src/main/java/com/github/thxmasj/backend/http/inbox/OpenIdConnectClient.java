@@ -97,7 +97,8 @@ public final class OpenIdConnectClient {
   }
 
   /// The request redeeming the code the user returned with at the token endpoint, to send it otherwise than by
-  /// [#redeem(String, String)], e.g. by an at-most-once outbox, as a code can be redeemed only once. The response is verified with [#verify(String, String)].
+  /// [#redeem(String, String)], e.g. by an at-most-once outbox, as a code can be redeemed only once. The response is
+  /// verified with [#verify(String, String)], or [#verifyWithNonce(String, String)] in a later session.
   public Mono<HttpRequest<String>> tokenRequest(String code, String secret) {
     return checked(secret).then(provider).map(provider -> {
       var parameters = new LinkedHashMap<String, String>();
@@ -123,6 +124,15 @@ public final class OpenIdConnectClient {
   /// The claims of the ID token of a response of the token endpoint, verified with the keys of the provider, for the
   /// client, and against the nonce of the secret. Fails if the response has no ID token or it is invalid.
   public Mono<JWTClaimsSet> verify(String tokenResponse, String secret) {
+    return checked(secret).then(Mono.defer(() -> verifyWithNonce(tokenResponse, nonce(secret))));
+  }
+
+  /// The claims of the ID token of a response of the token endpoint, verified with the keys of the provider, for the
+  /// client, and against the nonce, which is [#nonce(String)] of the secret of the sign-in. The nonce is sent to the
+  /// provider through the browser, so it can be stored, unlike the secret, e.g. to verify the response of a token
+  /// request an outbox sends, which is handled in a later session. Fails if the response has no ID token or it is
+  /// invalid.
+  public Mono<JWTClaimsSet> verifyWithNonce(String tokenResponse, String nonce) {
     return provider.flatMap(provider -> {
       JsonNode idToken;
       try {
@@ -133,7 +143,7 @@ public final class OpenIdConnectClient {
       if (idToken == null || !idToken.isString())
         return Mono.error(new IllegalStateException("The token response has no id_token"));
       // The keys may be fetched, which blocks
-      return Mono.fromCallable(() -> verified(provider.idTokenProcessor().process(idToken.asString(), null), secret))
+      return Mono.fromCallable(() -> verified(provider.idTokenProcessor().process(idToken.asString(), null), nonce))
           .subscribeOn(Schedulers.boundedElastic());
     });
   }
@@ -174,8 +184,8 @@ public final class OpenIdConnectClient {
             : Mono.error(new IllegalStateException("The token endpoint responded " + response.statusCode() + ": " + response.body())));
   }
 
-  private static JWTClaimsSet verified(JWTClaimsSet claims, String secret) throws ParseException {
-    if (!nonce(secret).equals(claims.getStringClaim("nonce")))
+  private static JWTClaimsSet verified(JWTClaimsSet claims, String nonce) throws ParseException {
+    if (nonce == null || !nonce.equals(claims.getStringClaim("nonce")))
       throw new IllegalStateException("The nonce of the ID token does not match");
     return claims;
   }
@@ -185,8 +195,9 @@ public final class OpenIdConnectClient {
     return secret;
   }
 
-  /// The nonce can't be derived from the code challenge, which is sent through the browser
-  private static String nonce(String secret) {
+  /// The nonce of the sign-in of the secret, which the authorization request sends and the ID token must have. It can't
+  /// be derived from the code challenge, which is sent through the browser too.
+  public static String nonce(String secret) {
     return Secrets.hash("nonce:" + secret);
   }
 

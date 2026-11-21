@@ -24,16 +24,13 @@ change the application's data. Its sessions and the load of its users stay out o
 
 | Entity | Description |
 |---|---|
-| `BackofficeSession` | A sign-in of a user: the sign-in started, who signed in, or was refused, every page viewed, and the sign-out or expiry. Found by the hash of the token of the session cookie, which is an id event of `BackofficeTokens`. |
+| `BackofficeSession` | A sign-in of a user: the sign-in started, the code redeemed, who signed in, or was refused, every page viewed, and the sign-out or expiry. Found by the hash of the token of the session cookie, which is an id event of `BackofficeTokens`. |
+| `BackofficeTokenRequest` | The request redeeming the code of a sign-in at the provider, an at-most-once [outbox](http-outbox.md) request, as a code can be redeemed only once. Its code, PKCE verifier and client secret, and the tokens of its response, are [masked](http-outbox.md#masking). |
 | `BackofficeResource` | A request not of a session: a static file, the health check, a redirect to the start page, or a page not found. It is an entity of the session only, which is [not stored](entities.md#events-and-entities-not-stored), nor is its inbox request. |
 
 <object data="../images/com.github.thxmasj.backend.backoffice.BackofficeSession.svg" type="image/svg+xml"></object>
 
 [Open the diagram in full size](images/com.github.thxmasj.backend.backoffice.BackofficeSession.svg)
-
-The state `Redeeming`, with `Code redemption requested` and `Token request failed`, is only there for the sessions
-stored before the code was redeemed in the transition of the callback, by an outbox request: no session goes there now,
-but those stored are read.
 
 A refused sign-in is an event of [severity](monitoring.md#severity) `Warning`, so attempts to get in show up in the
 monitoring. A session expires after its lifetime, or after 30,000 events, as the event numbers of an entity are
@@ -60,19 +57,19 @@ the application, e.g. "Orders backoffice", in the header and the title of its pa
 its inbox. The inbox requests read the cookies, and the transitions decide everything: whether a session is valid,
 whether the provider signed the user in and the claims permit the user, and what the response is, the pages included,
 which they render from the application's schema. Calling the provider is the only work outside the transitions: they
-find its endpoints, redeem codes and check ID tokens against its keys through a helper. The backoffice serves the pages
-under `/backoffice`, its static files and `/health`.
+find its endpoints and check ID tokens against its keys through a helper, and an outbox sends the token request. The
+backoffice serves the pages under `/backoffice`, its static files and `/health`.
 
 The event log of the backoffice records who signed in and which pages they viewed, but keeps no secrets and no pages
 (see [what is kept out of the event log](http-inbox.md#keeping-secrets-and-bulky-data-out-of-the-event-log)):
 
 - The cookies, with the token of a session and the secret of a sign-in, are
   [masked](http-inbox.md#masking) in the stored requests and responses, as every inbox request masks them. The token
-  of a session is stored as its hash, by which the session is found, and the secret of a sign-in as its hash, by which
-  the callback is checked.
-- The code of the callback is masked in its stored request. The code is redeemed, and the ID token verified, in the
-  transition of the callback, so neither the token request nor the response of the provider is stored, only the
-  claims of the user.
+  of a session is stored as its hash, by which the session is found. Of the secret of a sign-in, the session stores
+  its hash, by which the callback is checked, and the nonce derived from it, by which the ID token is checked.
+- The code of the callback is masked in its stored request and in the session's event of its redemption. The token
+  request redeeming it is [masked](http-outbox.md#masking) in the event log of the outbox: its code, its PKCE
+  verifier, its client secret and the tokens of the response. Only the claims of the user are stored.
 - The bodies of the responses, i.e. the pages, are masked, as they are rendered from the application's schema when
   viewed.
 - The static files and the health check are not stored, neither their requests nor their entities.
@@ -128,13 +125,13 @@ with a client secret or public without one:
 1. A page requested without a session, or with the cookie of no session, starts a sign-in in a new `BackofficeSession`.
    The user is redirected to the provider with the entity id of the session as `state`, and a secret, from which the
    PKCE verifier and the nonce are derived, is kept in a cookie named after it, only sent to `/backoffice/callback`.
-   The session keeps the hash of the secret.
+   The session keeps the hash of the secret and the nonce.
 2. The provider redirects the user back to `/backoffice/callback`, which is an event of the session. The session
    checks the secret of the cookie against its hash, which binds the sign-in to the browser it was started in, and
-   redeems the code at the provider with the secret. As this is done in the transition, the code is redeemed once, as
-   it can only be: if the transition fails, e.g. as the provider can't be reached, nothing is stored and the user
-   signs in again.
-3. The session verifies the ID token with the keys of the provider and against its nonce, and decides by the claims:
+   dispatches the token request redeeming the code with the secret, an at-most-once outbox request, so that a code is
+   never redeemed twice, also if the transition is computed again.
+3. The outbox tells the session the response of the provider. The session verifies the ID token with the keys of the
+   provider and against the nonce, and decides by the claims:
    if the configured claim has one of the permitted values, e.g. the claim `roles` the value `backoffice`, the user is
    signed in, with a new token in the session cookie, and sent back to the page first requested. Otherwise the session
    records that the sign-in was refused, with the claims of the user. The browser's request at the callback waits for
